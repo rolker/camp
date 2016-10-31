@@ -2,10 +2,13 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QStandardItemModel>
 
 namespace Ui {
 class MainWindow;
 }
+
+class AutonomousVehicleProject;
 
 class MainWindow : public QMainWindow
 {
@@ -20,6 +23,7 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+    AutonomousVehicleProject *project;
 };
 
 #endif // MAINWINDOW_H

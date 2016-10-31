@@ -14,10 +14,14 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    missioncanvas.cpp
+    missioncanvas.cpp \
+    autonomousvehicleproject.cpp \
+    backgroundraster.cpp
 
 HEADERS  += mainwindow.h \
-    missioncanvas.h
+    missioncanvas.h \
+    autonomousvehicleproject.h \
+    backgroundraster.h
 
 FORMS    += mainwindow.ui
 

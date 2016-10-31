@@ -2,6 +2,7 @@
 #define MISSIONCANVAS_H
 
 #include <QWidget>
+class QAbstractItemModel;
 
 class MissionCanvas : public QWidget
 {
@@ -9,10 +10,12 @@ class MissionCanvas : public QWidget
 public:
     explicit MissionCanvas(QWidget *parent = 0);
 
-    void setBackgroundImage(QImage &bgimage);
+    QAbstractItemModel *model() const { return m_model;}
+    void setModel(QAbstractItemModel *model);
 signals:
 
 public slots:
+    //void setCurrentIndex(const QModelIndex &index);
 
 protected:
     void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE;
@@ -22,15 +25,15 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
 
 private:
+    QAbstractItemModel * m_model;
+
     double scale;
-    QPointF backgroundDisplayCenter;
+    QPointF displayCenter;
 
     bool isPanning;
     QPointF mouseStart;
-    QPointF backgroundDisplayCenterStart;
+    QPointF displayCenterStart;
 
-    typedef std::map<int,QPixmap> Mipmaps;
-    Mipmaps backgroundImages;
 };
 
 #endif // MISSIONCANVAS_H
