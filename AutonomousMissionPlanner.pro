@@ -16,12 +16,16 @@ SOURCES += main.cpp\
         mainwindow.cpp \
     missioncanvas.cpp \
     autonomousvehicleproject.cpp \
-    backgroundraster.cpp
+    backgroundraster.cpp \
+    georeferenced.cpp \
+    scaledview.cpp
 
 HEADERS  += mainwindow.h \
     missioncanvas.h \
     autonomousvehicleproject.h \
-    backgroundraster.h
+    backgroundraster.h \
+    georeferenced.h \
+    scaledview.h
 
 FORMS    += mainwindow.ui
 

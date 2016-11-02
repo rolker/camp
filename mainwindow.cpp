@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QFileDialog>
+#include <QStandardItemModel>
 #include <gdal_priv.h>
 #include <cstdint>
 
@@ -16,6 +17,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     ui->treeView->setModel(project->getModel());
     ui->missionCanvas->setModel(project->getModel());
+    ui->missionCanvas->setStatusBar(statusBar());
 }
 
 MainWindow::~MainWindow()
@@ -29,4 +31,9 @@ void MainWindow::on_action_Open_triggered()
 
     project->openBackground(fname);
 
+}
+
+void MainWindow::on_action_Waypoint_triggered()
+{
+    ui->missionCanvas->addWaypoint();
 }

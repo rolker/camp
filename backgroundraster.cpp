@@ -1,12 +1,15 @@
 #include "backgroundraster.h"
 #include <QPainter>
 #include <gdal_priv.h>
+#include <scaledview.h>
 
 BackgroundRaster::BackgroundRaster(QObject *parent,const QString &fname) : QObject(parent)
 {
     GDALDataset * dataset = reinterpret_cast<GDALDataset*>(GDALOpen(fname.toStdString().c_str(),GA_ReadOnly));
     if (dataset)
     {
+        extractGeoreference(dataset);
+
         int width = dataset->GetRasterXSize();
         int height = dataset->GetRasterYSize();
 
@@ -40,7 +43,7 @@ BackgroundRaster::BackgroundRaster(QObject *parent,const QString &fname) : QObje
     }
 }
 
-void BackgroundRaster::paint(QPainter *painter, double scale, const QPointF &center, QRect const &viewRect) const
+void BackgroundRaster::paint(QPainter *painter, ScaledView const &view) const
 {
     painter->setRenderHint(QPainter::SmoothPixmapTransform);
 
@@ -48,7 +51,7 @@ void BackgroundRaster::paint(QPainter *painter, double scale, const QPointF &cen
     {
         QPixmap selectedBackground;
         int selectedScale;
-        auto l = backgroundImages.lower_bound(1/scale);
+        auto l = backgroundImages.lower_bound(1/view.scale());
         if (l == backgroundImages.end())
         {
             auto last = backgroundImages.rbegin();
@@ -60,13 +63,10 @@ void BackgroundRaster::paint(QPainter *painter, double scale, const QPointF &cen
             selectedBackground = l->second;
             selectedScale = l->first;
         }
-        double effectiveScale = scale*selectedScale;
+        double effectiveScale = view.scale()*selectedScale;
         painter->scale(effectiveScale,effectiveScale);
 
-        QSize wsize = viewRect.size();
-        QPointF offset = QPointF(wsize.width(),wsize.height())/2.0;
-        offset -= center*scale;
-        offset /= effectiveScale;
+        QPointF offset = view.scaledOffset()/effectiveScale;
 
         painter->drawPixmap(offset,selectedBackground);
     }

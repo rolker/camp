@@ -2,7 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-#include <QStandardItemModel>
+
 
 namespace Ui {
 class MainWindow;
@@ -20,6 +20,8 @@ public:
 
 private slots:
     void on_action_Open_triggered();
+
+    void on_action_Waypoint_triggered();
 
 private:
     Ui::MainWindow *ui;
