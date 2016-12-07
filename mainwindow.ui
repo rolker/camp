@@ -44,21 +44,21 @@
         </property>
        </widget>
       </widget>
-      <widget class="MissionCanvas" name="missionCanvas" native="true">
+      <widget class="ProjectView" name="projectView">
        <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
          <horstretch>1</horstretch>
          <verstretch>0</verstretch>
         </sizepolicy>
        </property>
-       <property name="minimumSize">
-        <size>
-         <width>100</width>
-         <height>100</height>
-        </size>
+       <property name="renderHints">
+        <set>QPainter::Antialiasing|QPainter::HighQualityAntialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
        </property>
-       <property name="mouseTracking">
-        <bool>true</bool>
+       <property name="dragMode">
+        <enum>QGraphicsView::ScrollHandDrag</enum>
+       </property>
+       <property name="transformationAnchor">
+        <enum>QGraphicsView::AnchorUnderMouse</enum>
        </property>
       </widget>
      </widget>
@@ -118,10 +118,9 @@
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>MissionCanvas</class>
-   <extends>QWidget</extends>
-   <header>missioncanvas.h</header>
-   <container>1</container>
+   <class>ProjectView</class>
+   <extends>QGraphicsView</extends>
+   <header>projectview.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui
+QT       += core gui positioning
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -14,21 +14,24 @@ TEMPLATE = app
 
 SOURCES += main.cpp\
         mainwindow.cpp \
-    missioncanvas.cpp \
     autonomousvehicleproject.cpp \
     backgroundraster.cpp \
     georeferenced.cpp \
-    scaledview.cpp
+    waypoint.cpp \
+    projectview.cpp
 
 HEADERS  += mainwindow.h \
-    missioncanvas.h \
     autonomousvehicleproject.h \
     backgroundraster.h \
     georeferenced.h \
-    scaledview.h
+    waypoint.h \
+    projectview.h
 
 FORMS    += mainwindow.ui
 
-INCLUDEPATH = /usr/include/gdal
+unix {
+    INCLUDEPATH = /usr/include/gdal
+}
+
 LIBS += -lgdal
 CONFIG += c++11

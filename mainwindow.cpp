@@ -9,15 +9,15 @@
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow),
-    project(new AutonomousVehicleProject(this))
+    ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
     GDALAllRegister();
+    project = new AutonomousVehicleProject(this);
 
-    ui->treeView->setModel(project->getModel());
-    ui->missionCanvas->setModel(project->getModel());
-    ui->missionCanvas->setStatusBar(statusBar());
+    ui->treeView->setModel(project->model());
+    ui->projectView->setStatusBar(statusBar());
+    ui->projectView->setProject(project);
 }
 
 MainWindow::~MainWindow()
@@ -27,7 +27,7 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_action_Open_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/");
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
 
     project->openBackground(fname);
 
@@ -35,5 +35,5 @@ void MainWindow::on_action_Open_triggered()
 
 void MainWindow::on_action_Waypoint_triggered()
 {
-    ui->missionCanvas->addWaypoint();
+    ui->projectView->setAddWaypointMode();
 }

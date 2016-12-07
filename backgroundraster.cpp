@@ -1,9 +1,8 @@
 #include "backgroundraster.h"
 #include <QPainter>
 #include <gdal_priv.h>
-#include <scaledview.h>
 
-BackgroundRaster::BackgroundRaster(QObject *parent,const QString &fname) : QObject(parent)
+BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem) : QObject(parent), QGraphicsItem(parentItem)
 {
     GDALDataset * dataset = reinterpret_cast<GDALDataset*>(GDALOpen(fname.toStdString().c_str(),GA_ReadOnly));
     if (dataset)
@@ -43,15 +42,23 @@ BackgroundRaster::BackgroundRaster(QObject *parent,const QString &fname) : QObje
     }
 }
 
-void BackgroundRaster::paint(QPainter *painter, ScaledView const &view) const
+QRectF BackgroundRaster::boundingRect() const
 {
-    painter->setRenderHint(QPainter::SmoothPixmapTransform);
+    auto ret = backgroundImages.cbegin();
+    return QRectF(QPointF(0.0,0.0), ret->second.size());
+}
 
+
+void BackgroundRaster::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidget *widget)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::SmoothPixmapTransform);
+    double scale = painter->transform().m11();
     if(!backgroundImages.empty())
     {
         QPixmap selectedBackground;
         int selectedScale;
-        auto l = backgroundImages.lower_bound(1/view.scale());
+        auto l = backgroundImages.lower_bound(1/scale);
         if (l == backgroundImages.end())
         {
             auto last = backgroundImages.rbegin();
@@ -63,12 +70,16 @@ void BackgroundRaster::paint(QPainter *painter, ScaledView const &view) const
             selectedBackground = l->second;
             selectedScale = l->first;
         }
-        double effectiveScale = view.scale()*selectedScale;
-        painter->scale(effectiveScale,effectiveScale);
+        painter->scale(selectedScale,selectedScale);
 
-        QPointF offset = view.scaledOffset()/effectiveScale;
-
-        painter->drawPixmap(offset,selectedBackground);
+        painter->drawPixmap(0,0,selectedBackground);
     }
+    painter->restore();
 
+}
+
+QPixmap BackgroundRaster::topLevelPixmap() const
+{
+    auto ret = backgroundImages.cbegin();
+    return ret->second;
 }

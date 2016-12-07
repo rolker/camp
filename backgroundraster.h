@@ -2,18 +2,21 @@
 #define BACKGROUNDRASTER_H
 
 #include <QObject>
+#include <QGraphicsItem>
 #include <QPixmap>
 #include "georeferenced.h"
 
 class QPainter;
-class ScaledView;
 
-class BackgroundRaster: public QObject, public Georeferenced
+class BackgroundRaster: public QObject, public QGraphicsItem, public Georeferenced
 {
     Q_OBJECT
+    Q_INTERFACES(QGraphicsItem)
 public:
-    BackgroundRaster(QObject *parent = 0, const QString &fname = QString());
-    void paint(QPainter *painter, const ScaledView &view) const;
+    BackgroundRaster(const QString &fname = QString(), QObject *parent = 0, QGraphicsItem *parentItem =0);
+    QRectF boundingRect() const;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
+    QPixmap topLevelPixmap() const;
 
 private:
     typedef std::map<int,QPixmap> Mipmaps;
