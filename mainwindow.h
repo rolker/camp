@@ -23,6 +23,8 @@ private slots:
 
     void on_action_Waypoint_triggered();
 
+    void on_action_Trackline_triggered();
+
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;

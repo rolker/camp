@@ -6,8 +6,9 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "waypoint.h"
+#include "trackline.h"
 
-ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent), statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan)
+ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent), statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr)
 {
 
     positionLabel->setText("(,)");
@@ -37,23 +38,28 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         case MouseMode::addWaypoint:
             if(bg)
             {
-                QPointF transformedMouse = mapToScene(event->pos());
-                QPointF projectedMouse = bg->pixelToProjectedPoint(transformedMouse);
-                QGeoCoordinate llMouse = bg->unproject(projectedMouse);
-                m_project->addWaypoint(llMouse,bg);
+                m_project->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())),bg);
             }
-            setDragMode(ScrollHandDrag);
-            mouseMode = MouseMode::pan;
-            modeLabel->setText("Mode: pan");
-            unsetCursor();
+            setPanMode();
             break;
         case MouseMode::addTrackline:
+            if(!currentTrackLine)
+            {
+                if(bg)
+                {
+                    currentTrackLine = m_project->addTrackLine(bg->pixelToGeo(mapToScene(event->pos())),bg);
+                }
+            }
+            else
+            {
+                currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+            }
             break;
         }
         break;
     case Qt::RightButton:
         if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint)
-            mouseMode = MouseMode::pan;
+            setPanMode();
         break;
     default:
         break;
@@ -82,7 +88,6 @@ void ProjectView::mouseReleaseEvent(QMouseEvent *event)
 {
     if(event->button() == Qt::LeftButton)
     {
-//        isPanning = false;
     }
     QGraphicsView::mouseReleaseEvent(event);
 }
@@ -92,6 +97,14 @@ void ProjectView::setAddWaypointMode()
     setDragMode(NoDrag);
     mouseMode = MouseMode::addWaypoint;
     modeLabel->setText("Mode: add waypoint");
+    setCursor(Qt::CrossCursor);
+}
+
+void ProjectView::setAddTracklineMode()
+{
+    setDragMode(NoDrag);
+    mouseMode = MouseMode::addTrackline;
+    modeLabel->setText("Mode: add trackline");
     setCursor(Qt::CrossCursor);
 }
 
@@ -106,4 +119,12 @@ void ProjectView::setProject(AutonomousVehicleProject *project)
 {
     m_project = project;
     setScene(project->scene());
+}
+
+void ProjectView::setPanMode()
+{
+    setDragMode(ScrollHandDrag);
+    mouseMode = MouseMode::pan;
+    modeLabel->setText("Mode: pan");
+    unsetCursor();
 }

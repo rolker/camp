@@ -1,11 +1,9 @@
 #ifndef WAYPOINT_H
 #define WAYPOINT_H
 
-#include <QObject>
-#include <QGraphicsItem>
-#include <QGeoCoordinate>
+#include "geographicsitem.h"
 
-class Waypoint : public QObject, public QGraphicsItem
+class Waypoint : public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -20,6 +18,9 @@ public:
 signals:
 
 public slots:
+
+protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value);
 
 private:
     QGeoCoordinate m_location;

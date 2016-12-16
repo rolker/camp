@@ -6,6 +6,7 @@
 
 #include "backgroundraster.h"
 #include "waypoint.h"
+#include "trackline.h"
 #include <gdal_priv.h>
 
 
@@ -64,13 +65,27 @@ void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRa
 {
     Waypoint *wp = new Waypoint(this,parentItem);
     wp->setLocation(position);
-    QPointF pp = parentItem->project(position);
-    QPointF pixel = parentItem->projectedPointToPixel(pp);
-    wp->setPos(pixel);
+    wp->setPos(parentItem->geoToPixel(position));
     QStandardItem *item = new QStandardItem("wayoint");
     item->setData(QVariant::fromValue<Waypoint*>(wp));
     topLevelItems["Mission"]->appendRow(item);
-    m_scene->addItem(wp);
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
+    wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+}
+
+TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem)
+{
+    TrackLine *tl = new TrackLine(this,parentItem);
+    tl->setPos(parentItem->geoToPixel(position));
+    QStandardItem *item = new QStandardItem("trackline");
+    item->setData(QVariant::fromValue<TrackLine*>(tl));
+    topLevelItems["Mission"]->appendRow(item);
+    tl->setFlag(QGraphicsItem::ItemIsMovable);
+    tl->setFlag(QGraphicsItem::ItemIsSelectable);
+    tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+
+    tl->addWaypoint(position);
+
+    return tl;
 }

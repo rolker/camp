@@ -18,14 +18,18 @@ SOURCES += main.cpp\
     backgroundraster.cpp \
     georeferenced.cpp \
     waypoint.cpp \
-    projectview.cpp
+    projectview.cpp \
+    trackline.cpp \
+    geographicsitem.cpp
 
 HEADERS  += mainwindow.h \
     autonomousvehicleproject.h \
     backgroundraster.h \
     georeferenced.h \
     waypoint.h \
-    projectview.h
+    projectview.h \
+    trackline.h \
+    geographicsitem.h
 
 FORMS    += mainwindow.ui
 

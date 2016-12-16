@@ -65,3 +65,12 @@ QGeoCoordinate Georeferenced::unproject(const QPointF &point) const
     return QGeoCoordinate();
 }
 
+QPointF Georeferenced::geoToPixel(const QGeoCoordinate &point) const
+{
+    return projectedPointToPixel(project(point));
+}
+
+QGeoCoordinate Georeferenced::pixelToGeo(const QPointF &point) const
+{
+    return unproject(pixelToProjectedPoint(point));
+}

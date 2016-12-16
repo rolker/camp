@@ -14,6 +14,8 @@ public:
     QPointF projectedPointToPixel(QPointF const &point) const;
     QPointF project(QGeoCoordinate const &point) const;
     QGeoCoordinate unproject(QPointF const &point) const;
+    QPointF geoToPixel(QGeoCoordinate const &point) const;
+    QGeoCoordinate pixelToGeo(QPointF const &point) const;
 protected:
     void extractGeoreference(GDALDataset *dataset);
 private:

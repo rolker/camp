@@ -37,3 +37,8 @@ void MainWindow::on_action_Waypoint_triggered()
 {
     ui->projectView->setAddWaypointMode();
 }
+
+void MainWindow::on_action_Trackline_triggered()
+{
+    ui->projectView->setAddTracklineMode();
+}

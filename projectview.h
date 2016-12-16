@@ -6,6 +6,7 @@
 class QStatusBar;
 class QLabel;
 class AutonomousVehicleProject;
+class TrackLine;
 
 class ProjectView : public QGraphicsView
 {
@@ -14,6 +15,8 @@ public:
     explicit ProjectView(QWidget *parent = 0);
     void setStatusBar(QStatusBar *bar);
     void setAddWaypointMode();
+    void setAddTracklineMode();
+    void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 signals:
 
@@ -32,6 +35,7 @@ private:
     QLabel * modeLabel;
     MouseMode mouseMode;
     AutonomousVehicleProject *m_project;
+    TrackLine * currentTrackLine;
 
 };
 

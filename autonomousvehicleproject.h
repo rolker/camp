@@ -12,6 +12,7 @@ class QLabel;
 class QStatusBar;
 class BackgroundRaster;
 class Waypoint;
+class TrackLine;
 
 class AutonomousVehicleProject : public QObject
 {
@@ -25,6 +26,7 @@ public:
     void openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
     void addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+    TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
 
 signals:
 
