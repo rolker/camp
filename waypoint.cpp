@@ -45,6 +45,7 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
         BackgroundRaster *bgr = avp->getBackgroundRaster();
         QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
         m_location = bgr->unproject(projectedPosition);
+        parentItem()->update();
     }
     return QGraphicsItem::itemChange(change,value);
 }
