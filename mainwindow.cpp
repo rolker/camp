@@ -18,6 +18,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->treeView->setModel(project->model());
     ui->projectView->setStatusBar(statusBar());
     ui->projectView->setProject(project);
+
 }
 
 MainWindow::~MainWindow()
@@ -41,4 +42,17 @@ void MainWindow::on_action_Waypoint_triggered()
 void MainWindow::on_action_Trackline_triggered()
 {
     ui->projectView->setAddTracklineMode();
+}
+
+void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
+{
+    QMenu menu(this);
+    QAction *exportAction = menu.addAction("Export");
+    connect(exportAction, &QAction::triggered, this, &MainWindow::exportHypack);
+    menu.exec(ui->treeView->mapToGlobal(pos));
+}
+
+void MainWindow::exportHypack() const
+{
+    project->exportHypack(ui->treeView->selectionModel()->currentIndex());
 }

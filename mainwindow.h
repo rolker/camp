@@ -25,9 +25,13 @@ private slots:
 
     void on_action_Trackline_triggered();
 
+    void on_treeView_customContextMenuRequested(const QPoint &pos);
+
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;
+
+    void exportHypack() const;
 };
 
 #endif // MAINWINDOW_H

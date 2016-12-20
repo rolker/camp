@@ -3,12 +3,15 @@
 #include <QStandardItemModel>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
+#include <QFileDialog>
+#include <QTextStream>
 
 #include "backgroundraster.h"
 #include "waypoint.h"
 #include "trackline.h"
 #include <gdal_priv.h>
 
+#include <iostream>
 
 AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent)
 {
@@ -88,4 +91,37 @@ TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, Back
     tl->addWaypoint(position);
 
     return tl;
+}
+
+void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
+{
+    QStandardItem *item = m_model->itemFromIndex(index);
+    TrackLine *tl = item->data().value<TrackLine*>();
+    if(tl)
+    {
+        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(parent()));
+        if(fname.length() > 0)
+        {
+            QFile outfile(fname);
+            if(outfile.open(QFile::WriteOnly))
+            {
+                QTextStream outstream(&outfile);
+                outstream << "LNS 1\n";
+                auto waypoints = tl->childItems();
+                outstream << "LIN " << waypoints.size() << "\n";
+                for(auto i: waypoints)
+                {
+                    const Waypoint *wp = qgraphicsitem_cast<Waypoint const*>(i);
+                    if(wp)
+                    {
+                        auto ll = wp->location();
+                        outstream << "PTS " << ll.latitude() << " " << ll.longitude() << "\n";
+                    }
+                }
+                outstream << "LNN 1\n";
+                outstream << "EOL\n";
+            }
+        }
+    }
+
 }

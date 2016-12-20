@@ -31,6 +31,9 @@
           <verstretch>1</verstretch>
          </sizepolicy>
         </property>
+        <property name="contextMenuPolicy">
+         <enum>Qt::CustomContextMenu</enum>
+        </property>
         <attribute name="headerVisible">
          <bool>false</bool>
         </attribute>

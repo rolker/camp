@@ -32,6 +32,8 @@ signals:
 
 public slots:
 
+    void exportHypack(QModelIndex const &index);
+
 
 private:
     QStandardItemModel* m_model;
