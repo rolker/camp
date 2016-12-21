@@ -1,6 +1,8 @@
 #include "trackline.h"
 #include "waypoint.h"
 #include <QPainter>
+#include <QJsonObject>
+#include <QJsonArray>
 
 TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem)
 {
@@ -68,4 +70,19 @@ void TrackLine::addWaypoint(const QGeoCoordinate &location)
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
     update();
+}
+
+void TrackLine::write(QJsonObject &json) const
+{
+    json["type"] = "TrackLine";
+    QJsonArray wpArray;
+    auto children = childItems();
+    for(auto child: children)
+    {
+        Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
+        QJsonObject wpObject;
+        wp->write(wpObject);
+        wpArray.append(wpObject);
+    }
+    json["waypoints"] = wpArray;
 }

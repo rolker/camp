@@ -5,6 +5,9 @@
 #include <QGraphicsPixmapItem>
 #include <QFileDialog>
 #include <QTextStream>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonArray>
 
 #include "backgroundraster.h"
 #include "waypoint.h"
@@ -43,6 +46,65 @@ QStandardItemModel *AutonomousVehicleProject::model() const
 QGraphicsScene *AutonomousVehicleProject::scene() const
 {
     return m_scene;
+}
+
+QString const &AutonomousVehicleProject::filename() const
+{
+    return m_filename;
+}
+
+void AutonomousVehicleProject::save(const QString &fname)
+{
+    QString saveName = fname;
+    if(saveName.isEmpty())
+        saveName = m_filename;
+    if(!saveName.isEmpty())
+    {
+        QJsonObject projectObject;
+
+        QJsonArray bgArray;
+        QStandardItem *bgitems = topLevelItems["Background"];
+        int row = 0;
+        QStandardItem *child = bgitems->child(row);
+        while(child)
+        {
+            BackgroundRaster *bg = child->data().value<BackgroundRaster*>();
+            QJsonObject bgObject;
+            bg->write(bgObject);
+            bgArray.append(bgObject);
+            row++;
+            child = bgitems->child(row);
+        }
+        projectObject["background"] = bgArray;
+
+        QJsonArray missionArray;
+
+        QStandardItem *missionitems = topLevelItems["Mission"];
+        row = 0;
+        child = missionitems->child(row);
+        while(child)
+        {
+            TrackLine *tl = child->data().value<TrackLine*>();
+            if(tl)
+            {
+                QJsonObject tlObject;
+                tl->write(tlObject);
+                missionArray.append(tlObject);
+            }
+            row++;
+            child = missionitems->child(row);
+        }
+        projectObject["mission"] = missionArray;
+
+        QFile saveFile(saveName);
+        if(saveFile.open(QFile::WriteOnly))
+        {
+            QJsonDocument saveDoc(projectObject);
+            saveFile.write(saveDoc.toJson());
+            m_filename = saveName;
+        }
+    }
+
 }
 
 void AutonomousVehicleProject::openBackground(const QString &fname)

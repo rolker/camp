@@ -15,6 +15,7 @@ public:
 
     QGeoCoordinate const &location() const;
     void setLocation(QGeoCoordinate const &location);
+    void write(QJsonObject &json) const;
 signals:
 
 public slots:

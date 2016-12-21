@@ -17,10 +17,13 @@ public:
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPixmap topLevelPixmap() const;
+    QString const &filename() const;
+    void write(QJsonObject &json) const;
 
 private:
     typedef std::map<int,QPixmap> Mipmaps;
     Mipmaps backgroundImages;
+    QString m_filename;
 
 };
 

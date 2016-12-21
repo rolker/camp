@@ -56,3 +56,14 @@ void MainWindow::exportHypack() const
 {
     project->exportHypack(ui->treeView->selectionModel()->currentIndex());
 }
+
+void MainWindow::on_actionSave_triggered()
+{
+    on_actionSave_As_triggered();
+}
+
+void MainWindow::on_actionSave_As_triggered()
+{
+    QString fname = QFileDialog::getSaveFileName(this);
+    project->save(fname);
+}

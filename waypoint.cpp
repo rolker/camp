@@ -2,6 +2,7 @@
 #include <QPainter>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
+#include <QJsonObject>
 
 Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem)
 {
@@ -48,4 +49,10 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
         parentItem()->update();
     }
     return QGraphicsItem::itemChange(change,value);
+}
+
+void Waypoint::write(QJsonObject &json) const
+{
+    json["latitude"] = m_location.latitude();
+    json["longitude"] = m_location.longitude();
 }

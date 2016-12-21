@@ -27,6 +27,8 @@ public:
     BackgroundRaster * getBackgroundRaster() const;
     void addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem =0);
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+    QString const &filename() const;
+    void save(QString const &fname = QString());
 
 signals:
 
@@ -39,6 +41,7 @@ private:
     QStandardItemModel* m_model;
     QGraphicsScene* m_scene;
     std::map<QString,QStandardItem*> topLevelItems;
+    QString m_filename;
 };
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

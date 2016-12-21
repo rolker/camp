@@ -1,8 +1,10 @@
 #include "backgroundraster.h"
 #include <QPainter>
+#include <QJsonObject>
 #include <gdal_priv.h>
 
-BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem) : QObject(parent), QGraphicsItem(parentItem)
+BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem)
+    : QObject(parent), QGraphicsItem(parentItem), m_filename(fname)
 {
     GDALDataset * dataset = reinterpret_cast<GDALDataset*>(GDALOpen(fname.toStdString().c_str(),GA_ReadOnly));
     if (dataset)
@@ -82,4 +84,14 @@ QPixmap BackgroundRaster::topLevelPixmap() const
 {
     auto ret = backgroundImages.cbegin();
     return ret->second;
+}
+
+QString const &BackgroundRaster::filename() const
+{
+    return m_filename;
+}
+
+void BackgroundRaster::write(QJsonObject &json) const
+{
+    json["filename"] = m_filename;
 }

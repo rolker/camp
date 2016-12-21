@@ -18,6 +18,8 @@ public:
 
     void addWaypoint(QGeoCoordinate const &location);
 
+    void write(QJsonObject &json) const;
+
 signals:
 
 public slots:
