@@ -29,6 +29,8 @@ public:
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
     QString const &filename() const;
     void save(QString const &fname = QString());
+    void open(QString const &fname);
+    void loadTrackLine(const QJsonObject &json);
 
 signals:
 

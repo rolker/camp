@@ -28,10 +28,9 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_action_Open_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
 
-    project->openBackground(fname);
-
+    project->open(fname);
 }
 
 void MainWindow::on_action_Waypoint_triggered()
@@ -66,4 +65,12 @@ void MainWindow::on_actionSave_As_triggered()
 {
     QString fname = QFileDialog::getSaveFileName(this);
     project->save(fname);
+}
+
+void MainWindow::on_actionOpen_Background_triggered()
+{
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
+
+    project->openBackground(fname);
+
 }

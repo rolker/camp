@@ -31,6 +31,8 @@ private slots:
 
     void on_actionSave_As_triggered();
 
+    void on_actionOpen_Background_triggered();
+
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;

@@ -107,6 +107,31 @@ void AutonomousVehicleProject::save(const QString &fname)
 
 }
 
+void AutonomousVehicleProject::open(const QString &fname)
+{
+    QFile loadFile(fname);
+    if(loadFile.open(QFile::ReadOnly))
+    {
+        QByteArray loadData = loadFile.readAll();
+        QJsonDocument loadDoc(QJsonDocument::fromJson(loadData));
+        QJsonArray bgArray = loadDoc.object()["background"].toArray();
+        for (int bgIndex = 0; bgIndex < bgArray.size(); ++bgIndex)
+        {
+            QJsonObject bgObject = bgArray[bgIndex].toObject();
+            openBackground(bgObject["filename"].toString());
+        }
+
+        QJsonArray missionArray = loadDoc.object()["mission"].toArray();
+        for (int missionIndex = 0; missionIndex < missionArray.size(); ++missionIndex)
+        {
+            QJsonObject missionObject = missionArray[missionIndex].toObject();
+            if(missionObject["type"] == "TrackLine")
+                loadTrackLine(missionObject);
+        }
+
+    }
+}
+
 void AutonomousVehicleProject::openBackground(const QString &fname)
 {
     BackgroundRaster *bgr = new BackgroundRaster(fname, this);
@@ -153,6 +178,30 @@ TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, Back
     tl->addWaypoint(position);
 
     return tl;
+}
+
+void AutonomousVehicleProject::loadTrackLine(const QJsonObject &json)
+{
+    QJsonArray waypointsArray = json["waypoints"].toArray();
+    if(waypointsArray.size()>0)
+    {
+        BackgroundRaster *bg = getBackgroundRaster();
+        TrackLine *tl = new TrackLine(this,bg);
+        QStandardItem *item = new QStandardItem("trackline");
+        item->setData(QVariant::fromValue<TrackLine*>(tl));
+        topLevelItems["Mission"]->appendRow(item);
+        tl->setFlag(QGraphicsItem::ItemIsMovable);
+        tl->setFlag(QGraphicsItem::ItemIsSelectable);
+        tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+        for(int wpIndex = 0; wpIndex < waypointsArray.size(); wpIndex++)
+        {
+            QJsonObject wpObject = waypointsArray[wpIndex].toObject();
+            QGeoCoordinate position(wpObject["latitude"].toDouble(),wpObject["longitude"].toDouble());
+            if(wpIndex == 0)
+                tl->setPos(bg->geoToPixel(position));
+            tl->addWaypoint(position);
+        }
+    }
 }
 
 void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
