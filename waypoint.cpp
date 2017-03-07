@@ -39,7 +39,7 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 
 QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 {
-    if(change == ItemPositionChange)
+    if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
     {
         QPointF newPos = value.toPointF();
         AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());

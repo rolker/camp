@@ -7,6 +7,7 @@ class QStatusBar;
 class QLabel;
 class AutonomousVehicleProject;
 class TrackLine;
+class SurveyPattern;
 
 class ProjectView : public QGraphicsView
 {
@@ -16,6 +17,7 @@ public:
     void setStatusBar(QStatusBar *bar);
     void setAddWaypointMode();
     void setAddTracklineMode();
+    void setAddSurveyPatternMode();
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 signals:
@@ -29,13 +31,14 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
 
 private:
-    enum class MouseMode {pan, addWaypoint, addTrackline};
+    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern};
     QStatusBar * statusBar;
     QLabel * positionLabel;
     QLabel * modeLabel;
     MouseMode mouseMode;
     AutonomousVehicleProject *m_project;
     TrackLine * currentTrackLine;
+    SurveyPattern * pendingSurveyPattern;
 
 };
 

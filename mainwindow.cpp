@@ -74,3 +74,8 @@ void MainWindow::on_actionOpen_Background_triggered()
     project->openBackground(fname);
 
 }
+
+void MainWindow::on_actionSurvey_Pattern_triggered()
+{
+    ui->projectView->setAddSurveyPatternMode();
+}

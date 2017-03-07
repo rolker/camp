@@ -7,8 +7,10 @@
 #include "backgroundraster.h"
 #include "waypoint.h"
 #include "trackline.h"
+#include "surveypattern.h"
 
-ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent), statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr)
+ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
+    statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingSurveyPattern(nullptr)
 {
 
     positionLabel->setText("(,)");
@@ -55,10 +57,31 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
             }
             break;
+        case MouseMode::addSurveyPattern:
+            if(!pendingSurveyPattern)
+            {
+                if(bg)
+                {
+                    pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())),bg);
+
+                }
+            }
+            else
+            {
+                if(pendingSurveyPattern->hasSpacingLocation())
+                {
+                    setPanMode();
+                }
+                else
+                {
+                    pendingSurveyPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                }
+            }
+            break;
         }
         break;
     case Qt::RightButton:
-        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint)
+        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern)
             setPanMode();
         break;
     default:
@@ -79,6 +102,13 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         posText += " Projected mouse: "+QString::number(projectedMouse.x(),'f')+","+QString::number(projectedMouse.y(),'f');
         QGeoCoordinate llMouse = bg->unproject(projectedMouse);
         posText += " WGS84: " + llMouse.toString();
+        if(pendingSurveyPattern)
+        {
+            if(pendingSurveyPattern->hasSpacingLocation())
+                pendingSurveyPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+            else
+                pendingSurveyPattern->setEndLocation(bg->pixelToGeo(mapToScene(event->pos())));
+        }
     }
     positionLabel->setText(posText);
     QGraphicsView::mouseMoveEvent(event);
@@ -108,12 +138,22 @@ void ProjectView::setAddTracklineMode()
     setCursor(Qt::CrossCursor);
 }
 
+void ProjectView::setAddSurveyPatternMode()
+{
+    setDragMode(NoDrag);
+    mouseMode = MouseMode::addSurveyPattern;
+    modeLabel->setText("Mode: add survey pattern");
+    setCursor(Qt::CrossCursor);
+}
+
 void ProjectView::setStatusBar(QStatusBar *bar)
 {
     statusBar = bar;
     statusBar->addWidget(positionLabel);
     statusBar->addPermanentWidget(modeLabel);
 }
+
+
 
 void ProjectView::setProject(AutonomousVehicleProject *project)
 {
@@ -127,4 +167,5 @@ void ProjectView::setPanMode()
     mouseMode = MouseMode::pan;
     modeLabel->setText("Mode: pan");
     unsetCursor();
+    pendingSurveyPattern = nullptr;
 }

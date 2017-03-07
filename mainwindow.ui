@@ -92,6 +92,7 @@
     </property>
     <addaction name="action_Waypoint"/>
     <addaction name="action_Trackline"/>
+    <addaction name="actionSurvey_Pattern"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -132,7 +133,12 @@
   </action>
   <action name="actionOpen_Background">
    <property name="text">
-    <string>Open Background</string>
+    <string>Open &amp;Background</string>
+   </property>
+  </action>
+  <action name="actionSurvey_Pattern">
+   <property name="text">
+    <string>Survey Pattern</string>
    </property>
   </action>
  </widget>

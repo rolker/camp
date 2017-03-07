@@ -20,7 +20,8 @@ SOURCES += main.cpp\
     waypoint.cpp \
     projectview.cpp \
     trackline.cpp \
-    geographicsitem.cpp
+    geographicsitem.cpp \
+    surveypattern.cpp
 
 HEADERS  += mainwindow.h \
     autonomousvehicleproject.h \
@@ -29,7 +30,8 @@ HEADERS  += mainwindow.h \
     waypoint.h \
     projectview.h \
     trackline.h \
-    geographicsitem.h
+    geographicsitem.h \
+    surveypattern.h
 
 FORMS    += mainwindow.ui
 

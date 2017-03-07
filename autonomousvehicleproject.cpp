@@ -12,6 +12,7 @@
 #include "backgroundraster.h"
 #include "waypoint.h"
 #include "trackline.h"
+#include "surveypattern.h"
 #include <gdal_priv.h>
 
 #include <iostream>
@@ -162,6 +163,21 @@ void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRa
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+}
+
+SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem)
+{
+    SurveyPattern *sp = new SurveyPattern(this,parentItem);
+    sp->setPos(parentItem->geoToPixel(position));
+    sp->setStartLocation(position);
+    QStandardItem *item = new QStandardItem("pattern");
+    item->setData(QVariant::fromValue<SurveyPattern*>(sp));
+    topLevelItems["Mission"]->appendRow(item);
+    sp->setFlag(QGraphicsItem::ItemIsMovable);
+    sp->setFlag(QGraphicsItem::ItemIsSelectable);
+    sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+
+    return sp;
 }
 
 TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem)
