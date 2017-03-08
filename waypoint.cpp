@@ -41,18 +41,27 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
     {
-        QPointF newPos = value.toPointF();
         AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
         BackgroundRaster *bgr = avp->getBackgroundRaster();
         QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
         m_location = bgr->unproject(projectedPosition);
         parentItem()->update();
     }
+    if(change == ItemPositionChange)
+        emit waypointMoved();
+
     return QGraphicsItem::itemChange(change,value);
 }
 
 void Waypoint::write(QJsonObject &json) const
 {
+    json["type"] = "Waypoint";
     json["latitude"] = m_location.latitude();
     json["longitude"] = m_location.longitude();
+}
+
+void Waypoint::read(const QJsonObject &json)
+{
+    QGeoCoordinate position(json["latitude"].toDouble(),json["longitude"].toDouble());
+    setLocation(position);
 }

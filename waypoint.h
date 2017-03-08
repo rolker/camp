@@ -15,10 +15,15 @@ public:
 
     QGeoCoordinate const &location() const;
     void setLocation(QGeoCoordinate const &location);
+
     void write(QJsonObject &json) const;
+    void read(const QJsonObject &json);
 signals:
 
 public slots:
+
+signals:
+    void waypointMoved();
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value);

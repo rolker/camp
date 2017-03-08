@@ -2,6 +2,9 @@
 #include "waypoint.h"
 #include <QPainter>
 #include <QtMath>
+#include <QJsonObject>
+
+#include <iostream>
 
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacingLocation(nullptr)
@@ -9,16 +12,21 @@ SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGrap
 
 }
 
+Waypoint * SurveyPattern::createWaypoint()
+{
+    Waypoint * wp = new Waypoint(parent(),this);
+    wp->setFlag(QGraphicsItem::ItemIsMovable);
+    wp->setFlag(QGraphicsItem::ItemIsSelectable);
+    wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    wp->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
+    connect(wp, &Waypoint::waypointMoved, this, &SurveyPattern::waypointHasChanged);
+    return wp;
+}
+
 void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 {
     if(m_startLocation == nullptr)
-    {
-        m_startLocation = new Waypoint(parent(),this);
-        m_startLocation->setFlag(QGraphicsItem::ItemIsMovable);
-        m_startLocation->setFlag(QGraphicsItem::ItemIsSelectable);
-        m_startLocation->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-        m_startLocation->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
-    }
+        m_startLocation = createWaypoint();
     m_startLocation->setLocation(location);
     m_startLocation->setPos(m_startLocation->geoToPixel(location));
     update();
@@ -27,13 +35,7 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 void SurveyPattern::setEndLocation(const QGeoCoordinate &location)
 {
     if(m_endLocation == nullptr)
-    {
-        m_endLocation = new Waypoint(parent(),this);
-        m_endLocation->setFlag(QGraphicsItem::ItemIsMovable);
-        m_endLocation->setFlag(QGraphicsItem::ItemIsSelectable);
-        m_endLocation->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-        m_endLocation->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
-    }
+        m_endLocation = createWaypoint();
     m_endLocation->setLocation(location);
     m_endLocation->setPos(m_endLocation->geoToPixel(location));
     update();
@@ -42,16 +44,44 @@ void SurveyPattern::setEndLocation(const QGeoCoordinate &location)
 void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location)
 {
     if(m_spacingLocation == nullptr)
-    {
-        m_spacingLocation = new Waypoint(parent(),this);
-        m_spacingLocation->setFlag(QGraphicsItem::ItemIsMovable);
-        m_spacingLocation->setFlag(QGraphicsItem::ItemIsSelectable);
-        m_spacingLocation->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-        m_spacingLocation->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
-    }
+        m_spacingLocation = createWaypoint();
     m_spacingLocation->setLocation(location);
     m_spacingLocation->setPos(m_spacingLocation->geoToPixel(location));
     update();
+}
+
+
+void SurveyPattern::write(QJsonObject &json) const
+{
+    json["type"] = "SurveyPattern";
+    if(m_startLocation)
+    {
+        QJsonObject slObject;
+        m_startLocation->write(slObject);
+        json["startLocation"] = slObject;
+    }
+    if(m_endLocation)
+    {
+        QJsonObject elObject;
+        m_endLocation->write(elObject);
+        json["endLocation"] = elObject;
+    }
+    if(m_spacingLocation)
+    {
+        QJsonObject splObject;
+        m_spacingLocation->write(splObject);
+        json["spacingLocation"] = splObject;
+    }
+}
+
+void SurveyPattern::read(const QJsonObject &json)
+{
+    m_startLocation = createWaypoint();
+    m_startLocation->read(json["startLocation"].toObject());
+    m_endLocation = createWaypoint();
+    m_endLocation->read(json["endLocation"].toObject());
+    m_spacingLocation = createWaypoint();
+    m_spacingLocation->read(json["spacingLocation"].toObject());
 }
 
 
@@ -145,4 +175,9 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
         }
     }
     return ret;
+}
+
+void SurveyPattern::waypointHasChanged()
+{
+    prepareGeometryChange();
 }

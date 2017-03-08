@@ -61,14 +61,21 @@ QPainterPath TrackLine::shape() const
     return QGraphicsItem::shape();
 }
 
-void TrackLine::addWaypoint(const QGeoCoordinate &location)
+Waypoint * TrackLine::createWaypoint()
 {
     Waypoint *wp = new Waypoint(parent(),this);
-    wp->setLocation(location);
-    wp->setPos(wp->geoToPixel(location));
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    return wp;
+
+}
+
+void TrackLine::addWaypoint(const QGeoCoordinate &location)
+{
+    Waypoint *wp = createWaypoint();
+    wp->setLocation(location);
+    wp->setPos(wp->geoToPixel(location));
     update();
 }
 
@@ -85,4 +92,21 @@ void TrackLine::write(QJsonObject &json) const
         wpArray.append(wpObject);
     }
     json["waypoints"] = wpArray;
+}
+
+void TrackLine::read(const QJsonObject &json)
+{
+    QJsonArray waypointsArray = json["waypoints"].toArray();
+    for(int wpIndex = 0; wpIndex < waypointsArray.size(); wpIndex++)
+    {
+        QJsonObject wpObject = waypointsArray[wpIndex].toObject();
+        if(wpIndex == 0)
+        {
+            QGeoCoordinate position(wpObject["latitude"].toDouble(),wpObject["longitude"].toDouble());
+            setPos(geoToPixel(position));
+        }
+        Waypoint *wp = createWaypoint();
+        wp->read(wpObject);
+    }
+
 }

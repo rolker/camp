@@ -17,14 +17,21 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPainterPath shape() const;
 
+    void write(QJsonObject &json) const;
+    void read(const QJsonObject &json);
+
     QGeoCoordinate const &startLocation() const;
     void setStartLocation(QGeoCoordinate const &location);
     void setEndLocation(QGeoCoordinate const &location);
     void setSpacingLocation(QGeoCoordinate const &location);
 
-    void write(QJsonObject &json) const;
-
     bool hasSpacingLocation() const;
+
+public slots:
+    void waypointHasChanged();
+
+protected:
+    Waypoint * createWaypoint();
 
 private:
     Waypoint * m_startLocation;

@@ -26,13 +26,19 @@ public:
     QGraphicsScene *scene() const;
     void openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
+
+    Waypoint * createWaypoint(BackgroundRaster *parentItem=0);
     void addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+
+    SurveyPattern * createSurveyPattern(BackgroundRaster *parentItem=0);
     SurveyPattern * addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+
+    TrackLine * createTrackLine(BackgroundRaster *parentItem =0);
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+
     QString const &filename() const;
     void save(QString const &fname = QString());
     void open(QString const &fname);
-    void loadTrackLine(const QJsonObject &json);
 
 signals:
 

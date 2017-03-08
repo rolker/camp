@@ -85,12 +85,12 @@ void AutonomousVehicleProject::save(const QString &fname)
         child = missionitems->child(row);
         while(child)
         {
-            TrackLine *tl = child->data().value<TrackLine*>();
-            if(tl)
+            GeoGraphicsItem *ggi = child->data().value<GeoGraphicsItem*>();
+            if(ggi)
             {
-                QJsonObject tlObject;
-                tl->write(tlObject);
-                missionArray.append(tlObject);
+                QJsonObject ggiObject;
+                ggi->write(ggiObject);
+                missionArray.append(ggiObject);
             }
             row++;
             child = missionitems->child(row);
@@ -126,10 +126,16 @@ void AutonomousVehicleProject::open(const QString &fname)
         for (int missionIndex = 0; missionIndex < missionArray.size(); ++missionIndex)
         {
             QJsonObject missionObject = missionArray[missionIndex].toObject();
+            GeoGraphicsItem *item = nullptr;
+            if(missionObject["type"] == "Waypoint")
+                item = createWaypoint();
             if(missionObject["type"] == "TrackLine")
-                loadTrackLine(missionObject);
+                item = createTrackLine();
+            if(missionObject["type"] == "SurveyPattern")
+                item = createSurveyPattern();
+            if(item)
+                item->read(missionObject);
         }
-
     }
 }
 
@@ -152,24 +158,34 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
     return 0;
 }
 
-void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem)
+Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem)
 {
+    if(!parentItem)
+        parentItem = getBackgroundRaster();
     Waypoint *wp = new Waypoint(this,parentItem);
-    wp->setLocation(position);
-    wp->setPos(parentItem->geoToPixel(position));
+
     QStandardItem *item = new QStandardItem("wayoint");
     item->setData(QVariant::fromValue<Waypoint*>(wp));
     topLevelItems["Mission"]->appendRow(item);
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+
+    return wp;
 }
 
-SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem)
+void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem)
 {
+    Waypoint *wp = createWaypoint(parentItem);
+    wp->setLocation(position);
+    wp->setPos(parentItem->geoToPixel(position));
+}
+
+SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *parentItem)
+{
+    if(!parentItem)
+        parentItem = getBackgroundRaster();
     SurveyPattern *sp = new SurveyPattern(this,parentItem);
-    sp->setPos(parentItem->geoToPixel(position));
-    sp->setStartLocation(position);
     QStandardItem *item = new QStandardItem("pattern");
     item->setData(QVariant::fromValue<SurveyPattern*>(sp));
     topLevelItems["Mission"]->appendRow(item);
@@ -178,46 +194,38 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
     sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
 
     return sp;
+
 }
 
-TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem)
+SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem)
 {
+    SurveyPattern *sp = createSurveyPattern();
+    sp->setPos(parentItem->geoToPixel(position));
+    sp->setStartLocation(position);
+    return sp;
+}
+
+TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentItem)
+{
+    if(!parentItem)
+        parentItem = getBackgroundRaster();
     TrackLine *tl = new TrackLine(this,parentItem);
-    tl->setPos(parentItem->geoToPixel(position));
     QStandardItem *item = new QStandardItem("trackline");
     item->setData(QVariant::fromValue<TrackLine*>(tl));
     topLevelItems["Mission"]->appendRow(item);
     tl->setFlag(QGraphicsItem::ItemIsMovable);
     tl->setFlag(QGraphicsItem::ItemIsSelectable);
     tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-
-    tl->addWaypoint(position);
-
     return tl;
 }
 
-void AutonomousVehicleProject::loadTrackLine(const QJsonObject &json)
+
+TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem)
 {
-    QJsonArray waypointsArray = json["waypoints"].toArray();
-    if(waypointsArray.size()>0)
-    {
-        BackgroundRaster *bg = getBackgroundRaster();
-        TrackLine *tl = new TrackLine(this,bg);
-        QStandardItem *item = new QStandardItem("trackline");
-        item->setData(QVariant::fromValue<TrackLine*>(tl));
-        topLevelItems["Mission"]->appendRow(item);
-        tl->setFlag(QGraphicsItem::ItemIsMovable);
-        tl->setFlag(QGraphicsItem::ItemIsSelectable);
-        tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-        for(int wpIndex = 0; wpIndex < waypointsArray.size(); wpIndex++)
-        {
-            QJsonObject wpObject = waypointsArray[wpIndex].toObject();
-            QGeoCoordinate position(wpObject["latitude"].toDouble(),wpObject["longitude"].toDouble());
-            if(wpIndex == 0)
-                tl->setPos(bg->geoToPixel(position));
-            tl->addWaypoint(position);
-        }
-    }
+    TrackLine *tl = createTrackLine(parentItem);
+    tl->setPos(parentItem->geoToPixel(position));
+    tl->addWaypoint(position);
+    return tl;
 }
 
 void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
