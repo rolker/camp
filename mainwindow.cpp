@@ -6,6 +6,7 @@
 #include <cstdint>
 
 #include "autonomousvehicleproject.h"
+#include "waypoint.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -18,6 +19,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->treeView->setModel(project->model());
     ui->projectView->setStatusBar(statusBar());
     ui->projectView->setProject(project);
+
+    ui->detailsView->setProject(project);
+    connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
 
 }
 
@@ -79,3 +83,4 @@ void MainWindow::on_actionSurvey_Pattern_triggered()
 {
     ui->projectView->setAddSurveyPatternMode();
 }
+

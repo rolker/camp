@@ -4,6 +4,7 @@
 #include "geographicsitem.h"
 
 class Waypoint;
+class QStandardItem;
 
 class TrackLine : public GeoGraphicsItem
 {
@@ -20,12 +21,21 @@ public:
     Waypoint * createWaypoint();
     void addWaypoint(QGeoCoordinate const &location);
 
+    QList<Waypoint *> waypoints() const;
+
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
 
+    void setItem(QStandardItem *item);
+
 signals:
+    void trackLineUpdated();
 
 public slots:
+
+private:
+
+    QStandardItem * m_item;
 };
 
 #endif // TRACKLINE_H

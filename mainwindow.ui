@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>Autonomous Mission Planner</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -38,14 +38,7 @@
          <bool>false</bool>
         </attribute>
        </widget>
-       <widget class="QTextEdit" name="textEdit">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
+       <widget class="DetailsView" name="detailsView" native="true"/>
       </widget>
       <widget class="ProjectView" name="projectView">
        <property name="sizePolicy">
@@ -138,7 +131,7 @@
   </action>
   <action name="actionSurvey_Pattern">
    <property name="text">
-    <string>Survey Pattern</string>
+    <string>&amp;Survey Pattern</string>
    </property>
   </action>
  </widget>
@@ -148,6 +141,12 @@
    <class>ProjectView</class>
    <extends>QGraphicsView</extends>
    <header>projectview.h</header>
+  </customwidget>
+  <customwidget>
+   <class>DetailsView</class>
+   <extends>QWidget</extends>
+   <header>detailsview.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>

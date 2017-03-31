@@ -213,6 +213,7 @@ TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentIt
     QStandardItem *item = new QStandardItem("trackline");
     item->setData(QVariant::fromValue<TrackLine*>(tl));
     topLevelItems["Mission"]->appendRow(item);
+    tl->setItem(item);
     tl->setFlag(QGraphicsItem::ItemIsMovable);
     tl->setFlag(QGraphicsItem::ItemIsSelectable);
     tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);

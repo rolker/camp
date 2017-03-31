@@ -27,8 +27,17 @@ public:
 
     bool hasSpacingLocation() const;
 
+    double spacing() const;
+    double firstLineHeading() const;
+
+    void setDirectionAndSpacing(double direction, double spacing);
+
+signals:
+    void surveyPatternUpdated();
+
 public slots:
     void waypointHasChanged();
+    void waypointAboutToChange();
 
 protected:
     Waypoint * createWaypoint();

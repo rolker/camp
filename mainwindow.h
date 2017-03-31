@@ -34,7 +34,6 @@ private slots:
     void on_actionOpen_Background_triggered();
 
     void on_actionSurvey_Pattern_triggered();
-
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;

@@ -3,6 +3,7 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include <QJsonObject>
+#include <QDebug>
 
 Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem)
 {
@@ -17,8 +18,9 @@ QGeoCoordinate const &Waypoint::location() const
 
 void Waypoint::setLocation(QGeoCoordinate const &location)
 {
-    m_location = location;
+    qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
     setPos(geoToPixel(location));
+    m_location = location;
 }
 
 QRectF Waypoint::boundingRect() const
@@ -31,6 +33,9 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 {
     painter->save();
 
+    //double scale = painter->transform().m11();
+    //painter->scale(1/scale,1/scale);
+
     painter->setPen(Qt::red);
     painter->drawRoundedRect(-10,-10,20,20,8,8);
 
@@ -41,13 +46,17 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
     {
+
         AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
         BackgroundRaster *bgr = avp->getBackgroundRaster();
         QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
         m_location = bgr->unproject(projectedPosition);
+        qDebug() << "itemChange" << m_location;
         parentItem()->update();
     }
     if(change == ItemPositionChange)
+        emit waypointAboutToMove();
+    if(change == ItemPositionHasChanged)
         emit waypointMoved();
 
     return QGraphicsItem::itemChange(change,value);

@@ -168,4 +168,5 @@ void ProjectView::setPanMode()
     modeLabel->setText("Mode: pan");
     unsetCursor();
     pendingSurveyPattern = nullptr;
+    currentTrackLine = nullptr;
 }

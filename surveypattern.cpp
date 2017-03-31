@@ -20,6 +20,7 @@ Waypoint * SurveyPattern::createWaypoint()
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
     wp->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
     connect(wp, &Waypoint::waypointMoved, this, &SurveyPattern::waypointHasChanged);
+    connect(wp, &Waypoint::waypointAboutToMove, this, &SurveyPattern::waypointAboutToChange);
     return wp;
 }
 
@@ -88,6 +89,26 @@ void SurveyPattern::read(const QJsonObject &json)
 bool SurveyPattern::hasSpacingLocation() const
 {
     return (m_spacingLocation != nullptr);
+}
+
+double SurveyPattern::spacing() const
+{
+    if(!hasSpacingLocation())
+        return 1.0;
+    return m_startLocation->location().distanceTo(m_spacingLocation->location());
+}
+
+double SurveyPattern::firstLineHeading() const
+{
+    if(!hasSpacingLocation())
+        return 0.0;
+    return m_startLocation->location().azimuthTo(m_spacingLocation->location())-90;
+}
+
+void SurveyPattern::setDirectionAndSpacing(double direction, double spacing)
+{
+    QGeoCoordinate c = m_startLocation->location().atDistanceAndAzimuth(spacing,direction+90.0);
+    setSpacingLocation(c);
 }
 
 QRectF SurveyPattern::boundingRect() const
@@ -177,7 +198,12 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
     return ret;
 }
 
-void SurveyPattern::waypointHasChanged()
+void SurveyPattern::waypointAboutToChange()
 {
     prepareGeometryChange();
+}
+
+void SurveyPattern::waypointHasChanged()
+{
+    emit surveyPatternUpdated();
 }
