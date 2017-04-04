@@ -33,10 +33,11 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 {
     painter->save();
 
-    //double scale = painter->transform().m11();
-    //painter->scale(1/scale,1/scale);
+    QPen p;
+    p.setColor(Qt::red);
+    p.setCosmetic(true);
+    painter->setPen(p);
 
-    painter->setPen(Qt::red);
     painter->drawRoundedRect(-10,-10,20,20,8,8);
 
     painter->restore();

@@ -32,6 +32,7 @@ private:
     Ui::SurveyPatternDetails *ui;
 
     SurveyPattern * m_surveyPattern;
+    bool updating;
 
     void updateSurveyPattern();
 };

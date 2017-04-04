@@ -23,8 +23,10 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
     {
         painter->save();
 
-        painter->setPen(Qt::red);
-
+        QPen p;
+        p.setColor(Qt::red);
+        p.setCosmetic(true);
+        painter->setPen(p);
 
         auto first = children.begin();
         auto second = first;

@@ -4,7 +4,8 @@
 
 SurveyPatternDetails::SurveyPatternDetails(QWidget *parent) :
     QWidget(parent),
-    ui(new Ui::SurveyPatternDetails)
+    ui(new Ui::SurveyPatternDetails),
+    updating(false)
 {
     ui->setupUi(this);
 }
@@ -23,13 +24,18 @@ void SurveyPatternDetails::setSurveyPattern(SurveyPattern *surveyPattern)
 
 void SurveyPatternDetails::onSurveyPatternUpdated()
 {
-    ui->lineSpacingEdit->setText(QString::number(m_surveyPattern->spacing()));
-    ui->headingEdit->setText(QString::number(m_surveyPattern->firstLineHeading()));
+    if(!updating)
+    {
+        ui->lineSpacingEdit->setText(QString::number(m_surveyPattern->spacing()));
+        ui->headingEdit->setText(QString::number(m_surveyPattern->direction()));
+    }
 }
 
 void SurveyPatternDetails::updateSurveyPattern()
 {
+    updating = true;
     m_surveyPattern->setDirectionAndSpacing(ui->headingEdit->text().toDouble(),ui->lineSpacingEdit->text().toDouble());
+    updating = false;
 }
 
 void SurveyPatternDetails::on_headingEdit_editingFinished()

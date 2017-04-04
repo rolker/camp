@@ -23,12 +23,12 @@ public:
     QGeoCoordinate const &startLocation() const;
     void setStartLocation(QGeoCoordinate const &location);
     void setEndLocation(QGeoCoordinate const &location);
-    void setSpacingLocation(QGeoCoordinate const &location);
+    void setSpacingLocation(QGeoCoordinate const &location, bool calc = true);
 
     bool hasSpacingLocation() const;
 
     double spacing() const;
-    double firstLineHeading() const;
+    double direction() const;
 
     void setDirectionAndSpacing(double direction, double spacing);
 
@@ -45,6 +45,9 @@ protected:
 private:
     Waypoint * m_startLocation;
     Waypoint * m_endLocation;
+    double m_spacing;
+    double m_direction;
+
     Waypoint * m_spacingLocation;
 
     QList<QGeoCoordinate> getPath() const;

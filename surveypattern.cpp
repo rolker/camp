@@ -7,7 +7,7 @@
 #include <iostream>
 
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
-    m_startLocation(nullptr),m_endLocation(nullptr),m_spacingLocation(nullptr)
+    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr)
 {
 
 }
@@ -42,12 +42,16 @@ void SurveyPattern::setEndLocation(const QGeoCoordinate &location)
     update();
 }
 
-void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location)
+void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_spacingLocation == nullptr)
         m_spacingLocation = createWaypoint();
     m_spacingLocation->setLocation(location);
-    m_spacingLocation->setPos(m_spacingLocation->geoToPixel(location));
+    if(calc)
+    {
+        m_spacing = m_startLocation->location().distanceTo(m_spacingLocation->location());
+        m_direction = m_startLocation->location().azimuthTo(m_spacingLocation->location())-90;
+    }
     update();
 }
 
@@ -67,12 +71,8 @@ void SurveyPattern::write(QJsonObject &json) const
         m_endLocation->write(elObject);
         json["endLocation"] = elObject;
     }
-    if(m_spacingLocation)
-    {
-        QJsonObject splObject;
-        m_spacingLocation->write(splObject);
-        json["spacingLocation"] = splObject;
-    }
+    json["spacing"] = m_spacing;
+    json["direction"] = m_direction;
 }
 
 void SurveyPattern::read(const QJsonObject &json)
@@ -81,8 +81,7 @@ void SurveyPattern::read(const QJsonObject &json)
     m_startLocation->read(json["startLocation"].toObject());
     m_endLocation = createWaypoint();
     m_endLocation->read(json["endLocation"].toObject());
-    m_spacingLocation = createWaypoint();
-    m_spacingLocation->read(json["spacingLocation"].toObject());
+    setDirectionAndSpacing(json["direction"].toDouble(),json["spacing"].toDouble());
 }
 
 
@@ -93,27 +92,24 @@ bool SurveyPattern::hasSpacingLocation() const
 
 double SurveyPattern::spacing() const
 {
-    if(!hasSpacingLocation())
-        return 1.0;
-    return m_startLocation->location().distanceTo(m_spacingLocation->location());
+    return m_spacing;
 }
 
-double SurveyPattern::firstLineHeading() const
+double SurveyPattern::direction() const
 {
-    if(!hasSpacingLocation())
-        return 0.0;
-    return m_startLocation->location().azimuthTo(m_spacingLocation->location())-90;
+    return m_direction;
 }
 
 void SurveyPattern::setDirectionAndSpacing(double direction, double spacing)
 {
+    m_direction = direction;
+    m_spacing = spacing;
     QGeoCoordinate c = m_startLocation->location().atDistanceAndAzimuth(spacing,direction+90.0);
-    setSpacingLocation(c);
+    setSpacingLocation(c,false);
 }
 
 QRectF SurveyPattern::boundingRect() const
 {
-    //return childrenBoundingRect();
     return shape().boundingRect();
 }
 
@@ -124,8 +120,10 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
     {
         painter->save();
 
-        painter->setPen(Qt::red);
-
+        QPen p;
+        p.setColor(Qt::red);
+        p.setCosmetic(true);
+        painter->setPen(p);
 
         auto first = children.begin();
         auto second = first;
