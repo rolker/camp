@@ -50,8 +50,22 @@ void MainWindow::on_action_Trackline_triggered()
 void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 {
     QMenu menu(this);
+
     QAction *exportAction = menu.addAction("Export");
     connect(exportAction, &QAction::triggered, this, &MainWindow::exportHypack);
+
+    QAction *openBackgroundAction = menu.addAction("Open Background");
+    connect(openBackgroundAction, &QAction::triggered, this, &MainWindow::on_actionOpen_Background_triggered);
+
+    QAction *addWaypointAction = menu.addAction("Add Waypoint");
+    connect(addWaypointAction, &QAction::triggered, this, &MainWindow::on_action_Waypoint_triggered);
+
+    QAction *addTrackLineAction = menu.addAction("Add Track Line");
+    connect(addTrackLineAction, &QAction::triggered, this, &MainWindow::on_action_Trackline_triggered);
+
+    QAction *addSurveyPatternAction = menu.addAction("Add Survey Pattern");
+    connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurvey_Pattern_triggered);
+
     menu.exec(ui->treeView->mapToGlobal(pos));
 }
 
