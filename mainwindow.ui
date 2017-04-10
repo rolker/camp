@@ -97,6 +97,10 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionOpen_Background"/>
+   <addaction name="action_Waypoint"/>
+   <addaction name="action_Trackline"/>
+   <addaction name="actionSurvey_Pattern"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="action_Open">
@@ -108,10 +112,16 @@
    <property name="text">
     <string>&amp;Waypoint</string>
    </property>
+   <property name="iconText">
+    <string>WP</string>
+   </property>
   </action>
   <action name="action_Trackline">
    <property name="text">
     <string>&amp;Trackline</string>
+   </property>
+   <property name="iconText">
+    <string>TL</string>
    </property>
   </action>
   <action name="actionSave">
@@ -128,10 +138,16 @@
    <property name="text">
     <string>Open &amp;Background</string>
    </property>
+   <property name="iconText">
+    <string>BG</string>
+   </property>
   </action>
   <action name="actionSurvey_Pattern">
    <property name="text">
     <string>&amp;Survey Pattern</string>
+   </property>
+   <property name="iconText">
+    <string>SP</string>
    </property>
   </action>
  </widget>

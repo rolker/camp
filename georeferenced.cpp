@@ -30,7 +30,8 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
 
     OGRSpatialReference projected, wgs84;
 
-    std::cerr << dataset->GetProjectionRef() << std::endl;
+    std::cerr << "projection:" << dataset->GetProjectionRef() << std::endl;
+    std::cerr << "gcp projection:" << dataset->GetGCPProjection() << std::endl;
 
     char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
     projected.importFromWkt(&wktProjection);
