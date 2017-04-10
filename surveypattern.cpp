@@ -186,7 +186,8 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
             {
                 int dir = i%2;
                 ret.append(lastLocation.atDistanceAndAzimuth(leg_length,leg_heading+dir*180));
-                ret.append(ret.back().atDistanceAndAzimuth(ac_distance,ac_angle));
+                if (i < line_count-1)
+                    ret.append(ret.back().atDistanceAndAzimuth(ac_distance,ac_angle));
                 lastLocation = ret.back();
             }
             if (ret.length() < 2)
