@@ -34,6 +34,8 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
     std::cerr << "gcp projection:" << dataset->GetGCPProjection() << std::endl;
 
     char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
+    if(wktProjection[0] == 0)
+        wktProjection = const_cast<char *>(dataset->GetGCPProjection());
     projected.importFromWkt(&wktProjection);
 
     wgs84.SetWellKnownGeogCS("WGS84");

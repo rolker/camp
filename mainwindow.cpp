@@ -23,11 +23,19 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->detailsView->setProject(project);
     connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
 
+
+    connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
+
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+}
+
+void MainWindow::setCurrent(QModelIndex &index)
+{
+    ui->treeView->setCurrentIndex(index);
 }
 
 void MainWindow::on_action_Open_triggered()

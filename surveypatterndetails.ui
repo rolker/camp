@@ -34,8 +34,26 @@
    <item row="1" column="1">
     <widget class="QLineEdit" name="headingEdit"/>
    </item>
+   <item row="2" column="1">
+    <widget class="WaypointDetails" name="startPoint" native="true"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>Start Point</string>
+     </property>
+    </widget>
+   </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>WaypointDetails</class>
+   <extends>QWidget</extends>
+   <header>waypointdetails.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

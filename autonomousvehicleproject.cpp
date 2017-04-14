@@ -188,6 +188,7 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *
     SurveyPattern *sp = new SurveyPattern(this,parentItem);
     QStandardItem *item = new QStandardItem("pattern");
     item->setData(QVariant::fromValue<SurveyPattern*>(sp));
+    sp->setItem(item);
     topLevelItems["Mission"]->appendRow(item);
     sp->setFlag(QGraphicsItem::ItemIsMovable);
     sp->setFlag(QGraphicsItem::ItemIsSelectable);

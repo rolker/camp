@@ -6,6 +6,7 @@
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
+class QStandardItem;
 
 class GeoGraphicsItem : public QObject, public QGraphicsItem
 {
@@ -22,6 +23,12 @@ public:
 
     virtual void write(QJsonObject &json) const = 0;
     virtual void read(const QJsonObject &json) = 0;
+
+    void setItem(QStandardItem * item);
+    QStandardItem * item() const;
+
+private:
+    QStandardItem *m_item;
 };
 
 #endif // GEOGRAPHICSITEM_H

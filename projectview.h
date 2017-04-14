@@ -21,6 +21,7 @@ public:
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 signals:
+    void currentChanged(QModelIndex &index);
 
 public slots:
 

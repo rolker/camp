@@ -32,3 +32,14 @@ AutonomousVehicleProject *GeoGraphicsItem::project() const
     AutonomousVehicleProject *ret = qobject_cast<AutonomousVehicleProject*>(parent());
     return ret;
 }
+
+void GeoGraphicsItem::setItem(QStandardItem *item)
+{
+    m_item = item;
+}
+
+
+QStandardItem * GeoGraphicsItem::item() const
+{
+    return m_item;
+}

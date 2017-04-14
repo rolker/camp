@@ -2,7 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
-
+#include <QModelIndex>
 
 namespace Ui {
 class MainWindow;
@@ -17,6 +17,10 @@ class MainWindow : public QMainWindow
 public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
+
+public slots:
+
+    void setCurrent(QModelIndex &index);
 
 private slots:
     void on_action_Open_triggered();

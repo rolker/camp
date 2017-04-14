@@ -3,6 +3,7 @@
 #include <QWheelEvent>
 #include <QLabel>
 #include <QStatusBar>
+#include <QStandardItemModel>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "waypoint.h"
@@ -63,7 +64,8 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 if(bg)
                 {
                     pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())),bg);
-
+                    QModelIndex i = m_project->model()->indexFromItem(pendingSurveyPattern->item());
+                    emit  currentChanged(i);
                 }
             }
             else
