@@ -260,5 +260,30 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
             }
         }
     }
+    SurveyPattern *sp = item->data().value<SurveyPattern*>();
+    if(sp)
+    {
+        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(parent()));
+        if(fname.length() > 0)
+        {
+            QFile outfile(fname);
+            if(outfile.open(QFile::WriteOnly))
+            {
+                QList<QGeoCoordinate> wpList = sp->getPath();
+                int lineCount = wpList.size()/2;
+                QTextStream outstream(&outfile);
+                outstream.setRealNumberPrecision(8);
+                outstream << "LNS " << lineCount << "\n";
+                for(int i = 0; i < lineCount; i++)
+                {
+                    outstream << "LIN 2\n";
+                    outstream << "PTS " << wpList[i*2].latitude() << " " << wpList[i*2].longitude() << "\n";
+                    outstream << "PTS " << wpList[i*2+1].latitude() << " " << wpList[i*2+1].longitude() << "\n";
+                    outstream << "LNN " << i << "\n";
+                    outstream << "EOL\n";
+                }
+            }
+        }
+    }
 
 }

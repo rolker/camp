@@ -32,6 +32,8 @@ public:
 
     void setDirectionAndSpacing(double direction, double spacing);
 
+    QList<QGeoCoordinate> getPath() const;
+
 signals:
     void surveyPatternUpdated();
 
@@ -50,7 +52,7 @@ private:
 
     Waypoint * m_spacingLocation;
 
-    QList<QGeoCoordinate> getPath() const;
+
 
 };
 
