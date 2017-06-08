@@ -123,6 +123,7 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         QPen p;
         p.setColor(Qt::red);
         p.setCosmetic(true);
+        p.setWidth(3);
         painter->setPen(p);
 
         auto first = children.begin();

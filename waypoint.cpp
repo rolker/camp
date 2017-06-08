@@ -36,6 +36,7 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     QPen p;
     p.setColor(Qt::red);
     p.setCosmetic(true);
+    p.setWidth(3);
     painter->setPen(p);
 
     painter->drawRoundedRect(-10,-10,20,20,8,8);
