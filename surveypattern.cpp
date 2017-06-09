@@ -3,11 +3,10 @@
 #include <QPainter>
 #include <QtMath>
 #include <QJsonObject>
-
-#include <iostream>
+#include <QDebug>
 
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
-    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr)
+    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6)
 {
 
 }
@@ -100,6 +99,11 @@ double SurveyPattern::direction() const
     return m_direction;
 }
 
+int SurveyPattern::arcCount() const
+{
+    return m_arcCount;
+}
+
 void SurveyPattern::setDirectionAndSpacing(double direction, double spacing)
 {
     m_direction = direction;
@@ -180,6 +184,7 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
             }
             qreal leg_heading = ac_angle-90.0;
             qreal leg_length = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
+            qDebug() << "getPath: leg_length: " << leg_length << " leg_heading: " << leg_heading;
             qreal surveyWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
 
             int line_count = qCeil(surveyWidth/ac_distance);
@@ -188,7 +193,35 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
                 int dir = i%2;
                 ret.append(lastLocation.atDistanceAndAzimuth(leg_length,leg_heading+dir*180));
                 if (i < line_count-1)
-                    ret.append(ret.back().atDistanceAndAzimuth(ac_distance,ac_angle));
+                {
+                    lastLocation = ret.back();
+                    if (m_arcCount > 2)
+                    {
+                        qreal deltaAngle = 180.0/float(m_arcCount);
+                        qreal r = ac_distance/2.0;
+                        qreal h = r*cos(deltaAngle*M_PI/360.0);
+                        qreal d = 2.0*h*tan(deltaAngle*M_PI/360.0);
+                        qreal currentAngle = leg_heading+dir*180;
+                        if(leg_length < 0.0)
+                        {
+                            currentAngle += 180.0;
+                            deltaAngle = -deltaAngle;
+                        }
+                        if(dir)
+                            currentAngle += deltaAngle/2.0;
+                        else
+                            currentAngle -= deltaAngle/2.0;
+                        for(int j = 0; j < m_arcCount-1; j++)
+                        {
+                            if(dir)
+                                currentAngle -= deltaAngle;
+                            else
+                                currentAngle += deltaAngle;
+                            ret.append(ret.back().atDistanceAndAzimuth(d,currentAngle));
+                        }
+                    }
+                    ret.append(lastLocation.atDistanceAndAzimuth(ac_distance,ac_angle));
+                }
                 lastLocation = ret.back();
             }
             if (ret.length() < 2)

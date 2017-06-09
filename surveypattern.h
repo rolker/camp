@@ -29,6 +29,7 @@ public:
 
     double spacing() const;
     double direction() const;
+    int arcCount() const;
 
     void setDirectionAndSpacing(double direction, double spacing);
 
@@ -49,6 +50,7 @@ private:
     Waypoint * m_endLocation;
     double m_spacing;
     double m_direction;
+    int m_arcCount;
 
     Waypoint * m_spacingLocation;
 
