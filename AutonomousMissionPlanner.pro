@@ -49,6 +49,11 @@ FORMS    += mainwindow.ui \
 unix {
     INCLUDEPATH = /usr/include/gdal
 }
+darwin {
+     INCLUDEPATH = /Library/Frameworks/GDAL.framework/Versions/2.1/Headers
+     LIBS += -L /Library/Frameworks/GDAL.framework/Versions/2.1/unix/lib
+     LIBS += -lgdal
+}
 
 LIBS += -lgdal
 CONFIG += c++11
