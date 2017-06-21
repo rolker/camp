@@ -54,6 +54,12 @@ void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc
     update();
 }
 
+void SurveyPattern::setArcCount(int ac)
+{
+    m_arcCount = ac;
+    update();
+}
+
 
 void SurveyPattern::write(QJsonObject &json) const
 {
@@ -102,6 +108,16 @@ double SurveyPattern::direction() const
 int SurveyPattern::arcCount() const
 {
     return m_arcCount;
+}
+
+Waypoint * SurveyPattern::startLocationWaypoint() const
+{
+    return m_startLocation;
+}
+
+Waypoint * SurveyPattern::endLocationWaypoint() const
+{
+    return m_endLocation;
 }
 
 void SurveyPattern::setDirectionAndSpacing(double direction, double spacing)
@@ -195,7 +211,7 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
                 if (i < line_count-1)
                 {
                     lastLocation = ret.back();
-                    if (m_arcCount > 2)
+                    if (m_arcCount > 1)
                     {
                         qreal deltaAngle = 180.0/float(m_arcCount);
                         qreal r = ac_distance/2.0;

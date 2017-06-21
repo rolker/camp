@@ -28,6 +28,8 @@ private slots:
 
     void on_lineSpacingEdit_editingFinished();
 
+    void on_turnArcPointCountLineEdit_editingFinished();
+
 private:
     Ui::SurveyPatternDetails *ui;
 

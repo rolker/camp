@@ -5,7 +5,7 @@
 
 WaypointDetails::WaypointDetails(QWidget *parent) :
     QWidget(parent),
-    ui(new Ui::WaypointDetails)
+    ui(new Ui::WaypointDetails),m_waypoint(nullptr)
 {
     ui->setupUi(this);
 }
@@ -33,10 +33,13 @@ void WaypointDetails::onLocationChanged()
 
 void WaypointDetails::updateWaypoint()
 {
-    QGeoCoordinate location;
-    location.setLatitude(ui->latitudeLineEdit->text().toDouble());
-    location.setLongitude(ui->longitudeLineEdit->text().toDouble());
-    m_waypoint->setLocation(location);
+    if(m_waypoint)
+    {
+        QGeoCoordinate location;
+        location.setLatitude(ui->latitudeLineEdit->text().toDouble());
+        location.setLongitude(ui->longitudeLineEdit->text().toDouble());
+        m_waypoint->setLocation(location);
+    }
 }
 
 void WaypointDetails::on_latitudeLineEdit_editingFinished()
