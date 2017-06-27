@@ -74,4 +74,5 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
             }
         }
     }
+    m_project->setCurrent(current);
 }

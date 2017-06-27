@@ -17,7 +17,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr)
 {
     GDALAllRegister();
 
@@ -124,11 +124,13 @@ void AutonomousVehicleProject::openBackground(const QString &fname)
     QStandardItem *item = new QStandardItem(fname);
     item->setData(QVariant::fromValue<BackgroundRaster*>(bgr));
     m_model->appendRow(item);
-    m_scene->addItem(bgr);
+    setCurrentBackground(bgr);
+    //m_scene->addItem(bgr);
 }
 
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
+    return m_currentBackground;
     if(m_model)
     {
         int row = 0;
@@ -314,7 +316,43 @@ void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)
         GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
         if(ggi)
             m_scene->removeItem(ggi);
+        BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
+        if(bgr)
+        {
+            m_scene->removeItem(bgr);
+            if(m_currentBackground == bgr)
+                m_currentBackground = nullptr;
+        }
 
         m_model->removeRow(index.row());
+    }
+}
+
+void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
+{
+    QStandardItem *item = m_model->itemFromIndex(index);
+    BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
+    if(bgr)
+        setCurrentBackground(bgr);
+}
+
+void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
+{
+    if(m_currentBackground)
+        m_scene->removeItem(m_currentBackground);
+    m_currentBackground = bgr;
+    if(bgr)
+    {
+        m_scene->addItem(bgr);
+        for(int i = 0; i < m_model->rowCount(); ++i)
+        {
+            QStandardItem *item = m_model->item(i);
+            GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
+            if(ggi)
+            {
+                ggi->setParentItem(bgr);
+                ggi->updateProjectedPoints();
+            }
+        }
     }
 }

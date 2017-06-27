@@ -42,6 +42,8 @@ public:
     void save(QString const &fname = QString());
     void open(QString const &fname);
 
+    void setCurrent(const QModelIndex &index);
+
 signals:
 
 public slots:
@@ -54,6 +56,9 @@ private:
     QStandardItemModel* m_model;
     QGraphicsScene* m_scene;
     QString m_filename;
+    BackgroundRaster* m_currentBackground;
+
+    void setCurrentBackground(BackgroundRaster *bgr);
 };
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

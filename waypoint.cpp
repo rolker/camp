@@ -76,3 +76,8 @@ void Waypoint::read(const QJsonObject &json)
     QGeoCoordinate position(json["latitude"].toDouble(),json["longitude"].toDouble());
     setLocation(position);
 }
+
+void Waypoint::updateProjectedPoints()
+{
+    setPos(geoToPixel(m_location));
+}

@@ -44,6 +44,7 @@ signals:
 public slots:
     void waypointHasChanged();
     void waypointAboutToChange();
+    void updateProjectedPoints();
 
 protected:
     Waypoint * createWaypoint();

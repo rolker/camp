@@ -36,6 +36,7 @@ MainWindow::~MainWindow()
 void MainWindow::setCurrent(QModelIndex &index)
 {
     ui->treeView->setCurrentIndex(index);
+    project->setCurrent(index);
 }
 
 void MainWindow::on_action_Open_triggered()

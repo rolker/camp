@@ -256,3 +256,13 @@ void SurveyPattern::waypointHasChanged()
 {
     emit surveyPatternUpdated();
 }
+
+void SurveyPattern::updateProjectedPoints()
+{
+    if(m_startLocation)
+        m_startLocation->updateProjectedPoints();
+    if(m_endLocation)
+        m_endLocation->updateProjectedPoints();
+    if(m_spacingLocation)
+        m_spacingLocation->updateProjectedPoints();
+}

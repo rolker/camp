@@ -27,6 +27,9 @@ public:
     void setItem(QStandardItem * item);
     QStandardItem * item() const;
 
+public slots:
+    virtual void updateProjectedPoints() =0;
+
 private:
     QStandardItem *m_item;
 };
