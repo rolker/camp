@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QGeoCoordinate>
+#include <QModelIndex>
 
 class QStandardItemModel;
 class QGraphicsScene;
@@ -14,6 +15,7 @@ class BackgroundRaster;
 class Waypoint;
 class TrackLine;
 class SurveyPattern;
+
 
 class AutonomousVehicleProject : public QObject
 {
@@ -45,12 +47,12 @@ signals:
 public slots:
 
     void exportHypack(QModelIndex const &index);
+    void deleteItems(QModelIndexList const &indices);
 
 
 private:
     QStandardItemModel* m_model;
     QGraphicsScene* m_scene;
-    std::map<QString,QStandardItem*> topLevelItems;
     QString m_filename;
 };
 

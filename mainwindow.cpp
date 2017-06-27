@@ -57,6 +57,8 @@ void MainWindow::on_action_Trackline_triggered()
 
 void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 {
+    QModelIndex index = ui->treeView->indexAt(pos);
+
     QMenu menu(this);
 
     QAction *exportAction = menu.addAction("Export");
@@ -73,6 +75,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
     QAction *addSurveyPatternAction = menu.addAction("Add Survey Pattern");
     connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurvey_Pattern_triggered);
+
+    if(index.isValid())
+    {
+        QAction *deleteItemAction = menu.addAction("Delete");
+        connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(ui->treeView->selectionModel()->selectedRows());});
+    }
 
     menu.exec(ui->treeView->mapToGlobal(pos));
 }
@@ -105,4 +113,3 @@ void MainWindow::on_actionSurvey_Pattern_triggered()
 {
     ui->projectView->setAddSurveyPatternMode();
 }
-

@@ -93,5 +93,6 @@ QString const &BackgroundRaster::filename() const
 
 void BackgroundRaster::write(QJsonObject &json) const
 {
+    json["type"] = "BackgroundRaster";
     json["filename"] = m_filename;
 }
