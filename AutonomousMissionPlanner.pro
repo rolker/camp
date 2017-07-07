@@ -25,7 +25,10 @@ SOURCES += main.cpp\
     detailsview.cpp \
     waypointdetails.cpp \
     tracklinedetails.cpp \
-    surveypatterndetails.cpp
+    surveypatterndetails.cpp \
+    platform.cpp \
+    missionitem.cpp \
+    platformdetails.cpp
 
 HEADERS  += mainwindow.h \
     autonomousvehicleproject.h \
@@ -39,12 +42,16 @@ HEADERS  += mainwindow.h \
     detailsview.h \
     waypointdetails.h \
     tracklinedetails.h \
-    surveypatterndetails.h
+    surveypatterndetails.h \
+    platform.h \
+    missionitem.h \
+    platformdetails.h
 
 FORMS    += mainwindow.ui \
     waypointdetails.ui \
     tracklinedetails.ui \
-    surveypatterndetails.ui
+    surveypatterndetails.ui \
+    platformdetails.ui
 
 unix {
     INCLUDEPATH = /usr/include/gdal

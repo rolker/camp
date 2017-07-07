@@ -15,6 +15,7 @@ class BackgroundRaster;
 class Waypoint;
 class TrackLine;
 class SurveyPattern;
+class Platform;
 
 
 class AutonomousVehicleProject : public QObject
@@ -37,6 +38,8 @@ public:
 
     TrackLine * createTrackLine(BackgroundRaster *parentItem =0);
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+
+    Platform * createPlatform();
 
     QString const &filename() const;
     void save(QString const &fname = QString());

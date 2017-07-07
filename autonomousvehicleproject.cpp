@@ -13,6 +13,7 @@
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include "platform.h"
 #include <gdal_priv.h>
 
 #include <iostream>
@@ -59,19 +60,12 @@ void AutonomousVehicleProject::save(const QString &fname)
         QStandardItem *child = m_model->item(row);
         while(child)
         {
-            BackgroundRaster *bg = child->data().value<BackgroundRaster*>();
-            if(bg)
+            MissionItem *mi = child->data().value<MissionItem*>();
+            if(mi)
             {
-                QJsonObject bgObject;
-                bg->write(bgObject);
-                objArray.append(bgObject);
-            }
-            GeoGraphicsItem *ggi = child->data().value<GeoGraphicsItem*>();
-            if(ggi)
-            {
-                QJsonObject ggiObject;
-                ggi->write(ggiObject);
-                objArray.append(ggiObject);
+                QJsonObject miObject;
+                mi->write(miObject);
+                objArray.append(miObject);
             }
             row++;
             child = m_model->item(row);
@@ -105,13 +99,15 @@ void AutonomousVehicleProject::open(const QString &fname)
             QJsonObject object = childrenArray[childIndex].toObject();
             if(object["type"] == "BackgroundRaster")
                 openBackground(object["filename"].toString());
-            GeoGraphicsItem *item = nullptr;
+            MissionItem *item = nullptr;
             if(object["type"] == "Waypoint")
                 item = createWaypoint();
             if(object["type"] == "TrackLine")
                 item = createTrackLine();
             if(object["type"] == "SurveyPattern")
                 item = createSurveyPattern();
+            if(object["type"] == "Platform")
+                item = createPlatform();
             if(item)
                 item->read(object);
         }
@@ -125,7 +121,6 @@ void AutonomousVehicleProject::openBackground(const QString &fname)
     item->setData(QVariant::fromValue<BackgroundRaster*>(bgr));
     m_model->appendRow(item);
     setCurrentBackground(bgr);
-    //m_scene->addItem(bgr);
 }
 
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
@@ -146,6 +141,15 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 
     }
     return 0;
+}
+
+Platform * AutonomousVehicleProject::createPlatform()
+{
+    Platform *p = new Platform(this);
+    QStandardItem *item = new QStandardItem("platform");
+    item->setData(QVariant::fromValue<Platform*>(p));
+    m_model->appendRow(item);
+    return p;
 }
 
 Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem)

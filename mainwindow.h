@@ -39,6 +39,8 @@ private slots:
 
     void on_actionSurvey_Pattern_triggered();
 
+    void on_action_Platform_triggered();
+
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;

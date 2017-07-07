@@ -1,14 +1,14 @@
 #ifndef GEOGRAPHICSITEM_H
 #define GEOGRAPHICSITEM_H
 
-#include <QObject>
+#include "missionitem.h"
 #include <QGraphicsItem>
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
 class QStandardItem;
 
-class GeoGraphicsItem : public QObject, public QGraphicsItem
+class GeoGraphicsItem : public MissionItem, public QGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)

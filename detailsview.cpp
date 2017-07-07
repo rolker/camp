@@ -7,6 +7,8 @@
 #include "tracklinedetails.h"
 #include "surveypattern.h"
 #include "surveypatterndetails.h"
+#include "platform.h"
+#include "platformdetails.h"
 #include <QDebug>
 
 DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),currentWidget(nullptr)
@@ -17,6 +19,8 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     trackLineDetails->hide();
     surveyPatternDetails = new SurveyPatternDetails(this);
     surveyPatternDetails->hide();
+    platformDetails = new PlatformDetails(this);
+    platformDetails->hide();
 }
 
 QSize DetailsView::sizeHint() const
@@ -70,7 +74,16 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
             }
             else
             {
-                setCurrentWidget(nullptr);
+                Platform *p = m_project->model()->data(current,Qt::UserRole+1).value<Platform *>();
+                if(p)
+                {
+                    setCurrentWidget(platformDetails);
+                    platformDetails->setPlatform(p);
+                }
+                else
+                {
+                    setCurrentWidget(nullptr);
+                }
             }
         }
     }

@@ -7,6 +7,7 @@ class AutonomousVehicleProject;
 class WaypointDetails;
 class TrackLineDetails;
 class SurveyPatternDetails;
+class PlatformDetails;
 
 class DetailsView : public QWidget
 {
@@ -31,6 +32,7 @@ private:
     WaypointDetails * waypointDetails;
     TrackLineDetails * trackLineDetails;
     SurveyPatternDetails * surveyPatternDetails;
+    PlatformDetails * platformDetails;
 
     void setCurrentWidget(QWidget *widget);
 };

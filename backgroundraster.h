@@ -1,14 +1,14 @@
 #ifndef BACKGROUNDRASTER_H
 #define BACKGROUNDRASTER_H
 
-#include <QObject>
+#include "missionitem.h"
 #include <QGraphicsItem>
-#include <QPixmap>
 #include "georeferenced.h"
+#include <QPixmap>
 
 class QPainter;
 
-class BackgroundRaster: public QObject, public QGraphicsItem, public Georeferenced
+class BackgroundRaster: public MissionItem, public QGraphicsItem, public Georeferenced
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -18,7 +18,9 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPixmap topLevelPixmap() const;
     QString const &filename() const;
+
     void write(QJsonObject &json) const;
+    void read(const QJsonObject &json);
 
 private:
     typedef std::map<int,QPixmap> Mipmaps;

@@ -2,7 +2,7 @@
 #include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 
-GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):QObject(parent), QGraphicsItem(parentItem)
+GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), QGraphicsItem(parentItem)
 {
 
 }

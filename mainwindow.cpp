@@ -77,6 +77,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     QAction *addSurveyPatternAction = menu.addAction("Add Survey Pattern");
     connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurvey_Pattern_triggered);
 
+    QAction *addPlatformAction = menu.addAction("Add Platform");
+    connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_action_Platform_triggered);
+
     if(index.isValid())
     {
         QAction *deleteItemAction = menu.addAction("Delete");
@@ -113,4 +116,9 @@ void MainWindow::on_actionOpen_Background_triggered()
 void MainWindow::on_actionSurvey_Pattern_triggered()
 {
     ui->projectView->setAddSurveyPatternMode();
+}
+
+void MainWindow::on_action_Platform_triggered()
+{
+    project->createPlatform();
 }
