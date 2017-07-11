@@ -7,6 +7,7 @@
 
 class AutonomousVehicleProject;
 class QStandardItem;
+class QGrpahicsTextItem;
 
 class GeoGraphicsItem : public MissionItem, public QGraphicsItem
 {
@@ -29,6 +30,9 @@ public:
 
 public slots:
     virtual void updateProjectedPoints() =0;
+
+protected:
+    QGraphicsTextItem *m_label;
 
 private:
     QStandardItem *m_item;

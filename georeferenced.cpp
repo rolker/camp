@@ -36,6 +36,7 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
     char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
     if(wktProjection[0] == 0)
         wktProjection = const_cast<char *>(dataset->GetGCPProjection());
+    m_projection = wktProjection;
     projected.importFromWkt(&wktProjection);
 
     wgs84.SetWellKnownGeogCS("WGS84");
@@ -76,4 +77,9 @@ QPointF Georeferenced::geoToPixel(const QGeoCoordinate &point) const
 QGeoCoordinate Georeferenced::pixelToGeo(const QPointF &point) const
 {
     return unproject(pixelToProjectedPoint(point));
+}
+
+QString const &Georeferenced::projection() const
+{
+    return m_projection;
 }

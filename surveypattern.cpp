@@ -135,6 +135,7 @@ QRectF SurveyPattern::boundingRect() const
 
 void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+    double cumulativeDistance = 0.0;
     auto children = getPath();
     if (children.length() > 1)
     {
@@ -152,6 +153,7 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         while(second != children.end())
         {
             painter->drawLine(m_startLocation->geoToPixel(*first),m_startLocation->geoToPixel(*second));
+            cumulativeDistance += first->distanceTo(*second);
             first++;
             second++;
         }
@@ -159,6 +161,8 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         painter->restore();
 
     }
+
+    m_label->setPlainText("Distance: "+QString::number(cumulativeDistance)+" (m), "+QString::number(cumulativeDistance*0.000539957)+" (nm)");
 
 }
 

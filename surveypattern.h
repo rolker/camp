@@ -58,8 +58,6 @@ private:
 
     Waypoint * m_spacingLocation;
 
-
-
 };
 
 #endif // SURVEYPATTERN_H
