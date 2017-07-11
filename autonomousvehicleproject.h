@@ -40,6 +40,7 @@ public:
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
 
     Platform * createPlatform();
+    Platform * currentPlatform() const;
 
     QString const &filename() const;
     void save(QString const &fname = QString());
@@ -48,6 +49,7 @@ public:
     void setCurrent(const QModelIndex &index);
 
 signals:
+    void currentPlaformUpdated();
 
 public slots:
 
@@ -60,6 +62,7 @@ private:
     QGraphicsScene* m_scene;
     QString m_filename;
     BackgroundRaster* m_currentBackground;
+    Platform* m_currentPlatform;
 
     void setCurrentBackground(BackgroundRaster *bgr);
 };

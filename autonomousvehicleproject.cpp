@@ -18,7 +18,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr)
 {
     GDALAllRegister();
 
@@ -187,6 +187,7 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *
     sp->setFlag(QGraphicsItem::ItemIsMovable);
     sp->setFlag(QGraphicsItem::ItemIsSelectable);
     sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&SurveyPattern::onCurrentPlatformUpdated);
 
     return sp;
 
@@ -338,6 +339,13 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
     BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
     if(bgr)
         setCurrentBackground(bgr);
+    Platform *p = item->data().value<Platform*>();
+    if(p && p != m_currentPlatform)
+    {
+        m_currentPlatform = p;
+        connect(m_currentPlatform,&Platform::speedChanged,[=](){emit currentPlaformUpdated();});
+        emit currentPlaformUpdated();
+    }
 }
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
@@ -359,4 +367,9 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
             }
         }
     }
+}
+
+Platform * AutonomousVehicleProject::currentPlatform() const
+{
+    return m_currentPlatform;
 }

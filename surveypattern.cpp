@@ -4,6 +4,8 @@
 #include <QtMath>
 #include <QJsonObject>
 #include <QDebug>
+#include "platform.h"
+#include "autonomousvehicleproject.h"
 
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6)
@@ -135,7 +137,6 @@ QRectF SurveyPattern::boundingRect() const
 
 void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-    double cumulativeDistance = 0.0;
     auto children = getPath();
     if (children.length() > 1)
     {
@@ -153,7 +154,6 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         while(second != children.end())
         {
             painter->drawLine(m_startLocation->geoToPixel(*first),m_startLocation->geoToPixel(*second));
-            cumulativeDistance += first->distanceTo(*second);
             first++;
             second++;
         }
@@ -162,8 +162,42 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
 
     }
 
-    m_label->setPlainText("Distance: "+QString::number(cumulativeDistance)+" (m), "+QString::number(cumulativeDistance*0.000539957)+" (nm)");
+}
 
+void SurveyPattern::updateLabel()
+{
+    double cumulativeDistance = 0.0;
+
+    auto children = getPath();
+    if (children.length() > 1)
+    {
+        auto first = children.begin();
+        auto second = first;
+        second++;
+        while(second != children.end())
+        {
+            cumulativeDistance += first->distanceTo(*second);
+            first++;
+            second++;
+        }
+    }
+
+    double distanceInNMs = cumulativeDistance*0.000539957;
+    QString label = "Distance: "+QString::number(cumulativeDistance)+" (m), "+QString::number(distanceInNMs)+" (nm)";
+
+    AutonomousVehicleProject* avp = autonomousVehicleProject();
+    if(avp)
+    {
+        Platform *platform = avp->currentPlatform();
+        if(platform)
+        {
+            double time = distanceInNMs/platform->speed();
+            label += " ETE: "+QString::number(time)+" (h)";
+        }
+    }
+
+
+    m_label->setPlainText(label);
 }
 
 QPainterPath SurveyPattern::shape() const
@@ -258,6 +292,7 @@ void SurveyPattern::waypointAboutToChange()
 
 void SurveyPattern::waypointHasChanged()
 {
+    updateLabel();
     emit surveyPatternUpdated();
 }
 
@@ -269,4 +304,9 @@ void SurveyPattern::updateProjectedPoints()
         m_endLocation->updateProjectedPoints();
     if(m_spacingLocation)
         m_spacingLocation->updateProjectedPoints();
+}
+
+void SurveyPattern::onCurrentPlatformUpdated()
+{
+    updateLabel();
 }

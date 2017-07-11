@@ -26,4 +26,5 @@ double Platform::speed() const
 void Platform::setSpeed(double speed)
 {
     m_speed = speed;
+    emit speedChanged();
 }

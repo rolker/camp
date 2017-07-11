@@ -45,9 +45,11 @@ public slots:
     void waypointHasChanged();
     void waypointAboutToChange();
     void updateProjectedPoints();
+    void onCurrentPlatformUpdated();
 
 protected:
     Waypoint * createWaypoint();
+    void updateLabel();
 
 private:
     Waypoint * m_startLocation;
