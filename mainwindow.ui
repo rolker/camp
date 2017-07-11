@@ -14,31 +14,34 @@
    <string>Autonomous Mission Planner</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
+   <layout class="QVBoxLayout" name="verticalLayout_2">
     <item>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="splitter">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QSplitter" name="splitter">
-       <property name="orientation">
-        <enum>Qt::Vertical</enum>
-       </property>
-       <widget class="QTreeView" name="treeView">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>1</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="contextMenuPolicy">
-         <enum>Qt::CustomContextMenu</enum>
-        </property>
-        <attribute name="headerVisible">
-         <bool>false</bool>
-        </attribute>
-       </widget>
-       <widget class="DetailsView" name="detailsView" native="true"/>
+      <widget class="QWidget" name="">
+       <layout class="QVBoxLayout" name="verticalLayout">
+        <item>
+         <widget class="QTreeView" name="treeView">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
+            <horstretch>0</horstretch>
+            <verstretch>1</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="contextMenuPolicy">
+           <enum>Qt::CustomContextMenu</enum>
+          </property>
+          <attribute name="headerVisible">
+           <bool>false</bool>
+          </attribute>
+         </widget>
+        </item>
+        <item>
+         <widget class="DetailsView" name="detailsView" native="true"/>
+        </item>
+       </layout>
       </widget>
       <widget class="ProjectView" name="projectView">
        <property name="sizePolicy">
@@ -67,25 +70,25 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>20</height>
+     <height>19</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
     <property name="title">
      <string>&amp;File</string>
     </property>
-    <addaction name="action_Open"/>
-    <addaction name="actionOpen_Background"/>
+    <addaction name="actionOpen"/>
+    <addaction name="actionOpenBackground"/>
     <addaction name="actionSave"/>
-    <addaction name="actionSave_As"/>
+    <addaction name="actionSaveAs"/>
    </widget>
    <widget class="QMenu" name="menu_Add">
     <property name="title">
      <string>&amp;Add</string>
     </property>
-    <addaction name="action_Waypoint"/>
-    <addaction name="action_Trackline"/>
-    <addaction name="actionSurvey_Pattern"/>
+    <addaction name="actionWaypoint"/>
+    <addaction name="actionTrackline"/>
+    <addaction name="actionSurveyPattern"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -97,18 +100,19 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionOpen_Background"/>
-   <addaction name="action_Waypoint"/>
-   <addaction name="action_Trackline"/>
-   <addaction name="actionSurvey_Pattern"/>
+   <addaction name="actionOpenBackground"/>
+   <addaction name="actionWaypoint"/>
+   <addaction name="actionTrackline"/>
+   <addaction name="actionSurveyPattern"/>
+   <addaction name="actionPlatform"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
-  <action name="action_Open">
+  <action name="actionOpen">
    <property name="text">
     <string>&amp;Open</string>
    </property>
   </action>
-  <action name="action_Waypoint">
+  <action name="actionWaypoint">
    <property name="text">
     <string>&amp;Waypoint</string>
    </property>
@@ -116,7 +120,7 @@
     <string>WP</string>
    </property>
   </action>
-  <action name="action_Trackline">
+  <action name="actionTrackline">
    <property name="text">
     <string>&amp;Trackline</string>
    </property>
@@ -129,12 +133,12 @@
     <string>&amp;Save</string>
    </property>
   </action>
-  <action name="actionSave_As">
+  <action name="actionSaveAs">
    <property name="text">
     <string>Sa&amp;ve As</string>
    </property>
   </action>
-  <action name="actionOpen_Background">
+  <action name="actionOpenBackground">
    <property name="text">
     <string>Open &amp;Background</string>
    </property>
@@ -142,12 +146,23 @@
     <string>BG</string>
    </property>
   </action>
-  <action name="actionSurvey_Pattern">
+  <action name="actionSurveyPattern">
    <property name="text">
     <string>&amp;Survey Pattern</string>
    </property>
    <property name="iconText">
     <string>SP</string>
+   </property>
+  </action>
+  <action name="actionPlatform">
+   <property name="text">
+    <string>Platform</string>
+   </property>
+   <property name="iconText">
+    <string>P</string>
+   </property>
+   <property name="toolTip">
+    <string>Add Platform</string>
    </property>
   </action>
  </widget>

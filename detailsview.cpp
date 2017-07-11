@@ -43,7 +43,10 @@ void DetailsView::setCurrentWidget(QWidget *widget)
             currentWidget->hide();
         currentWidget = widget;
         if(currentWidget)
+        {
             currentWidget->show();
+            updateGeometry();
+        }
     }
 }
 

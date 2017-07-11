@@ -23,23 +23,16 @@ public slots:
     void setCurrent(QModelIndex &index);
 
 private slots:
-    void on_action_Open_triggered();
-
-    void on_action_Waypoint_triggered();
-
-    void on_action_Trackline_triggered();
-
+    void on_actionOpen_triggered();
+    void on_actionWaypoint_triggered();
+    void on_actionTrackline_triggered();
     void on_treeView_customContextMenuRequested(const QPoint &pos);
-
     void on_actionSave_triggered();
+    void on_actionSaveAs_triggered();
+    void on_actionOpenBackground_triggered();
+    void on_actionSurveyPattern_triggered();
+    void on_actionPlatform_triggered();
 
-    void on_actionSave_As_triggered();
-
-    void on_actionOpen_Background_triggered();
-
-    void on_actionSurvey_Pattern_triggered();
-
-    void on_action_Platform_triggered();
 
 private:
     Ui::MainWindow *ui;
