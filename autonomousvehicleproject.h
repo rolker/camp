@@ -3,6 +3,7 @@
 
 #include <QObject>
 #include <QGeoCoordinate>
+#include <QModelIndex>
 
 class QStandardItemModel;
 class QGraphicsScene;
@@ -14,6 +15,8 @@ class BackgroundRaster;
 class Waypoint;
 class TrackLine;
 class SurveyPattern;
+class Platform;
+
 
 class AutonomousVehicleProject : public QObject
 {
@@ -36,22 +39,32 @@ public:
     TrackLine * createTrackLine(BackgroundRaster *parentItem =0);
     TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
 
+    Platform * createPlatform();
+    Platform * currentPlatform() const;
+
     QString const &filename() const;
     void save(QString const &fname = QString());
     void open(QString const &fname);
 
+    void setCurrent(const QModelIndex &index);
+
 signals:
+    void currentPlaformUpdated();
 
 public slots:
 
     void exportHypack(QModelIndex const &index);
+    void deleteItems(QModelIndexList const &indices);
 
 
 private:
     QStandardItemModel* m_model;
     QGraphicsScene* m_scene;
-    std::map<QString,QStandardItem*> topLevelItems;
     QString m_filename;
+    BackgroundRaster* m_currentBackground;
+    Platform* m_currentPlatform;
+
+    void setCurrentBackground(BackgroundRaster *bgr);
 };
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

@@ -1,15 +1,22 @@
 #include "geographicsitem.h"
 #include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
+#include <QGraphicsTextItem>
+#include <QFont>
 
-GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):QObject(parent), QGraphicsItem(parentItem)
+GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), QGraphicsItem(parentItem)
 {
-
+    m_label = new QGraphicsTextItem(this);
+    m_label->setFlag(GraphicsItemFlag::ItemIgnoresTransformations);
+    auto font = m_label->font();
+    font.setPointSize(20);
+    m_label->setFont(font);
+    m_label->setDefaultTextColor(QColor("blue"));
 }
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
-    AutonomousVehicleProject *p = project();
+    AutonomousVehicleProject *p = autonomousVehicleProject();
     if(p)
     {
         BackgroundRaster *bg = p->getBackgroundRaster();
@@ -25,12 +32,6 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
         }
     }
     return QPointF();
-}
-
-AutonomousVehicleProject *GeoGraphicsItem::project() const
-{
-    AutonomousVehicleProject *ret = qobject_cast<AutonomousVehicleProject*>(parent());
-    return ret;
 }
 
 void GeoGraphicsItem::setItem(QStandardItem *item)

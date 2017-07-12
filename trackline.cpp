@@ -141,3 +141,9 @@ void TrackLine::setItem(QStandardItem *item)
 {
     m_item = item;
 }
+
+void TrackLine::updateProjectedPoints()
+{
+    for(auto wp: waypoints())
+        wp->updateProjectedPoints();
+}

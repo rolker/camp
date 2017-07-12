@@ -18,9 +18,9 @@ public:
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
-signals:
 
 public slots:
+    void updateProjectedPoints();
 
 signals:
     void waypointMoved();
@@ -31,6 +31,7 @@ protected:
 
 private:
     QGeoCoordinate m_location;
+    bool m_internalPositionChangeFlag;
 };
 
 #endif // WAYPOINT_H

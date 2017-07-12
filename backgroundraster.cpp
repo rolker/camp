@@ -4,7 +4,7 @@
 #include <gdal_priv.h>
 
 BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem)
-    : QObject(parent), QGraphicsItem(parentItem), m_filename(fname)
+    : MissionItem(parent), QGraphicsItem(parentItem), m_filename(fname)
 {
     GDALDataset * dataset = reinterpret_cast<GDALDataset*>(GDALOpen(fname.toStdString().c_str(),GA_ReadOnly));
     if (dataset)
@@ -93,5 +93,11 @@ QString const &BackgroundRaster::filename() const
 
 void BackgroundRaster::write(QJsonObject &json) const
 {
+    json["type"] = "BackgroundRaster";
     json["filename"] = m_filename;
+}
+
+void BackgroundRaster::read(const QJsonObject &json)
+{
+
 }

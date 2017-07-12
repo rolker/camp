@@ -21,6 +21,8 @@ public:
     void read(const QJsonObject &json);
 
     QGeoCoordinate const &startLocation() const;
+    Waypoint * startLocationWaypoint() const;
+    Waypoint * endLocationWaypoint() const;
     void setStartLocation(QGeoCoordinate const &location);
     void setEndLocation(QGeoCoordinate const &location);
     void setSpacingLocation(QGeoCoordinate const &location, bool calc = true);
@@ -32,6 +34,7 @@ public:
     int arcCount() const;
 
     void setDirectionAndSpacing(double direction, double spacing);
+    void setArcCount(int ac);
 
     QList<QGeoCoordinate> getPath() const;
 
@@ -41,9 +44,12 @@ signals:
 public slots:
     void waypointHasChanged();
     void waypointAboutToChange();
+    void updateProjectedPoints();
+    void onCurrentPlatformUpdated();
 
 protected:
     Waypoint * createWaypoint();
+    void updateLabel();
 
 private:
     Waypoint * m_startLocation;
@@ -53,8 +59,6 @@ private:
     int m_arcCount;
 
     Waypoint * m_spacingLocation;
-
-
 
 };
 

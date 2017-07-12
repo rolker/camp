@@ -32,6 +32,7 @@ signals:
     void trackLineUpdated();
 
 public slots:
+    void updateProjectedPoints();
 
 private:
 
