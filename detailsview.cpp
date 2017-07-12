@@ -72,36 +72,25 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
         setCurrentWidget(waypointDetails);
         waypointDetails->setWaypoint(wp);
     }
-    else
+    else if (itemType == "TrackLine*")
     {
-        TrackLine *tl = m_project->model()->data(current,Qt::UserRole+1).value<TrackLine *>();
-        if(tl)
-        {
-            setCurrentWidget(trackLineDetails);
-            trackLineDetails->setTrackLine(tl);
-        }
-        else
-        {
-            SurveyPattern *sp = m_project->model()->data(current,Qt::UserRole+1).value<SurveyPattern *>();
-            if(sp)
-            {
-                setCurrentWidget(surveyPatternDetails);
-                surveyPatternDetails->setSurveyPattern(sp);
-            }
-            else
-            {
-                Platform *p = m_project->model()->data(current,Qt::UserRole+1).value<Platform *>();
-                if(p)
-                {
-                    setCurrentWidget(platformDetails);
-                    platformDetails->setPlatform(p);
-                }
-                else
-                {
-                    setCurrentWidget(nullptr);
-                }
-            }
-        }
+        TrackLine *tl = item.value<TrackLine *>();
+        setCurrentWidget(trackLineDetails);
+        trackLineDetails->setTrackLine(tl);
     }
+    else if (itemType == "SurveyPattern*")
+    {
+        SurveyPattern *sp = item.value<SurveyPattern *>();
+        setCurrentWidget(surveyPatternDetails);
+        surveyPatternDetails->setSurveyPattern(sp);
+    }
+    else if (itemType == "Platform*")
+    {
+        Platform *p = m_project->model()->data(current,Qt::UserRole+1).value<Platform *>();
+        setCurrentWidget(platformDetails);
+        platformDetails->setPlatform(p);
+    }
+    else
+        setCurrentWidget(nullptr);
     m_project->setCurrent(current);
 }

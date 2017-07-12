@@ -31,6 +31,7 @@ protected:
 
 private:
     QGeoCoordinate m_location;
+    bool m_internalPositionChangeFlag;
 };
 
 #endif // WAYPOINT_H

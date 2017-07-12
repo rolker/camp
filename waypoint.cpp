@@ -5,7 +5,7 @@
 #include <QJsonObject>
 #include <QDebug>
 
-Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem)
+Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem), m_internalPositionChangeFlag(false)
 {
 
 }
@@ -46,20 +46,23 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 
 QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 {
-    if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
+    if(!m_internalPositionChangeFlag)
     {
+        if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
+        {
 
-        AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
-        BackgroundRaster *bgr = avp->getBackgroundRaster();
-        QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
-        m_location = bgr->unproject(projectedPosition);
-        //qDebug() << "itemChange" << m_location;
-        parentItem()->update();
+            AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
+            BackgroundRaster *bgr = avp->getBackgroundRaster();
+            QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
+            m_location = bgr->unproject(projectedPosition);
+            //qDebug() << "itemChange" << m_location;
+            parentItem()->update();
+        }
+        if(change == ItemPositionChange)
+            emit waypointAboutToMove();
+        if(change == ItemPositionHasChanged)
+            emit waypointMoved();
     }
-    if(change == ItemPositionChange)
-        emit waypointAboutToMove();
-    if(change == ItemPositionHasChanged)
-        emit waypointMoved();
 
     return QGraphicsItem::itemChange(change,value);
 }
@@ -79,5 +82,7 @@ void Waypoint::read(const QJsonObject &json)
 
 void Waypoint::updateProjectedPoints()
 {
+    m_internalPositionChangeFlag = true;
     setPos(geoToPixel(m_location));
+    m_internalPositionChangeFlag = false;
 }

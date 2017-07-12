@@ -16,7 +16,7 @@ GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):Mis
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
-    AutonomousVehicleProject *p = project();
+    AutonomousVehicleProject *p = autonomousVehicleProject();
     if(p)
     {
         BackgroundRaster *bg = p->getBackgroundRaster();
@@ -32,12 +32,6 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
         }
     }
     return QPointF();
-}
-
-AutonomousVehicleProject *GeoGraphicsItem::project() const
-{
-    AutonomousVehicleProject *ret = qobject_cast<AutonomousVehicleProject*>(parent());
-    return ret;
 }
 
 void GeoGraphicsItem::setItem(QStandardItem *item)
