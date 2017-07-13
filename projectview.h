@@ -8,6 +8,7 @@ class QLabel;
 class AutonomousVehicleProject;
 class TrackLine;
 class SurveyPattern;
+class Waypoint;
 
 class ProjectView : public QGraphicsView
 {
@@ -39,6 +40,7 @@ private:
     MouseMode mouseMode;
     AutonomousVehicleProject *m_project;
     TrackLine * currentTrackLine;
+    Waypoint * pendingTrackLineWaypoint;
     SurveyPattern * pendingSurveyPattern;
 
 };

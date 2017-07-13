@@ -19,7 +19,7 @@ public:
     QPainterPath shape() const;
 
     Waypoint * createWaypoint();
-    void addWaypoint(QGeoCoordinate const &location);
+    Waypoint * addWaypoint(QGeoCoordinate const &location);
 
     QList<Waypoint *> waypoints() const;
 

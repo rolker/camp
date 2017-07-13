@@ -55,6 +55,8 @@ public slots:
 
     void exportHypack(QModelIndex const &index);
     void deleteItems(QModelIndexList const &indices);
+    void deleteItem(QModelIndex const &index);
+    void deleteItem(QStandardItem *item);
 
 
 private:

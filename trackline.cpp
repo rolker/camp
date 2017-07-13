@@ -77,19 +77,18 @@ Waypoint * TrackLine::createWaypoint()
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    wp->setItem(item);
     return wp;
 
 }
 
-void TrackLine::addWaypoint(const QGeoCoordinate &location)
+Waypoint * TrackLine::addWaypoint(const QGeoCoordinate &location)
 {
-    qDebug() << "Trackline adding waypoint: " << location;
     Waypoint *wp = createWaypoint();
-    qDebug() << static_cast<const void *>(wp);
     wp->setLocation(location);
-    //wp->setPos(wp->geoToPixel(location));
     emit trackLineUpdated();
     update();
+    return wp;
 }
 
 QList<Waypoint *> TrackLine::waypoints() const

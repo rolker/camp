@@ -34,13 +34,7 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
     return QPointF();
 }
 
-void GeoGraphicsItem::setItem(QStandardItem *item)
+void GeoGraphicsItem::prepareGeometryChange()
 {
-    m_item = item;
-}
-
-
-QStandardItem * GeoGraphicsItem::item() const
-{
-    return m_item;
+    QGraphicsItem::prepareGeometryChange();
 }

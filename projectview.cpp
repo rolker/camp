@@ -11,7 +11,7 @@
 #include "surveypattern.h"
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
-    statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingSurveyPattern(nullptr)
+    statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingSurveyPattern(nullptr), pendingTrackLineWaypoint(nullptr)
 {
 
     positionLabel->setText("(,)");
@@ -51,11 +51,13 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 if(bg)
                 {
                     currentTrackLine = m_project->addTrackLine(bg->pixelToGeo(mapToScene(event->pos())),bg);
+                    pendingTrackLineWaypoint = currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
                 }
             }
             else
             {
-                currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingTrackLineWaypoint = currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+
             }
             break;
         case MouseMode::addSurveyPattern:
@@ -84,7 +86,15 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         break;
     case Qt::RightButton:
         if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern)
+        {
+            if(mouseMode == MouseMode::addTrackline && currentTrackLine)
+            {
+                m_project->deleteItem(pendingTrackLineWaypoint->item());
+                pendingTrackLineWaypoint = nullptr;
+                update();
+            }
             setPanMode();
+        }
         break;
     default:
         break;
@@ -110,6 +120,10 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
                 pendingSurveyPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
             else
                 pendingSurveyPattern->setEndLocation(bg->pixelToGeo(mapToScene(event->pos())));
+        }
+        if(pendingTrackLineWaypoint)
+        {
+            pendingTrackLineWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
         }
     }
     positionLabel->setText(posText);

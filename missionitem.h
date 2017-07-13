@@ -4,6 +4,7 @@
 #include <QObject>
 
 class AutonomousVehicleProject;
+class QStandardItem;
 
 class MissionItem : public QObject
 {
@@ -16,9 +17,16 @@ public:
 
     AutonomousVehicleProject *autonomousVehicleProject() const;
 
+    void setItem(QStandardItem * item);
+    QStandardItem * item() const;
+
 signals:
 
 public slots:
+
+private:
+    QStandardItem *m_item;
+
 };
 
 #endif // MISSIONITEM_H

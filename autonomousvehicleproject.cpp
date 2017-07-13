@@ -149,6 +149,7 @@ Platform * AutonomousVehicleProject::createPlatform()
     QStandardItem *item = new QStandardItem("platform");
     item->setData(QVariant::fromValue<Platform*>(p));
     m_model->appendRow(item);
+    p->setItem(item);
     return p;
 }
 
@@ -161,6 +162,7 @@ Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem
     QStandardItem *item = new QStandardItem("wayoint");
     item->setData(QVariant::fromValue<Waypoint*>(wp));
     m_model->appendRow(item);
+    wp->setItem(item);
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -316,21 +318,33 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
 void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)
 {
     for(auto index: indices)
-    {
-        QStandardItem *item = m_model->itemFromIndex(index);
-        GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
-        if(ggi)
-            m_scene->removeItem(ggi);
-        BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
-        if(bgr)
-        {
-            m_scene->removeItem(bgr);
-            if(m_currentBackground == bgr)
-                m_currentBackground = nullptr;
-        }
+        deleteItem(index);
+}
 
-        m_model->removeRow(index.row());
+void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
+{
+    QStandardItem *item = m_model->itemFromIndex(index);
+    GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
+    if(ggi)
+    {
+        GeoGraphicsItem *pggi = qgraphicsitem_cast<GeoGraphicsItem*>(ggi->parentItem());
+        if(pggi)
+            pggi->prepareGeometryChange();
+        m_scene->removeItem(ggi);
     }
+    BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
+    if(bgr)
+    {
+        m_scene->removeItem(bgr);
+        if(m_currentBackground == bgr)
+            m_currentBackground = nullptr;
+    }
+    m_model->removeRow(index.row(),index.parent());
+}
+
+void AutonomousVehicleProject::deleteItem(QStandardItem *item)
+{
+    deleteItem(m_model->indexFromItem(item));
 }
 
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
