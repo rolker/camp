@@ -6,7 +6,6 @@
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
-class QGrpahicsTextItem;
 
 class GeoGraphicsItem : public MissionItem, public QGraphicsItem
 {
@@ -32,7 +31,7 @@ public slots:
     virtual void updateProjectedPoints() =0;
 
 private:
-    QGraphicsTextItem *m_label;
+    QGraphicsSimpleTextItem *m_label;
     QString m_labelText;
     bool m_showLabelFlag;
 
