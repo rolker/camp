@@ -66,7 +66,7 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
         if(change == ItemPositionChange)
             emit waypointAboutToMove();
         if(change == ItemPositionHasChanged)
-            emit waypointMoved();
+            emit waypointMoved(this);
     }
 
     return QGraphicsItem::itemChange(change,value);

@@ -8,7 +8,7 @@
 #include "autonomousvehicleproject.h"
 
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
-    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6)
+    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
 }
@@ -34,12 +34,14 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
     update();
 }
 
-void SurveyPattern::setEndLocation(const QGeoCoordinate &location)
+void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_endLocation == nullptr)
         m_endLocation = createWaypoint();
     m_endLocation->setLocation(location);
     m_endLocation->setPos(m_endLocation->geoToPixel(location));
+    if(calc)
+        calculateFromWaypoints();
     update();
 }
 
@@ -49,12 +51,29 @@ void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc
         m_spacingLocation = createWaypoint();
     m_spacingLocation->setLocation(location);
     if(calc)
-    {
-        m_spacing = m_startLocation->location().distanceTo(m_spacingLocation->location());
-        m_direction = m_startLocation->location().azimuthTo(m_spacingLocation->location())-90;
-    }
+        calculateFromWaypoints();
     update();
 }
+
+void SurveyPattern::calculateFromWaypoints()
+{
+    qreal ab_distance = m_startLocation->location().distanceTo(m_endLocation->location());
+    qreal ab_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
+
+    qreal ac_distance = 1.0;
+    qreal ac_angle = 90.0;
+    if(m_spacingLocation)
+    {
+        ac_distance = m_startLocation->location().distanceTo(m_spacingLocation->location());
+        ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
+        m_spacing = ac_distance;
+        m_direction = ac_angle-90;
+    }
+    qreal leg_heading = ac_angle-90.0;
+    m_lineLength = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
+    m_totalWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
+}
+
 
 void SurveyPattern::setArcCount(int ac)
 {
@@ -107,6 +126,16 @@ double SurveyPattern::direction() const
     return m_direction;
 }
 
+double SurveyPattern::lineLength() const
+{
+    return m_lineLength;
+}
+
+double SurveyPattern::totalWidth() const
+{
+    return m_totalWidth;
+}
+
 int SurveyPattern::arcCount() const
 {
     return m_arcCount;
@@ -127,7 +156,30 @@ void SurveyPattern::setDirectionAndSpacing(double direction, double spacing)
     m_direction = direction;
     m_spacing = spacing;
     QGeoCoordinate c = m_startLocation->location().atDistanceAndAzimuth(spacing,direction+90.0);
+    m_internalUpdateFlag = true;
     setSpacingLocation(c,false);
+    m_internalUpdateFlag = false;
+}
+
+void SurveyPattern::setLineLength(double lineLength)
+{
+    m_lineLength = lineLength;
+    updateEndLocation();
+}
+
+void SurveyPattern::setTotalWidth(double totalWidth)
+{
+    m_totalWidth = totalWidth;
+    updateEndLocation();
+}
+
+void SurveyPattern::updateEndLocation()
+{
+    m_internalUpdateFlag = true;
+    QGeoCoordinate p = m_startLocation->location().atDistanceAndAzimuth(m_lineLength, m_direction);
+    p = p.atDistanceAndAzimuth(m_totalWidth,m_direction+90.0);
+    setEndLocation(p,false);
+    m_internalUpdateFlag = false;
 }
 
 QRectF SurveyPattern::boundingRect() const
@@ -290,8 +342,10 @@ void SurveyPattern::waypointAboutToChange()
     prepareGeometryChange();
 }
 
-void SurveyPattern::waypointHasChanged()
+void SurveyPattern::waypointHasChanged(Waypoint *wp)
 {
+    if(!m_internalUpdateFlag)
+        calculateFromWaypoints();
     updateLabel();
     emit surveyPatternUpdated();
 }
