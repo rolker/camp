@@ -21,6 +21,7 @@ void Waypoint::setLocation(QGeoCoordinate const &location)
     qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
     setPos(geoToPixel(location));
     m_location = location;
+    setLabel(location.toString());
 }
 
 QRectF Waypoint::boundingRect() const
@@ -44,18 +45,22 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     painter->restore();
 }
 
+void Waypoint::updateLocation()
+{
+    AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
+    BackgroundRaster *bgr = avp->getBackgroundRaster();
+    QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
+    m_location = bgr->unproject(projectedPosition);
+    setLabel(m_location.toString());
+}
+
 QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 {
     if(!m_internalPositionChangeFlag)
     {
         if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
         {
-
-            AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
-            BackgroundRaster *bgr = avp->getBackgroundRaster();
-            QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
-            m_location = bgr->unproject(projectedPosition);
-            //qDebug() << "itemChange" << m_location;
+            updateLocation();
             parentItem()->update();
         }
         if(change == ItemPositionChange)

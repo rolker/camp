@@ -15,6 +15,7 @@ public:
 
     QGeoCoordinate const &location() const;
     void setLocation(QGeoCoordinate const &location);
+    void updateLocation();
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);

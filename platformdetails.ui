@@ -17,7 +17,7 @@
    <item row="0" column="0">
     <widget class="QLabel" name="speedLabel">
      <property name="text">
-      <string>Speed</string>
+      <string>Speed (knts)</string>
      </property>
     </widget>
    </item>

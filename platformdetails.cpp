@@ -1,5 +1,5 @@
 #include "platformdetails.h"
-#include "ui_platformdetail.h"
+#include "ui_platformdetails.h"
 #include "platform.h"
 
 PlatformDetails::PlatformDetails(QWidget *parent) :

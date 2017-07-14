@@ -4,12 +4,12 @@
 #include <QGraphicsTextItem>
 #include <QFont>
 
-GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), QGraphicsItem(parentItem)
+GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), QGraphicsItem(parentItem), m_showLabelFlag(false)
 {
     m_label = new QGraphicsTextItem(this);
     m_label->setFlag(GraphicsItemFlag::ItemIgnoresTransformations);
     auto font = m_label->font();
-    font.setPointSize(20);
+    font.setPointSize(18);
     m_label->setFont(font);
     m_label->setDefaultTextColor(QColor("blue"));
 }
@@ -37,4 +37,26 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 void GeoGraphicsItem::prepareGeometryChange()
 {
     QGraphicsItem::prepareGeometryChange();
+}
+
+void GeoGraphicsItem::setLabel(const QString &label)
+{
+    m_labelText = label;
+    if(m_showLabelFlag)
+        m_label->setPlainText(m_labelText);
+}
+
+
+bool GeoGraphicsItem::showLabelFlag() const
+{
+    return m_showLabelFlag;
+}
+
+void GeoGraphicsItem::setShowLabelFlag(bool show)
+{
+    m_showLabelFlag = show;
+    if(show)
+        m_label->setPlainText(m_labelText);
+    else
+        m_label->setPlainText("");
 }

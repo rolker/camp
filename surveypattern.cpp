@@ -10,7 +10,7 @@
 SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6)
 {
-
+    setShowLabelFlag(true);
 }
 
 Waypoint * SurveyPattern::createWaypoint()
@@ -197,7 +197,7 @@ void SurveyPattern::updateLabel()
     }
 
 
-    m_label->setPlainText(label);
+    setLabel(label);
 }
 
 QPainterPath SurveyPattern::shape() const
@@ -238,7 +238,7 @@ QList<QGeoCoordinate> SurveyPattern::getPath() const
             }
             qreal leg_heading = ac_angle-90.0;
             qreal leg_length = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
-            qDebug() << "getPath: leg_length: " << leg_length << " leg_heading: " << leg_heading;
+            //qDebug() << "getPath: leg_length: " << leg_length << " leg_heading: " << leg_heading;
             qreal surveyWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
 
             int line_count = qCeil(surveyWidth/ac_distance);

@@ -24,11 +24,17 @@ public:
 
     void prepareGeometryChange();
 
+    bool showLabelFlag() const;
+    void setShowLabelFlag(bool show=true);
+    void setLabel(QString const &label);
+
 public slots:
     virtual void updateProjectedPoints() =0;
 
-protected:
+private:
     QGraphicsTextItem *m_label;
+    QString m_labelText;
+    bool m_showLabelFlag;
 
 };
 
