@@ -28,3 +28,8 @@ void Platform::setSpeed(double speed)
     m_speed = speed;
     emit speedChanged();
 }
+
+QStandardItem * Platform::createItem(const QString& label)
+{
+    return createItemDetails<Platform>(label);
+}

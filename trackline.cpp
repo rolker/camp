@@ -70,14 +70,11 @@ Waypoint * TrackLine::createWaypoint()
 {
     Waypoint *wp = new Waypoint(parent(),this);
 
-    QStandardItem *item = new QStandardItem("wayoint");
-    item->setData(QVariant::fromValue<Waypoint*>(wp));
-    m_item->appendRow(item);
+    item()->appendRow(wp->createItem("waypoint"));
 
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
-    wp->setItem(item);
     return wp;
 
 }
@@ -136,13 +133,13 @@ void TrackLine::read(const QJsonObject &json)
 
 }
 
-void TrackLine::setItem(QStandardItem *item)
-{
-    m_item = item;
-}
-
 void TrackLine::updateProjectedPoints()
 {
     for(auto wp: waypoints())
         wp->updateProjectedPoints();
+}
+
+QStandardItem * TrackLine::createItem(const QString& label)
+{
+    return createItemDetails<TrackLine>(label);
 }

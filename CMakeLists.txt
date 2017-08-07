@@ -5,6 +5,7 @@ project(AutonomousMissionPlanner)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
 find_package(Qt5 COMPONENTS Core Widgets)
 
 find_package(GDAL REQUIRED)
@@ -34,6 +35,9 @@ set(SOURCES
     missionitem.cpp
     platformdetails.cpp
     backgrounddetails.cpp
+    vectordataset.cpp
+    group.cpp
+    point.cpp
 )
 
 set(HEADERS
@@ -54,11 +58,18 @@ set(HEADERS
     missionitem.h
     platformdetails.h
     backgrounddetails.h
+    vectordataset.h
+    group.h
+    point.h
 )
 
-add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES})
+set ( RESOURCES
+ main.qrc
+)
 
-qt5_use_modules(AutonomousMissionPlanner Widgets Positioning)
+add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
+
+qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg)
 
 target_link_libraries(AutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY})
 

@@ -10,6 +10,10 @@ Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(
 
 }
 
+QStandardItem * Waypoint::createItem(QString const &label)
+{
+    return createItemDetails<Waypoint>(label);
+}
 
 QGeoCoordinate const &Waypoint::location() const
 {
@@ -82,7 +86,9 @@ void Waypoint::write(QJsonObject &json) const
 void Waypoint::read(const QJsonObject &json)
 {
     QGeoCoordinate position(json["latitude"].toDouble(),json["longitude"].toDouble());
+    m_internalPositionChangeFlag = true;
     setLocation(position);
+    m_internalPositionChangeFlag = false;
 }
 
 void Waypoint::updateProjectedPoints()

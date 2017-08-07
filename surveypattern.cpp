@@ -364,3 +364,8 @@ void SurveyPattern::onCurrentPlatformUpdated()
 {
     updateLabel();
 }
+
+QStandardItem * SurveyPattern::createItem(const QString& label)
+{
+    return createItemDetails<SurveyPattern>(label);
+}

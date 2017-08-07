@@ -21,6 +21,8 @@ public:
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
+    
+    QStandardItem * createItem(QString const &label) override;
 
 private:
     typedef std::map<int,QPixmap> Mipmaps;

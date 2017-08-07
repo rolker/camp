@@ -11,6 +11,8 @@ public:
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
+    
+    QStandardItem * createItem(const QString & label) override;
 
     double speed() const;
     void setSpeed(double speed);

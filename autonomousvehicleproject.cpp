@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QSvgRenderer>
 
 #include "backgroundraster.h"
 #include "waypoint.h"
@@ -15,10 +16,11 @@
 #include "surveypattern.h"
 #include "platform.h"
 #include <gdal_priv.h>
+#include "vectordataset.h"
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
 {
     GDALAllRegister();
 
@@ -45,6 +47,12 @@ QString const &AutonomousVehicleProject::filename() const
 {
     return m_filename;
 }
+
+QSvgRenderer * AutonomousVehicleProject::symbols() const
+{
+    return m_symbols;
+}
+
 
 void AutonomousVehicleProject::save(const QString &fname)
 {
@@ -117,11 +125,17 @@ void AutonomousVehicleProject::open(const QString &fname)
 void AutonomousVehicleProject::openBackground(const QString &fname)
 {
     BackgroundRaster *bgr = new BackgroundRaster(fname, this);
-    QStandardItem *item = new QStandardItem(fname);
-    item->setData(QVariant::fromValue<BackgroundRaster*>(bgr));
-    m_model->appendRow(item);
+    m_model->appendRow(bgr->createItem(fname));
     setCurrentBackground(bgr);
 }
+
+void AutonomousVehicleProject::openGeometry(const QString& fname)
+{
+    VectorDataset * vd = new VectorDataset(this);
+    m_model->appendRow(vd->createItem(fname));
+    vd->open(fname);
+}
+
 
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
@@ -146,10 +160,7 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 Platform * AutonomousVehicleProject::createPlatform()
 {
     Platform *p = new Platform(this);
-    QStandardItem *item = new QStandardItem("platform");
-    item->setData(QVariant::fromValue<Platform*>(p));
-    m_model->appendRow(item);
-    p->setItem(item);
+    m_model->appendRow(p->createItem("platform"));
     return p;
 }
 
@@ -158,11 +169,7 @@ Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem
     if(!parentItem)
         parentItem = getBackgroundRaster();
     Waypoint *wp = new Waypoint(this,parentItem);
-
-    QStandardItem *item = new QStandardItem("wayoint");
-    item->setData(QVariant::fromValue<Waypoint*>(wp));
-    m_model->appendRow(item);
-    wp->setItem(item);
+    m_model->appendRow(wp->createItem("waypoint"));
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -182,10 +189,7 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *
     if(!parentItem)
         parentItem = getBackgroundRaster();
     SurveyPattern *sp = new SurveyPattern(this,parentItem);
-    QStandardItem *item = new QStandardItem("pattern");
-    item->setData(QVariant::fromValue<SurveyPattern*>(sp));
-    sp->setItem(item);
-    m_model->appendRow(item);
+    m_model->appendRow(sp->createItem("pattern"));
     sp->setFlag(QGraphicsItem::ItemIsMovable);
     sp->setFlag(QGraphicsItem::ItemIsSelectable);
     sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -208,10 +212,7 @@ TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentIt
     if(!parentItem)
         parentItem = getBackgroundRaster();
     TrackLine *tl = new TrackLine(this,parentItem);
-    QStandardItem *item = new QStandardItem("trackline");
-    item->setData(QVariant::fromValue<TrackLine*>(tl));
-    m_model->appendRow(item);
-    tl->setItem(item);
+    m_model->appendRow(tl->createItem("trackline"));
     tl->setFlag(QGraphicsItem::ItemIsMovable);
     tl->setFlag(QGraphicsItem::ItemIsSelectable);
     tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);

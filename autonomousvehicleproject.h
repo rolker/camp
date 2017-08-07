@@ -16,6 +16,7 @@ class Waypoint;
 class TrackLine;
 class SurveyPattern;
 class Platform;
+class QSvgRenderer;
 
 
 class AutonomousVehicleProject : public QObject
@@ -45,8 +46,12 @@ public:
     QString const &filename() const;
     void save(QString const &fname = QString());
     void open(QString const &fname);
+    
+    void openGeometry(QString const &fname);
 
     void setCurrent(const QModelIndex &index);
+    
+    QSvgRenderer * symbols() const;
 
 signals:
     void currentPlaformUpdated();
@@ -65,6 +70,9 @@ private:
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     Platform* m_currentPlatform;
+    
+    QSvgRenderer* m_symbols;
+    
 
     void setCurrentBackground(BackgroundRaster *bgr);
 };

@@ -19,6 +19,8 @@ public:
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
+    
+    QStandardItem * createItem(QString const &label) override;
 
     QGeoCoordinate const &startLocation() const;
     Waypoint * startLocationWaypoint() const;

@@ -18,9 +18,6 @@ public:
     QPointF geoToPixel(QGeoCoordinate const &point) const;
     QGeoCoordinate pixelToGeo(QPointF const &point) const;
 
-    virtual void write(QJsonObject &json) const = 0;
-    virtual void read(const QJsonObject &json) = 0;
-
     void prepareGeometryChange();
 
     bool showLabelFlag() const;

@@ -20,7 +20,7 @@
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QWidget" name="">
+      <widget class="QWidget" name="layoutWidget">
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
          <widget class="QTreeView" name="treeView">
@@ -79,6 +79,7 @@
     </property>
     <addaction name="actionOpen"/>
     <addaction name="actionOpenBackground"/>
+    <addaction name="actionOpenGeometry"/>
     <addaction name="actionSave"/>
     <addaction name="actionSaveAs"/>
    </widget>
@@ -163,6 +164,11 @@
    </property>
    <property name="toolTip">
     <string>Add Platform</string>
+   </property>
+  </action>
+  <action name="actionOpenGeometry">
+   <property name="text">
+    <string>Open &amp;Geometry</string>
    </property>
   </action>
  </widget>

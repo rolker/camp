@@ -109,7 +109,8 @@ void MainWindow::on_actionOpenBackground_triggered()
 {
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
 
-    project->openBackground(fname);
+    if(!fname.isEmpty())
+        project->openBackground(fname);
 
 }
 
@@ -121,4 +122,12 @@ void MainWindow::on_actionSurveyPattern_triggered()
 void MainWindow::on_actionPlatform_triggered()
 {
     project->createPlatform();
+}
+
+void MainWindow::on_actionOpenGeometry_triggered()
+{
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
+
+    if(!fname.isEmpty())
+        project->openGeometry(fname);
 }

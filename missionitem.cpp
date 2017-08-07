@@ -19,10 +19,10 @@ AutonomousVehicleProject* MissionItem::autonomousVehicleProject() const
     return nullptr;
 }
 
-void MissionItem::setItem(QStandardItem *item)
-{
-    m_item = item;
-}
+//void MissionItem::setItem(QStandardItem *item)
+//{
+//    m_item = item;
+//}
 
 
 QStandardItem * MissionItem::item() const
