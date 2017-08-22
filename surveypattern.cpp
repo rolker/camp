@@ -7,7 +7,7 @@
 #include "platform.h"
 #include "autonomousvehicleproject.h"
 
-SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsItem(parent, parentItem),
+SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), GeoGraphicsItem(parentItem),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
@@ -30,7 +30,7 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
     if(m_startLocation == nullptr)
         m_startLocation = createWaypoint();
     m_startLocation->setLocation(location);
-    m_startLocation->setPos(m_startLocation->geoToPixel(location));
+    m_startLocation->setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
     update();
 }
 
@@ -39,7 +39,7 @@ void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
     if(m_endLocation == nullptr)
         m_endLocation = createWaypoint();
     m_endLocation->setLocation(location);
-    m_endLocation->setPos(m_endLocation->geoToPixel(location));
+    m_endLocation->setPos(m_endLocation->geoToPixel(location,autonomousVehicleProject()));
     if(calc)
         calculateFromWaypoints();
     update();
@@ -205,7 +205,7 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         second++;
         while(second != children.end())
         {
-            painter->drawLine(m_startLocation->geoToPixel(*first),m_startLocation->geoToPixel(*second));
+            painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
             first++;
             second++;
         }
@@ -256,11 +256,11 @@ QPainterPath SurveyPattern::shape() const
 {
     auto children = getPath();
     auto i = children.begin();
-    QPainterPath ret(m_startLocation->geoToPixel(*i));
+    QPainterPath ret(m_startLocation->geoToPixel(*i,autonomousVehicleProject()));
     i++;
     while(i != children.end())
     {
-        ret.lineTo(m_startLocation->geoToPixel(*i));
+        ret.lineTo(m_startLocation->geoToPixel(*i,autonomousVehicleProject()));
         i++;
     }
     QPainterPathStroker pps;

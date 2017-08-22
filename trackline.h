@@ -1,12 +1,13 @@
 #ifndef TRACKLINE_H
 #define TRACKLINE_H
 
+#include "missionitem.h"
 #include "geographicsitem.h"
 
 class Waypoint;
 class QStandardItem;
 
-class TrackLine : public GeoGraphicsItem
+class TrackLine : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)

@@ -1,21 +1,22 @@
 #ifndef GEOGRAPHICSITEM_H
 #define GEOGRAPHICSITEM_H
 
-#include "missionitem.h"
+//#include "missionitem.h"
 #include <QGraphicsItem>
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
 
-class GeoGraphicsItem : public MissionItem, public QGraphicsItem
+class GeoGraphicsItem : /*public MissionItem, */public QGraphicsItem
 {
-    Q_OBJECT
+    //Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    GeoGraphicsItem(QObject *parent = 0, QGraphicsItem *parentItem = Q_NULLPTR);
+    GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
 
-    QPointF geoToPixel(QGeoCoordinate const &point) const;
+    
+    QPointF geoToPixel(QGeoCoordinate const &point, AutonomousVehicleProject *p) const;
     QGeoCoordinate pixelToGeo(QPointF const &point) const;
 
     void prepareGeometryChange();
@@ -25,7 +26,7 @@ public:
     void setLabel(QString const &label);
 
 public slots:
-    virtual void updateProjectedPoints() =0;
+    virtual void updateProjectedPoints()=0;
 
 private:
     QGraphicsSimpleTextItem *m_label;
@@ -33,5 +34,7 @@ private:
     bool m_showLabelFlag;
 
 };
+
+Q_DECLARE_METATYPE(GeoGraphicsItem*)
 
 #endif // GEOGRAPHICSITEM_H

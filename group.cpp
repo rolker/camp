@@ -1,6 +1,6 @@
 #include "group.h"
 
-Group::Group(QObject* parent)
+Group::Group(QObject* parent):MissionItem(parent)
 {
 
 }
@@ -15,7 +15,7 @@ void Group::read(const QJsonObject& json)
 
 }
 
-QList<MissionItem *> Group::childItems() const
+QList<MissionItem *> Group::childMissionItems() const
 {
     QList<MissionItem*> ret;
     for(auto child: children())

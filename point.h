@@ -1,10 +1,11 @@
 #ifndef POINT_H
 #define POINT_H
 
+#include "missionitem.h"
 #include "geographicsitem.h"
 
 
-class Point : public GeoGraphicsItem
+class Point : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)

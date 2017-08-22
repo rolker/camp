@@ -1,9 +1,10 @@
 #ifndef WAYPOINT_H
 #define WAYPOINT_H
 
+#include "missionitem.h"
 #include "geographicsitem.h"
 
-class Waypoint : public GeoGraphicsItem
+class Waypoint : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)

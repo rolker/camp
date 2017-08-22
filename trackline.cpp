@@ -6,7 +6,7 @@
 #include <QStandardItem>
 #include <QDebug>
 
-TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem)
+TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :MissionItem(parent), GeoGraphicsItem(parentItem)
 {
 
 }
@@ -125,7 +125,7 @@ void TrackLine::read(const QJsonObject &json)
         if(wpIndex == 0)
         {
             QGeoCoordinate position(wpObject["latitude"].toDouble(),wpObject["longitude"].toDouble());
-            setPos(geoToPixel(position));
+            setPos(geoToPixel(position,autonomousVehicleProject()));
         }
         Waypoint *wp = createWaypoint();
         wp->read(wpObject);

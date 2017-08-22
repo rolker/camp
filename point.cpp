@@ -3,7 +3,7 @@
 #include "autonomousvehicleproject.h"
 #include <QSvgRenderer>
 
-Point::Point(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsItem(parent, parentItem)
+Point::Point(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent), GeoGraphicsItem(parentItem)
 {
     QGraphicsSvgItem *symbol = new QGraphicsSvgItem(this);
     symbol->setSharedRenderer(autonomousVehicleProject()->symbols());
@@ -14,7 +14,7 @@ Point::Point(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsItem(parent,
 
 void Point::updateProjectedPoints()
 {
-   setPos(geoToPixel(m_location));
+   setPos(geoToPixel(m_location,autonomousVehicleProject()));
 }
 
 void Point::write(QJsonObject& json) const
@@ -39,7 +39,7 @@ QRectF Point::boundingRect() const
 
 void Point::setLocation(QGeoCoordinate const &location)
 {
-    setPos(geoToPixel(location));
+    setPos(geoToPixel(location,autonomousVehicleProject()));
     m_location = location;
     setLabel(location.toString());
 }

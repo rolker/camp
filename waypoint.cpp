@@ -5,7 +5,7 @@
 #include <QJsonObject>
 #include <QDebug>
 
-Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsItem(parent, parentItem), m_internalPositionChangeFlag(false)
+Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :MissionItem(parent), GeoGraphicsItem(parentItem), m_internalPositionChangeFlag(false)
 {
 
 }
@@ -23,7 +23,7 @@ QGeoCoordinate const &Waypoint::location() const
 void Waypoint::setLocation(QGeoCoordinate const &location)
 {
     qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
-    setPos(geoToPixel(location));
+    setPos(geoToPixel(location,autonomousVehicleProject()));
     m_location = location;
     setLabel(location.toString());
 }
@@ -94,6 +94,6 @@ void Waypoint::read(const QJsonObject &json)
 void Waypoint::updateProjectedPoints()
 {
     m_internalPositionChangeFlag = true;
-    setPos(geoToPixel(m_location));
+    setPos(geoToPixel(m_location,autonomousVehicleProject()));
     m_internalPositionChangeFlag = false;
 }

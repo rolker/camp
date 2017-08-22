@@ -2,6 +2,7 @@
 #include <gdal_priv.h>
 #include "group.h"
 #include "point.h"
+#include "linestring.h"
 #include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 #include <ogrsf_frmts.h>
@@ -41,6 +42,20 @@ void VectorDataset::open(const QString& fname)
                         QGeoCoordinate location(op->getY(),op->getX());
                         p->setLocation(location);
                         group->item()->appendRow(p->createItem("point"));
+                    }
+                    if(gtype == wkbLineString)
+                    {
+                        OGRLineString *ols = dynamic_cast<OGRLineString*>(geometry);
+                        LineString *ls = new LineString(parent(),bg);
+                        group->item()->appendRow(ls->createItem("lineString"));
+                        OGRPointIterator *i = ols->getPointIterator();
+                        OGRPoint *p;
+                        while(i->getNextPoint(p))
+                        {
+                            QGeoCoordinate location(p->getY(),p->getX());
+                            ls->addPoint(location);
+                        }                        
+                        group->item()->appendRow(ls->createItem("lineString"));
                     }
                 }
                 OGRFeature::DestroyFeature(feature);

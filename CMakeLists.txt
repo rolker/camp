@@ -38,6 +38,7 @@ set(SOURCES
     vectordataset.cpp
     group.cpp
     point.cpp
+    linestring.cpp
 )
 
 set(HEADERS
@@ -61,6 +62,7 @@ set(HEADERS
     vectordataset.h
     group.h
     point.h
+    linestring.h
 )
 
 set ( RESOURCES

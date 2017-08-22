@@ -1,11 +1,12 @@
 #ifndef SURVEYPATTERN_H
 #define SURVEYPATTERN_H
 
+#include "missionitem.h"
 #include "geographicsitem.h"
 
 class Waypoint;
 
-class SurveyPattern : public GeoGraphicsItem
+class SurveyPattern : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)

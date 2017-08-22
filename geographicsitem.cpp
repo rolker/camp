@@ -1,12 +1,13 @@
 #include "geographicsitem.h"
 #include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
+#include "missionitem.h"
 #include <QGraphicsSimpleTextItem>
 #include <QFont>
 #include <QBrush>
 #include <QPen>
 
-GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), QGraphicsItem(parentItem), m_showLabelFlag(false)
+GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(parentItem), m_showLabelFlag(false)
 {
     m_label = new QGraphicsSimpleTextItem(this);
     m_label->setFlag(GraphicsItemFlag::ItemIgnoresTransformations);
@@ -21,9 +22,9 @@ GeoGraphicsItem::GeoGraphicsItem(QObject *parent, QGraphicsItem *parentItem):Mis
     //m_label->setFlag(QGraphicsItem::ItemIsMovable); this caused other elements to move while trying to move the label!
 }
 
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
+QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
 {
-    AutonomousVehicleProject *p = autonomousVehicleProject();
+    //AutonomousVehicleProject *p;// =  dynamic_cast<MissionItem*>(this)->autonomousVehicleProject();
     if(p)
     {
         BackgroundRaster *bg = p->getBackgroundRaster();
@@ -67,3 +68,4 @@ void GeoGraphicsItem::setShowLabelFlag(bool show)
     else
         m_label->setText("");
 }
+

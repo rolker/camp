@@ -15,7 +15,7 @@ public:
     
     QStandardItem * createItem(const QString & label) override;
 
-    QList<MissionItem*> childItems() const;
+    QList<MissionItem*> childMissionItems() const;
 };
 
 #endif // GROUP_H
