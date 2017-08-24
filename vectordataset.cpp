@@ -4,8 +4,10 @@
 #include "point.h"
 #include "linestring.h"
 #include "backgroundraster.h"
+#include "polygon.h"
 #include "autonomousvehicleproject.h"
 #include <ogrsf_frmts.h>
+#include <QDebug>
 
 VectorDataset::VectorDataset(QObject* parent):MissionItem(parent)
 {
@@ -43,7 +45,7 @@ void VectorDataset::open(const QString& fname)
                         p->setLocation(location);
                         group->item()->appendRow(p->createItem("point"));
                     }
-                    if(gtype == wkbLineString)
+                    else if(gtype == wkbLineString)
                     {
                         OGRLineString *ols = dynamic_cast<OGRLineString*>(geometry);
                         LineString *ls = new LineString(parent(),bg);
@@ -55,8 +57,34 @@ void VectorDataset::open(const QString& fname)
                             QGeoCoordinate location(p->getY(),p->getX());
                             ls->addPoint(location);
                         }                        
-                        group->item()->appendRow(ls->createItem("lineString"));
                     }
+                    else if(gtype == wkbPolygon)
+                    {
+                        OGRPolygon *op = dynamic_cast<OGRPolygon*>(geometry);
+                        Polygon *p = new Polygon(parent(),bg);
+                        group->item()->appendRow(p->createItem("polygon"));
+                        OGRLinearRing *lr = op->getExteriorRing();
+                        OGRPointIterator *i = lr->getPointIterator();
+                        OGRPoint *pt;
+                        while(i->getNextPoint(pt))
+                        {
+                            QGeoCoordinate location(pt->getY(),pt->getX());
+                            p->addExteriorPoint(location);
+                        }                        
+                        for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ringNum++)
+                        {
+                            p->addInteriorRing();
+                            lr = op->getInteriorRing(ringNum);
+                            i = lr->getPointIterator();
+                            while(i->getNextPoint(pt))
+                            {
+                                QGeoCoordinate location(pt->getY(),pt->getX());
+                                p->addInteriorPoint(location);
+                            }                        
+                        }
+                    }
+                    else
+                        qDebug() << "type: " << gtype;
                 }
                 OGRFeature::DestroyFeature(feature);
                 feature = layer->GetNextFeature();

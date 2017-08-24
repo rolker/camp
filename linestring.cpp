@@ -2,15 +2,16 @@
 #include <QPainter>
 #include "point.h"
 
-LineString::LineString(QObject* parent, QGraphicsItem* parentItem):Group(parent),GeoGraphicsItem(parentItem)
+LineString::LineString(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent),GeoGraphicsItem(parentItem)
 {
 
 }
 
 void LineString::updateProjectedPoints()
 {
-    for(auto p: points())
-        p->updateProjectedPoints();
+    for(auto p: m_points)
+        p.pos = geoToPixel(p.location,autonomousVehicleProject());
+    updateBBox();
 }
 
 void LineString::write(QJsonObject& json) const
@@ -30,14 +31,13 @@ QStandardItem* LineString::createItem(const QString& label)
 
 QRectF LineString::boundingRect() const
 {
-
+    return m_bbox;
 }
 
 void LineString::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
 
-    auto children = childItems();
-    if (children.length() > 1)
+    if (m_points.length() > 1)
     {
         painter->save();
 
@@ -47,12 +47,12 @@ void LineString::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
         p.setWidth(3);
         painter->setPen(p);
 
-        auto first = children.begin();
+        auto first = m_points.begin();
         auto second = first;
         second++;
-        while(second != children.end())
+        while(second != m_points.end())
         {
-            painter->drawLine((*first)->pos(),(*second)->pos());
+            painter->drawLine(first->pos,second->pos);
             first++;
             second++;
         }
@@ -65,15 +65,14 @@ void LineString::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 
 QPainterPath LineString::shape() const
 {
-    auto children = childItems();
-    if (children.length() > 1)
+    if (m_points.length() > 1)
     {
-        auto i = children.begin();
-        QPainterPath ret((*i)->pos());
+        auto i = m_points.begin();
+        QPainterPath ret(i->pos);
         i++;
-        while(i != children.end())
+        while(i != m_points.end())
         {
-            ret.lineTo((*i)->pos());
+            ret.lineTo(i->pos);
             i++;
         }
         QPainterPathStroker pps;
@@ -85,27 +84,29 @@ QPainterPath LineString::shape() const
 }
 
 
-QList<Point *> LineString::points() const
+QList<LocationPosition> const &LineString::points() const
 {
-    QList<Point *> ret;
-    auto children = childItems();
-    for(auto child: children)
-    {
-        Point *p = qgraphicsitem_cast<Point*>(child);
-        if(p)
-            ret.append(p);
-    }
-    return ret;
+    return m_points;
 }
 
-Point * LineString::addPoint(const QGeoCoordinate &location)
+void LineString::addPoint(const QGeoCoordinate &location)
 {
-    Point *p = new Point(parent(),this);
+    LocationPosition lp;
+    lp.location = location;
+    lp.pos = geoToPixel(location,autonomousVehicleProject());
+    m_points.append(lp);
+    updateBBox();
+}
 
-    item()->appendRow(p->createItem("point"));
-    p->setLocation(location);
-    //emit trackLineUpdated();
-    update();
-    return p;
+void LineString::updateBBox()
+{
+    if(m_points.length() >0)
+    {
+        m_bbox = QRectF(m_points[0].pos,QSizeF());
+        for(auto p:m_points)
+            m_bbox = m_bbox.united(QRectF(p.pos,QSizeF()));
+    }
+    else
+        m_bbox = QRectF();
 }
 

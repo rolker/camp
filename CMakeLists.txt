@@ -39,6 +39,7 @@ set(SOURCES
     group.cpp
     point.cpp
     linestring.cpp
+    polygon.cpp
 )
 
 set(HEADERS
@@ -63,6 +64,7 @@ set(HEADERS
     group.h
     point.h
     linestring.h
+    polygon.h
 )
 
 set ( RESOURCES

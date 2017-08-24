@@ -1,16 +1,16 @@
-#ifndef LINESTRING_H
-#define LINESTRING_H
+#ifndef POLYGON_H
+#define POLYGON_H
 
-#include "geographicsitem.h"
 #include "missionitem.h"
+#include "geographicsitem.h"
 #include "locationposition.h"
 
-class LineString : public MissionItem, public GeoGraphicsItem
+class Polygon : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 public:
-    explicit LineString(QObject *parent = 0, QGraphicsItem *parentItem =0);
+    explicit Polygon(QObject *parent = 0, QGraphicsItem *parentItem =0);
     
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
@@ -21,19 +21,19 @@ public:
     
     QStandardItem * createItem(const QString & label) override;
 
-    void addPoint(QGeoCoordinate const &location);
-    
-    QList<LocationPosition> const &points() const;
+    void addExteriorPoint(QGeoCoordinate const &location);
+    void addInteriorPoint(QGeoCoordinate const &location);
+    void addInteriorRing();
 
 public slots:
     void updateProjectedPoints();
 
 private:
-    QList<LocationPosition> m_points;
+    QList<LocationPosition> m_exteriorRing;
+    QList<QList<LocationPosition> > m_interiorRings;
     QRectF m_bbox;
     
     void updateBBox();
-    
 };
 
-#endif // LINESTRING_H
+#endif // POLYGON_H
