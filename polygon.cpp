@@ -46,8 +46,7 @@ QPainterPath Polygon::shape() const
 //     paint.setClipRegion(clip);
 // 
 //     paint.fillPath(path,brush);
-
-    
+	return QPainterPath();
 }
 
 QStandardItem* Polygon::createItem(const QString& label)
