@@ -12,20 +12,20 @@ QRectF Polygon::boundingRect() const
 
 void Polygon::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    if(m_exteriorRing.length() > 1)
-    {
-        painter->save();
+    painter->save();
 
-        QPen p;
-        p.setColor(Qt::blue);
-        p.setCosmetic(true);
-        p.setWidth(2);
-        painter->setPen(p);
-        
+    QPen p;
+    p.setColor(Qt::blue);
+    p.setCosmetic(true);
+    p.setWidth(2);
+    painter->setPen(p);
+    if(m_exteriorRing.length() > 1)
         painter->drawPolygon(m_exteriorPolygon);
+    
+    for(auto ip:m_interiorPolygons)
+        painter->drawPolygon(ip);
         
-        painter->restore();
-    }
+    painter->restore();
 }
 
 void Polygon::read(const QJsonObject& json)
@@ -110,6 +110,15 @@ void Polygon::updateBBox()
     }
     else
         m_bbox = QRectF();
+    m_interiorPolygons.clear();
+    for(auto ip: m_interiorRings)
+        if(ip.length() > 1)
+        {
+            QPolygonF pf;
+            for(auto p: ip)
+                pf << p.pos;
+            m_interiorPolygons.append(pf);
+        }
 }
 
 void Polygon::addExteriorPoint(const QGeoCoordinate& location)
@@ -118,7 +127,7 @@ void Polygon::addExteriorPoint(const QGeoCoordinate& location)
     lp.location = location;
     lp.pos = geoToPixel(location,autonomousVehicleProject());
     m_exteriorRing.append(lp);
-    updateBBox();
+    //updateBBox();
 }
 
 void Polygon::addInteriorPoint(const QGeoCoordinate& location)

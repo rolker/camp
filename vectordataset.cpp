@@ -82,6 +82,7 @@ void VectorDataset::open(const QString& fname)
                                 p->addInteriorPoint(location);
                             }                        
                         }
+                        p->updateBBox();
                     }
                     else
                         qDebug() << "type: " << gtype;

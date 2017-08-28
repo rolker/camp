@@ -25,6 +25,7 @@ public:
     void addInteriorPoint(QGeoCoordinate const &location);
     void addInteriorRing();
 
+    void updateBBox();
 public slots:
     void updateProjectedPoints();
 
@@ -35,7 +36,7 @@ private:
     QList<QPolygonF> m_interiorPolygons;
     QRectF m_bbox;
     
-    void updateBBox();
+    
 };
 
 #endif // POLYGON_H
