@@ -30,7 +30,9 @@ public slots:
 
 private:
     QList<LocationPosition> m_exteriorRing;
+    QPolygonF m_exteriorPolygon;
     QList<QList<LocationPosition> > m_interiorRings;
+    QList<QPolygonF> m_interiorPolygons;
     QRectF m_bbox;
     
     void updateBBox();

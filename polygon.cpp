@@ -1,4 +1,5 @@
 #include "polygon.h"
+#include <QPainter>
 
 Polygon::Polygon(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent),GeoGraphicsItem(parentItem)
 {
@@ -11,6 +12,20 @@ QRectF Polygon::boundingRect() const
 
 void Polygon::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
+    if(m_exteriorRing.length() > 1)
+    {
+        painter->save();
+
+        QPen p;
+        p.setColor(Qt::blue);
+        p.setCosmetic(true);
+        p.setWidth(2);
+        painter->setPen(p);
+        
+        painter->drawPolygon(m_exteriorPolygon);
+        
+        painter->restore();
+    }
 }
 
 void Polygon::read(const QJsonObject& json)
@@ -46,7 +61,24 @@ QPainterPath Polygon::shape() const
 //     paint.setClipRegion(clip);
 // 
 //     paint.fillPath(path,brush);
-	return QPainterPath();
+
+    
+    if (m_exteriorRing.length() > 1)
+    {
+        auto i = m_exteriorRing.begin();
+        QPainterPath ret(i->pos);
+        i++;
+        while(i != m_exteriorRing.end())
+        {
+            ret.lineTo(i->pos);
+            i++;
+        }
+        QPainterPathStroker pps;
+        pps.setWidth(5);
+        return pps.createStroke(ret);
+
+    }
+    return QGraphicsItem::shape();
 }
 
 QStandardItem* Polygon::createItem(const QString& label)
@@ -68,9 +100,13 @@ void Polygon::updateBBox()
 {
     if(m_exteriorRing.length() >0)
     {
+        m_exteriorPolygon.clear();
         m_bbox = QRectF(m_exteriorRing[0].pos,QSizeF());
         for(auto p:m_exteriorRing)
+        {
             m_bbox = m_bbox.united(QRectF(p.pos,QSizeF()));
+            m_exteriorPolygon << p.pos;
+        }
     }
     else
         m_bbox = QRectF();
