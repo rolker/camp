@@ -34,6 +34,7 @@ void SurveyPatternDetails::onSurveyPatternUpdated()
         ui->turnArcPointCountLineEdit->setText(QString::number(m_surveyPattern->arcCount()));
         ui->lineLengthLineEdit->setText(QString::number(m_surveyPattern->lineLength()));
         ui->totalWidthLineEdit->setText(QString::number(m_surveyPattern->totalWidth()));
+        ui->maxSegmentLengthLineEdit->setText(QString::number(m_surveyPattern->maxSegmentLength()));
     }
 }
 
@@ -42,6 +43,7 @@ void SurveyPatternDetails::updateSurveyPattern()
     updating = true;
     m_surveyPattern->setDirectionAndSpacing(ui->headingEdit->text().toDouble(),ui->lineSpacingEdit->text().toDouble());
     m_surveyPattern->setArcCount(ui->turnArcPointCountLineEdit->text().toInt());
+    m_surveyPattern->setMaxSegmentLength(ui->maxSegmentLengthLineEdit->text().toDouble());
     m_surveyPattern->setLineLength(ui->lineLengthLineEdit->text().toDouble());
     m_surveyPattern->setTotalWidth(ui->totalWidthLineEdit->text().toDouble());
     updating = false;
@@ -68,6 +70,11 @@ void SurveyPatternDetails::on_lineLengthLineEdit_editingFinished()
 }
 
 void SurveyPatternDetails::on_totalWidthLineEdit_editingFinished()
+{
+    updateSurveyPattern();
+}
+
+void SurveyPatternDetails::on_maxSegmentLengthLineEdit_editingFinished()
 {
     updateSurveyPattern();
 }

@@ -37,13 +37,16 @@ public:
     double lineLength() const;
     double totalWidth() const;
     int arcCount() const;
+    double maxSegmentLength() const;
 
     void setDirectionAndSpacing(double direction, double spacing);
     void setLineLength(double lineLength);
     void setTotalWidth(double totalWidth);
     void setArcCount(int ac);
+    void setMaxSegmentLength(double maxLength);
 
-    QList<QGeoCoordinate> getPath() const;
+    //QList<QGeoCoordinate> getPath() const;
+    QList<QList<QGeoCoordinate> > getLines() const;
 
 signals:
     void surveyPatternUpdated();
@@ -67,6 +70,7 @@ private:
     double m_spacing;
     double m_direction;
     int m_arcCount;
+    double m_maxSegmentLength;
 
     Waypoint * m_spacingLocation;
 

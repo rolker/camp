@@ -268,52 +268,23 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
             if(outfile.open(QFile::WriteOnly))
             {
                 int arcCount = sp->arcCount();
-                QList<QGeoCoordinate> wpList = sp->getPath();
-                int lineCount = wpList.size()/2;
-                if(arcCount > 2)
-                {
-                    lineCount = 1 + wpList.size()/(arcCount+1);
-                }
-
+                auto lines = sp->getLines();
                 QTextStream outstream(&outfile);
                 outstream.setRealNumberPrecision(8);
-                if(arcCount > 2)
-                    outstream << "LNS " << lineCount*2-1 << "\n";
-                else
-                    outstream << "LNS " << lineCount << "\n";
-                for(int i = 0; i < lineCount; i++)
+                outstream << "LNS " << lines.length() << "\n";
+                int lineNum = 1;
+                for (auto l: lines)
                 {
-                    if(arcCount > 2)
-                    {
-                        outstream << "LIN 2\n";
-                        outstream << "PTS " << wpList[i*(arcCount+1)].latitude() << " " << wpList[i*(arcCount+1)].longitude() << "\n";
-                        outstream << "PTS " << wpList[i*(arcCount+1)+1].latitude() << " " << wpList[i*(arcCount+1)+1].longitude() << "\n";
-                        outstream << "LNN " << i << "\n";
-                        outstream << "EOL\n";
-                        if (i < lineCount-1)
-                        {
-                            outstream << "LIN " << arcCount-1 << "\n";
-                            for(int j = 0; j < arcCount-1; j++)
-                            {
-                                outstream << "PTS " << wpList[i*(arcCount+1)+j+2].latitude() << " " << wpList[i*(arcCount+1)+j+2].longitude() << "\n";
-                            }
-                            outstream << "LNN ARC" << i << "\n";
-                            outstream << "EOL\n";
-                        }
-                    }
-                    else
-                    {
-                        outstream << "LIN 2\n";
-                        outstream << "PTS " << wpList[i*2].latitude() << " " << wpList[i*2].longitude() << "\n";
-                        outstream << "PTS " << wpList[i*2+1].latitude() << " " << wpList[i*2+1].longitude() << "\n";
-                        outstream << "LNN " << i << "\n";
-                        outstream << "EOL\n";
-                    }
+                    outstream << "LIN " << l.length() << "\n";
+                    for (auto p:l)
+                        outstream << "PTS " << p.latitude() << " " << p.longitude() << "\n";
+                    outstream << "LNN " << lineNum << "\n";
+                    lineNum++;
+                    outstream << "EOL\n";
                 }
             }
         }
     }
-
 }
 
 void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)

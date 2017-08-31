@@ -33,6 +33,8 @@ private slots:
     void on_lineLengthLineEdit_editingFinished();
 
     void on_totalWidthLineEdit_editingFinished();
+    
+    void on_maxSegmentLengthLineEdit_editingFinished();
 
 private:
     Ui::SurveyPatternDetails *ui;
