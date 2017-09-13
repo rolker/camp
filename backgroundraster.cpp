@@ -14,28 +14,40 @@ BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraph
         int width = dataset->GetRasterXSize();
         int height = dataset->GetRasterYSize();
 
-
-        GDALRasterBand * band = dataset->GetRasterBand(1);
-
-        GDALColorTable *colorTable = band->GetColorTable();
-
-        std::vector<uint32_t> buffer(width);
-
         QImage image(width,height,QImage::Format_ARGB32);
 
-        for(int j = 0; j<height; ++j)
+        for(int bandNumber = 1; bandNumber <= dataset->GetRasterCount(); bandNumber++)
         {
-            band->RasterIO(GF_Read,0,j,width,1,&buffer.front(),width,1,GDT_UInt32,0,0);
-            uchar *scanline = image.scanLine(j);
-            for(int i = 0; i < width; ++i)
+            GDALRasterBand * band = dataset->GetRasterBand(bandNumber);
+
+            GDALColorTable *colorTable = band->GetColorTable();
+
+            std::vector<uint32_t> buffer(width);
+
+
+            for(int j = 0; j<height; ++j)
             {
-                GDALColorEntry const *ce = colorTable->GetColorEntry(buffer[i]);
-                scanline[i*4] = ce->c3;
-                scanline[i*4+1] = ce->c2;
-                scanline[i*4+2] = ce->c1;
-                scanline[i*4+3] = ce->c4;
+                band->RasterIO(GF_Read,0,j,width,1,&buffer.front(),width,1,GDT_UInt32,0,0);
+                uchar *scanline = image.scanLine(j);
+                for(int i = 0; i < width; ++i)
+                {
+                    if(colorTable)
+                    {
+                        GDALColorEntry const *ce = colorTable->GetColorEntry(buffer[i]);
+                        scanline[i*4] = ce->c3;
+                        scanline[i*4+1] = ce->c2;
+                        scanline[i*4+2] = ce->c1;
+                        scanline[i*4+3] = ce->c4;
+                    }
+                    else
+                    {
+                        scanline[i*4+3] = 255; // hack to make sure alpha is solid in case no alpha channel is present
+                        scanline[i*4 + bandNumber-1] = buffer[i];
+                    }
+                }
             }
         }
+        
         backgroundImages[1] = QPixmap::fromImage(image);
         for(int i = 2; i < 128; i*=2)
         {
