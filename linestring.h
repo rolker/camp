@@ -23,7 +23,7 @@ public:
     QList<LocationPosition> const &points() const;
 
 public slots:
-    void updateProjectedPoints();
+    void updateProjectedPoints() override;
 
 private:
     QList<LocationPosition> m_points;

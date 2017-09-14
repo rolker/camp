@@ -21,7 +21,8 @@ public:
     QStandardItem * createItem(QString const &label);
     
 
-signals:
+public slots:
+    virtual void updateProjectedPoints();
 
 public slots:
 

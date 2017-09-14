@@ -21,7 +21,7 @@ public:
     void read(const QJsonObject &json);
     
 public slots:
-    void updateProjectedPoints();
+    void updateProjectedPoints() override;
 
 private:
     QGeoCoordinate m_location;

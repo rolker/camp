@@ -32,3 +32,7 @@ QStandardItem * MissionItem::item() const
 {
     return m_item;
 }
+
+void MissionItem::updateProjectedPoints()
+{
+}

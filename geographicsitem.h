@@ -24,9 +24,6 @@ public:
     void setShowLabelFlag(bool show=true);
     void setLabel(QString const &label);
 
-public slots:
-    virtual void updateProjectedPoints()=0;
-
 private:
     QGraphicsSimpleTextItem *m_label;
     QString m_labelText;

@@ -105,3 +105,12 @@ void VectorDataset::read(const QJsonObject& json)
 
 }
 
+void VectorDataset::updateProjectedPoints()
+{
+    for(auto child: children())
+    {
+        MissionItem * childItem = qobject_cast<MissionItem*>(child);
+        if(childItem)
+            childItem->updateProjectedPoints();
+    }
+}

@@ -27,3 +27,8 @@ QList<MissionItem *> Group::childMissionItems() const
     return ret;
 }
 
+void Group::updateProjectedPoints()
+{
+    for(auto child: childMissionItems())
+        child->updateProjectedPoints();
+}

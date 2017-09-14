@@ -134,6 +134,7 @@ void AutonomousVehicleProject::openGeometry(const QString& fname)
     VectorDataset * vd = new VectorDataset(this);
     m_model->appendRow(vd->createItem(fname));
     vd->open(fname);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
 }
 
 

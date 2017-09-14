@@ -15,6 +15,10 @@ public:
     void read(const QJsonObject &json);
     
     void open(const QString &fname);
+    
+public slots:
+    void updateProjectedPoints() override;
+    
 private:
     QString m_filename;
 };
