@@ -97,3 +97,4 @@ void Waypoint::updateProjectedPoints()
     setPos(geoToPixel(m_location,autonomousVehicleProject()));
     m_internalPositionChangeFlag = false;
 }
+

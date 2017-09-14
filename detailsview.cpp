@@ -57,36 +57,37 @@ void DetailsView::setCurrentWidget(QWidget *widget)
 void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelIndex &previous)
 {
     QVariant item = m_project->model()->data(current,Qt::UserRole+1);
-    QString itemType = item.typeName();
-    qDebug() << "QVariant: " << itemType;
+    MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
+    qDebug() << "metaobject class name: " << mi->metaObject()->className();
+    QString itemType = mi->metaObject()->className();
 
-    if (itemType == "BackgroundRaster*")
+    if (itemType == "BackgroundRaster")
     {
-        BackgroundRaster *bg = item.value<BackgroundRaster*>();
+        BackgroundRaster *bg = qobject_cast<BackgroundRaster*>(mi);
         setCurrentWidget(backgroundDetails);
         backgroundDetails->setBackgroundRaster(bg);
     }
-    else if (itemType == "Waypoint*")
+    else if (itemType == "Waypoint")
     {
-        Waypoint *wp = item.value<Waypoint*>();
+        Waypoint *wp = qobject_cast<Waypoint*>(mi);
         setCurrentWidget(waypointDetails);
         waypointDetails->setWaypoint(wp);
     }
-    else if (itemType == "TrackLine*")
+    else if (itemType == "TrackLine")
     {
-        TrackLine *tl = item.value<TrackLine *>();
+        TrackLine *tl = qobject_cast<TrackLine*>(mi);
         setCurrentWidget(trackLineDetails);
         trackLineDetails->setTrackLine(tl);
     }
-    else if (itemType == "SurveyPattern*")
+    else if (itemType == "SurveyPattern")
     {
-        SurveyPattern *sp = item.value<SurveyPattern *>();
+        SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
         setCurrentWidget(surveyPatternDetails);
         surveyPatternDetails->setSurveyPattern(sp);
     }
-    else if (itemType == "Platform*")
+    else if (itemType == "Platform")
     {
-        Platform *p = m_project->model()->data(current,Qt::UserRole+1).value<Platform *>();
+        Platform *p = qobject_cast<Platform*>(mi);
         setCurrentWidget(platformDetails);
         platformDetails->setPlatform(p);
     }

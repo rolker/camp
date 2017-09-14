@@ -30,7 +30,9 @@ protected:
     template<typename T> QStandardItem * createItemDetails(QString const &label)
     {
         m_item = new QStandardItem(label);
-        m_item->setData(QVariant::fromValue<T*>((T*)this));
+        //m_item->setData(QVariant::fromValue<T*>((T*)this));
+        m_item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(this)));
+        m_item->setFlags(m_item->flags()&~(Qt::ItemIsDropEnabled));
         return m_item;
     }
 

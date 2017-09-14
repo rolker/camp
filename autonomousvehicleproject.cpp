@@ -321,11 +321,14 @@ void AutonomousVehicleProject::deleteItem(QStandardItem *item)
 
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 {
-    QStandardItem *item = m_model->itemFromIndex(index);
-    BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
+    QVariant item = m_model->data(index,Qt::UserRole+1);
+    MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
+    QString itemType = mi->metaObject()->className();
+
+    BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(mi);
     if(bgr)
         setCurrentBackground(bgr);
-    Platform *p = item->data().value<Platform*>();
+    Platform *p = qobject_cast<Platform*>(mi);
     if(p && p != m_currentPlatform)
     {
         m_currentPlatform = p;
