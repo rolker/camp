@@ -1,12 +1,11 @@
 #ifndef SURVEYPATTERN_H
 #define SURVEYPATTERN_H
 
-#include "missionitem.h"
-#include "geographicsitem.h"
+#include "geographicsmissionitem.h"
 
 class Waypoint;
 
-class SurveyPattern : public MissionItem, public GeoGraphicsItem
+class SurveyPattern : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -21,8 +20,6 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QStandardItem * createItem(QString const &label) override;
-
     QGeoCoordinate const &startLocation() const;
     Waypoint * startLocationWaypoint() const;
     Waypoint * endLocationWaypoint() const;

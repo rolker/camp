@@ -2,9 +2,9 @@
 #define MISSIONITEM_H
 
 #include <QObject>
-#include <QStandardItem>
 
 class AutonomousVehicleProject;
+class QStandardItem;
 
 class MissionItem : public QObject
 {
@@ -17,9 +17,8 @@ public:
     
     AutonomousVehicleProject *autonomousVehicleProject() const;
 
-    //void setItem(QStandardItem * item);
     QStandardItem * item() const;
-    virtual QStandardItem * createItem(QString const &label) = 0;
+    QStandardItem * createItem(QString const &label);
     
 
 signals:
@@ -27,14 +26,6 @@ signals:
 public slots:
 
 protected:
-    template<typename T> QStandardItem * createItemDetails(QString const &label)
-    {
-        m_item = new QStandardItem(label);
-        //m_item->setData(QVariant::fromValue<T*>((T*)this));
-        m_item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(this)));
-        m_item->setFlags(m_item->flags()&~(Qt::ItemIsDropEnabled));
-        return m_item;
-    }
 
     
 private:

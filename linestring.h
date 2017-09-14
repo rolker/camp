@@ -1,11 +1,10 @@
 #ifndef LINESTRING_H
 #define LINESTRING_H
 
-#include "geographicsitem.h"
-#include "missionitem.h"
+#include "geographicsmissionitem.h"
 #include "locationposition.h"
 
-class LineString : public MissionItem, public GeoGraphicsItem
+class LineString : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -19,8 +18,6 @@ public:
     void write(QJsonObject &json) const override;
     void read(const QJsonObject &json) override;
     
-    QStandardItem * createItem(const QString & label) override;
-
     void addPoint(QGeoCoordinate const &location);
     
     QList<LocationPosition> const &points() const;

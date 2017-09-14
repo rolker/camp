@@ -14,10 +14,7 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QStandardItem * createItem(const QString & label) override;
-    
     void open(const QString &fname);
-
 private:
     QString m_filename;
 };

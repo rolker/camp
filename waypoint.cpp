@@ -5,14 +5,9 @@
 #include <QJsonObject>
 #include <QDebug>
 
-Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :MissionItem(parent), GeoGraphicsItem(parentItem), m_internalPositionChangeFlag(false)
+Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsMissionItem(parent,parentItem), m_internalPositionChangeFlag(false)
 {
 
-}
-
-QStandardItem * Waypoint::createItem(QString const &label)
-{
-    return createItemDetails<Waypoint>(label);
 }
 
 QGeoCoordinate const &Waypoint::location() const

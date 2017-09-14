@@ -8,6 +8,7 @@
 #include "autonomousvehicleproject.h"
 #include <ogrsf_frmts.h>
 #include <QDebug>
+#include <QStandardItem>
 
 VectorDataset::VectorDataset(QObject* parent):MissionItem(parent)
 {
@@ -104,7 +105,3 @@ void VectorDataset::read(const QJsonObject& json)
 
 }
 
-QStandardItem * VectorDataset::createItem(const QString& label)
-{
-    return createItemDetails<VectorDataset>(label);
-}

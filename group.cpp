@@ -27,7 +27,3 @@ QList<MissionItem *> Group::childMissionItems() const
     return ret;
 }
 
-QStandardItem * Group::createItem(const QString& label)
-{
-    return createItemDetails<Group>(label);
-}

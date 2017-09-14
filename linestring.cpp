@@ -2,7 +2,7 @@
 #include <QPainter>
 #include "point.h"
 
-LineString::LineString(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent),GeoGraphicsItem(parentItem)
+LineString::LineString(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsMissionItem(parent, parentItem)
 {
 
 }
@@ -22,11 +22,6 @@ void LineString::write(QJsonObject& json) const
 void LineString::read(const QJsonObject& json)
 {
 
-}
-
-QStandardItem* LineString::createItem(const QString& label)
-{
-    return createItemDetails<LineString>(label);
 }
 
 QRectF LineString::boundingRect() const

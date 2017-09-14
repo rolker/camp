@@ -182,6 +182,7 @@ void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRa
     Waypoint *wp = createWaypoint(parentItem);
     wp->setLocation(position);
     wp->setPos(parentItem->geoToPixel(position));
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,wp,&Waypoint::updateBackground);
 }
 
 SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *parentItem)
@@ -204,6 +205,7 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
     SurveyPattern *sp = createSurveyPattern();
     sp->setPos(parentItem->geoToPixel(position));
     sp->setStartLocation(position);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
     return sp;
 }
 
@@ -225,6 +227,7 @@ TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, Back
     TrackLine *tl = createTrackLine(parentItem);
     tl->setPos(parentItem->geoToPixel(position));
     tl->addWaypoint(position);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,tl,&TrackLine::updateBackground);
     return tl;
 }
 
@@ -345,16 +348,7 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
     if(bgr)
     {
         m_scene->addItem(bgr);
-        for(int i = 0; i < m_model->rowCount(); ++i)
-        {
-            QStandardItem *item = m_model->item(i);
-            GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
-            if(ggi)
-            {
-                ggi->setParentItem(bgr);
-                ggi->updateProjectedPoints();
-            }
-        }
+        emit backgroundUpdated(bgr);
     }
 }
 

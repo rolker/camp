@@ -1,11 +1,10 @@
 #ifndef POLYGON_H
 #define POLYGON_H
 
-#include "missionitem.h"
-#include "geographicsitem.h"
+#include "geographicsmissionitem.h"
 #include "locationposition.h"
 
-class Polygon : public MissionItem, public GeoGraphicsItem
+class Polygon : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -19,8 +18,6 @@ public:
     void write(QJsonObject &json) const override;
     void read(const QJsonObject &json) override;
     
-    QStandardItem * createItem(const QString & label) override;
-
     void addExteriorPoint(QGeoCoordinate const &location);
     void addInteriorPoint(QGeoCoordinate const &location);
     void addInteriorRing();

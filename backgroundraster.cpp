@@ -114,7 +114,3 @@ void BackgroundRaster::read(const QJsonObject &json)
 
 }
 
-QStandardItem * BackgroundRaster::createItem(const QString& label)
-{
-    return createItemDetails<BackgroundRaster>(label);
-}

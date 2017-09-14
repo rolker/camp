@@ -40,6 +40,7 @@ set(SOURCES
     point.cpp
     linestring.cpp
     polygon.cpp
+    geographicsmissionitem.cpp
 )
 
 set(HEADERS
@@ -65,6 +66,7 @@ set(HEADERS
     point.h
     linestring.h
     polygon.h
+    geographicsmissionitem.h
 )
 
 set ( RESOURCES

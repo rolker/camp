@@ -1,7 +1,7 @@
 #include "polygon.h"
 #include <QPainter>
 
-Polygon::Polygon(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent),GeoGraphicsItem(parentItem)
+Polygon::Polygon(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsMissionItem(parent, parentItem)
 {
 }
 
@@ -79,11 +79,6 @@ QPainterPath Polygon::shape() const
 
     }
     return QGraphicsItem::shape();
-}
-
-QStandardItem* Polygon::createItem(const QString& label)
-{
-    return createItemDetails<Polygon>(label);
 }
 
 void Polygon::updateProjectedPoints()

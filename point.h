@@ -1,11 +1,10 @@
 #ifndef POINT_H
 #define POINT_H
 
-#include "missionitem.h"
-#include "geographicsitem.h"
+#include "geographicsmissionitem.h"
 
 
-class Point : public MissionItem, public GeoGraphicsItem
+class Point : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -21,8 +20,6 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QStandardItem * createItem(const QString & label) override;
-
 public slots:
     void updateProjectedPoints();
 

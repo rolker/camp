@@ -1,13 +1,12 @@
 #ifndef TRACKLINE_H
 #define TRACKLINE_H
 
-#include "missionitem.h"
-#include "geographicsitem.h"
+#include "geographicsmissionitem.h"
 
 class Waypoint;
 class QStandardItem;
 
-class TrackLine : public MissionItem, public GeoGraphicsItem
+class TrackLine : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -27,9 +26,6 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QStandardItem * createItem(const QString & label) override;
-
-
 signals:
     void trackLineUpdated();
 

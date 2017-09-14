@@ -7,7 +7,7 @@
 #include "platform.h"
 #include "autonomousvehicleproject.h"
 
-SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):MissionItem(parent), GeoGraphicsItem(parentItem),
+SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsMissionItem(parent, parentItem),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6),m_maxSegmentLength(0.0),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
@@ -476,7 +476,3 @@ void SurveyPattern::onCurrentPlatformUpdated()
     updateLabel();
 }
 
-QStandardItem * SurveyPattern::createItem(const QString& label)
-{
-    return createItemDetails<SurveyPattern>(label);
-}

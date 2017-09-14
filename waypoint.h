@@ -1,10 +1,9 @@
 #ifndef WAYPOINT_H
 #define WAYPOINT_H
 
-#include "missionitem.h"
-#include "geographicsitem.h"
+#include "geographicsmissionitem.h"
 
-class Waypoint : public MissionItem, public GeoGraphicsItem
+class Waypoint : public GeoGraphicsMissionItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -21,8 +20,6 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QStandardItem * createItem(const QString & label) override;
-
 public slots:
     void updateProjectedPoints();
 

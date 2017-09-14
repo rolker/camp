@@ -6,7 +6,7 @@
 #include <QStandardItem>
 #include <QDebug>
 
-TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :MissionItem(parent), GeoGraphicsItem(parentItem)
+TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsMissionItem(parent, parentItem)
 {
 
 }
@@ -139,7 +139,3 @@ void TrackLine::updateProjectedPoints()
         wp->updateProjectedPoints();
 }
 
-QStandardItem * TrackLine::createItem(const QString& label)
-{
-    return createItemDetails<TrackLine>(label);
-}

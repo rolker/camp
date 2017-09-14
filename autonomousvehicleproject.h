@@ -55,6 +55,7 @@ public:
 
 signals:
     void currentPlaformUpdated();
+    void backgroundUpdated(BackgroundRaster *bg);
 
 public slots:
 
