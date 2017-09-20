@@ -17,7 +17,7 @@ QGeoCoordinate const &Waypoint::location() const
 
 void Waypoint::setLocation(QGeoCoordinate const &location)
 {
-    qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
+    //qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
     setPos(geoToPixel(location,autonomousVehicleProject()));
     m_location = location;
     setLabel(location.toString());

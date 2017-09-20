@@ -20,6 +20,8 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
+    int type() const {return WaypointType;}
+    
 public slots:
     void updateProjectedPoints();
 

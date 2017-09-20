@@ -21,6 +21,8 @@ public:
     void addPoint(QGeoCoordinate const &location);
     
     QList<LocationPosition> const &points() const;
+    
+    int type() const override {return LineStringType;}
 
 public slots:
     void updateProjectedPoints() override;

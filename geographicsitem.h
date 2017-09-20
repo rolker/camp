@@ -12,6 +12,15 @@ class GeoGraphicsItem : public QGraphicsItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
+    enum {  BackgroundRasterType = UserType+1,
+            WaypointType,
+            TrackLineType,
+            SurveyPatternType,
+            PointType,
+            LineStringType,
+            PolygonType
+    };
+    
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
 
     
@@ -23,6 +32,8 @@ public:
     bool showLabelFlag() const;
     void setShowLabelFlag(bool show=true);
     void setLabel(QString const &label);
+    
+    int type() const override=0;
 
 private:
     QGraphicsSimpleTextItem *m_label;

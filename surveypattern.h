@@ -13,6 +13,9 @@ class SurveyPattern : public GeoGraphicsMissionItem
 public:
     SurveyPattern(QObject *parent = 0, QGraphicsItem *parentItem =0);
 
+    
+    int type() const override {return SurveyPatternType;}
+    
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPainterPath shape() const;

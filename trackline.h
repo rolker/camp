@@ -26,6 +26,8 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
+    int type() const override {return TrackLineType;}
+    
 signals:
     void trackLineUpdated();
 

@@ -18,7 +18,7 @@ QRectF TrackLine::boundingRect() const
 
 void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-    auto children = childItems();
+    auto children = waypoints();
     if (children.length() > 1)
     {
         painter->save();
@@ -47,7 +47,7 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
 
 QPainterPath TrackLine::shape() const
 {
-    auto children = childItems();
+    auto children = waypoints();
     if (children.length() > 1)
     {
         auto i = children.begin();
@@ -69,6 +69,7 @@ QPainterPath TrackLine::shape() const
 Waypoint * TrackLine::createWaypoint()
 {
     Waypoint *wp = new Waypoint(parent(),this);
+    //qDebug() << "create wp: " << (void *)wp;
 
     item()->appendRow(wp->createItem("waypoint"));
 
@@ -94,9 +95,13 @@ QList<Waypoint *> TrackLine::waypoints() const
     auto children = childItems();
     for(auto child: children)
     {
-        Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
-        if(wp)
-            ret.append(wp);
+        if(child->type() == GeoGraphicsItem::WaypointType)
+        {
+            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
+            //qDebug() << child << " cast to " << (void *)wp << " type " << child->type();
+            if(wp)
+                ret.append(wp);
+        }
     }
     return ret;
 }

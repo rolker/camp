@@ -17,8 +17,10 @@ public:
     QGeoCoordinate const &location() const;
     void setLocation(QGeoCoordinate const &location);
     
-    void write(QJsonObject &json) const;
-    void read(const QJsonObject &json);
+    void write(QJsonObject &json) const override;
+    void read(const QJsonObject &json) override;
+
+    int type() const override {return PointType;}
     
 public slots:
     void updateProjectedPoints() override;
