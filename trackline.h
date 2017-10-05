@@ -20,6 +20,7 @@ public:
 
     Waypoint * createWaypoint();
     Waypoint * addWaypoint(QGeoCoordinate const &location);
+    void removeWaypoint(Waypoint *wp);
 
     QList<Waypoint *> waypoints() const;
 

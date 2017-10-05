@@ -26,7 +26,7 @@ void WaypointDetails::setWaypoint(Waypoint *waypoint)
 
 void WaypointDetails::onLocationChanged()
 {
-    qDebug() << m_waypoint->location();
+    //qDebug() << m_waypoint->location();
     ui->latitudeLineEdit->setText(QString::number(m_waypoint->location().latitude(),'f',8));
     ui->longitudeLineEdit->setText(QString::number(m_waypoint->location().longitude(),'f',8));
 }

@@ -89,6 +89,12 @@ Waypoint * TrackLine::addWaypoint(const QGeoCoordinate &location)
     return wp;
 }
 
+void TrackLine::removeWaypoint(Waypoint* wp)
+{
+    wp->setParent(nullptr);
+}
+
+
 QList<Waypoint *> TrackLine::waypoints() const
 {
     QList<Waypoint *> ret;

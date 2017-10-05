@@ -90,6 +90,10 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             if(mouseMode == MouseMode::addTrackline && currentTrackLine)
             {
                 m_project->deleteItem(pendingTrackLineWaypoint->item());
+                currentTrackLine->removeWaypoint(pendingTrackLineWaypoint);
+                m_project->scene()->removeItem(pendingTrackLineWaypoint);
+                m_project->scene()->update();
+                delete pendingTrackLineWaypoint;
                 pendingTrackLineWaypoint = nullptr;
                 update();
             }
