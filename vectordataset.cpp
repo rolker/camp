@@ -51,9 +51,9 @@ void VectorDataset::open(const QString& fname)
                         OGRLineString *ols = dynamic_cast<OGRLineString*>(geometry);
                         LineString *ls = new LineString(parent(),bg);
                         group->item()->appendRow(ls->createItem("lineString"));
-                        OGRPointIterator *i = ols->getPointIterator();
+                        OGRPointIterator *pi = ols->getPointIterator();
                         OGRPoint *p;
-                        while(i->getNextPoint(p))
+                        while(pi->getNextPoint(p))
                         {
                             QGeoCoordinate location(p->getY(),p->getX());
                             ls->addPoint(location);
@@ -65,9 +65,9 @@ void VectorDataset::open(const QString& fname)
                         Polygon *p = new Polygon(parent(),bg);
                         group->item()->appendRow(p->createItem("polygon"));
                         OGRLinearRing *lr = op->getExteriorRing();
-                        OGRPointIterator *i = lr->getPointIterator();
+                        OGRPointIterator *pi = lr->getPointIterator();
                         OGRPoint *pt;
-                        while(i->getNextPoint(pt))
+                        while(pi->getNextPoint(pt))
                         {
                             QGeoCoordinate location(pt->getY(),pt->getX());
                             p->addExteriorPoint(location);
@@ -76,8 +76,8 @@ void VectorDataset::open(const QString& fname)
                         {
                             p->addInteriorRing();
                             lr = op->getInteriorRing(ringNum);
-                            i = lr->getPointIterator();
-                            while(i->getNextPoint(pt))
+                            pi = lr->getPointIterator();
+                            while(pi->getNextPoint(pt))
                             {
                                 QGeoCoordinate location(pt->getY(),pt->getX());
                                 p->addInteriorPoint(location);
