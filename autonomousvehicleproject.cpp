@@ -68,7 +68,7 @@ void AutonomousVehicleProject::save(const QString &fname)
         QStandardItem *child = m_model->item(row);
         while(child)
         {
-            MissionItem *mi = child->data().value<MissionItem*>();
+            MissionItem* mi = reinterpret_cast<MissionItem*>(child->data().value<quintptr>());
             if(mi)
             {
                 QJsonObject miObject;

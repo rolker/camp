@@ -119,10 +119,13 @@ void TrackLine::write(QJsonObject &json) const
     auto children = childItems();
     for(auto child: children)
     {
-        Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
-        QJsonObject wpObject;
-        wp->write(wpObject);
-        wpArray.append(wpObject);
+        if(child->type() == GeoGraphicsItem::WaypointType)
+        {
+            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
+            QJsonObject wpObject;
+            wp->write(wpObject);
+            wpArray.append(wpObject);
+        }
     }
     json["waypoints"] = wpArray;
 }
