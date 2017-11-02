@@ -18,7 +18,8 @@ public:
             SurveyPatternType,
             PointType,
             LineStringType,
-            PolygonType
+            PolygonType,
+            ROSNodeType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

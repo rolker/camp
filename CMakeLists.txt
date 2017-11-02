@@ -15,6 +15,14 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions(-std=c++11)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
+option(AMP_USE_ROS "Build ROS components")
+
+if(AMP_USE_ROS)
+    find_package(catkin REQUIRED COMPONENTS roscpp asv_msgs)
+    include_directories(${catkin_INCLUDE_DIRS})
+    add_definitions(-DAMP_ROS)
+endif()
+
 
 set(SOURCES
     main.cpp
@@ -69,6 +77,11 @@ set(HEADERS
     geographicsmissionitem.h
 )
 
+if(AMP_USE_ROS)
+    list(APPEND SOURCES rosnode.cpp)
+    list(APPEND HEADERS rosnode.h)
+endif()
+
 set ( RESOURCES
  main.qrc
 )
@@ -77,6 +90,6 @@ add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
 
 qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg)
 
-target_link_libraries(AutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY})
+target_link_libraries(AutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})
 
 INSTALL(TARGETS AutonomousMissionPlanner RUNTIME DESTINATION bin)

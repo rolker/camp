@@ -18,6 +18,10 @@
 #include <gdal_priv.h>
 #include "vectordataset.h"
 
+#ifdef AMP_ROS
+#include "rosnode.h"
+#endif
+
 #include <iostream>
 
 AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
@@ -164,6 +168,20 @@ Platform * AutonomousVehicleProject::createPlatform()
     m_model->appendRow(p->createItem("platform"));
     return p;
 }
+
+#ifdef AMP_ROS
+ROSNode * AutonomousVehicleProject::createROSNode()
+{
+    ROSNode *rn = new ROSNode(this,getBackgroundRaster());
+    m_model->appendRow(rn->createItem("ROS"));
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,rn,&ROSNode::updateBackground);
+    return rn;
+}
+#else
+void AutonomousVehicleProject::createROSNode()
+{
+}
+#endif
 
 Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem)
 {

@@ -99,6 +99,7 @@
     <addaction name="actionWaypoint"/>
     <addaction name="actionTrackline"/>
     <addaction name="actionSurveyPattern"/>
+    <addaction name="actionROS_Node"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -115,6 +116,7 @@
    <addaction name="actionTrackline"/>
    <addaction name="actionSurveyPattern"/>
    <addaction name="actionPlatform"/>
+   <addaction name="actionROS_Node"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -178,6 +180,14 @@
   <action name="actionOpenGeometry">
    <property name="text">
     <string>Open &amp;Geometry</string>
+   </property>
+  </action>
+  <action name="actionROS_Node">
+   <property name="text">
+    <string>ROS Node</string>
+   </property>
+   <property name="iconText">
+    <string>ROS</string>
    </property>
   </action>
  </widget>

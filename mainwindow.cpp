@@ -131,3 +131,8 @@ void MainWindow::on_actionOpenGeometry_triggered()
     if(!fname.isEmpty())
         project->openGeometry(fname);
 }
+
+void MainWindow::on_actionROS_Node_triggered()
+{
+    project->createROSNode();
+}
