@@ -11,6 +11,12 @@
 #include "surveypatterndetails.h"
 #include "platform.h"
 #include "platformdetails.h"
+
+#ifdef AMP_ROS
+#include "rosnode.h"
+#include "rosnodedetails.h"
+#endif
+
 #include <QDebug>
 
 DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),currentWidget(nullptr)
@@ -25,6 +31,11 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     surveyPatternDetails->hide();
     platformDetails = new PlatformDetails(this);
     platformDetails->hide();
+    
+#ifdef AMP_ROS
+    rosNodeDetails = new ROSNodeDetails(this);
+    rosNodeDetails->hide();
+#endif
 }
 
 QSize DetailsView::sizeHint() const
@@ -91,6 +102,14 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
         setCurrentWidget(platformDetails);
         platformDetails->setPlatform(p);
     }
+#ifdef AMP_ROS
+    else if (itemType == "ROSNode")
+    {
+        ROSNode *r = qobject_cast<ROSNode*>(mi);
+        setCurrentWidget(rosNodeDetails);
+        rosNodeDetails->setROSNode(r);
+    }
+#endif
     else
         setCurrentWidget(nullptr);
     m_project->setCurrent(current);

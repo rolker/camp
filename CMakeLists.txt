@@ -78,8 +78,8 @@ set(HEADERS
 )
 
 if(AMP_USE_ROS)
-    list(APPEND SOURCES rosnode.cpp)
-    list(APPEND HEADERS rosnode.h)
+    list(APPEND SOURCES rosnode.cpp rosnodedetails.cpp)
+    list(APPEND HEADERS rosnode.h rosnodedetails.h)
 endif()
 
 set ( RESOURCES

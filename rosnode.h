@@ -3,8 +3,7 @@
 
 #include "geographicsmissionitem.h"
 
-#include "asv_msgs/BasicPositionStamped.h"
-#include "asv_msgs/HeadingStamped.h"
+#include "geographic_msgs/GeoPointStamped.h"
 #include "ros/ros.h"
 
 class ROSNode : public GeoGraphicsMissionItem
@@ -23,23 +22,31 @@ public:
     
     int type() const {return ROSNodeType;}
     
+    bool active() const;
+    void setActive(bool active);
+    
 public slots:
     void updateLocation(QGeoCoordinate const &location);
     void updateProjectedPoints();
+    void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     
 private:
-    void positionCallback(const asv_msgs::BasicPositionStamped::ConstPtr& message);
-    void headingCallback(const asv_msgs::HeadingStamped::ConstPtr& message);
+    void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message); 
+    void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
+    
     ros::NodeHandle m_node;
-    ros::Subscriber m_position_subscriber;
-    ros::Subscriber m_heading_subscriber;
+    ros::Subscriber m_geopoint_subscriber;
+    ros::Subscriber m_origin_subscriber;
+    ros::Publisher m_active_publisher;
+    ros::Publisher m_wpt_updates_publisher;
     ros::AsyncSpinner m_spinner;
     QGeoCoordinate m_location;
+    QGeoCoordinate m_origin;
     std::vector<QGeoCoordinate> m_location_history;
     std::vector<QPointF> m_local_location_history;
     QPointF m_local_reference_position;
     double m_heading;
-
+    bool m_active;
 };
 
 #endif // ROSNODE_H

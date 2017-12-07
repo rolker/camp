@@ -69,6 +69,7 @@ signals:
 public slots:
 
     void exportHypack(QModelIndex const &index);
+    void sendToROS(QModelIndex const &index);
     void deleteItems(QModelIndexList const &indices);
     void deleteItem(QModelIndex const &index);
     void deleteItem(QStandardItem *item);
@@ -80,6 +81,7 @@ private:
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     Platform* m_currentPlatform;
+    ROSNode* m_currentROSNode;
     
     QSvgRenderer* m_symbols;
     

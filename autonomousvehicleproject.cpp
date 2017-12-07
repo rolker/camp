@@ -24,7 +24,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_currentROSNode(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
 {
     GDALAllRegister();
 
@@ -309,6 +309,45 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
     }
 }
 
+void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
+{
+#ifdef AMP_ROS
+    if(m_currentROSNode)
+    {
+        QVariant item = m_model->data(index,Qt::UserRole+1);
+        MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
+        QString itemType = mi->metaObject()->className();
+        if (itemType == "TrackLine")
+        {
+            TrackLine *tl = qobject_cast<TrackLine*>(mi);
+            QList<QGeoCoordinate> wps;
+            auto waypoints = tl->waypoints();
+            for(auto i: waypoints)
+            {
+                const Waypoint *wp = qgraphicsitem_cast<Waypoint const*>(i);
+                if(wp)
+                {
+                    auto ll = wp->location();
+                    wps.append(ll);
+                }
+            }
+            m_currentROSNode->sendWaypoints(wps);
+        }
+        if (itemType == "SurveyPattern")
+        {
+            SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
+            QList<QGeoCoordinate> wps;
+            auto lines = sp->getLines();
+            for (auto l: lines)
+                for (auto p: l)
+                    wps.append(p);
+            m_currentROSNode->sendWaypoints(wps);
+        }
+    }
+#endif
+}
+
+
 void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)
 {
     for(auto index: indices)
@@ -357,6 +396,11 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
         connect(m_currentPlatform,&Platform::speedChanged,[=](){emit currentPlaformUpdated();});
         emit currentPlaformUpdated();
     }
+#ifdef AMP_ROS
+    ROSNode *rn = qobject_cast<ROSNode*>(mi);
+    if(rn)
+        m_currentROSNode = rn;
+#endif
 }
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)

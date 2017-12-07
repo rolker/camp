@@ -41,6 +41,7 @@ private:
     AutonomousVehicleProject *project;
 
     void exportHypack() const;
+    void sendToROS() const;
 };
 
 #endif // MAINWINDOW_H

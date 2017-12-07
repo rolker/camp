@@ -1,10 +1,13 @@
 #include "rosnode.h"
-//#include <QDebug>
+#include "std_msgs/Bool.h"
+#include "std_msgs/String.h"
+#include <QDebug>
 #include <QPainter>
 #include <QGraphicsSvgItem>
 #include "autonomousvehicleproject.h"
+#include "gz4d_geo.h"
 
-ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMissionItem(parent,parentItem),m_spinner(0),m_heading(0.0)
+ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMissionItem(parent,parentItem),m_spinner(0),m_heading(0.0),m_active(false)
 {
     //QGraphicsSvgItem *symbol = new QGraphicsSvgItem(this);
     //symbol->setSharedRenderer(autonomousVehicleProject()->symbols());
@@ -13,8 +16,10 @@ ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMission
 
     
     qRegisterMetaType<QGeoCoordinate>();
-    m_position_subscriber = m_node.subscribe("/sensor/vehicle/position", 10, &ROSNode::positionCallback, this);
-    m_heading_subscriber = m_node.subscribe("/sensor/vehicle/heading", 10, &ROSNode::headingCallback, this);
+    m_geopoint_subscriber = m_node.subscribe("/zmq/position", 10, &ROSNode::geoPointStampedCallback, this);
+    m_origin_subscriber = m_node.subscribe("/zmq/origin", 10, &ROSNode::originCallback, this);
+    m_active_publisher = m_node.advertise<std_msgs::Bool>("/zmq/active",1);
+    m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/wpt_updates",1);
     m_spinner.start();
 
 }
@@ -29,7 +34,7 @@ void ROSNode::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->save();
 
     QPen p;
-    p.setColor(Qt::red);
+    p.setColor(Qt::darkGreen);
     p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
@@ -68,15 +73,43 @@ void ROSNode::write(QJsonObject& json) const
 {
 }
 
-void ROSNode::positionCallback(const asv_msgs::BasicPositionStamped::ConstPtr& message)
+void ROSNode::geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
 {
-    QGeoCoordinate position(message->basic_position.position.latitude,message->basic_position.position.longitude);
+    QGeoCoordinate position(message->position.latitude,message->position.longitude,message->position.altitude);
     QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
-void ROSNode::headingCallback(const asv_msgs::HeadingStamped::ConstPtr& message)
+void ROSNode::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
 {
-    m_heading = message->heading.heading;
+    m_origin.setLatitude(message->latitude);
+    m_origin.setLongitude(message->longitude);
+    m_origin.setAltitude(message->altitude);
+    //qDebug() << m_origin;
+}
+
+void ROSNode::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
+{
+    qDebug() << "origin: " << m_origin;
+    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
+    qDebug() << "as gz4d::geo::Point: " << gr[0] << ", " << gr[1] << ", " << gr[2];
+    gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
+
+    std::stringstream updates;
+    updates << "points = ";
+    for(auto wp: waypoints)
+    {
+        qDebug() << "wp: " << wp;
+        gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> ggp(wp.latitude(),wp.longitude(),0.0);
+        qDebug() << "ggp: " << ggp[0] << ", " << ggp[1] << ", " << ggp[2];
+        gz4d::geo::Point<double,gz4d::geo::WGS84::ECEF> ecef(ggp);
+        qDebug() << "ecef: " << ecef[0] << ", " << ecef[1] << ", " << ecef[2];
+        gz4d::Point<double> position = geoReference.toLocal(ecef);
+        updates << position[0] << ", " << position[1] << ":";
+    }
+    
+    std_msgs::String rosUpdates;
+    rosUpdates.data = updates.str();
+    m_wpt_updates_publisher.publish(rosUpdates);
 }
 
 
@@ -97,3 +130,17 @@ void ROSNode::updateProjectedPoints()
 {
     setPos(geoToPixel(m_location,autonomousVehicleProject()));
 }
+
+bool ROSNode::active() const
+{
+    return m_active;
+}
+
+void ROSNode::setActive(bool active)
+{
+    m_active = active;
+    std_msgs::Bool b;
+    b.data = active;
+    m_active_publisher.publish(b);
+}
+

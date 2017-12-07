@@ -64,6 +64,11 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
     QAction *exportAction = menu.addAction("Export");
     connect(exportAction, &QAction::triggered, this, &MainWindow::exportHypack);
+    
+#ifdef AMP_ROS
+    QAction *sendToROSAction = menu.addAction("Send to ROS");
+    connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
+#endif
 
     QAction *openBackgroundAction = menu.addAction("Open Background");
     connect(openBackgroundAction, &QAction::triggered, this, &MainWindow::on_actionOpenBackground_triggered);
@@ -93,6 +98,12 @@ void MainWindow::exportHypack() const
 {
     project->exportHypack(ui->treeView->selectionModel()->currentIndex());
 }
+
+void MainWindow::sendToROS() const
+{
+    project->sendToROS(ui->treeView->selectionModel()->currentIndex());
+}
+
 
 void MainWindow::on_actionSave_triggered()
 {

@@ -9,6 +9,7 @@ class WaypointDetails;
 class TrackLineDetails;
 class SurveyPatternDetails;
 class PlatformDetails;
+class ROSNodeDetails;
 
 class DetailsView : public QWidget
 {
@@ -35,6 +36,7 @@ private:
     TrackLineDetails * trackLineDetails;
     SurveyPatternDetails * surveyPatternDetails;
     PlatformDetails * platformDetails;
+    ROSNodeDetails * rosNodeDetails;
 
     void setCurrentWidget(QWidget *widget);
 };
