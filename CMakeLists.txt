@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.6.3)
+cmake_minimum_required(VERSION 3.5.1)
 
 project(AutonomousMissionPlanner)
 
@@ -7,6 +7,14 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 find_package(Qt5 COMPONENTS Core Widgets)
+
+if (Qt5Widgets_FOUND)
+    if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)
+        message(FATAL_ERROR "Minimum supported Qt5 version is 5.6!")
+    endif()
+else()
+    message(SEND_ERROR "The Qt5Widgets library could not be found!")
+endif(Qt5Widgets_FOUND)
 
 find_package(GDAL REQUIRED)
 include_directories(${GDAL_INCLUDE_DIR})
