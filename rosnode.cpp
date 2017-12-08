@@ -7,7 +7,7 @@
 #include "autonomousvehicleproject.h"
 #include "gz4d_geo.h"
 
-ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMissionItem(parent,parentItem),m_spinner(0),m_heading(0.0),m_active(false)
+ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMissionItem(parent,parentItem),m_spinner(0),m_heading(0.0),m_active(false),m_helmMode("standby")
 {
     //QGraphicsSvgItem *symbol = new QGraphicsSvgItem(this);
     //symbol->setSharedRenderer(autonomousVehicleProject()->symbols());
@@ -19,6 +19,7 @@ ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMission
     m_geopoint_subscriber = m_node.subscribe("/zmq/position", 10, &ROSNode::geoPointStampedCallback, this);
     m_origin_subscriber = m_node.subscribe("/zmq/origin", 10, &ROSNode::originCallback, this);
     m_active_publisher = m_node.advertise<std_msgs::Bool>("/zmq/active",1);
+    m_helmMode_publisher = m_node.advertise<std_msgs::String>("/zmq/helm_mode",1);
     m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/wpt_updates",1);
     m_spinner.start();
 
@@ -143,4 +144,18 @@ void ROSNode::setActive(bool active)
     b.data = active;
     m_active_publisher.publish(b);
 }
+
+const std::string& ROSNode::helmMode() const
+{
+    return m_helmMode;
+}
+
+void ROSNode::setHelmMode(const std::string& helmMode)
+{
+    m_helmMode = helmMode;
+    std_msgs::String hm;
+    hm.data = helmMode;
+    m_helmMode_publisher.publish(hm);
+}
+
 

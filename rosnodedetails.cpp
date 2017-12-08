@@ -30,4 +30,16 @@ void ROSNodeDetails::on_activeCheckBox_stateChanged(int state)
     m_rosNode->setActive(state);
 }
 
+void ROSNodeDetails::on_standbyPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSNodeDetails helm mode: standby";
+    m_rosNode->setHelmMode("standby");
+}
+
+void ROSNodeDetails::on_surveyPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSNodeDetails helm mode: survey";
+    m_rosNode->setHelmMode("survey");
+}
+
 
