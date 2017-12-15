@@ -13,7 +13,6 @@ ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMission
     //symbol->setSharedRenderer(autonomousVehicleProject()->symbols());
     //symbol->setElementId("Vessel");
     //symbol->setFlag(QGraphicsItem::ItemIgnoresTransformations);
-
     
     qRegisterMetaType<QGeoCoordinate>();
     m_geopoint_subscriber = m_node.subscribe("/zmq/position", 10, &ROSNode::geoPointStampedCallback, this);
@@ -21,8 +20,8 @@ ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMission
     m_active_publisher = m_node.advertise<std_msgs::Bool>("/zmq/active",1);
     m_helmMode_publisher = m_node.advertise<std_msgs::String>("/zmq/helm_mode",1);
     m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/wpt_updates",1);
+    m_loiter_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/loiter_updates",1);
     m_spinner.start();
-
 }
 
 QRectF ROSNode::boundingRect() const
@@ -113,6 +112,28 @@ void ROSNode::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
     m_wpt_updates_publisher.publish(rosUpdates);
 }
 
+void ROSNode::sendLoiter(const QGeoCoordinate& loiterLocation)
+{
+    qDebug() << "origin: " << m_origin;
+    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
+    qDebug() << "as gz4d::geo::Point: " << gr[0] << ", " << gr[1] << ", " << gr[2];
+    gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
+
+    std::stringstream updates;
+    updates << "center_assign = ";
+
+    qDebug() << "loiterLocation: " << loiterLocation;
+    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> ggp(loiterLocation.latitude(),loiterLocation.longitude(),0.0);
+    qDebug() << "ggp: " << ggp[0] << ", " << ggp[1] << ", " << ggp[2];
+    gz4d::geo::Point<double,gz4d::geo::WGS84::ECEF> ecef(ggp);
+    qDebug() << "ecef: " << ecef[0] << ", " << ecef[1] << ", " << ecef[2];
+    gz4d::Point<double> position = geoReference.toLocal(ecef);
+    updates << position[0] << ", " << position[1] << ":";
+    
+    std_msgs::String rosUpdates;
+    rosUpdates.data = updates.str();
+    m_loiter_updates_publisher.publish(rosUpdates);
+}
 
 void ROSNode::updateLocation(const QGeoCoordinate& location)
 {

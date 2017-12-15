@@ -30,8 +30,9 @@ public:
     
 public slots:
     void updateLocation(QGeoCoordinate const &location);
-    void updateProjectedPoints();
+    void updateProjectedPoints() override;
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
+    void sendLoiter(QGeoCoordinate const &loiterLocation);
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message); 
@@ -43,6 +44,7 @@ private:
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
     ros::Publisher m_wpt_updates_publisher;
+    ros::Publisher m_loiter_updates_publisher;
     ros::AsyncSpinner m_spinner;
     QGeoCoordinate m_location;
     QGeoCoordinate m_origin;

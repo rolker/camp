@@ -343,6 +343,13 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
                     wps.append(p);
             m_currentROSNode->sendWaypoints(wps);
         }
+        if (itemType == "Waypoint")
+        {
+            Waypoint *wp = qobject_cast<Waypoint*>(mi);
+            QList<QGeoCoordinate> wps;
+            wps.append(wp->location());
+            m_currentROSNode->sendWaypoints(wps);
+        }
     }
 #endif
 }

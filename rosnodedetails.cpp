@@ -42,4 +42,9 @@ void ROSNodeDetails::on_surveyPushButton_clicked(bool checked)
     m_rosNode->setHelmMode("survey");
 }
 
+void ROSNodeDetails::on_loiterPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSNodeDetails helm mode: loiter";
+    m_rosNode->setHelmMode("loiter");
+}
 

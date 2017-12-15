@@ -24,6 +24,7 @@ private slots:
     void on_activeCheckBox_stateChanged(int state);
     void on_standbyPushButton_clicked(bool checked);
     void on_surveyPushButton_clicked(bool checked);
+    void on_loiterPushButton_clicked(bool checked);
     
 private:
     Ui::ROSNodeDetails* ui;
