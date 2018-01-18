@@ -15,12 +15,12 @@ ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMission
     //symbol->setFlag(QGraphicsItem::ItemIgnoresTransformations);
     
     qRegisterMetaType<QGeoCoordinate>();
-    m_geopoint_subscriber = m_node.subscribe("/zmq/position", 10, &ROSNode::geoPointStampedCallback, this);
-    m_origin_subscriber = m_node.subscribe("/zmq/origin", 10, &ROSNode::originCallback, this);
-    m_active_publisher = m_node.advertise<std_msgs::Bool>("/zmq/active",1);
-    m_helmMode_publisher = m_node.advertise<std_msgs::String>("/zmq/helm_mode",1);
-    m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/wpt_updates",1);
-    m_loiter_updates_publisher = m_node.advertise<std_msgs::String>("/zmq/loiter_updates",1);
+    m_geopoint_subscriber = m_node.subscribe("/udp/position", 10, &ROSNode::geoPointStampedCallback, this);
+    m_origin_subscriber = m_node.subscribe("/udp/origin", 10, &ROSNode::originCallback, this);
+    m_active_publisher = m_node.advertise<std_msgs::Bool>("/udp/active",1);
+    m_helmMode_publisher = m_node.advertise<std_msgs::String>("/udp/helm_mode",1);
+    m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/udp/wpt_updates",1);
+    m_loiter_updates_publisher = m_node.advertise<std_msgs::String>("/udp/loiter_updates",1);
     m_spinner.start();
 }
 
