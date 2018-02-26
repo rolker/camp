@@ -24,13 +24,17 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_currentROSNode(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
 {
     GDALAllRegister();
 
     m_model = new QStandardItemModel(this);
     m_scene = new QGraphicsScene(this);
     m_model->setObjectName("projectModel");
+    
+#ifdef AMP_ROS
+    m_currentROSNode = nullptr;
+#endif
 }
 
 AutonomousVehicleProject::~AutonomousVehicleProject()

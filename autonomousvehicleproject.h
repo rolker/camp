@@ -81,7 +81,9 @@ private:
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     Platform* m_currentPlatform;
+#ifdef AMP_ROS
     ROSNode* m_currentROSNode;
+#endif
     
     QSvgRenderer* m_symbols;
     
