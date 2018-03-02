@@ -28,3 +28,18 @@ Building AutonomousMissionPlanner
 - Generate project
 - Opened AutonomousMissionPlanner.sln in build directory.
 - Built INSTALL target.
+
+
+Contributed by @shujaatak to solve issue with finding proj4 dll at runtime:
+
+Building PROJ4
+
+- Download PROJ4 - https://github.com/OSGeo/proj.4
+- Unzip it.
+- In the source directory, edit nmake.opt modifiying INSTDIR to desired install/build location
+- Run "VS2015 x64 Native Tools Command Prompt" for VS 2015
+- Change directory to PROJ4 source directory
+- Run these commands one after other:
+1. - nmake /f makefile.vc MSVC_VER=1910 WIN64=1
+2. - nmake /f makefile.vc MSVC_VER=1910 WIN64=1 install-all
+- After completion, you will find the compiled PROJ4 lib, include and bin folders in your specified install/build location, From bin folder, copy proj.dll to the AutonomousMissionPlanner.exe folder. Done!  
