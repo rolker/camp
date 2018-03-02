@@ -15,6 +15,7 @@
 #include "trackline.h"
 #include "surveypattern.h"
 #include "platform.h"
+#include "group.h"
 #include <gdal_priv.h>
 #include "vectordataset.h"
 
@@ -24,7 +25,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
 {
     GDALAllRegister();
 
@@ -133,14 +134,20 @@ void AutonomousVehicleProject::open(const QString &fname)
 void AutonomousVehicleProject::openBackground(const QString &fname)
 {
     BackgroundRaster *bgr = new BackgroundRaster(fname, this);
-    m_model->appendRow(bgr->createItem(fname));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(bgr->createItem(fname));
+    else
+        m_model->appendRow(bgr->createItem(fname));
     setCurrentBackground(bgr);
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname)
 {
     VectorDataset * vd = new VectorDataset(this);
-    m_model->appendRow(vd->createItem(fname));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(vd->createItem(fname));
+    else
+        m_model->appendRow(vd->createItem(fname));
     vd->open(fname);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
 }
@@ -149,29 +156,28 @@ void AutonomousVehicleProject::openGeometry(const QString& fname)
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
     return m_currentBackground;
-    if(m_model)
-    {
-        int row = 0;
-        QStandardItem *item = m_model->item(row);
-        while(item)
-        {
-            BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
-            if(bgr)
-                return bgr;
-            row += 1;
-            item = m_model->item(row);
-        }
-
-    }
-    return 0;
 }
 
 Platform * AutonomousVehicleProject::createPlatform()
 {
     Platform *p = new Platform(this);
-    m_model->appendRow(p->createItem("platform"));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(p->createItem("platform"));
+    else
+        m_model->appendRow(p->createItem("platform"));
     return p;
 }
+
+Group * AutonomousVehicleProject::addGroup()
+{
+    Group *g = new Group(this);
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(g->createItem("group"));
+    else
+        m_model->appendRow(g->createItem("group"));
+    return g;
+}
+
 
 #ifdef AMP_ROS
 ROSNode * AutonomousVehicleProject::createROSNode()
@@ -192,7 +198,10 @@ Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem
     if(!parentItem)
         parentItem = getBackgroundRaster();
     Waypoint *wp = new Waypoint(this,parentItem);
-    m_model->appendRow(wp->createItem("waypoint"));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(wp->createItem("waypoint"));
+    else
+        m_model->appendRow(wp->createItem("waypoint"));
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -213,7 +222,10 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *
     if(!parentItem)
         parentItem = getBackgroundRaster();
     SurveyPattern *sp = new SurveyPattern(this,parentItem);
-    m_model->appendRow(sp->createItem("pattern"));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(sp->createItem("pattern"));
+    else
+        m_model->appendRow(sp->createItem("pattern"));
     sp->setFlag(QGraphicsItem::ItemIsMovable);
     sp->setFlag(QGraphicsItem::ItemIsSelectable);
     sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -237,7 +249,10 @@ TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentIt
     if(!parentItem)
         parentItem = getBackgroundRaster();
     TrackLine *tl = new TrackLine(this,parentItem);
-    m_model->appendRow(tl->createItem("trackline"));
+    if(m_currentGroup)
+        m_currentGroup->item()->appendRow(tl->createItem("trackline"));
+    else
+        m_model->appendRow(tl->createItem("trackline"));
     tl->setFlag(QGraphicsItem::ItemIsMovable);
     tl->setFlag(QGraphicsItem::ItemIsSelectable);
     tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -412,6 +427,11 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
     if(rn)
         m_currentROSNode = rn;
 #endif
+    Group *g = qobject_cast<Group*>(mi);
+    if(g)
+        m_currentGroup = g;
+    else
+        m_currentGroup = nullptr;
 }
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)

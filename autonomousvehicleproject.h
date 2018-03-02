@@ -16,6 +16,7 @@ class Waypoint;
 class TrackLine;
 class SurveyPattern;
 class Platform;
+class Group;
 class QSvgRenderer;
 #ifdef AMP_ROS
 class ROSNode;
@@ -44,6 +45,8 @@ public:
 
     Platform * createPlatform();
     Platform * currentPlatform() const;
+    
+    Group * addGroup();
     
 #ifdef AMP_ROS
     ROSNode * createROSNode();
@@ -81,6 +84,7 @@ private:
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     Platform* m_currentPlatform;
+    Group* m_currentGroup;
 #ifdef AMP_ROS
     ROSNode* m_currentROSNode;
 #endif

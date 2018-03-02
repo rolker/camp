@@ -16,6 +16,11 @@ public:
 public slots:
     void updateBackground(BackgroundRaster * bg);
     
+protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
+
+    
 };
 
 #endif // GEOGRAPHICSMISSIONITEM_H

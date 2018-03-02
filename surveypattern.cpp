@@ -476,3 +476,6 @@ void SurveyPattern::onCurrentPlatformUpdated()
     updateLabel();
 }
 
+
+
+

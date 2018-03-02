@@ -70,8 +70,11 @@ Waypoint * TrackLine::createWaypoint()
 {
     Waypoint *wp = new Waypoint(parent(),this);
     //qDebug() << "create wp: " << (void *)wp;
+    
+    int i = item()->rowCount();
+    QString wplabel = "waypoint"+QString::number(i+1);
 
-    item()->appendRow(wp->createItem("waypoint"));
+    item()->appendRow(wp->createItem(wplabel));
 
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);

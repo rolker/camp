@@ -34,6 +34,7 @@ private slots:
     void on_actionPlatform_triggered();
     void on_actionOpenGeometry_triggered();
     void on_actionROS_Node_triggered();
+    void on_actionGroup_triggered();
 
 
 private:

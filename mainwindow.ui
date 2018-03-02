@@ -99,6 +99,7 @@
     <addaction name="actionWaypoint"/>
     <addaction name="actionTrackline"/>
     <addaction name="actionSurveyPattern"/>
+    <addaction name="actionGroup"/>
     <addaction name="actionROS_Node"/>
    </widget>
    <addaction name="menu_File"/>
@@ -115,6 +116,7 @@
    <addaction name="actionWaypoint"/>
    <addaction name="actionTrackline"/>
    <addaction name="actionSurveyPattern"/>
+   <addaction name="actionGroup"/>
    <addaction name="actionPlatform"/>
    <addaction name="actionROS_Node"/>
   </widget>
@@ -184,10 +186,18 @@
   </action>
   <action name="actionROS_Node">
    <property name="text">
-    <string>ROS Node</string>
+    <string>&amp;ROS Node</string>
    </property>
    <property name="iconText">
     <string>ROS</string>
+   </property>
+  </action>
+  <action name="actionGroup">
+   <property name="text">
+    <string>Group</string>
+   </property>
+   <property name="iconText">
+    <string>G</string>
    </property>
   </action>
  </widget>

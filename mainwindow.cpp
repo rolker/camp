@@ -82,6 +82,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     QAction *addSurveyPatternAction = menu.addAction("Add Survey Pattern");
     connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurveyPattern_triggered);
 
+    QAction *addGroupAction = menu.addAction("Add Group");
+    connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
+    
     QAction *addPlatformAction = menu.addAction("Add Platform");
     connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatform_triggered);
 
@@ -146,4 +149,9 @@ void MainWindow::on_actionOpenGeometry_triggered()
 void MainWindow::on_actionROS_Node_triggered()
 {
     project->createROSNode();
+}
+
+void MainWindow::on_actionGroup_triggered()
+{
+    project->addGroup();
 }
