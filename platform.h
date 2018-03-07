@@ -14,6 +14,7 @@ public:
     
     double speed() const;
     void setSpeed(double speed);
+    
 signals:
     void speedChanged();
 

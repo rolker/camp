@@ -1,16 +1,17 @@
 #ifndef AUTONOMOUSVEHICLEPROJECT_H
 #define AUTONOMOUSVEHICLEPROJECT_H
 
-#include <QObject>
+#include <QAbstractItemModel>
 #include <QGeoCoordinate>
 #include <QModelIndex>
 
-class QStandardItemModel;
+
 class QGraphicsScene;
 class QGraphicsItem;
 class QStandardItem;
 class QLabel;
 class QStatusBar;
+class MissionItem;
 class BackgroundRaster;
 class Waypoint;
 class TrackLine;
@@ -22,14 +23,13 @@ class QSvgRenderer;
 class ROSNode;
 #endif
 
-class AutonomousVehicleProject : public QObject
+class AutonomousVehicleProject : public QAbstractItemModel
 {
     Q_OBJECT
 public:
     explicit AutonomousVehicleProject(QObject *parent = 0);
     ~AutonomousVehicleProject();
 
-    QStandardItemModel *model() const;
     QGraphicsScene *scene() const;
     void openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
@@ -47,6 +47,17 @@ public:
     Platform * currentPlatform() const;
     
     Group * addGroup();
+    
+    MissionItem *itemFromIndex(QModelIndex const &index) const;
+
+    Qt::ItemFlags flags(const QModelIndex & index) const override;
+    QVariant data(const QModelIndex & index, int role) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+    int rowCount(const QModelIndex & parent) const override;
+    int columnCount(const QModelIndex & parent) const override;
+    
+    QModelIndex index(int row, int column, const QModelIndex & parent) const override;
+    QModelIndex parent(const QModelIndex & child) const override;
     
 #ifdef AMP_ROS
     ROSNode * createROSNode();
@@ -75,16 +86,16 @@ public slots:
     void sendToROS(QModelIndex const &index);
     void deleteItems(QModelIndexList const &indices);
     void deleteItem(QModelIndex const &index);
-    void deleteItem(QStandardItem *item);
+    void deleteItem(MissionItem *item);
 
 
 private:
-    QStandardItemModel* m_model;
     QGraphicsScene* m_scene;
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     Platform* m_currentPlatform;
     Group* m_currentGroup;
+    Group* m_root;
 #ifdef AMP_ROS
     ROSNode* m_currentROSNode;
 #endif

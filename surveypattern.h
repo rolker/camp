@@ -47,7 +47,7 @@ public:
 
     //QList<QGeoCoordinate> getPath() const;
     QList<QList<QGeoCoordinate> > getLines() const;
-
+    
 signals:
     void surveyPatternUpdated();
 

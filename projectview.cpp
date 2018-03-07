@@ -66,8 +66,8 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 if(bg)
                 {
                     pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())),bg);
-                    QModelIndex i = m_project->model()->indexFromItem(pendingSurveyPattern->item());
-                    emit  currentChanged(i);
+                    //QModelIndex i = m_project-> indexFromItem(pendingSurveyPattern);
+                    //emit  currentChanged(i);
                 }
             }
             else
@@ -89,7 +89,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         {
             if(mouseMode == MouseMode::addTrackline && currentTrackLine)
             {
-                m_project->deleteItem(pendingTrackLineWaypoint->item());
+                m_project->deleteItem(pendingTrackLineWaypoint);
                 currentTrackLine->removeWaypoint(pendingTrackLineWaypoint);
                 m_project->scene()->removeItem(pendingTrackLineWaypoint);
                 m_project->scene()->update();

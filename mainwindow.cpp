@@ -16,7 +16,7 @@ MainWindow::MainWindow(QWidget *parent) :
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
 
-    ui->treeView->setModel(project->model());
+    ui->treeView->setModel(project);
     ui->projectView->setStatusBar(statusBar());
     ui->projectView->setProject(project);
 

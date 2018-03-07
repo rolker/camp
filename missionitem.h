@@ -17,9 +17,8 @@ public:
     
     AutonomousVehicleProject *autonomousVehicleProject() const;
 
-    QStandardItem * item() const;
-    QStandardItem * createItem(QString const &label);
-    
+    virtual QList<MissionItem*> childMissionItems() const;
+    int row() const;
 
 public slots:
     virtual void updateProjectedPoints();
@@ -30,7 +29,6 @@ protected:
 
     
 private:
-    QStandardItem *m_item;
 
 };
 

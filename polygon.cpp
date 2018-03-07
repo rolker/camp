@@ -138,4 +138,3 @@ void Polygon::addInteriorRing()
     m_interiorRings.append(QList<LocationPosition>());
 }
 
-

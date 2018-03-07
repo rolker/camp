@@ -2,9 +2,9 @@
 #define VECTORDATASET_H
 
 #include "georeferenced.h"
-#include "missionitem.h"
+#include "group.h"
 
-class VectorDataset :public MissionItem, public Georeferenced
+class VectorDataset :public Group, public Georeferenced
 {
     Q_OBJECT
     

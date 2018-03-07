@@ -13,8 +13,6 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QList<MissionItem*> childMissionItems() const;
-    
 public slots:
     void updateProjectedPoints() override;
 };

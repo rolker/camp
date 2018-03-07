@@ -25,6 +25,7 @@ public:
     void updateBBox();
     
     int type() const override {return PolygonType;}
+    
 public slots:
     void updateProjectedPoints();
 

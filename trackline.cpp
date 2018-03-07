@@ -68,13 +68,12 @@ QPainterPath TrackLine::shape() const
 
 Waypoint * TrackLine::createWaypoint()
 {
-    Waypoint *wp = new Waypoint(parent(),this);
+    Waypoint *wp = new Waypoint(this,this);
     //qDebug() << "create wp: " << (void *)wp;
     
-    int i = item()->rowCount();
+    int i = childMissionItems().size();
     QString wplabel = "waypoint"+QString::number(i+1);
-
-    item()->appendRow(wp->createItem(wplabel));
+    wp->setObjectName(wplabel);
 
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -155,4 +154,3 @@ void TrackLine::updateProjectedPoints()
     for(auto wp: waypoints())
         wp->updateProjectedPoints();
 }
-

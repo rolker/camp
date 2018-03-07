@@ -2,7 +2,7 @@
 #include "autonomousvehicleproject.h"
 #include <QStandardItem>
 
-MissionItem::MissionItem(QObject *parent) : QObject(parent), m_item(nullptr)
+MissionItem::MissionItem(QObject *parent) : QObject(parent)
 {
 
 }
@@ -20,19 +20,26 @@ AutonomousVehicleProject* MissionItem::autonomousVehicleProject() const
     return nullptr;
 }
 
-QStandardItem * MissionItem::createItem(QString const &label)
-{
-    m_item = new QStandardItem(label);
-    m_item->setData(QVariant::fromValue(reinterpret_cast<quintptr>(this)));
-    m_item->setFlags(m_item->flags()&~(Qt::ItemIsDropEnabled));
-    return m_item;
-}
-
-QStandardItem * MissionItem::item() const
-{
-    return m_item;
-}
-
 void MissionItem::updateProjectedPoints()
 {
+}
+
+QList<MissionItem *> MissionItem::childMissionItems() const
+{
+    QList<MissionItem*> ret;
+    for(auto child: children())
+    {
+        MissionItem * childItem = qobject_cast<MissionItem*>(child);
+        if(childItem)
+            ret.append(childItem);
+    }
+    return ret;
+}
+
+int MissionItem::row() const
+{
+    MissionItem *item = qobject_cast<MissionItem*>(parent());
+    if(item)
+        return item->childMissionItems().indexOf(const_cast<MissionItem*>(this));
+    return 0;
 }

@@ -67,7 +67,7 @@ void DetailsView::setCurrentWidget(QWidget *widget)
 
 void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelIndex &previous)
 {
-    QVariant item = m_project->model()->data(current,Qt::UserRole+1);
+    QVariant item = m_project->data(current,Qt::UserRole+1);
     MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
     qDebug() << "metaobject class name: " << mi->metaObject()->className();
     QString itemType = mi->metaObject()->className();

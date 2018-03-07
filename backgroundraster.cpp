@@ -2,6 +2,7 @@
 #include <QPainter>
 #include <QJsonObject>
 #include <gdal_priv.h>
+#include <QModelIndex>
 
 BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem)
     : MissionItem(parent), QGraphicsItem(parentItem), m_filename(fname)
@@ -113,4 +114,3 @@ void BackgroundRaster::read(const QJsonObject &json)
 {
 
 }
-
