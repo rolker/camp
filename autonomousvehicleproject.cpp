@@ -31,6 +31,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
 
     m_scene = new QGraphicsScene(this);
     m_root = new Group(this);
+    m_currentGroup = m_root;
     setObjectName("projectModel");
     
 #ifdef AMP_ROS
@@ -124,21 +125,36 @@ void AutonomousVehicleProject::open(const QString &fname)
     }
 }
 
+class RowInserter
+{
+public:
+    RowInserter(AutonomousVehicleProject &project):m_project(project)
+    {
+        project.beginInsertRows(project.indexFromItem(project.m_currentGroup),project.m_currentGroup->childMissionItems().size(),project.m_currentGroup->childMissionItems().size());
+    }
+    
+    ~RowInserter()
+    {
+        m_project.endInsertRows();
+    }
+private:
+    AutonomousVehicleProject &m_project;
+};
+
 void AutonomousVehicleProject::openBackground(const QString &fname)
 {
-    BackgroundRaster *bgr = new BackgroundRaster(fname, this);
+    beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
+    BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
     bgr->setObjectName(fname);
-    if(m_currentGroup)
-        bgr->setParent(m_currentGroup);
     setCurrentBackground(bgr);
+    endInsertRows();
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname)
 {
-    VectorDataset * vd = new VectorDataset(this);
+    RowInserter ri(*this);
+    VectorDataset * vd = new VectorDataset(m_currentGroup);
     vd->setObjectName(fname);
-    if(m_currentGroup)
-        vd->setParent(m_currentGroup);
     vd->open(fname);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
 }
@@ -151,19 +167,17 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 
 Platform * AutonomousVehicleProject::createPlatform()
 {
-    Platform *p = new Platform(this);
+    RowInserter ri(*this);
+    Platform *p = new Platform(m_currentGroup);
     p->setObjectName("platform");
-    if(m_currentGroup)
-        p->setParent(m_currentGroup);
     return p;
 }
 
 Group * AutonomousVehicleProject::addGroup()
 {
-    Group *g = new Group(this);
+    RowInserter ri(*this);
+    Group *g = new Group(m_currentGroup);
     g->setObjectName("group");
-    if(m_currentGroup)
-        g->setParent(m_currentGroup);
     return g;
 }
 
@@ -186,10 +200,9 @@ Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem
 {
     if(!parentItem)
         parentItem = getBackgroundRaster();
-    Waypoint *wp = new Waypoint(this,parentItem);
+    RowInserter ri(*this);
+    Waypoint *wp = new Waypoint(m_currentGroup,parentItem);
     wp->setObjectName("waypoint");
-    if(m_currentGroup)
-        wp->setParent(m_currentGroup);
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -209,10 +222,9 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *
 {
     if(!parentItem)
         parentItem = getBackgroundRaster();
-    SurveyPattern *sp = new SurveyPattern(this,parentItem);
+    RowInserter ri(*this);
+    SurveyPattern *sp = new SurveyPattern(m_currentGroup,parentItem);
     sp->setObjectName("pattern");
-    if(m_currentGroup)
-        sp->setParent(m_currentGroup);
     sp->setFlag(QGraphicsItem::ItemIsMovable);
     sp->setFlag(QGraphicsItem::ItemIsSelectable);
     sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -235,10 +247,9 @@ TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentIt
 {
     if(!parentItem)
         parentItem = getBackgroundRaster();
-    TrackLine *tl = new TrackLine(this,parentItem);
+    RowInserter ri(*this);
+    TrackLine *tl = new TrackLine(m_currentGroup,parentItem);
     tl->setObjectName("trackline");
-    if(m_currentGroup)
-        tl->setParent(m_currentGroup);
     tl->setFlag(QGraphicsItem::ItemIsMovable);
     tl->setFlag(QGraphicsItem::ItemIsSelectable);
     tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -384,18 +395,22 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
         if(m_currentBackground == bgr)
             m_currentBackground = nullptr;
     }
-    removeRow(index.row(),index.parent());
+    QModelIndex p = parent(index);
+    MissionItem * pi = itemFromIndex(p);
+    int rownum = pi->childMissionItems().indexOf(item);
+    beginRemoveRows(p,rownum,rownum);
+    delete item;
+    endRemoveRows();
 }
 
 void AutonomousVehicleProject::deleteItem(MissionItem *item)
 {
-
+    deleteItem(indexFromItem(item));
 }
 
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 {
-    QVariant item = data(index,Qt::UserRole+1);
-    MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
+    MissionItem* mi = itemFromIndex(index);
     QString itemType = mi->metaObject()->className();
 
     BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(mi);
@@ -417,7 +432,7 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
     if(g)
         m_currentGroup = g;
     else
-        m_currentGroup = nullptr;
+        m_currentGroup = m_root;
 }
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
@@ -439,7 +454,7 @@ Platform * AutonomousVehicleProject::currentPlatform() const
 
 QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelIndex& parent) const
 {
-    if(column>0)
+    if(column != 0 || row < 0)
         return QModelIndex();
     MissionItem * parentItem = m_root;
     if(parent.isValid())
@@ -449,6 +464,17 @@ QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelInd
         auto subitems = parentItem->childMissionItems();
         if(row < subitems.size())
             return createIndex(row,0,subitems[row]);
+    }
+    return QModelIndex();
+}
+
+QModelIndex AutonomousVehicleProject::indexFromItem(MissionItem* item) const
+{
+    if(item && item != m_root)
+    {
+        MissionItem * parentItem = qobject_cast<MissionItem*>(item->parent());
+        if(parentItem)
+            return createIndex(parentItem->childMissionItems().indexOf(item),0,item);
     }
     return QModelIndex();
 }
@@ -488,6 +514,12 @@ QModelIndex AutonomousVehicleProject::parent(const QModelIndex& child) const
 
 QVariant AutonomousVehicleProject::data(const QModelIndex& index, int role) const
 {
+    MissionItem * item = itemFromIndex(index);
+    if(item)
+    {
+        if (role == Qt::DisplayRole)
+            return item->objectName();
+    }
     return QVariant();
 }
 

@@ -5,6 +5,7 @@
 #include <QJsonArray>
 #include <QStandardItem>
 #include <QDebug>
+#include "autonomousvehicleproject.h"
 
 TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsMissionItem(parent, parentItem)
 {
@@ -93,7 +94,7 @@ Waypoint * TrackLine::addWaypoint(const QGeoCoordinate &location)
 
 void TrackLine::removeWaypoint(Waypoint* wp)
 {
-    wp->setParent(nullptr);
+    autonomousVehicleProject()->deleteItem(wp);
 }
 
 

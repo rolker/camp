@@ -8,6 +8,8 @@
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
 
+#include <modeltest.h>
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
@@ -15,6 +17,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->setupUi(this);
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
+    
+    new ModelTest(project,this);
 
     ui->treeView->setModel(project);
     ui->projectView->setStatusBar(statusBar());

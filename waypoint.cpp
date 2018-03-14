@@ -46,7 +46,7 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 
 void Waypoint::updateLocation()
 {
-    AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
+    AutonomousVehicleProject *avp = autonomousVehicleProject();
     BackgroundRaster *bgr = avp->getBackgroundRaster();
     QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
     m_location = bgr->unproject(projectedPosition);

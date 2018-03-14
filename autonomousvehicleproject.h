@@ -21,6 +21,7 @@ class Group;
 class QSvgRenderer;
 #ifdef AMP_ROS
 class ROSNode;
+class RowInserter;
 #endif
 
 class AutonomousVehicleProject : public QAbstractItemModel
@@ -58,6 +59,7 @@ public:
     
     QModelIndex index(int row, int column, const QModelIndex & parent) const override;
     QModelIndex parent(const QModelIndex & child) const override;
+    QModelIndex indexFromItem(MissionItem * item) const;
     
 #ifdef AMP_ROS
     ROSNode * createROSNode();
@@ -104,6 +106,8 @@ private:
     
 
     void setCurrentBackground(BackgroundRaster *bgr);
+    
+    friend class RowInserter;
 };
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H
