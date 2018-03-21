@@ -73,7 +73,7 @@ Waypoint * TrackLine::createWaypoint()
     //qDebug() << "create wp: " << (void *)wp;
     
     int i = childMissionItems().size();
-    QString wplabel = "waypoint"+QString::number(i+1);
+    QString wplabel = "waypoint"+QString::number(i);
     wp->setObjectName(wplabel);
 
     wp->setFlag(QGraphicsItem::ItemIsMovable);

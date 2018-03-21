@@ -73,6 +73,7 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 
 void Waypoint::write(QJsonObject &json) const
 {
+    MissionItem::write(json);
     json["type"] = "Waypoint";
     json["latitude"] = m_location.latitude();
     json["longitude"] = m_location.longitude();
@@ -80,6 +81,7 @@ void Waypoint::write(QJsonObject &json) const
 
 void Waypoint::read(const QJsonObject &json)
 {
+    MissionItem::read(json);
     QGeoCoordinate position(json["latitude"].toDouble(),json["longitude"].toDouble());
     m_internalPositionChangeFlag = true;
     setLocation(position);

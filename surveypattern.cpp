@@ -15,7 +15,7 @@ SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGrap
 
 Waypoint * SurveyPattern::createWaypoint()
 {
-    Waypoint * wp = new Waypoint(parent(),this);
+    Waypoint * wp = new Waypoint(this,this);
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -28,7 +28,10 @@ Waypoint * SurveyPattern::createWaypoint()
 void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 {
     if(m_startLocation == nullptr)
+    {
         m_startLocation = createWaypoint();
+        m_startLocation->setObjectName("start");
+    }
     m_startLocation->setLocation(location);
     m_startLocation->setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
     update();
@@ -37,7 +40,10 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_endLocation == nullptr)
+    {
         m_endLocation = createWaypoint();
+        m_endLocation->setObjectName("end");
+    }
     m_endLocation->setLocation(location);
     m_endLocation->setPos(m_endLocation->geoToPixel(location,autonomousVehicleProject()));
     if(calc)
@@ -48,7 +54,10 @@ void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
 void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_spacingLocation == nullptr)
+    {
         m_spacingLocation = createWaypoint();
+        m_spacingLocation->setObjectName("spacing/direction");
+    }
     m_spacingLocation->setLocation(location);
     if(calc)
         calculateFromWaypoints();

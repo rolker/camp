@@ -9,6 +9,8 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QSvgRenderer>
+#include <QMimeData>
+#include <QDebug>
 
 #include "backgroundraster.h"
 #include "waypoint.h"
@@ -67,23 +69,9 @@ void AutonomousVehicleProject::save(const QString &fname)
     if(!saveName.isEmpty())
     {
         QJsonObject projectObject;
+        m_root->write(projectObject);
 
-        QJsonArray objArray;
-        int row = 0;
-        for(auto child: children())
-        {
-            MissionItem * childItem = qobject_cast<MissionItem*>(child);
-            if(childItem)
-            {
-                QJsonObject miObject;
-                childItem->write(miObject);
-                objArray.append(miObject);
-            }
-        }
-        
-        projectObject["type"] = "Group";
         projectObject["name"] = "project";
-        projectObject["children"] = objArray;
 
 
         QFile saveFile(saveName);
@@ -104,24 +92,8 @@ void AutonomousVehicleProject::open(const QString &fname)
     {
         QByteArray loadData = loadFile.readAll();
         QJsonDocument loadDoc(QJsonDocument::fromJson(loadData));
-        QJsonArray childrenArray = loadDoc.object()["children"].toArray();
-        for (int childIndex = 0; childIndex < childrenArray.size(); ++childIndex)
-        {
-            QJsonObject object = childrenArray[childIndex].toObject();
-            if(object["type"] == "BackgroundRaster")
-                openBackground(object["filename"].toString());
-            MissionItem *item = nullptr;
-            if(object["type"] == "Waypoint")
-                item = createWaypoint();
-            if(object["type"] == "TrackLine")
-                item = createTrackLine();
-            if(object["type"] == "SurveyPattern")
-                item = createSurveyPattern();
-            if(object["type"] == "Platform")
-                item = createPlatform();
-            if(item)
-                item->read(object);
-        }
+        m_root->read(loadDoc.object());
+        
     }
 }
 
@@ -525,13 +497,83 @@ QVariant AutonomousVehicleProject::data(const QModelIndex& index, int role) cons
 
 Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
 {
-    if (!index.isValid())
-        return 0;
-
-    return QAbstractItemModel::flags(index);
+    if (index.isValid())
+        return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled;
+    
+    return Qt::ItemIsDropEnabled;
 }
 
 QVariant AutonomousVehicleProject::headerData(int section, Qt::Orientation orientation, int role) const
 {
     return QVariant();
+}
+
+Qt::DropActions AutonomousVehicleProject::supportedDropActions() const
+{
+    return Qt::MoveAction;
+}
+
+
+bool AutonomousVehicleProject::removeRows(int row, int count, const QModelIndex& parent)
+{
+    MissionItem * parentItem = m_root;
+    if(parent.isValid())
+        parentItem = itemFromIndex(parent);
+    if(parentItem)
+    {
+        if(parentItem->childMissionItems().size() <= row+count)
+        {
+            beginRemoveRows(parent,row,row+count);
+            for (int i = row+count-1; i >= row; --i)
+                delete parentItem->childMissionItems()[i];
+            endRemoveRows();
+        }
+    }
+    return false;
+}
+
+QStringList AutonomousVehicleProject::mimeTypes() const
+{
+    QStringList ret;
+    ret.append("application/json");
+    ret.append("text/plain");
+    return ret;
+}
+
+QMimeData * AutonomousVehicleProject::mimeData(const QModelIndexList& indexes) const
+{
+    QList<MissionItem*> itemList;
+    for(QModelIndex itemIndex: indexes)
+    {
+        MissionItem * item = itemFromIndex(itemIndex);
+        if(item)
+            itemList.append(item);
+    }
+    
+    if(itemList.empty())
+        return nullptr;
+
+    QMimeData *mimeData = new QMimeData();
+    
+    QJsonArray mimeArray;
+    
+    for(MissionItem *item: itemList)
+    {
+        QJsonObject itemObject;
+        item->write(itemObject);
+        mimeArray.append(itemObject);
+    }
+    
+    mimeData->setData("application/json", QJsonDocument(mimeArray).toJson());
+    mimeData->setData("text/plain", QJsonDocument(mimeArray).toJson());
+        
+    return mimeData;
+}
+
+bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column, const QModelIndex& parent)
+{
+    qDebug() << "dropMimeData: " << row << ", " << column;
+    qDebug() << "mime encoded: " << data->data("application/json");
+    
+        
 }

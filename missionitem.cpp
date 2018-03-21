@@ -1,6 +1,6 @@
 #include "missionitem.h"
 #include "autonomousvehicleproject.h"
-#include <QStandardItem>
+#include <QJsonObject>
 
 MissionItem::MissionItem(QObject *parent) : QObject(parent)
 {
@@ -42,4 +42,15 @@ int MissionItem::row() const
     if(item)
         return item->childMissionItems().indexOf(const_cast<MissionItem*>(this));
     return 0;
+}
+
+void MissionItem::write(QJsonObject& json) const
+{
+    json["label"] = objectName();
+}
+
+
+void MissionItem::read(const QJsonObject& json)
+{
+    setObjectName(json["label"].toString());
 }

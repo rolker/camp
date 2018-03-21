@@ -61,6 +61,15 @@ public:
     QModelIndex parent(const QModelIndex & child) const override;
     QModelIndex indexFromItem(MissionItem * item) const;
     
+    Qt::DropActions supportedDropActions() const override;
+    
+    bool removeRows(int row, int count, const QModelIndex & parent) override;
+    
+    QStringList mimeTypes() const override;
+    QMimeData * mimeData(const QModelIndexList & indexes) const override;
+    bool dropMimeData(const QMimeData * data, Qt::DropAction action, int row, int column, const QModelIndex & parent) override;
+    
+    
 #ifdef AMP_ROS
     ROSNode * createROSNode();
 #else
