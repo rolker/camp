@@ -21,8 +21,8 @@ class Group;
 class QSvgRenderer;
 #ifdef AMP_ROS
 class ROSNode;
-class RowInserter;
 #endif
+
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -34,15 +34,15 @@ public:
     QGraphicsScene *scene() const;
     void openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
+    MissionItem *potentialParentItemFor(std::string const &childType);
 
-    Waypoint * createWaypoint(BackgroundRaster *parentItem=0);
-    void addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+    Waypoint *addWaypoint(QGeoCoordinate position);
 
-    SurveyPattern * createSurveyPattern(BackgroundRaster *parentItem=0);
-    SurveyPattern * addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+    SurveyPattern * createSurveyPattern();
+    SurveyPattern * addSurveyPattern(QGeoCoordinate position);
 
-    TrackLine * createTrackLine(BackgroundRaster *parentItem =0);
-    TrackLine * addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem =0);
+    TrackLine * createTrackLine();
+    TrackLine * addTrackLine(QGeoCoordinate position);
 
     Platform * createPlatform();
     Platform * currentPlatform() const;
@@ -107,6 +107,7 @@ private:
     Platform* m_currentPlatform;
     Group* m_currentGroup;
     Group* m_root;
+    MissionItem * m_currentSelected;
 #ifdef AMP_ROS
     ROSNode* m_currentROSNode;
 #endif
@@ -115,8 +116,24 @@ private:
     
 
     void setCurrentBackground(BackgroundRaster *bgr);
+
     
+public:
+    
+    class RowInserter
+    {
+    public:
+        RowInserter(AutonomousVehicleProject &project, MissionItem *parent);
+        
+        ~RowInserter();
+    private:
+        AutonomousVehicleProject &m_project;
+    };
+
+private:    
     friend class RowInserter;
 };
+
+
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

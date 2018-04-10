@@ -3,7 +3,7 @@
 #include "autonomousvehicleproject.h"
 #include <QSvgRenderer>
 
-Point::Point(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsMissionItem(parent, parentItem)
+Point::Point(MissionItem* parent):GeoGraphicsMissionItem(parent)
 {
     QGraphicsSvgItem *symbol = new QGraphicsSvgItem(this);
     symbol->setSharedRenderer(autonomousVehicleProject()->symbols());

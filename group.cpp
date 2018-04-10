@@ -3,12 +3,8 @@
 #include<QJsonObject>
 #include<QJsonArray>
 #include"autonomousvehicleproject.h"
-#include "waypoint.h"
-#include "trackline.h"
-#include "surveypattern.h"
-#include "platform.h"
 
-Group::Group(QObject* parent):MissionItem(parent)
+Group::Group(MissionItem* parent):MissionItem(parent)
 {
 
 }
@@ -31,29 +27,17 @@ void Group::write(QJsonObject& json) const
 
 void Group::read(const QJsonObject& json)
 {
-    auto project = autonomousVehicleProject();
-    QJsonArray childrenArray = json["children"].toArray();
-    for (int childIndex = 0; childIndex < childrenArray.size(); ++childIndex)
-    {
-        QJsonObject object = childrenArray[childIndex].toObject();
-        if(object["type"] == "BackgroundRaster")
-            project->openBackground(object["filename"].toString());
-        MissionItem *item = nullptr;
-        if(object["type"] == "Waypoint")
-            item = project->createWaypoint();
-        if(object["type"] == "TrackLine")
-            item = project->createTrackLine();
-        if(object["type"] == "SurveyPattern")
-            item = project->createSurveyPattern();
-        if(object["type"] == "Platform")
-            item = project->createPlatform();
-        if(item)
-            item->read(object);
-    }
+    MissionItem::read(json);
+    readChildren(json["children"].toArray());
 }
 
 void Group::updateProjectedPoints()
 {
     for(auto child: childMissionItems())
         child->updateProjectedPoints();
+}
+
+bool Group::canAcceptChildType(const std::string& childType) const
+{
+    return true;
 }

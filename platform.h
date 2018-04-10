@@ -7,7 +7,7 @@ class Platform : public MissionItem
 {
     Q_OBJECT
 public:
-    explicit Platform(QObject *parent = 0);
+    explicit Platform(MissionItem *parent = 0);
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);

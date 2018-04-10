@@ -3,10 +3,15 @@
 #include "backgroundraster.h"
 #include <QDebug>
 
-GeoGraphicsMissionItem::GeoGraphicsMissionItem(QObject* parent, QGraphicsItem* parentItem):MissionItem(parent), GeoGraphicsItem(parentItem)
+GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent):MissionItem(parent)
 {
+    QGraphicsItem *parentItem = parent->findParentGraphicsItem();
+    setParentItem(parentItem);
     setAcceptHoverEvents(true);
     setOpacity(.5);
+    setFlag(QGraphicsItem::ItemIsMovable);
+    setFlag(QGraphicsItem::ItemIsSelectable);
+    setFlag(QGraphicsItem::ItemSendsGeometryChanges);
 }
 
 void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)
@@ -25,4 +30,9 @@ void GeoGraphicsMissionItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
 {
     //qDebug() << "Leave item!";
     setOpacity(.5);
+}
+
+QGraphicsItem * GeoGraphicsMissionItem::findParentGraphicsItem()
+{
+    return this;
 }

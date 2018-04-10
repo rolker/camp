@@ -1,10 +1,18 @@
 #include "missionitem.h"
 #include "autonomousvehicleproject.h"
 #include <QJsonObject>
+#include <QJsonArray>
+#include "waypoint.h"
+#include "trackline.h"
+#include "surveypattern.h"
+#include "platform.h"
+#include "backgroundraster.h"
 
 MissionItem::MissionItem(QObject *parent) : QObject(parent)
 {
-
+    MissionItem * parentMissionItem = qobject_cast<MissionItem*>(parent);
+    if(parentMissionItem)
+        parentMissionItem->m_childrenMissionItems.append(this);
 }
 
 AutonomousVehicleProject* MissionItem::autonomousVehicleProject() const
@@ -24,17 +32,11 @@ void MissionItem::updateProjectedPoints()
 {
 }
 
-QList<MissionItem *> MissionItem::childMissionItems() const
+const QList<MissionItem *> & MissionItem::childMissionItems() const
 {
-    QList<MissionItem*> ret;
-    for(auto child: children())
-    {
-        MissionItem * childItem = qobject_cast<MissionItem*>(child);
-        if(childItem)
-            ret.append(childItem);
-    }
-    return ret;
+    return m_childrenMissionItems;
 }
+
 
 int MissionItem::row() const
 {
@@ -53,4 +55,47 @@ void MissionItem::write(QJsonObject& json) const
 void MissionItem::read(const QJsonObject& json)
 {
     setObjectName(json["label"].toString());
+}
+
+void MissionItem::readChildren(const QJsonArray& json)
+{
+    auto project = autonomousVehicleProject();
+    for (int childIndex = 0; childIndex < json.size(); ++childIndex)
+    {
+        QJsonObject object = json[childIndex].toObject();
+        if(object["type"] == "BackgroundRaster")
+            project->openBackground(object["filename"].toString());
+        MissionItem *item = nullptr;
+        if(object["type"] == "Waypoint")
+            item = createMissionItem<Waypoint>("waypoint");
+        if(object["type"] == "TrackLine")
+            item = project->createTrackLine();
+        if(object["type"] == "SurveyPattern")
+            item = project->createSurveyPattern();
+        if(object["type"] == "Platform")
+            item = project->createPlatform();
+        if(item)
+            item->read(object);
+    }
+
+}
+
+QGraphicsItem * MissionItem::findParentGraphicsItem()
+{
+    if(parent() == autonomousVehicleProject())
+        return autonomousVehicleProject()->getBackgroundRaster();
+    MissionItem *pmi = qobject_cast<MissionItem*>(parent());
+    if(pmi)
+        return pmi->findParentGraphicsItem();
+    return nullptr;
+}
+
+bool MissionItem::canAcceptChildType(const std::string& childType) const
+{
+    return false;
+}
+
+void MissionItem::removeChildMissionItem(MissionItem* cmi)
+{
+    m_childrenMissionItems.removeAll(cmi);
 }

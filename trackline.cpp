@@ -7,7 +7,7 @@
 #include <QDebug>
 #include "autonomousvehicleproject.h"
 
-TrackLine::TrackLine(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsMissionItem(parent, parentItem)
+TrackLine::TrackLine(MissionItem *parent) :GeoGraphicsMissionItem(parent)
 {
 
 }
@@ -69,18 +69,14 @@ QPainterPath TrackLine::shape() const
 
 Waypoint * TrackLine::createWaypoint()
 {
-    Waypoint *wp = new Waypoint(this,this);
-    //qDebug() << "create wp: " << (void *)wp;
-    
     int i = childMissionItems().size();
     QString wplabel = "waypoint"+QString::number(i);
-    wp->setObjectName(wplabel);
+    Waypoint *wp = createMissionItem<Waypoint>(wplabel);
 
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
     return wp;
-
 }
 
 Waypoint * TrackLine::addWaypoint(const QGeoCoordinate &location)
@@ -154,4 +150,9 @@ void TrackLine::updateProjectedPoints()
 {
     for(auto wp: waypoints())
         wp->updateProjectedPoints();
+}
+
+bool TrackLine::canAcceptChildType(const std::string& childType) const
+{
+    return childType == "Waypoint";
 }

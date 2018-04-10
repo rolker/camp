@@ -114,3 +114,4 @@ void BackgroundRaster::read(const QJsonObject &json)
 {
 
 }
+

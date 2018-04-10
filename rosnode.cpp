@@ -7,8 +7,12 @@
 #include "autonomousvehicleproject.h"
 #include "gz4d_geo.h"
 
-ROSNode::ROSNode(QObject* parent, QGraphicsItem* parentItem): GeoGraphicsMissionItem(parent,parentItem),m_spinner(0),m_heading(0.0),m_active(false),m_helmMode("standby")
+ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(0),m_heading(0.0),m_have_local_reference(false), m_active(false),m_helmMode("standby")
 {
+    setAcceptHoverEvents(false);
+    setOpacity(1.0);
+    setFlag(QGraphicsItem::ItemIsMovable, false);
+
     //QGraphicsSvgItem *symbol = new QGraphicsSvgItem(this);
     //symbol->setSharedRenderer(autonomousVehicleProject()->symbols());
     //symbol->setElementId("Vessel");
@@ -51,6 +55,7 @@ QPainterPath ROSNode::shape() const
     {
         QPainterPath ret;
         auto p = m_local_location_history.begin();
+        ret.moveTo(*p);
         p++;
         while(p != m_local_location_history.end())
         {
@@ -59,6 +64,8 @@ QPainterPath ROSNode::shape() const
         }
         auto last = *(m_local_location_history.rbegin());
         ret.addRoundedRect(last.x()-10,last.y()-10,20,20,8,8);
+        ret.addRect(-1,-5,2,10);
+        ret.addRect(-5,-1,10,2);
         return ret;
     }
     return QPainterPath();
@@ -84,6 +91,7 @@ void ROSNode::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
     m_origin.setLatitude(message->latitude);
     m_origin.setLongitude(message->longitude);
     m_origin.setAltitude(message->altitude);
+    QMetaObject::invokeMethod(this,"updateOriginLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, m_origin));
     //qDebug() << m_origin;
 }
 
@@ -137,20 +145,26 @@ void ROSNode::sendLoiter(const QGeoCoordinate& loiterLocation)
 
 void ROSNode::updateLocation(const QGeoCoordinate& location)
 {
-    if(m_location_history.empty())
+    if(m_have_local_reference)
     {
-        setPos(geoToPixel(location,autonomousVehicleProject()));
-        m_local_reference_position = geoToPixel(location,autonomousVehicleProject());
+        m_location_history.push_back(location);
+        m_local_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
+        m_location = location;
+        update();
     }
-    m_location_history.push_back(location);
-    m_local_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
-    m_location = location;
-    update();
 }
+
+void ROSNode::updateOriginLocation(const QGeoCoordinate& location)
+{
+    setPos(geoToPixel(location,autonomousVehicleProject()));
+    m_local_reference_position = geoToPixel(location,autonomousVehicleProject());
+    m_have_local_reference = true;
+}
+
 
 void ROSNode::updateProjectedPoints()
 {
-    setPos(geoToPixel(m_location,autonomousVehicleProject()));
+    setPos(geoToPixel(m_origin,autonomousVehicleProject()));
 }
 
 bool ROSNode::active() const

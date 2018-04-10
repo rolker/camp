@@ -10,7 +10,7 @@
 #include <QDebug>
 #include <QStandardItem>
 
-VectorDataset::VectorDataset(QObject* parent):Group(parent)
+VectorDataset::VectorDataset(MissionItem* parent):Group(parent)
 {
 }
 
@@ -39,7 +39,7 @@ void VectorDataset::open(const QString& fname)
                     if(gtype == wkbPoint)
                     {
                         OGRPoint *op = dynamic_cast<OGRPoint*>(geometry);
-                        Point *p = new Point(group,bg);
+                        Point *p = new Point(group);
                         QGeoCoordinate location(op->getY(),op->getX());
                         p->setLocation(location);
                         p->setObjectName("point");
@@ -47,7 +47,7 @@ void VectorDataset::open(const QString& fname)
                     else if(gtype == wkbLineString)
                     {
                         OGRLineString *ols = dynamic_cast<OGRLineString*>(geometry);
-                        LineString *ls = new LineString(group,bg);
+                        LineString *ls = new LineString(group);
                         ls->setObjectName("lineString");
                         OGRPointIterator *pi = ols->getPointIterator();
                         OGRPoint *p;
@@ -60,7 +60,7 @@ void VectorDataset::open(const QString& fname)
                     else if(gtype == wkbPolygon)
                     {
                         OGRPolygon *op = dynamic_cast<OGRPolygon*>(geometry);
-                        Polygon *p = new Polygon(group,bg);
+                        Polygon *p = new Polygon(group);
                         p->setObjectName("polygon");
                         OGRLinearRing *lr = op->getExteriorRing();
                         OGRPointIterator *pi = lr->getPointIterator();

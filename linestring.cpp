@@ -2,7 +2,7 @@
 #include <QPainter>
 #include "point.h"
 
-LineString::LineString(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsMissionItem(parent, parentItem)
+LineString::LineString(MissionItem* parent):GeoGraphicsMissionItem(parent)
 {
 
 }

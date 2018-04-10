@@ -41,7 +41,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         case MouseMode::addWaypoint:
             if(bg)
             {
-                m_project->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())),bg);
+                m_project->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
             }
             setPanMode();
             break;
@@ -50,7 +50,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    currentTrackLine = m_project->addTrackLine(bg->pixelToGeo(mapToScene(event->pos())),bg);
+                    currentTrackLine = m_project->addTrackLine(bg->pixelToGeo(mapToScene(event->pos())));
                     pendingTrackLineWaypoint = currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
                 }
             }
@@ -65,7 +65,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())),bg);
+                    pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())));
                     //QModelIndex i = m_project-> indexFromItem(pendingSurveyPattern);
                     //emit  currentChanged(i);
                 }
@@ -115,7 +115,7 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         QPointF projectedMouse = bg->pixelToProjectedPoint(transformedMouse);
         posText += " Projected mouse: "+QString::number(projectedMouse.x(),'f')+","+QString::number(projectedMouse.y(),'f');
         QGeoCoordinate llMouse = bg->unproject(projectedMouse);
-        posText += " WGS84: " + llMouse.toString();
+        posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees);
         if(pendingSurveyPattern)
         {
             if(pendingSurveyPattern->hasSpacingLocation())

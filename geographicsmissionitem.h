@@ -11,7 +11,9 @@ class GeoGraphicsMissionItem : public MissionItem, public GeoGraphicsItem
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 public:
-    explicit GeoGraphicsMissionItem(QObject *parent = 0, QGraphicsItem *parentItem =0);
+    explicit GeoGraphicsMissionItem(MissionItem *parent = 0);
+
+    QGraphicsItem * findParentGraphicsItem() override;
     
 public slots:
     void updateBackground(BackgroundRaster * bg);

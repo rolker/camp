@@ -9,7 +9,7 @@ class VectorDataset :public Group, public Georeferenced
     Q_OBJECT
     
 public:
-    VectorDataset(QObject *parent = 0);
+    VectorDataset(MissionItem *parent = 0);
     
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
