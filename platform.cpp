@@ -1,7 +1,7 @@
 #include "platform.h"
 #include <QJsonObject>
 
-Platform::Platform(QObject *parent) : MissionItem(parent), m_speed(0.0)
+Platform::Platform(MissionItem *parent) : MissionItem(parent), m_speed(0.0)
 {
 
 }

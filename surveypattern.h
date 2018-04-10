@@ -11,7 +11,7 @@ class SurveyPattern : public GeoGraphicsMissionItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    SurveyPattern(QObject *parent = 0, QGraphicsItem *parentItem =0);
+    SurveyPattern(MissionItem *parent = 0);
 
     
     int type() const override {return SurveyPatternType;}
@@ -47,7 +47,7 @@ public:
 
     //QList<QGeoCoordinate> getPath() const;
     QList<QList<QGeoCoordinate> > getLines() const;
-
+    
 signals:
     void surveyPatternUpdated();
 

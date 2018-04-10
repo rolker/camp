@@ -8,12 +8,12 @@ class Group : public MissionItem
     Q_OBJECT
 
 public:
-    Group(QObject *parent = 0);
+    Group(MissionItem *parent = 0);
     
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
-    QList<MissionItem*> childMissionItems() const;
+    bool canAcceptChildType(const std::string & childType) const override;
     
 public slots:
     void updateProjectedPoints() override;

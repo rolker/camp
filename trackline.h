@@ -12,7 +12,7 @@ class TrackLine : public GeoGraphicsMissionItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    explicit TrackLine(QObject *parent = 0, QGraphicsItem *parentItem =0);
+    explicit TrackLine(MissionItem *parent = 0);
 
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
@@ -28,6 +28,8 @@ public:
     void read(const QJsonObject &json);
     
     int type() const override {return TrackLineType;}
+    
+    bool canAcceptChildType(const std::string & childType) const override;
     
 signals:
     void trackLineUpdated();

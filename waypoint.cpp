@@ -5,9 +5,8 @@
 #include <QJsonObject>
 #include <QDebug>
 
-Waypoint::Waypoint(QObject *parent, QGraphicsItem *parentItem) :GeoGraphicsMissionItem(parent,parentItem), m_internalPositionChangeFlag(false)
+Waypoint::Waypoint(MissionItem *parent) :GeoGraphicsMissionItem(parent), m_internalPositionChangeFlag(false)
 {
-
 }
 
 QGeoCoordinate const &Waypoint::location() const
@@ -46,7 +45,7 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 
 void Waypoint::updateLocation()
 {
-    AutonomousVehicleProject *avp = qobject_cast<AutonomousVehicleProject*>(parent());
+    AutonomousVehicleProject *avp = autonomousVehicleProject();
     BackgroundRaster *bgr = avp->getBackgroundRaster();
     QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
     m_location = bgr->unproject(projectedPosition);
@@ -73,6 +72,7 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
 
 void Waypoint::write(QJsonObject &json) const
 {
+    MissionItem::write(json);
     json["type"] = "Waypoint";
     json["latitude"] = m_location.latitude();
     json["longitude"] = m_location.longitude();
@@ -80,6 +80,7 @@ void Waypoint::write(QJsonObject &json) const
 
 void Waypoint::read(const QJsonObject &json)
 {
+    MissionItem::read(json);
     QGeoCoordinate position(json["latitude"].toDouble(),json["longitude"].toDouble());
     m_internalPositionChangeFlag = true;
     setLocation(position);

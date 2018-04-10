@@ -10,7 +10,7 @@
 #include <QDebug>
 #include <QStandardItem>
 
-VectorDataset::VectorDataset(QObject* parent):MissionItem(parent)
+VectorDataset::VectorDataset(MissionItem* parent):Group(parent)
 {
 }
 
@@ -29,8 +29,6 @@ void VectorDataset::open(const QString& fname)
             OGRLayer *layer = dataset->GetLayer(i);
             Group *group = new Group(this);
             group->setObjectName(layer->GetName());
-            if(item())
-                item()->appendRow(group->createItem(layer->GetName()));
             OGRFeature * feature = layer->GetNextFeature();
             while(feature)
             {
@@ -41,16 +39,16 @@ void VectorDataset::open(const QString& fname)
                     if(gtype == wkbPoint)
                     {
                         OGRPoint *op = dynamic_cast<OGRPoint*>(geometry);
-                        Point *p = new Point(parent(),bg);
+                        Point *p = new Point(group);
                         QGeoCoordinate location(op->getY(),op->getX());
                         p->setLocation(location);
-                        group->item()->appendRow(p->createItem("point"));
+                        p->setObjectName("point");
                     }
                     else if(gtype == wkbLineString)
                     {
                         OGRLineString *ols = dynamic_cast<OGRLineString*>(geometry);
-                        LineString *ls = new LineString(parent(),bg);
-                        group->item()->appendRow(ls->createItem("lineString"));
+                        LineString *ls = new LineString(group);
+                        ls->setObjectName("lineString");
                         OGRPointIterator *pi = ols->getPointIterator();
                         OGRPoint *p;
                         while(pi->getNextPoint(p))
@@ -62,8 +60,8 @@ void VectorDataset::open(const QString& fname)
                     else if(gtype == wkbPolygon)
                     {
                         OGRPolygon *op = dynamic_cast<OGRPolygon*>(geometry);
-                        Polygon *p = new Polygon(parent(),bg);
-                        group->item()->appendRow(p->createItem("polygon"));
+                        Polygon *p = new Polygon(group);
+                        p->setObjectName("polygon");
                         OGRLinearRing *lr = op->getExteriorRing();
                         OGRPointIterator *pi = lr->getPointIterator();
                         OGRPoint *pt;

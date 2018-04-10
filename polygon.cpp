@@ -1,7 +1,7 @@
 #include "polygon.h"
 #include <QPainter>
 
-Polygon::Polygon(QObject* parent, QGraphicsItem* parentItem):GeoGraphicsMissionItem(parent, parentItem)
+Polygon::Polygon(MissionItem* parent):GeoGraphicsMissionItem(parent)
 {
 }
 
@@ -137,5 +137,4 @@ void Polygon::addInteriorRing()
 {
     m_interiorRings.append(QList<LocationPosition>());
 }
-
 

@@ -11,7 +11,7 @@ class ROSNode : public GeoGraphicsMissionItem
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 public:
-    ROSNode(QObject* parent, QGraphicsItem* parentItem);
+    ROSNode(MissionItem* parent);
     
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
@@ -30,6 +30,7 @@ public:
     
 public slots:
     void updateLocation(QGeoCoordinate const &location);
+    void updateOriginLocation(QGeoCoordinate const &location);
     void updateProjectedPoints() override;
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     void sendLoiter(QGeoCoordinate const &loiterLocation);
@@ -51,6 +52,7 @@ private:
     std::vector<QGeoCoordinate> m_location_history;
     std::vector<QPointF> m_local_location_history;
     QPointF m_local_reference_position;
+    bool m_have_local_reference;
     double m_heading;
     bool m_active;
     std::string m_helmMode;

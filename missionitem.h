@@ -2,9 +2,10 @@
 #define MISSIONITEM_H
 
 #include <QObject>
+#include "autonomousvehicleproject.h"
 
-class AutonomousVehicleProject;
 class QStandardItem;
+class QGraphicsItem;
 
 class MissionItem : public QObject
 {
@@ -12,14 +13,28 @@ class MissionItem : public QObject
 public:
     explicit MissionItem(QObject *parent = 0);
 
-    virtual void write(QJsonObject &json) const = 0;
-    virtual void read(const QJsonObject &json) = 0;
+    virtual void write(QJsonObject &json) const;
+    virtual void read(const QJsonObject &json);
+    virtual void readChildren(const QJsonArray &json);
+    
+    virtual QGraphicsItem *findParentGraphicsItem();
     
     AutonomousVehicleProject *autonomousVehicleProject() const;
 
-    QStandardItem * item() const;
-    QStandardItem * createItem(QString const &label);
+    QList<MissionItem*> const &childMissionItems() const;
+    void removeChildMissionItem(MissionItem *cmi);
     
+    int row() const;
+    
+    template<typename T> T* createMissionItem(QString const &name = "")
+    {
+        AutonomousVehicleProject::RowInserter ri(*autonomousVehicleProject(),this);
+        T* ret = new T(this);
+        ret->setObjectName(name);
+        return ret;
+    }
+    
+    virtual bool canAcceptChildType(std::string const &childType) const;
 
 public slots:
     virtual void updateProjectedPoints();
@@ -30,7 +45,7 @@ protected:
 
     
 private:
-    QStandardItem *m_item;
+    QList<MissionItem *> m_childrenMissionItems;
 
 };
 

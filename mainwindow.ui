@@ -37,10 +37,13 @@
            <bool>true</bool>
           </property>
           <property name="dragDropMode">
-           <enum>QAbstractItemView::InternalMove</enum>
+           <enum>QAbstractItemView::DragDrop</enum>
           </property>
           <property name="defaultDropAction">
            <enum>Qt::MoveAction</enum>
+          </property>
+          <property name="selectionMode">
+           <enum>QAbstractItemView::ExtendedSelection</enum>
           </property>
           <attribute name="headerVisible">
            <bool>false</bool>
@@ -99,6 +102,7 @@
     <addaction name="actionWaypoint"/>
     <addaction name="actionTrackline"/>
     <addaction name="actionSurveyPattern"/>
+    <addaction name="actionGroup"/>
     <addaction name="actionROS_Node"/>
    </widget>
    <addaction name="menu_File"/>
@@ -115,6 +119,7 @@
    <addaction name="actionWaypoint"/>
    <addaction name="actionTrackline"/>
    <addaction name="actionSurveyPattern"/>
+   <addaction name="actionGroup"/>
    <addaction name="actionPlatform"/>
    <addaction name="actionROS_Node"/>
   </widget>
@@ -184,10 +189,18 @@
   </action>
   <action name="actionROS_Node">
    <property name="text">
-    <string>ROS Node</string>
+    <string>&amp;ROS Node</string>
    </property>
    <property name="iconText">
     <string>ROS</string>
+   </property>
+  </action>
+  <action name="actionGroup">
+   <property name="text">
+    <string>&amp;Group</string>
+   </property>
+   <property name="iconText">
+    <string>G</string>
    </property>
   </action>
  </widget>

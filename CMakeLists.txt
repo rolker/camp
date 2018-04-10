@@ -6,7 +6,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt5 COMPONENTS Core Widgets)
+find_package(Qt5 COMPONENTS Core Widgets Test)
 
 if (Qt5Widgets_FOUND)
     if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)
@@ -57,6 +57,7 @@ set(SOURCES
     linestring.cpp
     polygon.cpp
     geographicsmissionitem.cpp
+    modeltest.cpp
 )
 
 set(HEADERS
@@ -96,7 +97,7 @@ set ( RESOURCES
 
 add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
 
-qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg)
+qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg Test)
 
 target_link_libraries(AutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})
 

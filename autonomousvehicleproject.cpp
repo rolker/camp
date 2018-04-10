@@ -9,12 +9,15 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QSvgRenderer>
+#include <QMimeData>
+#include <QDebug>
 
 #include "backgroundraster.h"
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
 #include "platform.h"
+#include "group.h"
 #include <gdal_priv.h>
 #include "vectordataset.h"
 
@@ -24,22 +27,23 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QObject(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr),m_currentROSNode(nullptr),m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
 {
     GDALAllRegister();
 
-    m_model = new QStandardItemModel(this);
     m_scene = new QGraphicsScene(this);
-    m_model->setObjectName("projectModel");
+    m_root = new Group();
+    m_root->setParent(this);
+    m_currentGroup = m_root;
+    setObjectName("projectModel");
+    
+#ifdef AMP_ROS
+    m_currentROSNode = nullptr;
+#endif
 }
 
 AutonomousVehicleProject::~AutonomousVehicleProject()
 {
-}
-
-QStandardItemModel *AutonomousVehicleProject::model() const
-{
-    return m_model;
 }
 
 QGraphicsScene *AutonomousVehicleProject::scene() const
@@ -66,25 +70,9 @@ void AutonomousVehicleProject::save(const QString &fname)
     if(!saveName.isEmpty())
     {
         QJsonObject projectObject;
+        m_root->write(projectObject);
 
-        QJsonArray objArray;
-        int row = 0;
-        QStandardItem *child = m_model->item(row);
-        while(child)
-        {
-            MissionItem* mi = reinterpret_cast<MissionItem*>(child->data().value<quintptr>());
-            if(mi)
-            {
-                QJsonObject miObject;
-                mi->write(miObject);
-                objArray.append(miObject);
-            }
-            row++;
-            child = m_model->item(row);
-        }
-        projectObject["type"] = "Group";
         projectObject["name"] = "project";
-        projectObject["children"] = objArray;
 
 
         QFile saveFile(saveName);
@@ -105,38 +93,25 @@ void AutonomousVehicleProject::open(const QString &fname)
     {
         QByteArray loadData = loadFile.readAll();
         QJsonDocument loadDoc(QJsonDocument::fromJson(loadData));
-        QJsonArray childrenArray = loadDoc.object()["children"].toArray();
-        for (int childIndex = 0; childIndex < childrenArray.size(); ++childIndex)
-        {
-            QJsonObject object = childrenArray[childIndex].toObject();
-            if(object["type"] == "BackgroundRaster")
-                openBackground(object["filename"].toString());
-            MissionItem *item = nullptr;
-            if(object["type"] == "Waypoint")
-                item = createWaypoint();
-            if(object["type"] == "TrackLine")
-                item = createTrackLine();
-            if(object["type"] == "SurveyPattern")
-                item = createSurveyPattern();
-            if(object["type"] == "Platform")
-                item = createPlatform();
-            if(item)
-                item->read(object);
-        }
+        m_root->read(loadDoc.object());
     }
 }
 
+
 void AutonomousVehicleProject::openBackground(const QString &fname)
 {
-    BackgroundRaster *bgr = new BackgroundRaster(fname, this);
-    m_model->appendRow(bgr->createItem(fname));
+    beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
+    BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
+    bgr->setObjectName(fname);
     setCurrentBackground(bgr);
+    endInsertRows();
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname)
 {
-    VectorDataset * vd = new VectorDataset(this);
-    m_model->appendRow(vd->createItem(fname));
+    RowInserter ri(*this,m_currentGroup);
+    VectorDataset * vd = new VectorDataset(m_currentGroup);
+    vd->setObjectName(fname);
     vd->open(fname);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
 }
@@ -145,35 +120,30 @@ void AutonomousVehicleProject::openGeometry(const QString& fname)
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
     return m_currentBackground;
-    if(m_model)
-    {
-        int row = 0;
-        QStandardItem *item = m_model->item(row);
-        while(item)
-        {
-            BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
-            if(bgr)
-                return bgr;
-            row += 1;
-            item = m_model->item(row);
-        }
-
-    }
-    return 0;
 }
 
 Platform * AutonomousVehicleProject::createPlatform()
 {
-    Platform *p = new Platform(this);
-    m_model->appendRow(p->createItem("platform"));
+    RowInserter ri(*this,m_currentGroup);
+    Platform *p = new Platform(m_currentGroup);
+    p->setObjectName("platform");
     return p;
 }
+
+Group * AutonomousVehicleProject::addGroup()
+{
+    RowInserter ri(*this,m_currentGroup);
+    Group *g = new Group(m_currentGroup);
+    g->setObjectName("group");
+    return g;
+}
+
 
 #ifdef AMP_ROS
 ROSNode * AutonomousVehicleProject::createROSNode()
 {
-    ROSNode *rn = new ROSNode(this,getBackgroundRaster());
-    m_model->appendRow(rn->createItem("ROS"));
+    ROSNode *rn = m_root->createMissionItem<ROSNode>("ROS");
+    m_currentROSNode = rn;
     connect(this,&AutonomousVehicleProject::backgroundUpdated,rn,&ROSNode::updateBackground);
     return rn;
 }
@@ -183,68 +153,54 @@ void AutonomousVehicleProject::createROSNode()
 }
 #endif
 
-Waypoint * AutonomousVehicleProject::createWaypoint(BackgroundRaster *parentItem)
+MissionItem *AutonomousVehicleProject::potentialParentItemFor(std::string const &childType)
 {
+    MissionItem * parentItem = m_currentSelected;
     if(!parentItem)
-        parentItem = getBackgroundRaster();
-    Waypoint *wp = new Waypoint(this,parentItem);
-    m_model->appendRow(wp->createItem("waypoint"));
-    wp->setFlag(QGraphicsItem::ItemIsMovable);
-    wp->setFlag(QGraphicsItem::ItemIsSelectable);
-    wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+        parentItem = m_root;
+    while(parentItem && !parentItem->canAcceptChildType(childType))
+        parentItem = qobject_cast<MissionItem*>(parentItem->parent());
+    return parentItem;
+}
 
+Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
+{
+    
+    Waypoint *wp = potentialParentItemFor("Waypoint")->createMissionItem<Waypoint>("waypoint");
+    wp->setLocation(position);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,wp,&Waypoint::updateBackground);
     return wp;
 }
 
-void AutonomousVehicleProject::addWaypoint(QGeoCoordinate position, BackgroundRaster *parentItem)
-{
-    Waypoint *wp = createWaypoint(parentItem);
-    wp->setLocation(position);
-    wp->setPos(parentItem->geoToPixel(position));
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,wp,&Waypoint::updateBackground);
-}
 
-SurveyPattern * AutonomousVehicleProject::createSurveyPattern(BackgroundRaster *parentItem)
+SurveyPattern * AutonomousVehicleProject::createSurveyPattern()
 {
-    if(!parentItem)
-        parentItem = getBackgroundRaster();
-    SurveyPattern *sp = new SurveyPattern(this,parentItem);
-    m_model->appendRow(sp->createItem("pattern"));
-    sp->setFlag(QGraphicsItem::ItemIsMovable);
-    sp->setFlag(QGraphicsItem::ItemIsSelectable);
-    sp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    SurveyPattern *sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>("pattern");
     connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&SurveyPattern::onCurrentPlatformUpdated);
 
     return sp;
 
 }
 
-SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate position, BackgroundRaster *parentItem)
+SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate position)
 {
     SurveyPattern *sp = createSurveyPattern();
-    sp->setPos(parentItem->geoToPixel(position));
     sp->setStartLocation(position);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
     return sp;
 }
 
-TrackLine * AutonomousVehicleProject::createTrackLine(BackgroundRaster *parentItem)
+TrackLine * AutonomousVehicleProject::createTrackLine()
 {
-    if(!parentItem)
-        parentItem = getBackgroundRaster();
-    TrackLine *tl = new TrackLine(this,parentItem);
-    m_model->appendRow(tl->createItem("trackline"));
-    tl->setFlag(QGraphicsItem::ItemIsMovable);
-    tl->setFlag(QGraphicsItem::ItemIsSelectable);
-    tl->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    TrackLine *tl = potentialParentItemFor("TrackLine")->createMissionItem<TrackLine>("trackline");
     return tl;
 }
 
 
-TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, BackgroundRaster *parentItem)
+TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position)
 {
-    TrackLine *tl = createTrackLine(parentItem);
-    tl->setPos(parentItem->geoToPixel(position));
+    TrackLine *tl = createTrackLine();
+    tl->setPos(tl->geoToPixel(position,this));
     tl->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,tl,&TrackLine::updateBackground);
     return tl;
@@ -252,11 +208,11 @@ TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position, Back
 
 void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
 {
-    QStandardItem *item = m_model->itemFromIndex(index);
-    TrackLine *tl = item->data().value<TrackLine*>();
+    MissionItem *item = itemFromIndex(index);
+    TrackLine *tl = qobject_cast<TrackLine*>(item);
     if(tl)
     {
-        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(parent()));
+        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(QObject::parent()));
         if(fname.length() > 0)
         {
             QFile outfile(fname);
@@ -280,10 +236,10 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
             }
         }
     }
-    SurveyPattern *sp = item->data().value<SurveyPattern*>();
+    SurveyPattern *sp = qobject_cast<SurveyPattern*>(item);
     if(sp)
     {
-        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(parent()));
+        QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(QObject::parent()));
         if(fname.length() > 0)
         {
             QFile outfile(fname);
@@ -314,8 +270,9 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 #ifdef AMP_ROS
     if(m_currentROSNode)
     {
-        QVariant item = m_model->data(index,Qt::UserRole+1);
-        MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
+        MissionItem *mi = itemFromIndex(index);
+        //QVariant item = m_model->data(index,Qt::UserRole+1);
+        //MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
         QString itemType = mi->metaObject()->className();
         if (itemType == "TrackLine")
         {
@@ -363,8 +320,8 @@ void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)
 
 void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
 {
-    QStandardItem *item = m_model->itemFromIndex(index);
-    GeoGraphicsItem *ggi = item->data().value<GeoGraphicsItem*>();
+    MissionItem *item = itemFromIndex(index);
+    GeoGraphicsMissionItem *ggi = qobject_cast<GeoGraphicsMissionItem*>(item);
     if(ggi)
     {
         GeoGraphicsItem *pggi = qgraphicsitem_cast<GeoGraphicsItem*>(ggi->parentItem());
@@ -372,42 +329,55 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
             pggi->prepareGeometryChange();
         m_scene->removeItem(ggi);
     }
-    BackgroundRaster *bgr = item->data().value<BackgroundRaster*>();
+    BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(item);
     if(bgr)
     {
         m_scene->removeItem(bgr);
         if(m_currentBackground == bgr)
             m_currentBackground = nullptr;
     }
-    m_model->removeRow(index.row(),index.parent());
+    QModelIndex p = parent(index);
+    MissionItem * pi = itemFromIndex(p);
+    int rownum = pi->childMissionItems().indexOf(item);
+    beginRemoveRows(p,rownum,rownum);
+    pi->removeChildMissionItem(item);
+    delete item;
+    endRemoveRows();
 }
 
-void AutonomousVehicleProject::deleteItem(QStandardItem *item)
+void AutonomousVehicleProject::deleteItem(MissionItem *item)
 {
-    deleteItem(m_model->indexFromItem(item));
+    deleteItem(indexFromItem(item));
 }
 
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 {
-    QVariant item = m_model->data(index,Qt::UserRole+1);
-    MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
-    QString itemType = mi->metaObject()->className();
-
-    BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(mi);
-    if(bgr)
-        setCurrentBackground(bgr);
-    Platform *p = qobject_cast<Platform*>(mi);
-    if(p && p != m_currentPlatform)
+    m_currentSelected = itemFromIndex(index);
+    if(m_currentSelected)
     {
-        m_currentPlatform = p;
-        connect(m_currentPlatform,&Platform::speedChanged,[=](){emit currentPlaformUpdated();});
-        emit currentPlaformUpdated();
-    }
+        QString itemType = m_currentSelected->metaObject()->className();
+
+        BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(m_currentSelected);
+        if(bgr)
+            setCurrentBackground(bgr);
+        Platform *p = qobject_cast<Platform*>(m_currentSelected);
+        if(p && p != m_currentPlatform)
+        {
+            m_currentPlatform = p;
+            connect(m_currentPlatform,&Platform::speedChanged,[=](){emit currentPlaformUpdated();});
+            emit currentPlaformUpdated();
+        }
 #ifdef AMP_ROS
-    ROSNode *rn = qobject_cast<ROSNode*>(mi);
-    if(rn)
-        m_currentROSNode = rn;
+        ROSNode *rn = qobject_cast<ROSNode*>(m_currentSelected);
+        if(rn)
+            m_currentROSNode = rn;
 #endif
+        Group *g = qobject_cast<Group*>(m_currentSelected);
+        if(g)
+            m_currentGroup = g;
+        else
+            m_currentGroup = m_root;
+    }
 }
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
@@ -425,4 +395,176 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
 Platform * AutonomousVehicleProject::currentPlatform() const
 {
     return m_currentPlatform;
+}
+
+QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelIndex& parent) const
+{
+    if(column != 0 || row < 0)
+        return QModelIndex();
+    MissionItem * parentItem = m_root;
+    if(parent.isValid())
+        parentItem = itemFromIndex(parent);
+    if(parentItem)
+    {
+        auto subitems = parentItem->childMissionItems();
+        if(row < subitems.size())
+            return createIndex(row,0,subitems[row]);
+    }
+    return QModelIndex();
+}
+
+QModelIndex AutonomousVehicleProject::indexFromItem(MissionItem* item) const
+{
+    if(item && item != m_root)
+    {
+        MissionItem * parentItem = qobject_cast<MissionItem*>(item->parent());
+        if(parentItem)
+            return createIndex(parentItem->childMissionItems().indexOf(item),0,item);
+    }
+    return QModelIndex();
+}
+
+MissionItem * AutonomousVehicleProject::itemFromIndex(const QModelIndex& index) const
+{
+    if(index.isValid())
+        return reinterpret_cast<MissionItem*>(index.internalPointer());
+    return nullptr;
+}
+
+int AutonomousVehicleProject::rowCount(const QModelIndex& parent) const
+{
+    MissionItem * item = m_root;
+    if(parent.isValid())
+        item = itemFromIndex(parent);
+    if(item)
+        return item->childMissionItems().size();
+    return 0;
+}
+
+int AutonomousVehicleProject::columnCount(const QModelIndex& parent) const
+{
+    return 1;
+}
+
+QModelIndex AutonomousVehicleProject::parent(const QModelIndex& child) const
+{
+    if(child.isValid())
+    {        
+        MissionItem* item = qobject_cast<MissionItem*>(itemFromIndex(child)->parent());
+        if(item)
+            return createIndex(item->row(),0,item);
+    }
+    return QModelIndex();
+}
+
+QVariant AutonomousVehicleProject::data(const QModelIndex& index, int role) const
+{
+    MissionItem * item = itemFromIndex(index);
+    if(item)
+    {
+        if (role == Qt::DisplayRole)
+            return item->objectName();
+    }
+    return QVariant();
+}
+
+Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
+{
+    if (index.isValid())
+        return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled;
+    
+    return Qt::ItemIsDropEnabled;
+}
+
+QVariant AutonomousVehicleProject::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    return QVariant();
+}
+
+Qt::DropActions AutonomousVehicleProject::supportedDropActions() const
+{
+    return Qt::MoveAction;
+}
+
+
+bool AutonomousVehicleProject::removeRows(int row, int count, const QModelIndex& parent)
+{
+    MissionItem * parentItem = m_root;
+    if(parent.isValid())
+        parentItem = itemFromIndex(parent);
+    if(parentItem)
+    {
+        if(parentItem->childMissionItems().size() <= row+count)
+        {
+            beginRemoveRows(parent,row,row+count);
+            for (int i = row+count-1; i >= row; --i)
+                delete parentItem->childMissionItems()[i];
+            endRemoveRows();
+        }
+    }
+    return false;
+}
+
+QStringList AutonomousVehicleProject::mimeTypes() const
+{
+    QStringList ret;
+    ret.append("application/json");
+    ret.append("text/plain");
+    return ret;
+}
+
+QMimeData * AutonomousVehicleProject::mimeData(const QModelIndexList& indexes) const
+{
+    QList<MissionItem*> itemList;
+    for(QModelIndex itemIndex: indexes)
+    {
+        MissionItem * item = itemFromIndex(itemIndex);
+        if(item)
+            itemList.append(item);
+    }
+    
+    if(itemList.empty())
+        return nullptr;
+
+    QMimeData *mimeData = new QMimeData();
+    
+    QJsonArray mimeArray;
+    
+    for(MissionItem *item: itemList)
+    {
+        QJsonObject itemObject;
+        item->write(itemObject);
+        mimeArray.append(itemObject);
+    }
+    
+    mimeData->setData("application/json", QJsonDocument(mimeArray).toJson());
+    mimeData->setData("text/plain", QJsonDocument(mimeArray).toJson());
+        
+    return mimeData;
+}
+
+bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column, const QModelIndex& parent)
+{
+    qDebug() << "dropMimeData: " << row << ", " << column;
+    qDebug() << "mime encoded: " << data->data("application/json");
+    
+    QJsonDocument doc(QJsonDocument::fromJson(data->data("application/json")));
+    
+    MissionItem * parentItem = itemFromIndex(parent);
+    if(!parentItem)
+        parentItem = m_root;
+    
+    parentItem->readChildren(doc.array());
+        
+}
+
+
+AutonomousVehicleProject::RowInserter::RowInserter(AutonomousVehicleProject& project, MissionItem* parent):m_project(project)
+{
+    project.beginInsertRows(project.indexFromItem(parent),parent->childMissionItems().size(),parent->childMissionItems().size());
+}
+
+AutonomousVehicleProject::RowInserter::~RowInserter()
+{
+    m_project.endInsertRows();
 }

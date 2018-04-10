@@ -8,7 +8,7 @@ class Waypoint : public GeoGraphicsMissionItem
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 public:
-    explicit Waypoint(QObject *parent = 0, QGraphicsItem *parentItem =0);
+    explicit Waypoint(MissionItem *parent = 0);
 
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);

@@ -1,34 +1,43 @@
 #include "group.h"
 
-Group::Group(QObject* parent):MissionItem(parent)
+#include<QJsonObject>
+#include<QJsonArray>
+#include"autonomousvehicleproject.h"
+
+Group::Group(MissionItem* parent):MissionItem(parent)
 {
 
 }
 
 void Group::write(QJsonObject& json) const
 {
-
+    MissionItem::write(json);
+    json["type"] = "Group";
+    
+    QJsonArray childrenArray;
+    for(MissionItem *item: childMissionItems())
+    {
+        QJsonObject miObject;
+        item->write(miObject);
+        childrenArray.append(miObject);
+    }
+    
+    json["children"] = childrenArray;
 }
 
 void Group::read(const QJsonObject& json)
 {
-
-}
-
-QList<MissionItem *> Group::childMissionItems() const
-{
-    QList<MissionItem*> ret;
-    for(auto child: children())
-    {
-        MissionItem * childItem = qobject_cast<MissionItem*>(child);
-        if(childItem)
-            ret.append(childItem);
-    }
-    return ret;
+    MissionItem::read(json);
+    readChildren(json["children"].toArray());
 }
 
 void Group::updateProjectedPoints()
 {
     for(auto child: childMissionItems())
         child->updateProjectedPoints();
+}
+
+bool Group::canAcceptChildType(const std::string& childType) const
+{
+    return true;
 }

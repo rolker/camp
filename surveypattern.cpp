@@ -7,7 +7,7 @@
 #include "platform.h"
 #include "autonomousvehicleproject.h"
 
-SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGraphicsMissionItem(parent, parentItem),
+SurveyPattern::SurveyPattern(MissionItem *parent):GeoGraphicsMissionItem(parent),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6),m_maxSegmentLength(0.0),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
@@ -15,7 +15,7 @@ SurveyPattern::SurveyPattern(QObject *parent, QGraphicsItem *parentItem):GeoGrap
 
 Waypoint * SurveyPattern::createWaypoint()
 {
-    Waypoint * wp = new Waypoint(parent(),this);
+    Waypoint * wp = createMissionItem<Waypoint>();
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
@@ -28,7 +28,10 @@ Waypoint * SurveyPattern::createWaypoint()
 void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 {
     if(m_startLocation == nullptr)
+    {
         m_startLocation = createWaypoint();
+        m_startLocation->setObjectName("start");
+    }
     m_startLocation->setLocation(location);
     m_startLocation->setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
     update();
@@ -37,7 +40,10 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
 void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_endLocation == nullptr)
+    {
         m_endLocation = createWaypoint();
+        m_endLocation->setObjectName("end");
+    }
     m_endLocation->setLocation(location);
     m_endLocation->setPos(m_endLocation->geoToPixel(location,autonomousVehicleProject()));
     if(calc)
@@ -48,7 +54,10 @@ void SurveyPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
 void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc)
 {
     if(m_spacingLocation == nullptr)
+    {
         m_spacingLocation = createWaypoint();
+        m_spacingLocation->setObjectName("spacing/direction");
+    }
     m_spacingLocation->setLocation(location);
     if(calc)
         calculateFromWaypoints();
@@ -57,21 +66,24 @@ void SurveyPattern::setSpacingLocation(const QGeoCoordinate &location, bool calc
 
 void SurveyPattern::calculateFromWaypoints()
 {
-    qreal ab_distance = m_startLocation->location().distanceTo(m_endLocation->location());
-    qreal ab_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
-
-    qreal ac_distance = 1.0;
-    qreal ac_angle = 90.0;
-    if(m_spacingLocation)
+    if(m_startLocation && m_endLocation)
     {
-        ac_distance = m_startLocation->location().distanceTo(m_spacingLocation->location());
-        ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
-        m_spacing = ac_distance;
-        m_direction = ac_angle-90;
+        qreal ab_distance = m_startLocation->location().distanceTo(m_endLocation->location());
+        qreal ab_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
+
+        qreal ac_distance = 1.0;
+        qreal ac_angle = 90.0;
+        if(m_spacingLocation)
+        {
+            ac_distance = m_startLocation->location().distanceTo(m_spacingLocation->location());
+            ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
+            m_spacing = ac_distance;
+            m_direction = ac_angle-90;
+        }
+        qreal leg_heading = ac_angle-90.0;
+        m_lineLength = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
+        m_totalWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
     }
-    qreal leg_heading = ac_angle-90.0;
-    m_lineLength = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
-    m_totalWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
 }
 
 
