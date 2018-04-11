@@ -7,7 +7,7 @@
 #include "autonomousvehicleproject.h"
 #include "gz4d_geo.h"
 
-ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(0),m_heading(0.0),m_have_local_reference(false), m_active(false),m_helmMode("standby")
+ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(0),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby")
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -21,6 +21,7 @@ ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(
     qRegisterMetaType<QGeoCoordinate>();
     m_geopoint_subscriber = m_node.subscribe("/udp/position", 10, &ROSNode::geoPointStampedCallback, this);
     m_origin_subscriber = m_node.subscribe("/udp/origin", 10, &ROSNode::originCallback, this);
+    m_heading_subscriber = m_node.subscribe("/udp/heading", 10, &ROSNode::headingCallback, this);
     m_active_publisher = m_node.advertise<std_msgs::Bool>("/udp/active",1);
     m_helmMode_publisher = m_node.advertise<std_msgs::String>("/udp/helm_mode",1);
     m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/udp/wpt_updates",1);
@@ -63,9 +64,25 @@ QPainterPath ROSNode::shape() const
             p++;
         }
         auto last = *(m_local_location_history.rbegin());
-        ret.addRoundedRect(last.x()-10,last.y()-10,20,20,8,8);
+        
+        
+        double heading_radians = m_heading*2*M_PI/360.0;
+        double sin_heading = sin(heading_radians);
+        double cos_heading = cos(heading_radians);
+        
+        //qDebug() << "heading (rad): " << heading_radians << " s: " << sin_heading << " c: " << cos_heading;
+
+        
+        ret.moveTo(last.x()+(-10*cos_heading)-( 10*sin_heading),last.y()+(-10*sin_heading)+( 10*cos_heading));
+        ret.lineTo(last.x()                  -(-20*sin_heading),last.y()                  +(-20*cos_heading));
+        ret.lineTo(last.x()+( 10*cos_heading)-( 10*sin_heading),last.y()+( 10*sin_heading)+( 10*cos_heading));
+        ret.lineTo(last.x()+(-10*cos_heading)-( 10*sin_heading),last.y()+(-10*sin_heading)+( 10*cos_heading));
+        
+        //ret.addRoundedRect(last.x()-10,last.y()-10,20,20,8,8);
+        
         ret.addRect(-1,-5,2,10);
         ret.addRect(-5,-1,10,2);
+        
         return ret;
     }
     return QPainterPath();
@@ -94,6 +111,12 @@ void ROSNode::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
     QMetaObject::invokeMethod(this,"updateOriginLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, m_origin));
     //qDebug() << m_origin;
 }
+
+void ROSNode::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message)
+{
+    QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
+}
+
 
 void ROSNode::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
 {
@@ -159,6 +182,12 @@ void ROSNode::updateOriginLocation(const QGeoCoordinate& location)
     setPos(geoToPixel(location,autonomousVehicleProject()));
     m_local_reference_position = geoToPixel(location,autonomousVehicleProject());
     m_have_local_reference = true;
+}
+
+void ROSNode::updateHeading(double heading)
+{
+    m_heading = heading;
+    update();
 }
 
 
