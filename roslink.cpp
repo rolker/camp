@@ -43,7 +43,7 @@ void ROSLink::connectROS()
         }
         else
         {
-            qDebug() << "waiting for ROS...";
+            //qDebug() << "waiting for ROS...";
             QTimer::singleShot(1000,this,SLOT(connectROS()));
         }
     }
