@@ -29,6 +29,8 @@ MainWindow::MainWindow(QWidget *parent) :
 
 
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
+    
+    ui->rosDetails->setROSLink(project->rosLink());
 
 }
 
@@ -148,11 +150,6 @@ void MainWindow::on_actionOpenGeometry_triggered()
 
     if(!fname.isEmpty())
         project->openGeometry(fname);
-}
-
-void MainWindow::on_actionROS_Node_triggered()
-{
-    project->createROSNode();
 }
 
 void MainWindow::on_actionGroup_triggered()

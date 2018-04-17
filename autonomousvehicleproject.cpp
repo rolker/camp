@@ -22,7 +22,7 @@
 #include "vectordataset.h"
 
 #ifdef AMP_ROS
-#include "rosnode.h"
+#include "roslink.h"
 #endif
 
 #include <iostream>
@@ -38,7 +38,8 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     setObjectName("projectModel");
     
 #ifdef AMP_ROS
-    m_currentROSNode = nullptr;
+    m_ROSLink =  new ROSLink(this);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,m_ROSLink ,&ROSLink::updateBackground);
 #endif
 }
 
@@ -137,21 +138,6 @@ Group * AutonomousVehicleProject::addGroup()
     g->setObjectName("group");
     return g;
 }
-
-
-#ifdef AMP_ROS
-ROSNode * AutonomousVehicleProject::createROSNode()
-{
-    ROSNode *rn = m_root->createMissionItem<ROSNode>("ROS");
-    m_currentROSNode = rn;
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,rn,&ROSNode::updateBackground);
-    return rn;
-}
-#else
-void AutonomousVehicleProject::createROSNode()
-{
-}
-#endif
 
 MissionItem *AutonomousVehicleProject::potentialParentItemFor(std::string const &childType)
 {
@@ -268,7 +254,7 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
 void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 {
 #ifdef AMP_ROS
-    if(m_currentROSNode)
+    if(m_ROSLink)
     {
         MissionItem *mi = itemFromIndex(index);
         //QVariant item = m_model->data(index,Qt::UserRole+1);
@@ -288,7 +274,7 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
                     wps.append(ll);
                 }
             }
-            m_currentROSNode->sendWaypoints(wps);
+            m_ROSLink->sendWaypoints(wps);
         }
         if (itemType == "SurveyPattern")
         {
@@ -298,14 +284,14 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
             for (auto l: lines)
                 for (auto p: l)
                     wps.append(p);
-            m_currentROSNode->sendWaypoints(wps);
+            m_ROSLink->sendWaypoints(wps);
         }
         if (itemType == "Waypoint")
         {
             Waypoint *wp = qobject_cast<Waypoint*>(mi);
             QList<QGeoCoordinate> wps;
             wps.append(wp->location());
-            m_currentROSNode->sendWaypoints(wps);
+            m_ROSLink->sendWaypoints(wps);
         }
     }
 #endif
@@ -367,11 +353,6 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
             connect(m_currentPlatform,&Platform::speedChanged,[=](){emit currentPlaformUpdated();});
             emit currentPlaformUpdated();
         }
-#ifdef AMP_ROS
-        ROSNode *rn = qobject_cast<ROSNode*>(m_currentSelected);
-        if(rn)
-            m_currentROSNode = rn;
-#endif
         Group *g = qobject_cast<Group*>(m_currentSelected);
         if(g)
             m_currentGroup = g;
@@ -556,6 +537,11 @@ bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropActio
     
     parentItem->readChildren(doc.array());
         
+}
+
+ROSLink * AutonomousVehicleProject::rosLink() const
+{
+    return m_ROSLink;
 }
 
 

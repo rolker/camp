@@ -23,6 +23,9 @@
       <widget class="QWidget" name="layoutWidget">
        <layout class="QVBoxLayout" name="verticalLayout">
         <item>
+         <widget class="ROSDetails" name="rosDetails" native="true"/>
+        </item>
+        <item>
          <widget class="QTreeView" name="treeView">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Minimum" vsizetype="Minimum">
@@ -103,7 +106,6 @@
     <addaction name="actionTrackline"/>
     <addaction name="actionSurveyPattern"/>
     <addaction name="actionGroup"/>
-    <addaction name="actionROS_Node"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -121,7 +123,6 @@
    <addaction name="actionSurveyPattern"/>
    <addaction name="actionGroup"/>
    <addaction name="actionPlatform"/>
-   <addaction name="actionROS_Node"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -187,14 +188,6 @@
     <string>Open &amp;Geometry</string>
    </property>
   </action>
-  <action name="actionROS_Node">
-   <property name="text">
-    <string>&amp;ROS Node</string>
-   </property>
-   <property name="iconText">
-    <string>ROS</string>
-   </property>
-  </action>
   <action name="actionGroup">
    <property name="text">
     <string>&amp;Group</string>
@@ -215,6 +208,12 @@
    <class>DetailsView</class>
    <extends>QWidget</extends>
    <header>detailsview.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ROSDetails</class>
+   <extends>QWidget</extends>
+   <header>rosdetails.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

@@ -1,13 +1,15 @@
-#include "rosnode.h"
+#include "roslink.h"
 #include "std_msgs/Bool.h"
 #include "std_msgs/String.h"
 #include <QDebug>
 #include <QPainter>
 #include <QGraphicsSvgItem>
 #include "autonomousvehicleproject.h"
+#include "backgroundraster.h"
+#include <QTimer>
 #include "gz4d_geo.h"
 
-ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(0),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby")
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby")
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -19,22 +21,40 @@ ROSNode::ROSNode(MissionItem* parent): GeoGraphicsMissionItem(parent),m_spinner(
     //symbol->setFlag(QGraphicsItem::ItemIgnoresTransformations);
     
     qRegisterMetaType<QGeoCoordinate>();
-    m_geopoint_subscriber = m_node.subscribe("/udp/position", 10, &ROSNode::geoPointStampedCallback, this);
-    m_origin_subscriber = m_node.subscribe("/udp/origin", 10, &ROSNode::originCallback, this);
-    m_heading_subscriber = m_node.subscribe("/udp/heading", 10, &ROSNode::headingCallback, this);
-    m_active_publisher = m_node.advertise<std_msgs::Bool>("/udp/active",1);
-    m_helmMode_publisher = m_node.advertise<std_msgs::String>("/udp/helm_mode",1);
-    m_wpt_updates_publisher = m_node.advertise<std_msgs::String>("/udp/wpt_updates",1);
-    m_loiter_updates_publisher = m_node.advertise<std_msgs::String>("/udp/loiter_updates",1);
-    m_spinner.start();
+    connectROS();
 }
 
-QRectF ROSNode::boundingRect() const
+void ROSLink::connectROS()
+{    
+    if(!m_node)
+    {
+        if(ros::master::check())
+        {
+            m_node = new ros::NodeHandle;
+            m_spinner = new ros::AsyncSpinner(0);
+            m_geopoint_subscriber = m_node->subscribe("/udp/position", 10, &ROSLink::geoPointStampedCallback, this);
+            m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
+            m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
+            m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
+            m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
+            m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
+            m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
+            m_spinner->start();
+        }
+        else
+        {
+            qDebug() << "waiting for ROS...";
+            QTimer::singleShot(1000,this,SLOT(connectROS()));
+        }
+    }
+}
+
+QRectF ROSLink::boundingRect() const
 {
     return shape().boundingRect();
 }
 
-void ROSNode::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
+void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     painter->save();
 
@@ -50,7 +70,7 @@ void ROSNode::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     
 }
 
-QPainterPath ROSNode::shape() const
+QPainterPath ROSLink::shape() const
 {
     if (m_local_location_history.size() > 1)
     {
@@ -89,21 +109,21 @@ QPainterPath ROSNode::shape() const
 }
 
 
-void ROSNode::read(const QJsonObject& json)
+void ROSLink::read(const QJsonObject& json)
 {
 }
 
-void ROSNode::write(QJsonObject& json) const
+void ROSLink::write(QJsonObject& json) const
 {
 }
 
-void ROSNode::geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
+void ROSLink::geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
 {
     QGeoCoordinate position(message->position.latitude,message->position.longitude,message->position.altitude);
     QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
-void ROSNode::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
+void ROSLink::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
 {
     m_origin.setLatitude(message->latitude);
     m_origin.setLongitude(message->longitude);
@@ -112,13 +132,13 @@ void ROSNode::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
     //qDebug() << m_origin;
 }
 
-void ROSNode::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message)
+void ROSLink::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message)
 {
     QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
 }
 
 
-void ROSNode::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
+void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
 {
     qDebug() << "origin: " << m_origin;
     gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
@@ -143,7 +163,7 @@ void ROSNode::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
     m_wpt_updates_publisher.publish(rosUpdates);
 }
 
-void ROSNode::sendLoiter(const QGeoCoordinate& loiterLocation)
+void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
 {
     qDebug() << "origin: " << m_origin;
     gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
@@ -166,7 +186,7 @@ void ROSNode::sendLoiter(const QGeoCoordinate& loiterLocation)
     m_loiter_updates_publisher.publish(rosUpdates);
 }
 
-void ROSNode::updateLocation(const QGeoCoordinate& location)
+void ROSLink::updateLocation(const QGeoCoordinate& location)
 {
     if(m_have_local_reference)
     {
@@ -177,31 +197,41 @@ void ROSNode::updateLocation(const QGeoCoordinate& location)
     }
 }
 
-void ROSNode::updateOriginLocation(const QGeoCoordinate& location)
+void ROSLink::updateOriginLocation(const QGeoCoordinate& location)
 {
     setPos(geoToPixel(location,autonomousVehicleProject()));
     m_local_reference_position = geoToPixel(location,autonomousVehicleProject());
     m_have_local_reference = true;
 }
 
-void ROSNode::updateHeading(double heading)
+void ROSLink::updateHeading(double heading)
 {
     m_heading = heading;
     update();
 }
 
 
-void ROSNode::updateProjectedPoints()
+void ROSLink::updateBackground(BackgroundRaster *bgr)
 {
+    setParentItem(bgr);
     setPos(geoToPixel(m_origin,autonomousVehicleProject()));
+    if(m_have_local_reference)
+    {
+        m_local_reference_position = geoToPixel(m_origin,autonomousVehicleProject());
+        m_local_location_history.clear();
+        for(auto l: m_location_history)
+        {
+            m_local_location_history.push_back(geoToPixel(l,autonomousVehicleProject())-m_local_reference_position);            
+        }
+    }
 }
 
-bool ROSNode::active() const
+bool ROSLink::active() const
 {
     return m_active;
 }
 
-void ROSNode::setActive(bool active)
+void ROSLink::setActive(bool active)
 {
     m_active = active;
     std_msgs::Bool b;
@@ -209,12 +239,12 @@ void ROSNode::setActive(bool active)
     m_active_publisher.publish(b);
 }
 
-const std::string& ROSNode::helmMode() const
+const std::string& ROSLink::helmMode() const
 {
     return m_helmMode;
 }
 
-void ROSNode::setHelmMode(const std::string& helmMode)
+void ROSLink::setHelmMode(const std::string& helmMode)
 {
     m_helmMode = helmMode;
     std_msgs::String hm;
@@ -222,4 +252,8 @@ void ROSNode::setHelmMode(const std::string& helmMode)
     m_helmMode_publisher.publish(hm);
 }
 
+AutonomousVehicleProject * ROSLink::autonomousVehicleProject() const
+{
+    return qobject_cast<AutonomousVehicleProject*>(parent());
+}
 

@@ -19,7 +19,7 @@ public:
             PointType,
             LineStringType,
             PolygonType,
-            ROSNodeType
+            ROSLinkType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

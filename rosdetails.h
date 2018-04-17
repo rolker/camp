@@ -5,20 +5,20 @@
 
 namespace Ui
 {
-class ROSNodeDetails;
+class ROSDetails;
 }
 
-class ROSNode;
+class ROSLink;
 
-class ROSNodeDetails : public QWidget
+class ROSDetails : public QWidget
 {
     Q_OBJECT
     
 public:
-    explicit ROSNodeDetails(QWidget *parent =0);
-    ~ROSNodeDetails();
+    explicit ROSDetails(QWidget *parent =0);
+    ~ROSDetails();
     
-    void setROSNode(ROSNode *rosNode);
+    void setROSLink(ROSLink *rosLink);
 
 private slots:
     void on_activeCheckBox_stateChanged(int state);
@@ -27,8 +27,8 @@ private slots:
     void on_loiterPushButton_clicked(bool checked);
     
 private:
-    Ui::ROSNodeDetails* ui;
-    ROSNode *m_rosNode;
+    Ui::ROSDetails* ui;
+    ROSLink *m_rosLink;
 };
 
 #endif // ROSNODEDETAILS_H
