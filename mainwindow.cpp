@@ -7,7 +7,7 @@
 
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
-
+#include "roslink.h"
 #include <modeltest.h>
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -29,9 +29,11 @@ MainWindow::MainWindow(QWidget *parent) :
 
 
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
-    
-    ui->rosDetails->setROSLink(project->rosLink());
 
+    ui->rosDetails->setEnabled(false);
+    connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
+    ui->rosDetails->setROSLink(project->rosLink());
+    project->rosLink()->connectROS();
 }
 
 MainWindow::~MainWindow()
@@ -156,3 +158,10 @@ void MainWindow::on_actionGroup_triggered()
 {
     project->addGroup();
 }
+
+void MainWindow::onROSConnected(bool connected)
+{
+    ui->rosDetails->setEnabled(connected);
+}
+
+

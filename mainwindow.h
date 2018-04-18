@@ -21,6 +21,7 @@ public:
 public slots:
 
     void setCurrent(QModelIndex &index);
+    void onROSConnected(bool connected);
 
 private slots:
     void on_actionOpen_triggered();

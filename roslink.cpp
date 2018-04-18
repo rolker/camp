@@ -21,32 +21,41 @@ ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphics
     //symbol->setFlag(QGraphicsItem::ItemIgnoresTransformations);
     
     qRegisterMetaType<QGeoCoordinate>();
-    connectROS();
+    //connectROS();
 }
 
 void ROSLink::connectROS()
 {    
-    if(!m_node)
+    if(ros::master::check())
     {
-        if(ros::master::check())
+        if(!m_node)
         {
             m_node = new ros::NodeHandle;
             m_spinner = new ros::AsyncSpinner(0);
             m_geopoint_subscriber = m_node->subscribe("/udp/position", 10, &ROSLink::geoPointStampedCallback, this);
             m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
+            m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
             m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
             m_spinner->start();
-        }
-        else
-        {
-            //qDebug() << "waiting for ROS...";
-            QTimer::singleShot(1000,this,SLOT(connectROS()));
+            emit rosConnected(true);
         }
     }
+    else
+    {
+        if(m_node)
+        {
+            delete m_node;
+            m_node = nullptr;
+            delete m_spinner;
+            m_spinner = nullptr;
+            emit rosConnected(false);
+        }
+    }
+    QTimer::singleShot(1000,this,SLOT(connectROS()));
 }
 
 QRectF ROSLink::boundingRect() const
@@ -59,7 +68,10 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->save();
 
     QPen p;
-    p.setColor(Qt::darkGreen);
+    if(m_node)
+        p.setColor(Qt::darkGreen);
+    else
+        p.setColor(Qt::darkRed);
     p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
@@ -85,27 +97,41 @@ QPainterPath ROSLink::shape() const
         }
         auto last = *(m_local_location_history.rbegin());
         
-        
-        double heading_radians = m_heading*2*M_PI/360.0;
-        double sin_heading = sin(heading_radians);
-        double cos_heading = cos(heading_radians);
-        
-        //qDebug() << "heading (rad): " << heading_radians << " s: " << sin_heading << " c: " << cos_heading;
-
-        
-        ret.moveTo(last.x()+(-10*cos_heading)-( 10*sin_heading),last.y()+(-10*sin_heading)+( 10*cos_heading));
-        ret.lineTo(last.x()                  -(-20*sin_heading),last.y()                  +(-20*cos_heading));
-        ret.lineTo(last.x()+( 10*cos_heading)-( 10*sin_heading),last.y()+( 10*sin_heading)+( 10*cos_heading));
-        ret.lineTo(last.x()+(-10*cos_heading)-( 10*sin_heading),last.y()+(-10*sin_heading)+( 10*cos_heading));
-        
-        //ret.addRoundedRect(last.x()-10,last.y()-10,20,20,8,8);
+        drawTriangle(ret,last,m_heading,10);
         
         ret.addRect(-1,-5,2,10);
         ret.addRect(-5,-1,10,2);
+
+        for(auto contactList: m_contacts)
+        {
+            auto p = contactList.second.begin();
+            ret.moveTo(p->location_local);
+            p++;
+            while(p != contactList.second.end())
+            {
+                ret.lineTo(p->location_local);
+                p++;
+            }
+            auto last = *(contactList.second.rbegin());
+            
+            drawTriangle(ret,last.location_local,last.heading,10);
+        }
         
         return ret;
     }
     return QPainterPath();
+}
+
+void ROSLink::drawTriangle(QPainterPath& path, const QPointF& location, double heading_degrees, double scale) const
+{
+        double heading_radians = heading_degrees*2*M_PI/360.0;
+        double sin_heading = sin(heading_radians);
+        double cos_heading = cos(heading_radians);
+        
+        path.moveTo(location.x()+(-scale*.5*cos_heading)-( scale*.5*sin_heading),location.y()+(-scale*.5*sin_heading)+( scale*.5*cos_heading));
+        path.lineTo(location.x()                        -(-scale   *sin_heading),location.y()                        +(-scale*   cos_heading));
+        path.lineTo(location.x()+( scale*.5*cos_heading)-( scale*.5*sin_heading),location.y()+( scale*.5*sin_heading)+( scale*.5*cos_heading));
+        path.lineTo(location.x()+(-scale*.5*cos_heading)-( scale*.5*sin_heading),location.y()+(-scale*.5*sin_heading)+( scale*.5*cos_heading));
 }
 
 
@@ -135,6 +161,20 @@ void ROSLink::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
 void ROSLink::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message)
 {
     QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
+}
+
+void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
+{
+    qDebug() << message->mmsi << ": " << message->name.c_str();
+    Contact c;
+    c.name = message->name;
+    c.location.setLatitude(message->position.latitude);
+    c.location.setLongitude(message->position.longitude);
+    if(c.heading == -1)
+        c.heading = message->cog*180.0/M_PI;
+    else
+        c.heading = message->heading*180.0/M_PI;
+    QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(uint32_t, message->mmsi),Q_ARG(Contact, c));
 }
 
 
@@ -210,6 +250,15 @@ void ROSLink::updateHeading(double heading)
     update();
 }
 
+void ROSLink::addAISContact(uint32_t mmsi, Contact c)
+{
+    if(m_have_local_reference)
+    {
+        c.location_local = geoToPixel(c.location,autonomousVehicleProject())-m_local_reference_position;
+    }
+    m_contacts[mmsi].push_back(c);
+    update();
+}
 
 void ROSLink::updateBackground(BackgroundRaster *bgr)
 {
@@ -222,6 +271,11 @@ void ROSLink::updateBackground(BackgroundRaster *bgr)
         for(auto l: m_location_history)
         {
             m_local_location_history.push_back(geoToPixel(l,autonomousVehicleProject())-m_local_reference_position);            
+        }
+        for(auto contactList: m_contacts)
+        {
+            for(auto contact: contactList.second)
+                contact.location_local = geoToPixel(contact.location,autonomousVehicleProject())-m_local_reference_position;
         }
     }
 }
