@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>171</width>
-    <height>122</height>
+    <width>197</width>
+    <height>231</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -36,6 +36,34 @@
     <widget class="QPushButton" name="loiterPushButton">
      <property name="text">
       <string>Loiter</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="vehicleStateLabel">
+     <property name="text">
+      <string>vehicle state:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="vehicleStateReasonLabel">
+     <property name="text">
+      <string>reason:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="pilotControlLabel">
+     <property name="text">
+      <string>pilot control:</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="rosPilotModeLabel">
+     <property name="text">
+      <string>ros pilot mode:</string>
      </property>
     </widget>
    </item>

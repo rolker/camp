@@ -18,6 +18,7 @@ ROSDetails::~ROSDetails()
 void ROSDetails::setROSLink(ROSLink* rosLink)
 {
     m_rosLink = rosLink;
+    rosLink->setROSDetails(this);
     Qt::CheckState s = Qt::Unchecked;
     if(rosLink->active())
         s = Qt::Checked;
@@ -46,5 +47,13 @@ void ROSDetails::on_loiterPushButton_clicked(bool checked)
 {
     qDebug() << "ROSDetails helm mode: loiter";
     m_rosLink->setHelmMode("loiter");
+}
+
+void ROSDetails::updateVehicleStatus(const QString& vehicleState, const QString& reason, const QString& pilotControl, const QString& rosPilotMode)
+{
+    ui->vehicleStateLabel->setText(vehicleState);
+    ui->vehicleStateReasonLabel->setText(reason);
+    ui->pilotControlLabel->setText(pilotControl);
+    ui->rosPilotModeLabel->setText(rosPilotMode);
 }
 

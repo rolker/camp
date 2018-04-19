@@ -8,6 +8,13 @@
 #include "backgroundraster.h"
 #include <QTimer>
 #include "gz4d_geo.h"
+#include "rosdetails.h"
+
+ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading(0.0)
+{
+
+}
+
 
 ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby")
 {
@@ -36,6 +43,7 @@ void ROSLink::connectROS()
             m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
             m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
+            m_vehicle_status_subscriber = m_node->subscribe("/udp/vehicle_status", 10, &ROSLink::vehicleStatusCallback, this);
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
@@ -75,8 +83,12 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
-    painter->drawPath(shape());
+    painter->drawPath(vehicleShape());
 
+    p.setColor(Qt::blue);
+    painter->setPen(p);
+    painter->drawPath(aisShape());
+    
     painter->restore();
   
     
@@ -84,9 +96,9 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
 
 QPainterPath ROSLink::shape() const
 {
+    QPainterPath ret;
     if (m_local_location_history.size() > 1)
     {
-        QPainterPath ret;
         auto p = m_local_location_history.begin();
         ret.moveTo(*p);
         p++;
@@ -101,26 +113,71 @@ QPainterPath ROSLink::shape() const
         
         ret.addRect(-1,-5,2,10);
         ret.addRect(-5,-1,10,2);
-
-        for(auto contactList: m_contacts)
-        {
-            auto p = contactList.second.begin();
-            ret.moveTo(p->location_local);
-            p++;
-            while(p != contactList.second.end())
-            {
-                ret.lineTo(p->location_local);
-                p++;
-            }
-            auto last = *(contactList.second.rbegin());
-            
-            drawTriangle(ret,last.location_local,last.heading,10);
-        }
-        
-        return ret;
     }
-    return QPainterPath();
+    
+    for(auto contactList: m_contacts)
+    {
+        auto p = contactList.second.begin();
+        ret.moveTo((*p)->location_local);
+        p++;
+        while(p != contactList.second.end())
+        {
+            ret.lineTo((*p)->location_local);
+            p++;
+        }
+        auto last = *(contactList.second.rbegin());
+        
+        drawTriangle(ret,last->location_local,last->heading,10);
+    }
+        
+    return ret;
 }
+
+QPainterPath ROSLink::vehicleShape() const
+{
+    QPainterPath ret;
+    if (m_local_location_history.size() > 1)
+    {
+        auto p = m_local_location_history.begin();
+        ret.moveTo(*p);
+        p++;
+        while(p != m_local_location_history.end())
+        {
+            ret.lineTo(*p);
+            p++;
+        }
+        auto last = *(m_local_location_history.rbegin());
+        
+        drawTriangle(ret,last,m_heading,10);
+        
+        ret.addRect(-1,-5,2,10);
+        ret.addRect(-5,-1,10,2);
+    }
+    return ret;
+}
+
+
+QPainterPath ROSLink::aisShape() const
+{
+    QPainterPath ret;
+    for(auto contactList: m_contacts)
+    {
+        auto p = contactList.second.begin();
+        ret.moveTo((*p)->location_local);
+        p++;
+        while(p != contactList.second.end())
+        {
+            ret.lineTo((*p)->location_local);
+            p++;
+        }
+        auto last = *(contactList.second.rbegin());
+        
+        drawTriangle(ret,last->location_local,last->heading,10);
+    }
+        
+    return ret;
+}
+
 
 void ROSLink::drawTriangle(QPainterPath& path, const QPointF& location, double heading_degrees, double scale) const
 {
@@ -142,6 +199,12 @@ void ROSLink::read(const QJsonObject& json)
 void ROSLink::write(QJsonObject& json) const
 {
 }
+
+void ROSLink::setROSDetails(ROSDetails* details)
+{
+    m_details = details;
+}
+
 
 void ROSLink::geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
 {
@@ -165,16 +228,84 @@ void ROSLink::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& mes
 
 void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
 {
-    qDebug() << message->mmsi << ": " << message->name.c_str();
-    Contact c;
-    c.name = message->name;
-    c.location.setLatitude(message->position.latitude);
-    c.location.setLongitude(message->position.longitude);
-    if(c.heading == -1)
-        c.heading = message->cog*180.0/M_PI;
+    qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog;
+    ROSAISContact *c = new ROSAISContact();
+    c->mmsi = message->mmsi;
+    c->name = message->name;
+    c->location.setLatitude(message->position.latitude);
+    c->location.setLongitude(message->position.longitude);
+    if(message->heading < 0)
+        c->heading = message->cog*180.0/M_PI;
     else
-        c.heading = message->heading*180.0/M_PI;
-    QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(uint32_t, message->mmsi),Q_ARG(Contact, c));
+        c->heading = message->heading*180.0/M_PI;
+    QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(ROSAISContact*, c));
+}
+
+void ROSLink::vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message)
+{
+    QString state;
+    switch(message->vehicle_state)
+    {
+        case asv_msgs::VehicleStatus::VP_STATE_RESET:
+            state = "vehicle state: reset";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_INITIAL:
+            state = "vehicle state: initial";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_CONFIG:
+            state = "vehicle state: config";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_ARMED:
+            state = "vehicle state: armed";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_PAUSE:
+            state = "vehicle state: pause";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_ACTIVE:
+            state = "vehicle state: active";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_RECOVER:
+            state = "vehicle state: recover";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_MANNED:
+            state = "vehicle state: manned";
+            break;
+        case asv_msgs::VehicleStatus::VP_STATE_EMERGENCY:
+            state = "vehicle state: emergency";
+            break;
+        default:
+            state = "vehicle state: unknown";
+    }
+    QString state_reason = "reason: " + QString(message->vehicle_state_reason.c_str());
+    QString pilot_control = "pilot control: " + QString(message->pilot_control.c_str());
+    QString ros_pilot_mode;
+    switch(message->ros_pilot_mode)
+    {
+        case asv_msgs::VehicleStatus::PILOT_NOT_IN_COMMAND:
+            ros_pilot_mode = "ros pilot mode: not in command";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_INACTIVE:
+            ros_pilot_mode = "ros pilot mode: inactive";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_INHIBITED:
+            ros_pilot_mode = "ros pilot mode: inhibited";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_DIRECT_DRIVE:
+            ros_pilot_mode = "ros pilot mode: direct drive";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_HEADING_HOLD:
+            ros_pilot_mode = "ros pilot mode: heading hold";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_SEEK_POSITION:
+            ros_pilot_mode = "ros pilot mode: seek position";
+            break;
+        case asv_msgs::VehicleStatus::PILOT_TRACK_FOLLOW:
+            ros_pilot_mode = "ros pilot mode: track follow";
+            break;
+        default:
+            ros_pilot_mode = "ros pilot mode: unknown";
+    }
+    QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, state), Q_ARG(QString const&, state_reason), Q_ARG(QString const&, pilot_control), Q_ARG(QString const&, ros_pilot_mode));
 }
 
 
@@ -250,13 +381,14 @@ void ROSLink::updateHeading(double heading)
     update();
 }
 
-void ROSLink::addAISContact(uint32_t mmsi, Contact c)
+void ROSLink::addAISContact(ROSAISContact *c)
 {
+    //c->setParent(this);
     if(m_have_local_reference)
     {
-        c.location_local = geoToPixel(c.location,autonomousVehicleProject())-m_local_reference_position;
+        c->location_local = geoToPixel(c->location,autonomousVehicleProject())-m_local_reference_position;
     }
-    m_contacts[mmsi].push_back(c);
+    m_contacts[c->mmsi].push_back(c);
     update();
 }
 
@@ -275,7 +407,7 @@ void ROSLink::updateBackground(BackgroundRaster *bgr)
         for(auto contactList: m_contacts)
         {
             for(auto contact: contactList.second)
-                contact.location_local = geoToPixel(contact.location,autonomousVehicleProject())-m_local_reference_position;
+                contact->location_local = geoToPixel(contact->location,autonomousVehicleProject())-m_local_reference_position;
         }
     }
 }

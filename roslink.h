@@ -7,6 +7,22 @@
 #include "mission_plan/NavEulerStamped.h"
 #include "ros/ros.h"
 #include "asv_msgs/AISContact.h"
+#include "asv_msgs/VehicleStatus.h"
+
+class ROSDetails;
+
+struct ROSAISContact: public QObject
+{
+    Q_OBJECT
+public:
+    ROSAISContact(QObject *parent = nullptr);
+    uint32_t mmsi;
+    std::string name;
+    QGeoCoordinate location;
+    QPointF location_local;
+    double heading;
+};
+
 
 class ROSLink : public QObject, GeoGraphicsItem
 {
@@ -18,7 +34,9 @@ public:
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPainterPath shape() const override;
-    
+    QPainterPath vehicleShape() const;
+    QPainterPath aisShape() const;
+
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
@@ -29,14 +47,8 @@ public:
     
     std::string const &helmMode() const;
     void setHelmMode(const std::string& helmMode);
+    void setROSDetails(ROSDetails *details);
 
-    struct Contact
-    {
-        std::string name;
-        QGeoCoordinate location;
-        QPointF location_local;
-        double heading;
-    };
     
 signals:
 
@@ -47,7 +59,7 @@ public slots:
     void updateOriginLocation(QGeoCoordinate const &location);
     void updateHeading(double heading);
     void updateBackground(BackgroundRaster *bgr);
-    void addAISContact(uint32_t mmsi, Contact c);
+    void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     void sendLoiter(QGeoCoordinate const &loiterLocation);
     void connectROS();
@@ -59,6 +71,7 @@ private:
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
     void headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message);
     void aisCallback(const asv_msgs::AISContact::ConstPtr& message);
+    void vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QPointF const &location, double heading_degrees, double scale=1.0) const;
     
@@ -69,6 +82,7 @@ private:
     ros::Subscriber m_origin_subscriber;
     ros::Subscriber m_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
+    ros::Subscriber m_vehicle_status_subscriber;
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
     ros::Publisher m_wpt_updates_publisher;
@@ -84,11 +98,11 @@ private:
     bool m_active;
     std::string m_helmMode;
     
-    typedef std::vector<Contact> ContactList;
+    typedef std::vector<ROSAISContact*> ContactList;
     typedef std::map<uint32_t,ContactList> ContactMap;
     
     ContactMap m_contacts;
-    
+    ROSDetails *m_details;
     
 };
 
