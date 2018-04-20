@@ -2,6 +2,7 @@
 #define PROJECTVIEW_H
 
 #include<QGraphicsView>
+#include <QGeoCoordinate>
 
 class QStatusBar;
 class QLabel;
@@ -25,12 +26,15 @@ signals:
     void currentChanged(QModelIndex &index);
 
 public slots:
+    void sendLoiterAt();
+    void sendGotoAt();
 
 protected:
-    void wheelEvent(QWheelEvent *event) Q_DECL_OVERRIDE;
-    void mousePressEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
-    void mouseMoveEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
-    void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+    void wheelEvent(QWheelEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
     enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern};
@@ -42,6 +46,7 @@ private:
     TrackLine * currentTrackLine;
     Waypoint * pendingTrackLineWaypoint;
     SurveyPattern * pendingSurveyPattern;
+    QGeoCoordinate m_contextMenuLocation;
 
 };
 

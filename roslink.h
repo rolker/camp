@@ -62,6 +62,7 @@ public slots:
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     void sendLoiter(QGeoCoordinate const &loiterLocation);
+    void sendGoto(QGeoCoordinate const &loiterLocation);
     void connectROS();
     
     

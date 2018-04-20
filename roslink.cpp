@@ -357,6 +357,14 @@ void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
     m_loiter_updates_publisher.publish(rosUpdates);
 }
 
+void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
+{
+    QList<QGeoCoordinate> wps;
+    wps.append(gotoLocation);
+    sendWaypoints(wps);
+}
+
+
 void ROSLink::updateLocation(const QGeoCoordinate& location)
 {
     if(m_have_local_reference)

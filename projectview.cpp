@@ -9,6 +9,9 @@
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include <QDebug>
+#include <QMenu>
+#include "roslink.h"
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
     statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingSurveyPattern(nullptr), pendingTrackLineWaypoint(nullptr)
@@ -96,6 +99,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 update();
             }
             setPanMode();
+            event->accept();
         }
         break;
     default:
@@ -188,3 +192,40 @@ void ProjectView::setPanMode()
     pendingSurveyPattern = nullptr;
     currentTrackLine = nullptr;
 }
+
+void ProjectView::contextMenuEvent(QContextMenuEvent* event)
+{
+    BackgroundRaster *bg = m_project->getBackgroundRaster();
+    if(bg)
+    {
+        m_contextMenuLocation = bg->pixelToGeo(bg->mapFromParent(mapToScene(event->pos())));
+        qDebug() << m_contextMenuLocation;
+        QMenu menu(this);
+
+#ifdef AMP_ROS
+        QAction *loiterAtAction = menu.addAction("Loiter Here");
+        connect(loiterAtAction, &QAction::triggered, this, &ProjectView::sendLoiterAt);
+
+        QAction *gotoAction = menu.addAction("Goto Here");
+        connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGotoAt);
+#endif
+
+        menu.exec(event->globalPos());
+    }
+    event->accept();
+
+}
+
+void ProjectView::sendLoiterAt()
+{
+    m_project->rosLink()->sendLoiter(m_contextMenuLocation);
+    m_project->rosLink()->setHelmMode("loiter");
+}
+
+void ProjectView::sendGotoAt()
+{
+    m_project->rosLink()->sendGoto(m_contextMenuLocation);
+    m_project->rosLink()->setHelmMode("survey");
+}
+
+
