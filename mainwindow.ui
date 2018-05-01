@@ -95,6 +95,8 @@
     <addaction name="actionOpen"/>
     <addaction name="actionOpenBackground"/>
     <addaction name="actionOpenGeometry"/>
+    <addaction name="actionImport"/>
+    <addaction name="separator"/>
     <addaction name="actionSave"/>
     <addaction name="actionSaveAs"/>
    </widget>
@@ -194,6 +196,11 @@
    </property>
    <property name="iconText">
     <string>G</string>
+   </property>
+  </action>
+  <action name="actionImport">
+   <property name="text">
+    <string>Import</string>
    </property>
   </action>
  </widget>

@@ -74,6 +74,8 @@ public:
     void open(QString const &fname);
     
     void openGeometry(QString const &fname);
+    
+    void import(QString const &fname);
 
     void setCurrent(const QModelIndex &index);
     

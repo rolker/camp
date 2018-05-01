@@ -22,6 +22,7 @@ public:
     
     int type() const {return WaypointType;}
     
+    
 public slots:
     void updateProjectedPoints();
 

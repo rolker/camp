@@ -46,7 +46,7 @@ public:
     void setMaxSegmentLength(double maxLength);
 
     //QList<QGeoCoordinate> getPath() const;
-    QList<QList<QGeoCoordinate> > getLines() const;
+    QList<QList<QGeoCoordinate> > getLines() const override;
     
 signals:
     void surveyPatternUpdated();

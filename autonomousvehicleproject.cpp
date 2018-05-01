@@ -117,6 +117,58 @@ void AutonomousVehicleProject::openGeometry(const QString& fname)
     connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
 }
 
+void AutonomousVehicleProject::import(const QString& fname)
+{
+    // try Hypack L84 file
+    QFile infile(fname);
+    if(infile.open(QIODevice::ReadOnly|QIODevice::Text))
+    {
+        RowInserter ri(*this,m_currentGroup);
+        Group * hypackGroup = new Group(m_currentGroup);
+        QFileInfo info(fname);
+        hypackGroup->setObjectName(info.fileName());
+        TrackLine * currentLine = nullptr;
+        QTextStream instream(&infile);
+        while(!instream.atEnd())
+        {
+            QString line = instream.readLine();
+            QStringList parts = line.split(" ");
+            if(!parts.empty())
+            {
+                // hypack files seem to have lines that all start with a 3 character identifier
+                if(parts[0].length() == 3)
+                {
+                    qDebug() << parts;
+                    if(parts[0] == "LIN")
+                    {
+                        currentLine = new TrackLine(hypackGroup);
+                        currentLine->setObjectName("trackline");
+                    }
+                    if(parts[0] == "LNN" && currentLine)
+                    {
+                        parts.removeAt(0);
+                        currentLine->setObjectName(parts.join(" "));
+                    }
+                    if(parts[0] == "PTS" && currentLine)
+                    {
+                        for(int i = 1; i < parts.size()-1; i += 2)
+                        {
+                            bool ok = false;
+                            double lat = parts[i].toDouble(&ok);
+                            if(ok)
+                            {
+                                double lon = parts[i+1].toDouble(&ok);
+                                if(ok)
+                                    currentLine->addWaypoint(QGeoCoordinate(lat,lon))->setObjectName("waypoint");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
@@ -257,42 +309,12 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
     if(m_ROSLink)
     {
         MissionItem *mi = itemFromIndex(index);
-        //QVariant item = m_model->data(index,Qt::UserRole+1);
-        //MissionItem* mi = reinterpret_cast<MissionItem*>(item.value<quintptr>());
-        QString itemType = mi->metaObject()->className();
-        if (itemType == "TrackLine")
-        {
-            TrackLine *tl = qobject_cast<TrackLine*>(mi);
-            QList<QGeoCoordinate> wps;
-            auto waypoints = tl->waypoints();
-            for(auto i: waypoints)
-            {
-                const Waypoint *wp = qgraphicsitem_cast<Waypoint const*>(i);
-                if(wp)
-                {
-                    auto ll = wp->location();
-                    wps.append(ll);
-                }
-            }
-            m_ROSLink->sendWaypoints(wps);
-        }
-        if (itemType == "SurveyPattern")
-        {
-            SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
-            QList<QGeoCoordinate> wps;
-            auto lines = sp->getLines();
-            for (auto l: lines)
-                for (auto p: l)
-                    wps.append(p);
-            m_ROSLink->sendWaypoints(wps);
-        }
-        if (itemType == "Waypoint")
-        {
-            Waypoint *wp = qobject_cast<Waypoint*>(mi);
-            QList<QGeoCoordinate> wps;
-            wps.append(wp->location());
-            m_ROSLink->sendWaypoints(wps);
-        }
+        QList<QGeoCoordinate> wps;
+        auto lines = mi->getLines();
+        for (auto l: lines)
+            for (auto p: l)
+                wps.append(p);
+        m_ROSLink->sendWaypoints(wps);
     }
 #endif
 }

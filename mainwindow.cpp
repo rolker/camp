@@ -54,6 +54,14 @@ void MainWindow::on_actionOpen_triggered()
     project->open(fname);
 }
 
+void MainWindow::on_actionImport_triggered()
+{
+    QString fname = QFileDialog::getOpenFileName(this,tr("Import"));
+
+    project->import(fname);
+}
+
+
 void MainWindow::on_actionWaypoint_triggered()
 {
     ui->projectView->setAddWaypointMode();

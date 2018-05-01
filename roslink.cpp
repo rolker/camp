@@ -317,7 +317,7 @@ void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
     gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
 
     std::stringstream updates;
-    updates << "points = ";
+    updates << "points = " << std::fixed;
     for(auto wp: waypoints)
     {
         qDebug() << "wp: " << wp;

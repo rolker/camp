@@ -35,6 +35,7 @@ public:
     }
     
     virtual bool canAcceptChildType(std::string const &childType) const;
+    virtual QList<QList<QGeoCoordinate> > getLines() const;
 
 public slots:
     virtual void updateProjectedPoints();

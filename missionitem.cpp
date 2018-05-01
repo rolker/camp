@@ -37,6 +37,15 @@ const QList<MissionItem *> & MissionItem::childMissionItems() const
     return m_childrenMissionItems;
 }
 
+QList<QList<QGeoCoordinate> > MissionItem::getLines() const
+{
+    QList<QList<QGeoCoordinate> > ret;
+    for(auto mi:m_childrenMissionItems)
+        for(auto line: mi->getLines())
+            ret.append(line);
+    return ret;
+}
+
 
 int MissionItem::row() const
 {

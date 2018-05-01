@@ -97,19 +97,25 @@ void TrackLine::removeWaypoint(Waypoint* wp)
 QList<Waypoint *> TrackLine::waypoints() const
 {
     QList<Waypoint *> ret;
-    auto children = childItems();
+    auto children = childMissionItems();
     for(auto child: children)
     {
-        if(child->type() == GeoGraphicsItem::WaypointType)
-        {
-            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
-            //qDebug() << child << " cast to " << (void *)wp << " type " << child->type();
+        Waypoint *wp = qobject_cast<Waypoint*>(child);
             if(wp)
                 ret.append(wp);
-        }
     }
     return ret;
 }
+
+QList<QList<QGeoCoordinate> > TrackLine::getLines() const
+{
+    QList<QList<QGeoCoordinate> > ret;
+    ret.append(QList<QGeoCoordinate>());
+    for(auto wp:waypoints())
+        ret.back().append(wp->location());
+    return ret;
+}
+
 
 void TrackLine::write(QJsonObject &json) const
 {
