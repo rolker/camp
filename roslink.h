@@ -4,7 +4,7 @@
 #include "geographicsitem.h"
 
 #include "geographic_msgs/GeoPointStamped.h"
-#include "mission_plan/NavEulerStamped.h"
+#include "marine_msgs/NavEulerStamped.h"
 #include "ros/ros.h"
 #include "asv_msgs/AISContact.h"
 #include "asv_msgs/VehicleStatus.h"
@@ -70,7 +70,7 @@ public slots:
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message); 
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
-    void headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message);
+    void headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void aisCallback(const asv_msgs::AISContact::ConstPtr& message);
     void vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message);
     

@@ -221,7 +221,7 @@ void ROSLink::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
     //qDebug() << m_origin;
 }
 
-void ROSLink::headingCallback(const mission_plan::NavEulerStamped::ConstPtr& message)
+void ROSLink::headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message)
 {
     QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
 }
