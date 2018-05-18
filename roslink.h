@@ -8,6 +8,7 @@
 #include "ros/ros.h"
 #include "asv_msgs/AISContact.h"
 #include "asv_msgs/VehicleStatus.h"
+#include "std_msgs/String.h"
 
 class ROSDetails;
 
@@ -36,6 +37,7 @@ public:
     QPainterPath shape() const override;
     QPainterPath vehicleShape() const;
     QPainterPath aisShape() const;
+    QPainterPath viewShape() const;
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
@@ -65,16 +67,21 @@ public slots:
     void sendGoto(QGeoCoordinate const &loiterLocation);
     void connectROS();
     
-    
-    
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message); 
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
     void headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void aisCallback(const asv_msgs::AISContact::ConstPtr& message);
     void vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message);
+    void viewPointCallback(const std_msgs::String::ConstPtr&message);
+    void viewPolygonCallback(const std_msgs::String::ConstPtr&message);
+    void viewSeglistCallback(const std_msgs::String::ConstPtr&message);
     
     void drawTriangle(QPainterPath &path, QPointF const &location, double heading_degrees, double scale=1.0) const;
+    QMap<QString,QString> parseViewString(QString const &vs) const;
+    QList<QPointF> parseViewPointList(QString const &pointList) const;
+    
+    QGeoCoordinate rosMapToGeo(QPointF const &location) const;
     
     AutonomousVehicleProject *autonomousVehicleProject() const;
     
@@ -84,6 +91,9 @@ private:
     ros::Subscriber m_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
     ros::Subscriber m_vehicle_status_subscriber;
+    ros::Subscriber m_view_point_subscriber;
+    ros::Subscriber m_view_polygon_subscriber;
+    ros::Subscriber m_view_seglist_subscriber;
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
     ros::Publisher m_wpt_updates_publisher;
@@ -105,6 +115,17 @@ private:
     ContactMap m_contacts;
     ROSDetails *m_details;
     
+    QGeoCoordinate m_view_point;
+    QPointF m_local_view_point;
+    bool m_view_point_active;
+    
+    QList<QGeoCoordinate> m_view_seglist;
+    QList<QPointF> m_local_view_seglist;
+    bool m_view_seglist_active;
+    
+    QList<QGeoCoordinate> m_view_polygon;
+    QList<QPointF> m_local_view_polygon;
+    bool m_view_polygon_active;
 };
 
 #endif // ROSNODE_H
