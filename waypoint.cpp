@@ -94,3 +94,10 @@ void Waypoint::updateProjectedPoints()
     m_internalPositionChangeFlag = false;
 }
 
+QList<QList<QGeoCoordinate> > Waypoint::getLines() const
+{
+    QList<QList<QGeoCoordinate> > ret;
+    ret.append(QList<QGeoCoordinate>());
+    ret.back().append(m_location);
+    return ret;
+}

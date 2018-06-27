@@ -22,6 +22,8 @@ public:
     
     int type() const {return WaypointType;}
     
+    QList<QList<QGeoCoordinate> > getLines() const override;
+    
     
 public slots:
     void updateProjectedPoints();
