@@ -102,14 +102,14 @@ private:
     QGeoCoordinate m_location;
     QGeoCoordinate m_origin;
     std::vector<QGeoCoordinate> m_location_history;
-    std::vector<QPointF> m_local_location_history;
+    std::list<QPointF> m_local_location_history;
     QPointF m_local_reference_position;
     bool m_have_local_reference;
     double m_heading;
     bool m_active;
     std::string m_helmMode;
     
-    typedef std::vector<ROSAISContact*> ContactList;
+    typedef std::list<ROSAISContact*> ContactList;
     typedef std::map<uint32_t,ContactList> ContactMap;
     
     ContactMap m_contacts;

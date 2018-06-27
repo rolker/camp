@@ -424,6 +424,8 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     {
         m_location_history.push_back(location);
         m_local_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
+        while (m_local_location_history.size()>100)
+            m_local_location_history.pop_front();
         m_location = location;
         update();
     }
@@ -450,6 +452,8 @@ void ROSLink::addAISContact(ROSAISContact *c)
         c->location_local = geoToPixel(c->location,autonomousVehicleProject())-m_local_reference_position;
     }
     m_contacts[c->mmsi].push_back(c);
+    while(m_contacts[c->mmsi].size() > 50)
+        m_contacts[c->mmsi].pop_front();
     update();
 }
 
