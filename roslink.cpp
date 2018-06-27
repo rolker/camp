@@ -16,7 +16,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 }
 
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby")
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false)
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -44,6 +44,9 @@ void ROSLink::connectROS()
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
             m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
             m_vehicle_status_subscriber = m_node->subscribe("/udp/vehicle_status", 10, &ROSLink::vehicleStatusCallback, this);
+            m_view_point_subscriber = m_node->subscribe("/udp/view_point", 10, &ROSLink::viewPointCallback, this);
+            m_view_polygon_subscriber = m_node->subscribe("/udp/view_polygon", 10, &ROSLink::viewPolygonCallback, this);
+            m_view_seglist_subscriber = m_node->subscribe("/udp/view_seglist", 10, &ROSLink::viewSeglistCallback, this);
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
@@ -89,9 +92,11 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(aisShape());
     
-    painter->restore();
-  
+    p.setColor(Qt::darkYellow);
+    painter->setPen(p);
+    painter->drawPath(viewShape());
     
+    painter->restore();
 }
 
 QPainterPath ROSLink::shape() const
@@ -129,6 +134,8 @@ QPainterPath ROSLink::shape() const
         
         drawTriangle(ret,last->location_local,last->heading,10);
     }
+    
+    ret.addPath(viewShape());
         
     return ret;
 }
@@ -175,6 +182,43 @@ QPainterPath ROSLink::aisShape() const
         drawTriangle(ret,last->location_local,last->heading,10);
     }
         
+    return ret;
+}
+
+QPainterPath ROSLink::viewShape() const
+
+{
+    QPainterPath ret;
+    
+    if(m_view_point_active)
+        ret.addEllipse(m_local_view_point,4,4);
+    
+    if(m_view_seglist_active)
+    {
+        auto p = m_local_view_seglist.begin();
+        ret.moveTo(*p);
+        p++;
+        while(p != m_local_view_seglist.end())
+        {
+            ret.lineTo(*p);
+            p++;
+        }
+    }
+
+    if(m_view_polygon_active)
+    {
+        auto p = m_local_view_polygon.begin();
+        ret.moveTo(*p);
+        p++;
+        while(p != m_local_view_polygon.end())
+        {
+            ret.lineTo(*p);
+            p++;
+        }
+        ret.lineTo(m_local_view_polygon.front());
+    }
+
+    
     return ret;
 }
 
@@ -306,6 +350,15 @@ void ROSLink::vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& mes
             ros_pilot_mode = "ros pilot mode: unknown";
     }
     QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, state), Q_ARG(QString const&, state_reason), Q_ARG(QString const&, pilot_control), Q_ARG(QString const&, ros_pilot_mode));
+}
+
+QGeoCoordinate ROSLink::rosMapToGeo(const QPointF& location) const
+{
+    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
+    gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
+    auto ecef = geoReference.toECEF(gz4d::Point<double>(location.x(),location.y(),0.0));
+    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon>ret(ecef);
+    return QGeoCoordinate(ret[0],ret[1]);
 }
 
 
@@ -449,5 +502,113 @@ void ROSLink::setHelmMode(const std::string& helmMode)
 AutonomousVehicleProject * ROSLink::autonomousVehicleProject() const
 {
     return qobject_cast<AutonomousVehicleProject*>(parent());
+}
+
+QMap<QString, QString> ROSLink::parseViewString(const QString& vs) const
+{
+    // return key-value pairs.
+    // The string has ',' as a separator for the pairs, but also for elements of lists
+    // that may be the value. For that reason, spliting on ',' won't always work if lists
+    // as values aren't considered. Spliting on '=' first, then grabing the next key from
+    // the end of the last value is the strategy used here.
+    QMap<QString, QString> ret;
+    QString key;
+    QString value;
+    QStringList parts = vs.split('=');
+    if(!parts.empty())
+    {
+        key = parts[0];
+        QStringList::iterator parts_iterator = parts.begin();
+        parts_iterator++;
+        while(parts_iterator != parts.end())
+        {
+            QString part = *parts_iterator;
+            QStringList comma_separated_parts = part.split(',');
+            if(comma_separated_parts.size() == 1)
+            {
+                value = comma_separated_parts[0];
+                ret[key] = value;
+            }
+            else
+            {
+                QString next_key = comma_separated_parts.back();
+                comma_separated_parts.removeLast();
+                value = comma_separated_parts.join(',');
+                ret[key] = value;
+                key = next_key;
+            }
+            parts_iterator++;
+        }
+    }
+    return ret;
+}
+
+QList<QPointF> ROSLink::parseViewPointList(const QString& pointList) const
+{
+    QList<QPointF> ret;
+    QString trimmed = pointList.mid(1,pointList.size()-2);
+    auto pairs = trimmed.split(':');
+    for (auto pair: pairs)
+    {
+        auto xy =  pair.split(',');
+        ret.append(QPointF(xy[0].toFloat(),xy[1].toFloat()));
+    }
+    return ret;
+}
+
+
+void ROSLink::viewPointCallback(const std_msgs::String::ConstPtr& message)
+{
+    //qDebug() << "view point" << std::string(message->data).c_str();
+    auto parsed = parseViewString(QString(std::string(message->data).c_str()));
+    //qDebug() << parsed;
+    if(parsed.contains("active"))
+        m_view_point_active = (parsed["active"] == "true");
+    else
+        m_view_point_active = true;
+    m_view_point = rosMapToGeo(QPointF(parsed["x"].toFloat(),parsed["y"].toFloat()));
+    //qDebug() << m_view_point;
+    m_local_view_point = geoToPixel(m_view_point,autonomousVehicleProject())-m_local_reference_position;
+    //qDebug() << m_local_view_point;
+}
+
+void ROSLink::viewPolygonCallback(const std_msgs::String::ConstPtr& message)
+{
+    qDebug() << "view polygon" << std::string(message->data).c_str();
+    auto parsed = parseViewString(QString(std::string(message->data).c_str()));
+    qDebug() << parsed;
+    if(parsed.contains("active"))
+        m_view_polygon_active = (parsed["active"] == "true");
+    else
+        m_view_polygon_active = true;
+    auto points = parseViewPointList(parsed["pts"]);
+    //qDebug() << points;
+    m_view_polygon.clear();
+    m_local_view_polygon.clear();
+    for(auto p: points)
+    {
+        m_view_polygon.append(rosMapToGeo(p));
+        m_local_view_polygon.append(geoToPixel(m_view_polygon.back(),autonomousVehicleProject())-m_local_reference_position);
+    }
+}
+
+void ROSLink::viewSeglistCallback(const std_msgs::String::ConstPtr& message)
+{
+    //qDebug() << "view seglist" << std::string(message->data).c_str();
+    auto parsed = parseViewString(QString(std::string(message->data).c_str()));
+    //qDebug() << parsed;
+    if(parsed.contains("active"))
+        m_view_seglist_active = (parsed["active"] == "true");
+    else
+        m_view_seglist_active = true;
+    auto points = parseViewPointList(parsed["pts"]);
+    //qDebug() << points;
+    m_view_seglist.clear();
+    m_local_view_seglist.clear();
+    for(auto p: points)
+    {
+        m_view_seglist.append(rosMapToGeo(p));
+        m_local_view_seglist.append(geoToPixel(m_view_seglist.back(),autonomousVehicleProject())-m_local_reference_position);
+    }
 }
 
