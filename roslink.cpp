@@ -43,7 +43,7 @@ void ROSLink::connectROS()
             m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
             m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
-            m_vehicle_status_subscriber = m_node->subscribe("/udp/vehicle_status", 10, &ROSLink::vehicleStatusCallback, this);
+            m_heartbeat_subscriber = m_node->subscribe("/udp/heartbeat", 10, &ROSLink::heartbeatCallback, this);
             m_view_point_subscriber = m_node->subscribe("/udp/view_point", 10, &ROSLink::viewPointCallback, this);
             m_view_polygon_subscriber = m_node->subscribe("/udp/view_polygon", 10, &ROSLink::viewPolygonCallback, this);
             m_view_seglist_subscriber = m_node->subscribe("/udp/view_seglist", 10, &ROSLink::viewSeglistCallback, this);
@@ -285,71 +285,18 @@ void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
     QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(ROSAISContact*, c));
 }
 
-void ROSLink::vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message)
+void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
 {
-    QString state;
-    switch(message->vehicle_state)
+    QString status_string;
+    for(auto kv: message->values)
     {
-        case asv_msgs::VehicleStatus::VP_STATE_RESET:
-            state = "vehicle state: reset";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_INITIAL:
-            state = "vehicle state: initial";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_CONFIG:
-            state = "vehicle state: config";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_ARMED:
-            state = "vehicle state: armed";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_PAUSE:
-            state = "vehicle state: pause";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_ACTIVE:
-            state = "vehicle state: active";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_RECOVER:
-            state = "vehicle state: recover";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_MANNED:
-            state = "vehicle state: manned";
-            break;
-        case asv_msgs::VehicleStatus::VP_STATE_EMERGENCY:
-            state = "vehicle state: emergency";
-            break;
-        default:
-            state = "vehicle state: unknown";
+        status_string += kv.key.c_str();
+        status_string += ": ";
+        status_string += kv.value.c_str();
+        status_string += "\n";
     }
-    QString state_reason = "reason: " + QString(message->vehicle_state_reason.c_str());
-    QString pilot_control = "pilot control: " + QString(message->pilot_control.c_str());
-    QString ros_pilot_mode;
-    switch(message->ros_pilot_mode)
-    {
-        case asv_msgs::VehicleStatus::PILOT_NOT_IN_COMMAND:
-            ros_pilot_mode = "ros pilot mode: not in command";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_INACTIVE:
-            ros_pilot_mode = "ros pilot mode: inactive";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_INHIBITED:
-            ros_pilot_mode = "ros pilot mode: inhibited";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_DIRECT_DRIVE:
-            ros_pilot_mode = "ros pilot mode: direct drive";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_HEADING_HOLD:
-            ros_pilot_mode = "ros pilot mode: heading hold";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_SEEK_POSITION:
-            ros_pilot_mode = "ros pilot mode: seek position";
-            break;
-        case asv_msgs::VehicleStatus::PILOT_TRACK_FOLLOW:
-            ros_pilot_mode = "ros pilot mode: track follow";
-            break;
-        default:
-            ros_pilot_mode = "ros pilot mode: unknown";
-    }
-    QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, state), Q_ARG(QString const&, state_reason), Q_ARG(QString const&, pilot_control), Q_ARG(QString const&, ros_pilot_mode));
+    
+    QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
 }
 
 QGeoCoordinate ROSLink::rosMapToGeo(const QPointF& location) const

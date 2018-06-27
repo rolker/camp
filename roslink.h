@@ -5,9 +5,9 @@
 
 #include "geographic_msgs/GeoPointStamped.h"
 #include "marine_msgs/NavEulerStamped.h"
+#include "marine_msgs/Heartbeat.h"
 #include "ros/ros.h"
 #include "asv_msgs/AISContact.h"
-#include "asv_msgs/VehicleStatus.h"
 #include "std_msgs/String.h"
 
 class ROSDetails;
@@ -72,7 +72,7 @@ private:
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
     void headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void aisCallback(const asv_msgs::AISContact::ConstPtr& message);
-    void vehicleStatusCallback(const asv_msgs::VehicleStatus::ConstPtr& message);
+    void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void viewPointCallback(const std_msgs::String::ConstPtr&message);
     void viewPolygonCallback(const std_msgs::String::ConstPtr&message);
     void viewSeglistCallback(const std_msgs::String::ConstPtr&message);
@@ -90,7 +90,7 @@ private:
     ros::Subscriber m_origin_subscriber;
     ros::Subscriber m_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
-    ros::Subscriber m_vehicle_status_subscriber;
+    ros::Subscriber m_heartbeat_subscriber;
     ros::Subscriber m_view_point_subscriber;
     ros::Subscriber m_view_polygon_subscriber;
     ros::Subscriber m_view_seglist_subscriber;

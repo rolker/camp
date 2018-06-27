@@ -25,7 +25,7 @@ private slots:
     void on_standbyPushButton_clicked(bool checked);
     void on_surveyPushButton_clicked(bool checked);
     void on_loiterPushButton_clicked(bool checked);
-    void updateVehicleStatus(QString const &vehicleState, QString const &reason, QString const &pilotControl, QString const &rosPilotMode);
+    void updateVehicleStatus(QString const &status);
     
 private:
     Ui::ROSDetails* ui;

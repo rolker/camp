@@ -49,11 +49,8 @@ void ROSDetails::on_loiterPushButton_clicked(bool checked)
     m_rosLink->setHelmMode("loiter");
 }
 
-void ROSDetails::updateVehicleStatus(const QString& vehicleState, const QString& reason, const QString& pilotControl, const QString& rosPilotMode)
+void ROSDetails::updateVehicleStatus(const QString& status)
 {
-    ui->vehicleStateLabel->setText(vehicleState);
-    ui->vehicleStateReasonLabel->setText(reason);
-    ui->pilotControlLabel->setText(pilotControl);
-    ui->rosPilotModeLabel->setText(rosPilotMode);
+    ui->vehicleStatusTextBrowser->setText(status);
 }
 
