@@ -19,6 +19,9 @@ public:
     ~ROSDetails();
     
     void setROSLink(ROSLink *rosLink);
+    
+public slots:
+    void heartbeatDelay(double seconds);
 
 private slots:
     void on_activeCheckBox_stateChanged(int state);
@@ -26,6 +29,7 @@ private slots:
     void on_surveyPushButton_clicked(bool checked);
     void on_loiterPushButton_clicked(bool checked);
     void updateVehicleStatus(QString const &status);
+    
     
 private:
     Ui::ROSDetails* ui;

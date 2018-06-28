@@ -54,3 +54,15 @@ void ROSDetails::updateVehicleStatus(const QString& status)
     ui->vehicleStatusTextBrowser->setText(status);
 }
 
+void ROSDetails::heartbeatDelay(double seconds)
+{
+    QPalette pal = palette();
+    if(seconds < 2.0)
+        pal.setColor(QPalette::Background, Qt::green);
+    else if (seconds < 5.0)
+        pal.setColor(QPalette::Background, Qt::yellow);
+    else
+        pal.setColor(QPalette::Background, Qt::red);
+    this->setAutoFillBackground(true);
+    this->setPalette(pal);
+}

@@ -10,6 +10,9 @@
 #include "asv_msgs/AISContact.h"
 #include "std_msgs/String.h"
 
+
+Q_DECLARE_METATYPE(ros::Time);
+
 class ROSDetails;
 
 struct ROSAISContact: public QObject
@@ -66,6 +69,8 @@ public slots:
     void sendLoiter(QGeoCoordinate const &loiterLocation);
     void sendGoto(QGeoCoordinate const &loiterLocation);
     void connectROS();
+    void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
+    void watchdogUpdate();
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message); 
@@ -126,6 +131,11 @@ private:
     QList<QGeoCoordinate> m_view_polygon;
     QList<QPointF> m_local_view_polygon;
     bool m_view_polygon_active;
+    
+    ros::Time m_last_heartbeat_timestamp;
+    ros::Time m_last_heartbeat_receive_time;
+    
+    QTimer * m_watchdog_timer;
 };
 
 #endif // ROSNODE_H

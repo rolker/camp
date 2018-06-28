@@ -29,6 +29,10 @@ ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphics
     
     qRegisterMetaType<QGeoCoordinate>();
     //connectROS();
+    
+    m_watchdog_timer = new QTimer(this);
+    connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
+    m_watchdog_timer->start(500);
 }
 
 void ROSLink::connectROS()
@@ -287,6 +291,9 @@ void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
 
 void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
 {
+    ros::Time last_heartbeat_receive_time = ros::Time::now();
+    ros::Time last_heartbeat_timestamp = message->header.stamp;
+    
     QString status_string;
     for(auto kv: message->values)
     {
@@ -297,7 +304,26 @@ void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
     }
     
     QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
+    QMetaObject::invokeMethod(this,"updateHeartbeatTimes", Qt::QueuedConnection, Q_ARG(ros::Time const&, last_heartbeat_timestamp), Q_ARG(ros::Time const&, last_heartbeat_receive_time));
 }
+
+void ROSLink::updateHeartbeatTimes(const ros::Time& last_heartbeat_timestamp, const ros::Time& last_heartbeat_receive_time)
+{
+    m_last_heartbeat_timestamp = last_heartbeat_timestamp;
+    m_last_heartbeat_receive_time = last_heartbeat_receive_time;
+
+}
+
+void ROSLink::watchdogUpdate()
+{
+    ros::Time now = ros::Time::now();
+    ros::Duration diff = now-m_last_heartbeat_timestamp;
+    std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
+
+    m_details->heartbeatDelay(diff.toSec());
+        
+}
+
 
 QGeoCoordinate ROSLink::rosMapToGeo(const QPointF& location) const
 {
