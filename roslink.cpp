@@ -316,12 +316,16 @@ void ROSLink::updateHeartbeatTimes(const ros::Time& last_heartbeat_timestamp, co
 
 void ROSLink::watchdogUpdate()
 {
-    ros::Time now = ros::Time::now();
-    ros::Duration diff = now-m_last_heartbeat_timestamp;
-    std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
+    if(m_node)
+    {
+        ros::Time now = ros::Time::now();
+        ros::Duration diff = now-m_last_heartbeat_timestamp;
+        //std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
 
-    m_details->heartbeatDelay(diff.toSec());
-        
+        m_details->heartbeatDelay(diff.toSec());
+    }
+    else
+        m_details->heartbeatDelay(1000.0);
 }
 
 
