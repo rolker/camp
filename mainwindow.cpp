@@ -9,6 +9,7 @@
 #include "waypoint.h"
 #include "roslink.h"
 #include <modeltest.h>
+#include "backgroundraster.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -27,6 +28,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->detailsView->setProject(project);
     connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
 
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, ui->projectView, &ProjectView::updateBackground);
 
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
@@ -50,8 +52,9 @@ void MainWindow::setCurrent(QModelIndex &index)
 void MainWindow::on_actionOpen_triggered()
 {
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
-
+    setCursor(Qt::WaitCursor);
     project->open(fname);
+    unsetCursor();
 }
 
 void MainWindow::on_actionImport_triggered()
@@ -140,7 +143,11 @@ void MainWindow::on_actionOpenBackground_triggered()
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
 
     if(!fname.isEmpty())
+    {
+        setCursor(Qt::WaitCursor);
         project->openBackground(fname);
+        unsetCursor();
+    }
 
 }
 

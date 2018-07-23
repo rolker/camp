@@ -16,7 +16,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 }
 
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_base_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false)
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -32,7 +32,6 @@ ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphics
     
     m_watchdog_timer = new QTimer(this);
     connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
-    m_watchdog_timer->start(500);
 }
 
 void ROSLink::connectROS()
@@ -44,8 +43,10 @@ void ROSLink::connectROS()
             m_node = new ros::NodeHandle;
             m_spinner = new ros::AsyncSpinner(0);
             m_geopoint_subscriber = m_node->subscribe("/udp/position", 10, &ROSLink::geoPointStampedCallback, this);
+            m_base_navsatfix_subscriber = m_node->subscribe("/base/position", 10, &ROSLink::baseNavSatFixCallback, this);
             m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
+            m_base_heading_subscriber = m_node->subscribe("/base/orientation", 10, &ROSLink::baseHeadingCallback, this);
             m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
             m_heartbeat_subscriber = m_node->subscribe("/udp/heartbeat", 10, &ROSLink::heartbeatCallback, this);
             m_view_point_subscriber = m_node->subscribe("/udp/view_point", 10, &ROSLink::viewPointCallback, this);
@@ -56,6 +57,7 @@ void ROSLink::connectROS()
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
             m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
             m_spinner->start();
+            m_watchdog_timer->start(500);
             emit rosConnected(true);
         }
     }
@@ -99,6 +101,10 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     p.setColor(Qt::darkYellow);
     painter->setPen(p);
     painter->drawPath(viewShape());
+
+    p.setColor(Qt::lightGray);
+    painter->setPen(p);
+    painter->drawPath(baseShape());
     
     painter->restore();
 }
@@ -140,6 +146,7 @@ QPainterPath ROSLink::shape() const
     }
     
     ret.addPath(viewShape());
+    ret.addPath(baseShape());
         
     return ret;
 }
@@ -167,6 +174,26 @@ QPainterPath ROSLink::vehicleShape() const
     return ret;
 }
 
+QPainterPath ROSLink::baseShape() const
+{
+    QPainterPath ret;
+    if (m_local_base_location_history.size() > 1)
+    {
+        auto p = m_local_base_location_history.begin();
+        ret.moveTo(*p);
+        p++;
+        while(p != m_local_base_location_history.end())
+        {
+            ret.lineTo(*p);
+            p++;
+        }
+        auto last = *(m_local_base_location_history.rbegin());
+        
+        drawTriangle(ret,last,m_base_heading,10);
+    }
+    return ret;
+}
+
 
 QPainterPath ROSLink::aisShape() const
 {
@@ -183,7 +210,8 @@ QPainterPath ROSLink::aisShape() const
         }
         auto last = *(contactList.second.rbegin());
         
-        drawTriangle(ret,last->location_local,last->heading,10);
+        //drawTriangle(ret,last->location_local,last->heading,10);
+        drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
     }
         
     return ret;
@@ -239,6 +267,33 @@ void ROSLink::drawTriangle(QPainterPath& path, const QPointF& location, double h
         path.lineTo(location.x()+(-scale*.5*cos_heading)-( scale*.5*sin_heading),location.y()+(-scale*.5*sin_heading)+( scale*.5*cos_heading));
 }
 
+void ROSLink::drawShipOutline(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const
+{
+        float length = dimension_to_bow+dimension_to_stern;
+        float width = dimension_to_port+dimension_to_stbd;
+        QGeoCoordinate llcorner = location.atDistanceAndAzimuth(dimension_to_port,270+heading_degrees).atDistanceAndAzimuth(dimension_to_stern,180+heading_degrees);
+        QGeoCoordinate lrcorner = llcorner.atDistanceAndAzimuth(width,90+heading_degrees);
+        QGeoCoordinate urcorner = lrcorner.atDistanceAndAzimuth(length,heading_degrees);
+        QGeoCoordinate ulcorner = urcorner.atDistanceAndAzimuth(width,270+heading_degrees);
+        QGeoCoordinate rkink = lrcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
+        QGeoCoordinate lkink = llcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
+        QGeoCoordinate bow = ulcorner.atDistanceAndAzimuth(width/2.0,90+heading_degrees);
+        QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject())-m_local_reference_position;
+        QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject())-m_local_reference_position;
+        QPointF urlocal = geoToPixel(urcorner,autonomousVehicleProject())-m_local_reference_position;
+        QPointF ullocal = geoToPixel(ulcorner,autonomousVehicleProject())-m_local_reference_position;
+        QPointF lkinkl = geoToPixel(lkink,autonomousVehicleProject())-m_local_reference_position;
+        QPointF rkinkl = geoToPixel(rkink,autonomousVehicleProject())-m_local_reference_position;
+        QPointF bowl = geoToPixel(bow,autonomousVehicleProject())-m_local_reference_position;
+        
+        path.moveTo(lllocal);
+        path.lineTo(lrlocal);
+        path.lineTo(rkinkl);
+        path.lineTo(bowl);
+        path.lineTo(lkinkl);
+        path.lineTo(lllocal);
+}
+
 
 void ROSLink::read(const QJsonObject& json)
 {
@@ -260,6 +315,13 @@ void ROSLink::geoPointStampedCallback(const geographic_msgs::GeoPointStamped::Co
     QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
+void ROSLink::baseNavSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr& message)
+{
+    QGeoCoordinate position(message->latitude, message->longitude, message->altitude);
+    QMetaObject::invokeMethod(this,"updateBaseLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
+}
+
+
 void ROSLink::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
 {
     m_origin.setLatitude(message->latitude);
@@ -274,9 +336,15 @@ void ROSLink::headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& mess
     QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
 }
 
+void ROSLink::baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message)
+{
+    QMetaObject::invokeMethod(this,"updateBaseHeading", Qt::QueuedConnection, Q_ARG(double, message->orientation.heading));
+}
+
+
 void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
 {
-    qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog;
+    qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
     ROSAISContact *c = new ROSAISContact();
     c->mmsi = message->mmsi;
     c->name = message->name;
@@ -286,6 +354,10 @@ void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
         c->heading = message->cog*180.0/M_PI;
     else
         c->heading = message->heading*180.0/M_PI;
+    c->dimension_to_bow = message->dimension_to_bow;
+    c->dimension_to_port = message->dimension_to_port;
+    c->dimension_to_stbd = message->dimension_to_stbd;
+    c->dimension_to_stern = message->dimension_to_stern;
     QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(ROSAISContact*, c));
 }
 
@@ -404,6 +476,19 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     }
 }
 
+void ROSLink::updateBaseLocation(const QGeoCoordinate& location)
+{
+    if(m_have_local_reference)
+    {
+        m_base_location_history.push_back(location);
+        m_local_base_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
+        while (m_local_base_location_history.size()>100)
+            m_local_base_location_history.pop_front();
+        m_base_location = location;
+        update();
+    }
+}
+
 void ROSLink::updateOriginLocation(const QGeoCoordinate& location)
 {
     setPos(geoToPixel(location,autonomousVehicleProject()));
@@ -414,6 +499,12 @@ void ROSLink::updateOriginLocation(const QGeoCoordinate& location)
 void ROSLink::updateHeading(double heading)
 {
     m_heading = heading;
+    update();
+}
+
+void ROSLink::updateBaseHeading(double heading)
+{
+    m_base_heading = heading;
     update();
 }
 
