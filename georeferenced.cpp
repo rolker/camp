@@ -4,7 +4,7 @@
 #include <gdal_priv.h>
 #include <ogr_spatialref.h>
 
-#include <iostream>
+#include <QDebug>
 
 Georeferenced::Georeferenced(): geoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, inverseGeoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, projectTransformation(0), unprojectTransformation(0)
 {
@@ -26,12 +26,13 @@ QPointF Georeferenced::projectedPointToPixel(const QPointF &point) const
 void Georeferenced::extractGeoreference(GDALDataset *dataset)
 {
     dataset->GetGeoTransform(geoTransform);
+    qDebug() << "geoTransform: " << geoTransform[0] << ", " << geoTransform[1] << ", " << geoTransform[2] << ", " << geoTransform[3] << ", " << geoTransform[4] << ", " << geoTransform[5];
     GDALInvGeoTransform(geoTransform,inverseGeoTransform);
 
     OGRSpatialReference projected, wgs84;
 
-    std::cerr << "projection:" << dataset->GetProjectionRef() << std::endl;
-    std::cerr << "gcp projection:" << dataset->GetGCPProjection() << std::endl;
+    qDebug() << "projection:" << dataset->GetProjectionRef();
+    qDebug() << "gcp projection:" << dataset->GetGCPProjection();
 
     char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
     if(wktProjection[0] == 0)

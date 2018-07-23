@@ -10,6 +10,7 @@ class AutonomousVehicleProject;
 class TrackLine;
 class SurveyPattern;
 class Waypoint;
+class BackgroundRaster;
 
 class ProjectView : public QGraphicsView
 {
@@ -28,6 +29,8 @@ signals:
 public slots:
     void sendLoiterAt();
     void sendGotoAt();
+    void updateBackground(BackgroundRaster * bg);
+
 
 protected:
     void wheelEvent(QWheelEvent *event) override;

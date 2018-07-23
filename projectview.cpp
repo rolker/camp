@@ -228,4 +228,7 @@ void ProjectView::sendGotoAt()
     m_project->rosLink()->setHelmMode("survey");
 }
 
-
+void ProjectView::updateBackground(BackgroundRaster* bg)
+{
+    setSceneRect(bg->boundingRect());
+}
