@@ -27,7 +27,7 @@ public:
     int type() const override {return PolygonType;}
     
 public slots:
-    void updateProjectedPoints();
+    void updateProjectedPoints() override;
 
 private:
     QList<LocationPosition> m_exteriorRing;

@@ -6,6 +6,7 @@
 #include <QFont>
 #include <QBrush>
 #include <QPen>
+#include <QDebug>
 
 GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(parentItem), m_showLabelFlag(false)
 {
