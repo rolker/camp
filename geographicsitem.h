@@ -19,7 +19,8 @@ public:
             PointType,
             LineStringType,
             PolygonType,
-            ROSLinkType
+            ROSLinkType,
+            SurveyAreaType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

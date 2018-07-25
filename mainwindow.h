@@ -32,6 +32,7 @@ private slots:
     void on_actionSaveAs_triggered();
     void on_actionOpenBackground_triggered();
     void on_actionSurveyPattern_triggered();
+    void on_actionSurveyArea_triggered();
     void on_actionPlatform_triggered();
     void on_actionOpenGeometry_triggered();
     void on_actionGroup_triggered();

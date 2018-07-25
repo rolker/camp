@@ -9,6 +9,7 @@ class QLabel;
 class AutonomousVehicleProject;
 class TrackLine;
 class SurveyPattern;
+class SurveyArea;
 class Waypoint;
 class BackgroundRaster;
 
@@ -21,6 +22,7 @@ public:
     void setAddWaypointMode();
     void setAddTracklineMode();
     void setAddSurveyPatternMode();
+    void setAddSurveyAreaMode();
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 signals:
@@ -40,7 +42,7 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
-    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern};
+    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern, addSurveyArea};
     QStatusBar * statusBar;
     QLabel * positionLabel;
     QLabel * modeLabel;
@@ -49,6 +51,9 @@ private:
     TrackLine * currentTrackLine;
     Waypoint * pendingTrackLineWaypoint;
     SurveyPattern * pendingSurveyPattern;
+    SurveyArea * pendingSurveyArea;
+    Waypoint * pendingSurveyAreaWaypoint;
+
     QGeoCoordinate m_contextMenuLocation;
 
 };

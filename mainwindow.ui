@@ -85,7 +85,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>19</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -107,6 +107,7 @@
     <addaction name="actionWaypoint"/>
     <addaction name="actionTrackline"/>
     <addaction name="actionSurveyPattern"/>
+    <addaction name="actionSurveyArea"/>
     <addaction name="actionGroup"/>
    </widget>
    <addaction name="menu_File"/>
@@ -123,6 +124,7 @@
    <addaction name="actionWaypoint"/>
    <addaction name="actionTrackline"/>
    <addaction name="actionSurveyPattern"/>
+   <addaction name="actionSurveyArea"/>
    <addaction name="actionGroup"/>
    <addaction name="actionPlatform"/>
   </widget>
@@ -201,6 +203,17 @@
   <action name="actionImport">
    <property name="text">
     <string>Import</string>
+   </property>
+  </action>
+  <action name="actionSurveyArea">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Survey Area</string>
+   </property>
+   <property name="iconText">
+    <string>SA</string>
    </property>
   </action>
  </widget>

@@ -140,7 +140,7 @@ void MainWindow::on_actionSaveAs_triggered()
 
 void MainWindow::on_actionOpenBackground_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),"/home/roland/data/BSB_ROOT/13283");
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));//,"/home/roland/data/BSB_ROOT/13283");
 
     if(!fname.isEmpty())
     {
@@ -154,6 +154,11 @@ void MainWindow::on_actionOpenBackground_triggered()
 void MainWindow::on_actionSurveyPattern_triggered()
 {
     ui->projectView->setAddSurveyPatternMode();
+}
+
+void MainWindow::on_actionSurveyArea_triggered()
+{
+    ui->projectView->setAddSurveyAreaMode();
 }
 
 void MainWindow::on_actionPlatform_triggered()
