@@ -44,6 +44,7 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPainterPath shape() const override;
     QPainterPath vehicleShape() const;
+    QPainterPath vehicleShapePosmv() const;
     QPainterPath baseShape() const;
     QPainterPath aisShape() const;
     QPainterPath viewShape() const;
@@ -67,9 +68,11 @@ signals:
     
 public slots:
     void updateLocation(QGeoCoordinate const &location);
+    void updatePosmvLocation(QGeoCoordinate const &location);
     void updateBaseLocation(QGeoCoordinate const &location);
     void updateOriginLocation(QGeoCoordinate const &location);
     void updateHeading(double heading);
+    void updatePosmvHeading(double heading);
     void updateBaseHeading(double heading);
     void updateBackground(BackgroundRaster *bgr);
     void addAISContact(ROSAISContact *c);
@@ -91,6 +94,8 @@ private:
     void viewPointCallback(const std_msgs::String::ConstPtr&message);
     void viewPolygonCallback(const std_msgs::String::ConstPtr&message);
     void viewSeglistCallback(const std_msgs::String::ConstPtr&message);
+    void posmvOrientationCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
+    void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QPointF const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -112,21 +117,28 @@ private:
     ros::Subscriber m_view_point_subscriber;
     ros::Subscriber m_view_polygon_subscriber;
     ros::Subscriber m_view_seglist_subscriber;
+    ros::Subscriber m_posmv_position;
+    ros::Subscriber m_posmv_orientation;
+    
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
     ros::Publisher m_wpt_updates_publisher;
     ros::Publisher m_loiter_updates_publisher;
     ros::AsyncSpinner *m_spinner;
     QGeoCoordinate m_location;
+    QGeoCoordinate m_posmv_location;
     QGeoCoordinate m_base_location; // location of the base operator station (ship, shore station, etc)
     QGeoCoordinate m_origin;
     std::vector<QGeoCoordinate> m_location_history;
     std::list<QPointF> m_local_location_history;
+    std::vector<QGeoCoordinate> m_posmv_location_history;
+    std::list<QPointF> m_local_posmv_location_history;
     std::vector<QGeoCoordinate> m_base_location_history;
     std::list<QPointF> m_local_base_location_history;
     QPointF m_local_reference_position;
     bool m_have_local_reference;
     double m_heading;
+    double m_posmv_heading;
     double m_base_heading;
     bool m_active;
     std::string m_helmMode;
