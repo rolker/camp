@@ -166,7 +166,9 @@ QPainterPath ROSLink::vehicleShape() const
         }
         auto last = *(m_local_location_history.rbegin());
         
-        drawTriangle(ret,last,m_heading,10);
+        //drawTriangle(ret,last,m_heading,10);
+        drawShipOutline(ret,m_location,m_heading,3.5,.8,.8,.5);
+
         
         ret.addRect(-1,-5,2,10);
         ret.addRect(-5,-1,10,2);
@@ -433,7 +435,8 @@ void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
     
     std_msgs::String rosUpdates;
     rosUpdates.data = updates.str();
-    m_wpt_updates_publisher.publish(rosUpdates);
+    if(m_node)
+        m_wpt_updates_publisher.publish(rosUpdates);
 }
 
 void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
@@ -473,7 +476,7 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     {
         m_location_history.push_back(location);
         m_local_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
-        while (m_local_location_history.size()>100)
+        while (m_local_location_history.size()>500)
             m_local_location_history.pop_front();
         m_location = location;
         update();

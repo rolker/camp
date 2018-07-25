@@ -58,6 +58,7 @@ set(SOURCES
     polygon.cpp
     geographicsmissionitem.cpp
     modeltest.cpp
+    surveyarea.cpp
 )
 
 set(HEADERS
@@ -84,6 +85,7 @@ set(HEADERS
     linestring.h
     polygon.h
     geographicsmissionitem.h
+    surveyarea.h
 )
 
 if(AMP_USE_ROS)

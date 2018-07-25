@@ -16,6 +16,7 @@
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include "surveyarea.h"
 #include "platform.h"
 #include "group.h"
 #include <gdal_priv.h>
@@ -227,6 +228,22 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
     connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
     return sp;
 }
+
+SurveyArea * AutonomousVehicleProject::createSurveyArea()
+{
+    SurveyArea *sa = potentialParentItemFor("SurveyArea")->createMissionItem<SurveyArea>("area");
+    return sa;
+}
+
+SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
+{
+    SurveyArea *sa = createSurveyArea();
+    sa->setPos(sa->geoToPixel(position,this));
+    sa->addWaypoint(position);
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,sa,&SurveyArea::updateBackground);
+    return sa;
+}
+
 
 TrackLine * AutonomousVehicleProject::createTrackLine()
 {

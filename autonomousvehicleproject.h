@@ -16,6 +16,7 @@ class BackgroundRaster;
 class Waypoint;
 class TrackLine;
 class SurveyPattern;
+class SurveyArea;
 class Platform;
 class Group;
 class QSvgRenderer;
@@ -40,6 +41,9 @@ public:
 
     SurveyPattern * createSurveyPattern();
     SurveyPattern * addSurveyPattern(QGeoCoordinate position);
+    
+    SurveyArea * createSurveyArea();
+    SurveyArea * addSurveyArea(QGeoCoordinate position);
 
     TrackLine * createTrackLine();
     TrackLine * addTrackLine(QGeoCoordinate position);

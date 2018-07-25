@@ -1,5 +1,6 @@
 #include "polygon.h"
 #include <QPainter>
+#include <QDebug>
 
 Polygon::Polygon(MissionItem* parent):GeoGraphicsMissionItem(parent)
 {

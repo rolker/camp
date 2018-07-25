@@ -8,7 +8,7 @@
 #include "autonomousvehicleproject.h"
 
 SurveyPattern::SurveyPattern(MissionItem *parent):GeoGraphicsMissionItem(parent),
-    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_spacingLocation(nullptr),m_arcCount(6),m_maxSegmentLength(0.0),m_internalUpdateFlag(false)
+    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_arcCount(6),m_spacingLocation(nullptr),m_maxSegmentLength(0.0),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
 }
@@ -423,7 +423,6 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
                     if (m_arcCount > 1)
                     {
                         QList<QGeoCoordinate> arc;
-                        arc.append(lastLocation);
                         qreal deltaAngle = 180.0/float(m_arcCount);
                         qreal r = ac_distance/2.0;
                         qreal h = r*cos(deltaAngle*M_PI/360.0);
@@ -434,6 +433,7 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
                             currentAngle += 180.0;
                             deltaAngle = -deltaAngle;
                         }
+                        arc.append(lastLocation.atDistanceAndAzimuth(d,currentAngle));
                         if(dir)
                             currentAngle += deltaAngle/2.0;
                         else
@@ -449,8 +449,10 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
                         ret.append(arc);
                     }
                     line.append(lastLocation.atDistanceAndAzimuth(ac_distance,ac_angle));
+                    lastLocation = lastLocation.atDistanceAndAzimuth(ac_distance,ac_angle);
                 }
-                lastLocation = ret.back().back();
+                else
+                    lastLocation = ret.back().back();
             }
             //if (ret.length() < 2)
                 //ret.append(m_endLocation->location());
