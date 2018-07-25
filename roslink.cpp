@@ -159,7 +159,7 @@ QPainterPath ROSLink::vehicleShape() const
         auto last = *(m_local_location_history.rbegin());
         
         //drawTriangle(ret,last,m_heading,10);
-        drawShipOutline(ret,m_location,m_heading,3.5,.8,.8,.5);
+        drawShipOutline(ret,m_location,m_heading,3,.8,.8,1);
 
         
         ret.addRect(-1,-5,2,10);
@@ -184,7 +184,7 @@ QPainterPath ROSLink::vehicleShapePosmv() const
         auto last = *(m_local_posmv_location_history.rbegin());
         
         //drawTriangle(ret,last,m_heading,10);
-        drawShipOutline(ret,m_posmv_location,m_posmv_heading,3.5,.8,.8,.5);
+        drawShipOutline(ret,m_posmv_location,m_posmv_heading,2,.8,.8,2);
     }
     return ret;
 }
