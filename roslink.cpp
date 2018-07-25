@@ -87,32 +87,24 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->save();
 
     QPen p;
+    p.setCosmetic(true);
+
     if(m_node)
         p.setColor(Qt::darkGreen);
     else
         p.setColor(Qt::darkRed);
-    p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
     painter->drawPath(vehicleShape());
 
-    p.setWidth(8);
-    p.setColor(Qt::yellow);
-    painter->setPen(p);
-    painter->drawPath(vehicleShapePosmv());
-    p.setWidth(3);
-    if(m_node)
-        p.setColor(Qt::darkGreen);
-    else
-        p.setColor(Qt::darkRed);
-    painter->setPen(p);
-    painter->drawPath(vehicleShapePosmv());
     
     p.setColor(Qt::blue);
+    p.setWidth(2);
     painter->setPen(p);
     painter->drawPath(aisShape());
     
     p.setColor(Qt::darkYellow);
+    p.setWidth(4);
     painter->setPen(p);
     painter->drawPath(viewShape());
 
@@ -125,6 +117,18 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(baseShape());
     
+    p.setWidth(8);
+    p.setColor(Qt::yellow);
+    painter->setPen(p);
+    painter->drawPath(vehicleShapePosmv());
+    p.setWidth(3);
+    if(m_node)
+        p.setColor(Qt::darkGreen);
+    else
+        p.setColor(Qt::darkRed);
+    painter->setPen(p);
+    painter->drawPath(vehicleShapePosmv());
+
     painter->restore();
 }
 
@@ -203,7 +207,7 @@ QPainterPath ROSLink::baseShape() const
         
         //drawTriangle(ret,last,m_base_heading,10);
         // fairweather estimates: 70m by 12.70m
-        drawShipOutline(ret,m_base_location,m_base_heading,24,6.35,6.35,46);
+        drawShipOutline(ret,m_base_location,m_base_heading,20,6.35,6.35,49);
 
     }
     return ret;
