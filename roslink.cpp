@@ -96,7 +96,7 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(vehicleShape());
 
-    p.setWidth(5);
+    p.setWidth(8);
     p.setColor(Qt::yellow);
     painter->setPen(p);
     painter->drawPath(vehicleShapePosmv());
@@ -116,6 +116,11 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(viewShape());
 
+    p.setColor(Qt::darkBlue);
+    p.setWidth(5);
+    painter->setPen(p);
+    painter->drawPath(baseShape());
+    p.setWidth(3);
     p.setColor(Qt::lightGray);
     painter->setPen(p);
     painter->drawPath(baseShape());
@@ -196,7 +201,10 @@ QPainterPath ROSLink::baseShape() const
         }
         auto last = *(m_local_base_location_history.rbegin());
         
-        drawTriangle(ret,last,m_base_heading,10);
+        //drawTriangle(ret,last,m_base_heading,10);
+        // fairweather estimates: 70m by 12.70m
+        drawShipOutline(ret,m_base_location,m_base_heading,24,6.35,6.35,46);
+
     }
     return ret;
 }
