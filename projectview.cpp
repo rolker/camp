@@ -29,6 +29,7 @@ void ProjectView::wheelEvent(QWheelEvent *event)
         scale(.8,.8);
     if(event->angleDelta().y()>0)
         scale(1.25,1.25);
+    emit scaleChanged(matrix().m11());
     event->accept();
 }
 

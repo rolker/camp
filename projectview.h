@@ -27,6 +27,7 @@ public:
     void setProject(AutonomousVehicleProject *project);
 signals:
     void currentChanged(QModelIndex &index);
+    void scaleChanged(qreal scale);
 
 public slots:
     void sendLoiterAt();

@@ -3,6 +3,7 @@
 #include <QJsonObject>
 #include <gdal_priv.h>
 #include <QModelIndex>
+#include <QDebug>
 
 BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem)
     : MissionItem(parent), QGraphicsItem(parentItem), m_filename(fname)
@@ -14,7 +15,12 @@ BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraph
 
         int width = dataset->GetRasterXSize();
         int height = dataset->GetRasterYSize();
-
+        
+        QGeoCoordinate p1 = pixelToGeo(QPointF(width/2,height/2));
+        QGeoCoordinate p2 = pixelToGeo(QPointF((width/2)+1,height/2));
+        m_pixel_size = p1.distanceTo(p2);
+        qDebug() << "pixel size: " << m_pixel_size;
+        
         QImage image(width,height,QImage::Format_ARGB32);
 
         for(int bandNumber = 1; bandNumber <= dataset->GetRasterCount(); bandNumber++)
@@ -113,5 +119,10 @@ void BackgroundRaster::write(QJsonObject &json) const
 void BackgroundRaster::read(const QJsonObject &json)
 {
 
+}
+
+qreal BackgroundRaster::pixelSize() const
+{
+    return m_pixel_size;
 }
 

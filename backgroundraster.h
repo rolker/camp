@@ -22,10 +22,13 @@ public:
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
     
+    qreal pixelSize() const;
+    
 private:
     typedef std::map<int,QPixmap> Mipmaps;
     Mipmaps backgroundImages;
     QString m_filename;
+    qreal m_pixel_size; // size of a pixel in meters.
 
 };
 

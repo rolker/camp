@@ -35,6 +35,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->rosDetails->setEnabled(false);
     connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
     ui->rosDetails->setROSLink(project->rosLink());
+
+    connect(ui->projectView,&ProjectView::scaleChanged,project->rosLink(),&ROSLink::updateMapScale);
+
     project->rosLink()->connectROS();
 }
 
