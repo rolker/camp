@@ -25,6 +25,12 @@ void Group::write(QJsonObject& json) const
     json["children"] = childrenArray;
 }
 
+void Group::writeToMissionPlan(QJsonArray& navArray) const
+{
+    for(MissionItem *item: childMissionItems())
+        item->writeToMissionPlan(navArray);
+}
+
 void Group::read(const QJsonObject& json)
 {
     MissionItem::read(json);

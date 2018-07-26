@@ -92,6 +92,10 @@ void SurveyArea::write(QJsonObject& json) const
 {
 }
 
+void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
+{
+}
+
 void SurveyArea::read(const QJsonObject& json)
 {
 }

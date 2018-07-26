@@ -16,6 +16,7 @@ public:
     QPainterPath shape() const override;
     
     void write(QJsonObject &json) const override;
+    void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json) override;
     
     void addExteriorPoint(QGeoCoordinate const &location);

@@ -10,7 +10,8 @@ class Group : public MissionItem
 public:
     Group(MissionItem *parent = 0);
     
-    void write(QJsonObject &json) const;
+    void write(QJsonObject &json) const override;
+    void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json);
     
     bool canAcceptChildType(const std::string & childType) const override;

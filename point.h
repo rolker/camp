@@ -18,6 +18,7 @@ public:
     void setLocation(QGeoCoordinate const &location);
     
     void write(QJsonObject &json) const override;
+    void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json) override;
 
     int type() const override {return PointType;}

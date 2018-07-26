@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QtMath>
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QDebug>
 #include "platform.h"
 #include "autonomousvehicleproject.h"
@@ -116,6 +117,32 @@ void SurveyPattern::write(QJsonObject &json) const
     }
     json["spacing"] = m_spacing;
     json["direction"] = m_direction;
+}
+
+void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
+{
+    auto lines = getLines();
+    for(int i = 0; i < lines.size(); i++)
+    {
+        auto l = lines[i];
+        QJsonObject navItem;
+        QJsonObject pathObject;
+        QJsonArray pathNavArray;
+        for(auto wp: l)
+        {
+            Waypoint * temp_wp = new Waypoint();
+            temp_wp->setLocation(wp);
+            temp_wp->writeToMissionPlan(pathNavArray);
+            delete temp_wp;
+        }
+        pathObject["nav"] = pathNavArray;
+        if(m_arcCount>0 && i%2 == 1)
+            pathObject["type"] = "turn";
+        else
+            pathObject["type"] = "survey_line";
+        navItem["path"] = pathObject;
+        navArray.append(navItem);
+    }    
 }
 
 void SurveyPattern::read(const QJsonObject &json)

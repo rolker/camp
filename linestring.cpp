@@ -19,6 +19,11 @@ void LineString::write(QJsonObject& json) const
 
 }
 
+void LineString::writeToMissionPlan(QJsonArray& navArray) const
+{
+}
+
+
 void LineString::read(const QJsonObject& json)
 {
 

@@ -37,6 +37,11 @@ void Polygon::write(QJsonObject& json) const
 {
 }
 
+void Polygon::writeToMissionPlan(QJsonArray& navArray) const
+{
+}
+
+
 QPainterPath Polygon::shape() const
 {
 

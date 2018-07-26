@@ -18,6 +18,11 @@ void Platform::write(QJsonObject &json) const
     json["speed"]=m_speed;
 }
 
+void Platform::writeToMissionPlan(QJsonArray& navArray) const
+{
+    
+}
+
 double Platform::speed() const
 {
     return m_speed;

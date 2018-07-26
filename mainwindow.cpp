@@ -84,8 +84,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
     QMenu menu(this);
 
-    QAction *exportAction = menu.addAction("Export");
-    connect(exportAction, &QAction::triggered, this, &MainWindow::exportHypack);
+    QAction *exportHypackAction = menu.addAction("Export Hypack");
+    connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
+
+    QAction *exportMPAction = menu.addAction("Export Mission Plan");
+    connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
+
     
 #ifdef AMP_ROS
     QAction *sendToROSAction = menu.addAction("Send to ROS");
@@ -122,6 +126,11 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 void MainWindow::exportHypack() const
 {
     project->exportHypack(ui->treeView->selectionModel()->currentIndex());
+}
+
+void MainWindow::exportMissionPlan() const
+{
+    project->exportMissionPlan(ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::sendToROS() const

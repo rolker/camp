@@ -9,8 +9,9 @@ class Platform : public MissionItem
 public:
     explicit Platform(MissionItem *parent = 0);
 
-    void write(QJsonObject &json) const;
-    void read(const QJsonObject &json);
+    void write(QJsonObject &json) const override;
+    void writeToMissionPlan(QJsonArray & navArray) const override;
+    void read(const QJsonObject &json) override;
     
     double speed() const;
     void setSpeed(double speed);

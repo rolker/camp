@@ -14,6 +14,7 @@ public:
     explicit MissionItem(QObject *parent = 0);
 
     virtual void write(QJsonObject &json) const;
+    virtual void writeToMissionPlan(QJsonArray &navArray) const = 0;
     virtual void read(const QJsonObject &json);
     virtual void readChildren(const QJsonArray &json);
     

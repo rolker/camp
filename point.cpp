@@ -22,6 +22,11 @@ void Point::write(QJsonObject& json) const
 
 }
 
+void Point::writeToMissionPlan(QJsonArray& navArray) const
+{
+}
+
+
 void Point::read(const QJsonObject& json)
 {
 

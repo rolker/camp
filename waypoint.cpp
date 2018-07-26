@@ -3,6 +3,7 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include <QJsonObject>
+#include <QJsonArray>
 #include <QDebug>
 
 Waypoint::Waypoint(MissionItem *parent) :GeoGraphicsMissionItem(parent), m_internalPositionChangeFlag(false)
@@ -77,6 +78,30 @@ void Waypoint::write(QJsonObject &json) const
     json["latitude"] = m_location.latitude();
     json["longitude"] = m_location.longitude();
 }
+
+void Waypoint::writeToMissionPlan(QJsonArray& navArray) const
+{
+    QJsonObject waypointObject;
+    QJsonObject navObject;
+
+    QJsonObject orientationObject;
+    orientationObject["heading"] = QJsonValue::Null;
+    orientationObject["pitch"] = QJsonValue::Null;
+    orientationObject["roll"] = QJsonValue::Null;
+    navObject["orientation"] = orientationObject;
+
+    QJsonObject positionObject;
+    positionObject["altitude"] = m_location.altitude();
+    positionObject["latitude"] = m_location.latitude();
+    positionObject["longitude"] = m_location.longitude();
+    navObject["position"] = positionObject;
+    
+    waypointObject["nav"] = navObject;
+    QJsonObject navItem;
+    navItem["waypoint"] = waypointObject;
+    navArray.append(navItem);
+}
+
 
 void Waypoint::read(const QJsonObject &json)
 {

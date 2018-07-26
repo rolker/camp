@@ -5,13 +5,16 @@
 
 GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent):MissionItem(parent)
 {
-    QGraphicsItem *parentItem = parent->findParentGraphicsItem();
-    setParentItem(parentItem);
-    setAcceptHoverEvents(true);
-    setOpacity(.5);
-    setFlag(QGraphicsItem::ItemIsMovable);
-    setFlag(QGraphicsItem::ItemIsSelectable);
-    setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    if(parent)
+    {
+        QGraphicsItem *parentItem = parent->findParentGraphicsItem();
+        setParentItem(parentItem);
+        setAcceptHoverEvents(true);
+        setOpacity(.5);
+        setFlag(QGraphicsItem::ItemIsMovable);
+        setFlag(QGraphicsItem::ItemIsSelectable);
+        setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    }
 }
 
 void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)

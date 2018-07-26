@@ -87,6 +87,8 @@ public:
     
     ROSLink * rosLink() const;
 
+    QJsonDocument generateMissionPlan(QModelIndex const &index);
+    
 signals:
     void currentPlaformUpdated();
     void backgroundUpdated(BackgroundRaster *bg);
@@ -94,6 +96,7 @@ signals:
 public slots:
 
     void exportHypack(QModelIndex const &index);
+    void exportMissionPlan(QModelIndex const &index);
     void sendToROS(QModelIndex const &index);
     void deleteItems(QModelIndexList const &indices);
     void deleteItem(QModelIndex const &index);

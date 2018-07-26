@@ -769,7 +769,7 @@ void ROSLink::viewPolygonCallback(const std_msgs::String::ConstPtr& message)
 
 void ROSLink::viewSeglistCallback(const std_msgs::String::ConstPtr& message)
 {
-    //qDebug() << "view seglist" << std::string(message->data).c_str();
+    qDebug() << "view seglist" << std::string(message->data).c_str();
     auto parsed = parseViewString(QString(std::string(message->data).c_str()));
     //qDebug() << parsed;
     if(parsed.contains("active"))

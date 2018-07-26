@@ -116,6 +116,11 @@ void BackgroundRaster::write(QJsonObject &json) const
     json["filename"] = m_filename;
 }
 
+void BackgroundRaster::writeToMissionPlan(QJsonArray& navArray) const
+{
+}
+
+
 void BackgroundRaster::read(const QJsonObject &json)
 {
 

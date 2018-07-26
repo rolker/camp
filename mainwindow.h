@@ -44,6 +44,7 @@ private:
     AutonomousVehicleProject *project;
 
     void exportHypack() const;
+    void exportMissionPlan() const;
     void sendToROS() const;
 };
 
