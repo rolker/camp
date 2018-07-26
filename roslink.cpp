@@ -58,6 +58,7 @@ void ROSLink::connectROS()
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
             m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
+            m_mission_plan_publisher = m_node->advertise<std_msgs::String>("/udp/mission_plan",1);
             m_spinner->start();
             m_watchdog_timer->start(500);
             emit rosConnected(true);
@@ -252,7 +253,7 @@ QPainterPath ROSLink::viewShape() const
     if(m_view_point_active)
         ret.addEllipse(m_local_view_point,4*m_pixel_size,4*m_pixel_size);
     
-    if(m_view_seglist_active)
+    if(m_view_seglist_active && !m_local_view_seglist.empty())
     {
         auto p = m_local_view_seglist.begin();
         ret.moveTo(*p);
@@ -264,7 +265,7 @@ QPainterPath ROSLink::viewShape() const
         }
     }
 
-    if(m_view_polygon_active)
+    if(m_view_polygon_active && !m_local_view_polygon.empty())
     {
         auto p = m_local_view_polygon.begin();
         ret.moveTo(*p);
@@ -477,6 +478,15 @@ void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
     if(m_node)
         m_wpt_updates_publisher.publish(rosUpdates);
 }
+
+void ROSLink::sendMissionPlan(const QString& plan)
+{
+    std_msgs::String mp;
+    mp.data = plan.toStdString();
+    if(m_node)
+        m_mission_plan_publisher.publish(mp);
+}
+
 
 void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
 {

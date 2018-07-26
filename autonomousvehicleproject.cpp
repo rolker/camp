@@ -322,18 +322,67 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
 
 void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 {
+    MissionItem *mi = itemFromIndex(index);
+    QList<QGeoCoordinate> wps;
+    auto lines = mi->getLines();
+    for (auto l: lines)
+        for (auto p: l)
+            wps.append(p);
+
 #ifdef AMP_ROS
     if(m_ROSLink)
     {
-        MissionItem *mi = itemFromIndex(index);
-        QList<QGeoCoordinate> wps;
-        auto lines = mi->getLines();
-        for (auto l: lines)
-            for (auto p: l)
-                wps.append(p);
         m_ROSLink->sendWaypoints(wps);
     }
 #endif
+    // mission=plan format
+    QJsonDocument plan;
+    QJsonObject topLevel;
+    QJsonArray navArray;
+    
+    for (auto l: lines)
+    {
+        QJsonObject navObject;
+        QJsonObject pathObject;
+        QJsonArray pathNavArray;
+        for (auto w: l)
+        {
+            QJsonObject wpObject;
+            QJsonObject wpNavObject;
+            
+            QJsonObject orientationObject;
+            orientationObject["heading"] = QJsonValue::Null;
+            orientationObject["pitch"] = QJsonValue::Null;
+            orientationObject["roll"] = QJsonValue::Null;
+            wpNavObject["orientation"] = orientationObject;
+
+            QJsonObject positionObject;
+            positionObject["altitude"] = QJsonValue::Null;
+            positionObject["latitude"] = w.latitude();
+            positionObject["longitude"] = w.longitude();
+            wpNavObject["position"] = positionObject;
+            
+            wpObject["nav"] = wpNavObject;
+            QJsonObject navItem;
+            navItem["waypoint"]=wpObject;
+            pathNavArray.append(navItem);
+        }
+        pathObject["nav"] = pathNavArray;
+        navObject["path"] = pathObject;
+        navArray.append(navObject);
+    }
+
+    topLevel["NAVIGATION"] = navArray;
+
+    plan.setObject(topLevel);
+    
+#ifdef AMP_ROS
+    if(m_ROSLink)
+    {
+        m_ROSLink->sendMissionPlan(plan.toJson());
+    }
+#endif
+
 }
 
 

@@ -79,6 +79,7 @@ public slots:
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
+    void sendMissionPlan(QString const &plan);
     void sendLoiter(QGeoCoordinate const &loiterLocation);
     void sendGoto(QGeoCoordinate const &loiterLocation);
     void connectROS();
@@ -127,6 +128,8 @@ private:
     ros::Publisher m_helmMode_publisher;
     ros::Publisher m_wpt_updates_publisher;
     ros::Publisher m_loiter_updates_publisher;
+    ros::Publisher m_mission_plan_publisher;
+    
     ros::AsyncSpinner *m_spinner;
     QGeoCoordinate m_location;
     QGeoCoordinate m_posmv_location;
