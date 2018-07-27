@@ -59,6 +59,7 @@ set(SOURCES
     geographicsmissionitem.cpp
     modeltest.cpp
     surveyarea.cpp
+    measuringtool.cpp
 )
 
 set(HEADERS
@@ -86,6 +87,7 @@ set(HEADERS
     polygon.h
     geographicsmissionitem.h
     surveyarea.h
+    measuringtool.h
 )
 
 if(AMP_USE_ROS)

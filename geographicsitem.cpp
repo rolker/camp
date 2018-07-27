@@ -55,6 +55,10 @@ void GeoGraphicsItem::setLabel(const QString &label)
         m_label->setText(m_labelText);
 }
 
+void GeoGraphicsItem::setLabelPosition(QPointF pos)
+{
+    m_label->setPos(pos);
+}
 
 bool GeoGraphicsItem::showLabelFlag() const
 {

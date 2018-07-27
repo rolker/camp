@@ -12,6 +12,7 @@ class SurveyPattern;
 class SurveyArea;
 class Waypoint;
 class BackgroundRaster;
+class MeasuringTool;
 
 class ProjectView : public QGraphicsView
 {
@@ -54,6 +55,7 @@ private:
     SurveyPattern * pendingSurveyPattern;
     SurveyArea * pendingSurveyArea;
     Waypoint * pendingSurveyAreaWaypoint;
+    MeasuringTool * measuringTool;
 
     QGeoCoordinate m_contextMenuLocation;
 

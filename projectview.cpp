@@ -13,9 +13,10 @@
 #include <QDebug>
 #include <QMenu>
 #include "roslink.h"
+#include "measuringtool.h"
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
-    statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingTrackLineWaypoint(nullptr), pendingSurveyPattern(nullptr), pendingSurveyArea(nullptr),pendingSurveyAreaWaypoint(nullptr)
+    statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingTrackLineWaypoint(nullptr), pendingSurveyPattern(nullptr), pendingSurveyArea(nullptr),pendingSurveyAreaWaypoint(nullptr),measuringTool(nullptr)
 {
 
     positionLabel->setText("(,)");
@@ -126,6 +127,14 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             event->accept();
         }
         break;
+    case Qt::MiddleButton:
+        if(bg && !measuringTool)
+        {
+            measuringTool = new MeasuringTool(bg);
+            measuringTool->setStart(bg->pixelToGeo(mapToScene(event->pos())));
+            measuringTool->setFinish(bg->pixelToGeo(mapToScene(event->pos())));
+        }
+        break;
     default:
         break;
     }
@@ -159,6 +168,8 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         {
             pendingSurveyAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
         }
+        if(measuringTool)
+            measuringTool->setFinish(llMouse);
     }
     positionLabel->setText(posText);
     QGraphicsView::mouseMoveEvent(event);
@@ -166,8 +177,11 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
 
 void ProjectView::mouseReleaseEvent(QMouseEvent *event)
 {
-    if(event->button() == Qt::LeftButton)
+    if(event->button() == Qt::MiddleButton)
     {
+        if(measuringTool)
+            delete measuringTool;
+        measuringTool = nullptr;
     }
     QGraphicsView::mouseReleaseEvent(event);
 }
