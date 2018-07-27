@@ -109,6 +109,8 @@
     <addaction name="actionSurveyPattern"/>
     <addaction name="actionSurveyArea"/>
     <addaction name="actionGroup"/>
+    <addaction name="actionPlatform"/>
+    <addaction name="actionBehavior"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -127,6 +129,7 @@
    <addaction name="actionSurveyArea"/>
    <addaction name="actionGroup"/>
    <addaction name="actionPlatform"/>
+   <addaction name="actionBehavior"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -214,6 +217,14 @@
    </property>
    <property name="iconText">
     <string>SA</string>
+   </property>
+  </action>
+  <action name="actionBehavior">
+   <property name="text">
+    <string>Behavior</string>
+   </property>
+   <property name="iconText">
+    <string>B</string>
    </property>
   </action>
  </widget>

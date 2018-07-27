@@ -145,3 +145,8 @@ qreal BackgroundRaster::mapScale() const
 {
     return m_map_scale;
 }
+
+bool BackgroundRaster::canAcceptChildType(const std::string& childType) const
+{
+    return false;
+}

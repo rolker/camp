@@ -37,7 +37,7 @@ private slots:
     void on_actionOpenGeometry_triggered();
     void on_actionGroup_triggered();
     void on_actionImport_triggered();
-
+    void on_actionBehavior_triggered();
 
 private:
     Ui::MainWindow *ui;

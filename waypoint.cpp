@@ -95,6 +95,8 @@ void Waypoint::write(QJsonObject &json) const
 void Waypoint::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject waypointObject;
+    writeBehaviorsToMissionPlanObject(waypointObject);
+
     QJsonObject navObject;
 
     QJsonObject orientationObject;

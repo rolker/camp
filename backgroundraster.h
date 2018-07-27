@@ -26,6 +26,8 @@ public:
     qreal pixelSize() const;
     qreal scaledPixelSize() const;
     qreal mapScale() const;
+    
+    bool canAcceptChildType(const std::string & childType) const override;
 
 public slots:
     void updateMapScale(qreal scale); 

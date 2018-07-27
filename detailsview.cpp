@@ -11,6 +11,8 @@
 #include "surveypatterndetails.h"
 #include "platform.h"
 #include "platformdetails.h"
+#include "behavior.h"
+#include "behaviordetails.h"
 
 #include <QDebug>
 
@@ -26,6 +28,8 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     surveyPatternDetails->hide();
     platformDetails = new PlatformDetails(this);
     platformDetails->hide();
+    behaviorDetails = new BehaviorDetails(this);
+    behaviorDetails->hide();
 }
 
 QSize DetailsView::sizeHint() const
@@ -90,6 +94,12 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
         Platform *p = qobject_cast<Platform*>(mi);
         setCurrentWidget(platformDetails);
         platformDetails->setPlatform(p);
+    }
+    else if (itemType == "Behavior")
+    {
+        Behavior *b = qobject_cast<Behavior*>(mi);
+        setCurrentWidget(behaviorDetails);
+        behaviorDetails->setBehavior(b);
     }
     else
         setCurrentWidget(nullptr);

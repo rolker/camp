@@ -21,6 +21,7 @@
 #include "group.h"
 #include <gdal_priv.h>
 #include "vectordataset.h"
+#include "behavior.h"
 
 #ifdef AMP_ROS
 #include "roslink.h"
@@ -183,6 +184,13 @@ Platform * AutonomousVehicleProject::createPlatform()
     p->setObjectName("platform");
     return p;
 }
+
+Behavior * AutonomousVehicleProject::createBehavior()
+{
+    Behavior *b = potentialParentItemFor("Behavior")->createMissionItem<Behavior>("behavior");
+    return b;
+}
+
 
 Group * AutonomousVehicleProject::addGroup()
 {

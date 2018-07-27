@@ -129,6 +129,7 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
         auto l = lines[i];
         QJsonObject navItem;
         QJsonObject pathObject;
+        writeBehaviorsToMissionPlanObject(pathObject);
         QJsonArray pathNavArray;
         for(auto wp: l)
         {

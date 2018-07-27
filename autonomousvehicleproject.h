@@ -23,7 +23,7 @@ class QSvgRenderer;
 #ifdef AMP_ROS
 class ROSLink;
 #endif
-
+class Behavior;
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -50,6 +50,8 @@ public:
 
     Platform * createPlatform();
     Platform * currentPlatform() const;
+    
+    Behavior * createBehavior();
     
     Group * addGroup();
     

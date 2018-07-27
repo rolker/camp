@@ -140,6 +140,7 @@ void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject navItem;
     QJsonObject pathObject;
+    writeBehaviorsToMissionPlanObject(pathObject);
     QJsonArray pathNavArray;
     auto children = childItems();
     for(auto child: children)

@@ -60,6 +60,8 @@ set(SOURCES
     modeltest.cpp
     surveyarea.cpp
     measuringtool.cpp
+    behavior.cpp
+    behaviordetails.cpp
 )
 
 set(HEADERS
@@ -88,6 +90,8 @@ set(HEADERS
     geographicsmissionitem.h
     surveyarea.h
     measuringtool.h
+    behavior.h
+    behaviordetails.h
 )
 
 if(AMP_USE_ROS)

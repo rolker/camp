@@ -178,6 +178,11 @@ void MainWindow::on_actionPlatform_triggered()
     project->createPlatform();
 }
 
+void MainWindow::on_actionBehavior_triggered()
+{
+    project->createBehavior();
+}
+
 void MainWindow::on_actionOpenGeometry_triggered()
 {
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"));

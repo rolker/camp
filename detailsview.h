@@ -10,6 +10,7 @@ class TrackLineDetails;
 class SurveyPatternDetails;
 class PlatformDetails;
 class ROSDetails;
+class BehaviorDetails;
 
 class DetailsView : public QWidget
 {
@@ -37,6 +38,7 @@ private:
     SurveyPatternDetails * surveyPatternDetails;
     PlatformDetails * platformDetails;
     ROSDetails * rosDetails;
+    BehaviorDetails * behaviorDetails;
 
     void setCurrentWidget(QWidget *widget);
 };

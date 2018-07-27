@@ -15,6 +15,7 @@ public:
 
     virtual void write(QJsonObject &json) const;
     virtual void writeToMissionPlan(QJsonArray &navArray) const = 0;
+    virtual void writeBehaviorsToMissionPlanObject(QJsonObject &missionObject) const;
     virtual void read(const QJsonObject &json);
     virtual void readChildren(const QJsonArray &json);
     
