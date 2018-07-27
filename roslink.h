@@ -33,7 +33,7 @@ public:
 };
 
 
-class ROSLink : public QObject, GeoGraphicsItem
+class ROSLink : public QObject, public GeoGraphicsItem
 {
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
@@ -85,7 +85,6 @@ public slots:
     void connectROS();
     void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
     void watchdogUpdate();
-    void updateMapScale(qreal scale);
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
@@ -102,6 +101,7 @@ private:
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
+    void drawOctagon(QPainterPath &path, QGeoCoordinate const &location, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
     QMap<QString,QString> parseViewString(QString const &vs) const;
     QList<QPointF> parseViewPointList(QString const &pointList) const;
@@ -171,9 +171,6 @@ private:
     ros::Time m_last_heartbeat_receive_time;
     
     QTimer * m_watchdog_timer;
-    
-    qreal m_map_scale;
-    qreal m_pixel_size;
 };
 
 #endif // ROSNODE_H

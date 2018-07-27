@@ -29,16 +29,17 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
         p.setCosmetic(true);
         p.setWidth(3);
         painter->setPen(p);
+        painter->drawPath(shape());
 
-        auto first = children.begin();
-        auto second = first;
-        second++;
-        while(second != children.end())
-        {
-            painter->drawLine((*first)->pos(),(*second)->pos());
-            first++;
-            second++;
-        }
+//         auto first = children.begin();
+//         auto second = first;
+//         second++;
+//         while(second != children.end())
+//         {
+//             painter->drawLine((*first)->pos(),(*second)->pos());
+//             first++;
+//             second++;
+//         }
 
         painter->restore();
 

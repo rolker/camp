@@ -28,7 +28,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this))
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0)
 {
     GDALAllRegister();
 
@@ -446,6 +446,7 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
     m_currentBackground = bgr;
     if(bgr)
     {
+        bgr->updateMapScale(m_map_scale);
         m_scene->addItem(bgr);
         emit backgroundUpdated(bgr);
     }
@@ -622,6 +623,13 @@ ROSLink * AutonomousVehicleProject::rosLink() const
     return m_ROSLink;
 }
 
+void AutonomousVehicleProject::updateMapScale(qreal scale)
+{
+    if(m_currentBackground)
+        m_currentBackground->updateMapScale(scale);
+    m_map_scale = scale;
+    
+}
 
 AutonomousVehicleProject::RowInserter::RowInserter(AutonomousVehicleProject& project, MissionItem* parent):m_project(project)
 {
@@ -632,3 +640,4 @@ AutonomousVehicleProject::RowInserter::~RowInserter()
 {
     m_project.endInsertRows();
 }
+

@@ -70,3 +70,5 @@ void GeoGraphicsItem::setShowLabelFlag(bool show)
         m_label->setText("");
 }
 
+
+

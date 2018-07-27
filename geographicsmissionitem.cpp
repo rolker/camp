@@ -23,6 +23,7 @@ void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)
     updateProjectedPoints();
 }
 
+
 void GeoGraphicsMissionItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
 {
     //qDebug() << "Enter item!";

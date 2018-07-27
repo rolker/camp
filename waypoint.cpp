@@ -25,8 +25,7 @@ void Waypoint::setLocation(QGeoCoordinate const &location)
 
 QRectF Waypoint::boundingRect() const
 {
-    qreal penWidth = 1;
-    return QRectF(-10 - penWidth / 2, -10 - penWidth / 2, 20 + penWidth, 20 + penWidth);
+    return shape().boundingRect().marginsAdded(QMarginsF(2,2,2,2));
 }
 
 void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
@@ -38,11 +37,25 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
-
-    painter->drawRoundedRect(-10,-10,20,20,8,8);
+    
+    painter->drawPath(shape());
 
     painter->restore();
 }
+
+QPainterPath Waypoint::shape() const
+{
+    QPainterPath ret;
+    qreal scale = 1.0;
+    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+    if(bgr)
+        scale = 1.0/bgr->mapScale();// scaledPixelSize();
+    qDebug() << "scale: " << scale;
+    scale = std::max(0.05,scale);
+    ret.addRoundedRect(-10*scale,-10*scale,20*scale,20*scale,8*scale,8*scale);
+    return ret;
+}
+
 
 void Waypoint::updateLocation()
 {

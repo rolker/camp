@@ -101,6 +101,7 @@ public slots:
     void deleteItems(QModelIndexList const &indices);
     void deleteItem(QModelIndex const &index);
     void deleteItem(MissionItem *item);
+    void updateMapScale(qreal scale);
 
 
 private:
@@ -135,6 +136,8 @@ public:
 
 private:    
     friend class RowInserter;
+    
+    qreal m_map_scale;
 };
 
 

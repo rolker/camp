@@ -14,9 +14,9 @@ class TrackLine : public GeoGraphicsMissionItem
 public:
     explicit TrackLine(MissionItem *parent = 0);
 
-    QRectF boundingRect() const;
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
-    QPainterPath shape() const;
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+    QPainterPath shape() const override;
 
     Waypoint * createWaypoint();
     Waypoint * addWaypoint(QGeoCoordinate const &location);

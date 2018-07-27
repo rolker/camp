@@ -21,8 +21,6 @@ public slots:
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
     void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
-
-    
 };
 
 #endif // GEOGRAPHICSMISSIONITEM_H

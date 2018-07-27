@@ -34,6 +34,7 @@ void SurveyPattern::setStartLocation(const QGeoCoordinate &location)
         m_startLocation->setObjectName("start");
     }
     m_startLocation->setLocation(location);
+    setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
     m_startLocation->setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
     update();
 }
@@ -73,6 +74,7 @@ void SurveyPattern::calculateFromWaypoints()
         qreal ab_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
 
         qreal ac_distance = 1.0;
+        m_spacing = ab_distance/10.0;
         qreal ac_angle = 90.0;
         if(m_spacingLocation)
         {
@@ -233,7 +235,7 @@ void SurveyPattern::updateEndLocation()
 
 QRectF SurveyPattern::boundingRect() const
 {
-    return shape().boundingRect();
+    return shape().boundingRect().marginsAdded(QMarginsF(5,5,5,5));
 }
 
 void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
@@ -421,6 +423,8 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
                 ac_distance = m_startLocation->location().distanceTo(m_spacingLocation->location());
                 ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
             }
+            else
+                ac_distance = ab_distance/10.0;
             qreal leg_heading = ac_angle-90.0;
             qreal leg_length = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
             //qDebug() << "getPath: leg_length: " << leg_length << " leg_heading: " << leg_heading;

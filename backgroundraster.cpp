@@ -131,3 +131,17 @@ qreal BackgroundRaster::pixelSize() const
     return m_pixel_size;
 }
 
+qreal BackgroundRaster::scaledPixelSize() const
+{
+    return m_pixel_size/m_map_scale;
+}
+
+void BackgroundRaster::updateMapScale(qreal scale)
+{
+    m_map_scale = scale;
+}
+
+qreal BackgroundRaster::mapScale() const
+{
+    return m_map_scale;
+}

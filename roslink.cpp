@@ -16,7 +16,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 }
 
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_map_scale(1.0)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false)
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -146,6 +146,7 @@ QPainterPath ROSLink::shape() const
 
 QPainterPath ROSLink::vehicleShape() const
 {
+    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
     QPainterPath ret;
     if (m_local_location_history.size() > 1)
     {
@@ -159,11 +160,14 @@ QPainterPath ROSLink::vehicleShape() const
         }
         auto last = *(m_local_location_history.rbegin());
         
-        if(m_pixel_size > .5)
-            drawTriangle(ret,m_location,m_heading,m_pixel_size);
-        else
-            drawShipOutline(ret,m_location,m_heading,3,.8,.8,1);
-
+        if(bgr)
+        {
+            qreal pixel_size = bgr->scaledPixelSize();
+            if(pixel_size > .5)
+                drawTriangle(ret,m_location,m_heading,pixel_size);
+            else
+                drawShipOutline(ret,m_location,m_heading,3,.8,.8,1);
+        }
         
         //ret.addRect(-1,-5,2,10);
         //ret.addRect(-5,-1,10,2);
@@ -186,10 +190,15 @@ QPainterPath ROSLink::vehicleShapePosmv() const
         }
         auto last = *(m_local_posmv_location_history.rbegin());
         
-        if(m_pixel_size > .5)
-            drawTriangle(ret,m_posmv_location,m_heading,m_pixel_size);
-        else
-            drawShipOutline(ret,m_posmv_location,m_posmv_heading,2,.8,.8,2);
+        auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+        if(bgr)
+        {
+            qreal pixel_size = bgr->scaledPixelSize();
+            if(pixel_size > .5)
+                drawTriangle(ret,m_posmv_location,m_heading,pixel_size);
+            else
+                drawShipOutline(ret,m_posmv_location,m_posmv_heading,2,.8,.8,2);
+        }
     }
     return ret;
 }
@@ -210,11 +219,16 @@ QPainterPath ROSLink::baseShape() const
         }
         auto last = *(m_local_base_location_history.rbegin());
         
-        if(m_pixel_size > 1)
-            drawTriangle(ret,m_base_location,m_base_heading,m_pixel_size);
-        else
-            // fairweather estimates: 70m by 12.70m
-            drawShipOutline(ret,m_base_location,m_base_heading,20,6.35,6.35,49);
+        auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+        if(bgr)
+        {
+            qreal pixel_size = bgr->scaledPixelSize();
+            if(pixel_size > 1)
+                drawTriangle(ret,m_base_location,m_base_heading,pixel_size);
+            else
+                // fairweather estimates: 70m by 12.70m
+                drawShipOutline(ret,m_base_location,m_base_heading,20,6.35,6.35,49);
+        }
 
     }
     return ret;
@@ -236,22 +250,27 @@ QPainterPath ROSLink::aisShape() const
         }
         auto last = *(contactList.second.rbegin());
 
-        if(m_pixel_size > 1)
-            drawTriangle(ret,last->location,last->heading,m_pixel_size);
-        else
-            drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
+        auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+        if(bgr)
+        {
+            qreal pixel_size = bgr->scaledPixelSize();
+            if(pixel_size > 1)
+                drawTriangle(ret,last->location,last->heading,pixel_size);
+            else
+                drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
+        }
     }
         
     return ret;
 }
 
 QPainterPath ROSLink::viewShape() const
-
 {
     QPainterPath ret;
     
     if(m_view_point_active)
-        ret.addEllipse(m_local_view_point,4*m_pixel_size,4*m_pixel_size);
+        drawOctagon(ret,m_view_point,autonomousVehicleProject()->getBackgroundRaster()->scaledPixelSize());
+//        ret.addEllipse(m_local_view_point,4*m_pixel_size,4*m_pixel_size);
     
     if(m_view_seglist_active && !m_local_view_seglist.empty())
     {
@@ -297,6 +316,16 @@ void ROSLink::drawTriangle(QPainterPath& path, const QGeoCoordinate& location, d
     path.lineTo(lllocal);
     path.lineTo(lrlocal);
     path.lineTo(ltip);
+}
+
+void ROSLink::drawOctagon(QPainterPath& path, const QGeoCoordinate& location, double scale) const
+{
+    QPointF points[8];
+    for(int i = 0; i < 8; i++)
+        points[i] = geoToPixel(location.atDistanceAndAzimuth(10*scale,i*360/8),autonomousVehicleProject())-m_local_reference_position;
+    path.moveTo(points[7]);
+    for(int i = 0; i < 8; i++)
+        path.lineTo(points[i]);
 }
 
 void ROSLink::drawShipOutline(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const
@@ -351,13 +380,11 @@ void ROSLink::posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& mess
     QMetaObject::invokeMethod(this,"updatePosmvLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
-
 void ROSLink::baseNavSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr& message)
 {
     QGeoCoordinate position(message->latitude, message->longitude, message->altitude);
     QMetaObject::invokeMethod(this,"updateBaseLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
-
 
 void ROSLink::originCallback(const geographic_msgs::GeoPoint::ConstPtr& message)
 {
@@ -613,7 +640,6 @@ void ROSLink::addAISContact(ROSAISContact *c)
 
 void ROSLink::updateBackground(BackgroundRaster *bgr)
 {
-    m_pixel_size = m_map_scale/bgr->pixelSize();
     setParentItem(bgr);
     recalculatePositions();
 }
@@ -785,13 +811,5 @@ void ROSLink::viewSeglistCallback(const std_msgs::String::ConstPtr& message)
         m_view_seglist.append(rosMapToGeo(p));
         m_local_view_seglist.append(geoToPixel(m_view_seglist.back(),autonomousVehicleProject())-m_local_reference_position);
     }
-}
-
-void ROSLink::updateMapScale(qreal scale)
-{
-    m_map_scale = scale;
-    qDebug() << "scale: " << m_map_scale;
-    m_pixel_size = autonomousVehicleProject()->getBackgroundRaster()->pixelSize()/m_map_scale;
-    qDebug() << "scaled pixel size: " << m_pixel_size;
 }
 

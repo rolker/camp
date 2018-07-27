@@ -36,12 +36,12 @@ public:
     void setLabel(QString const &label);
     
     int type() const override=0;
-
+  
 private:
     QGraphicsSimpleTextItem *m_label;
     QString m_labelText;
     bool m_showLabelFlag;
-
+    
 };
 
 Q_DECLARE_METATYPE(GeoGraphicsItem*)
