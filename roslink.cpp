@@ -195,7 +195,7 @@ QPainterPath ROSLink::vehicleShapePosmv() const
         {
             qreal pixel_size = bgr->scaledPixelSize();
             if(pixel_size > .5)
-                drawTriangle(ret,m_posmv_location,m_heading,pixel_size);
+                drawTriangle(ret,m_posmv_location,m_posmv_heading,pixel_size);
             else
                 drawShipOutline(ret,m_posmv_location,m_posmv_heading,2,.8,.8,2);
         }
