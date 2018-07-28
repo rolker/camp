@@ -50,7 +50,7 @@ QPainterPath Waypoint::shape() const
     auto bgr = autonomousVehicleProject()->getBackgroundRaster();
     if(bgr)
         scale = 1.0/bgr->mapScale();// scaledPixelSize();
-    qDebug() << "scale: " << scale;
+    //qDebug() << "scale: " << scale;
     scale = std::max(0.05,scale);
     ret.addRoundedRect(-10*scale,-10*scale,20*scale,20*scale,8*scale,8*scale);
     return ret;

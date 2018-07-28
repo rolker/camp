@@ -60,9 +60,10 @@ QPainterPath TrackLine::shape() const
             ret.lineTo((*i)->pos());
             i++;
         }
-        QPainterPathStroker pps;
-        pps.setWidth(5);
-        return pps.createStroke(ret);
+        return ret;
+        //QPainterPathStroker pps;
+        //pps.setWidth(5);
+        //return pps.createStroke(ret);
 
     }
     return QGraphicsItem::shape();
