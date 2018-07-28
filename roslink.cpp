@@ -430,6 +430,8 @@ void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
 {
     qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
     qDebug() << "\t\t" << message->position.latitude << ", " << message->position.longitude;
+    if(message->position.latitude > 90 || message->position.longitude > 180)
+        return;
     ROSAISContact *c = new ROSAISContact();
     c->timestamp = message->header.stamp;
     c->mmsi = message->mmsi;
