@@ -275,8 +275,15 @@ QPainterPath ROSLink::viewShape() const
     QPainterPath ret;
     
     if(m_view_point_active)
-        drawOctagon(ret,m_view_point,autonomousVehicleProject()->getBackgroundRaster()->scaledPixelSize());
-//        ret.addEllipse(m_local_view_point,4*m_pixel_size,4*m_pixel_size);
+    {
+        qreal scale = 1.0;
+        auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+        if(bgr)
+            scale = 1.0/bgr->mapScale();
+        scale = std::max(0.05,scale);
+        //drawOctagon(ret,m_view_point,autonomousVehicleProject()->getBackgroundRaster()->scaledPixelSize());
+        ret.addEllipse(m_local_view_point,10*scale,10*scale);
+    }
     
     if(m_view_seglist_active && !m_local_view_seglist.empty())
     {
@@ -322,16 +329,6 @@ void ROSLink::drawTriangle(QPainterPath& path, const QGeoCoordinate& location, d
     path.lineTo(lllocal);
     path.lineTo(lrlocal);
     path.lineTo(ltip);
-}
-
-void ROSLink::drawOctagon(QPainterPath& path, const QGeoCoordinate& location, double scale) const
-{
-    QPointF points[8];
-    for(int i = 0; i < 8; i++)
-        points[i] = geoToPixel(location.atDistanceAndAzimuth(10*scale,i*360/8),autonomousVehicleProject())-m_local_reference_position;
-    path.moveTo(points[7]);
-    for(int i = 0; i < 8; i++)
-        path.lineTo(points[i]);
 }
 
 void ROSLink::drawShipOutline(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const

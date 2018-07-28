@@ -105,7 +105,6 @@ private:
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
-    void drawOctagon(QPainterPath &path, QGeoCoordinate const &location, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
     QMap<QString,QString> parseViewString(QString const &vs) const;
     QList<QPointF> parseViewPointList(QString const &pointList) const;
