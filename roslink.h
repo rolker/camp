@@ -10,6 +10,7 @@
 #include "ros/ros.h"
 #include "asv_msgs/AISContact.h"
 #include "std_msgs/String.h"
+#include "std_msgs/Float32.h"
 
 
 Q_DECLARE_METATYPE(ros::Time);
@@ -21,6 +22,7 @@ struct ROSAISContact: public QObject
     Q_OBJECT
 public:
     ROSAISContact(QObject *parent = nullptr);
+    ros::Time timestamp;
     uint32_t mmsi;
     std::string name;
     QGeoCoordinate location;
@@ -99,6 +101,8 @@ private:
     void viewSeglistCallback(const std_msgs::String::ConstPtr&message);
     void posmvOrientationCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
+    void rangeCallback(const std_msgs::Float32::ConstPtr& message);
+    void bearingCallback(const std_msgs::Float32::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawOctagon(QPainterPath &path, QGeoCoordinate const &location, double scale=1.0) const;
@@ -123,6 +127,8 @@ private:
     ros::Subscriber m_view_seglist_subscriber;
     ros::Subscriber m_posmv_position;
     ros::Subscriber m_posmv_orientation;
+    ros::Subscriber m_range_subscriber;
+    ros::Subscriber m_bearing_subscriber;
     
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
@@ -171,6 +177,11 @@ private:
     ros::Time m_last_heartbeat_receive_time;
     
     QTimer * m_watchdog_timer;
+    
+    double m_range;
+    ros::Time m_range_timestamp;
+    double m_bearing;
+    ros::Time m_bearing_timestamp;
 };
 
 #endif // ROSNODE_H

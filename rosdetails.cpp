@@ -66,3 +66,18 @@ void ROSDetails::heartbeatDelay(double seconds)
     this->setAutoFillBackground(true);
     this->setPalette(pal);
 }
+
+void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_timestamp, double bearing, ros::Time const & bearing_timestamp)
+{
+    QString rblabel = "Range: " + QString::number(range) + " m, Bearing: " + QString::number(bearing) + " degs";
+    ui->rangeBearingLabel->setText(rblabel);
+
+    ros::Time now = ros::Time::now();
+    QPalette pal = palette();
+    if(now-range_timestamp < ros::Duration(5) && now-bearing_timestamp < ros::Duration(5))
+        pal.setColor(QPalette::Foreground, Qt::black);
+    else
+        pal.setColor(QPalette::Foreground, Qt::lightGray);
+    ui->rangeBearingLabel->setPalette(pal);
+    
+}

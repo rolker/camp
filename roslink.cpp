@@ -54,6 +54,9 @@ void ROSLink::connectROS()
             m_view_seglist_subscriber = m_node->subscribe("/udp/view_seglist", 10, &ROSLink::viewSeglistCallback, this);
             m_posmv_position = m_node->subscribe("/udp/posmv/position", 10, &ROSLink::posmvPositionCallback, this);
             m_posmv_orientation = m_node->subscribe("/udp/posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
+            m_range_subscriber = m_node->subscribe("/range", 10, &ROSLink::rangeCallback, this);
+            m_bearing_subscriber = m_node->subscribe("/bearing",10, &ROSLink::bearingCallback, this);
+            
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
@@ -240,24 +243,27 @@ QPainterPath ROSLink::aisShape() const
     QPainterPath ret;
     for(auto contactList: m_contacts)
     {
-        auto p = contactList.second.begin();
-        ret.moveTo((*p)->location_local);
-        p++;
-        while(p != contactList.second.end())
+        if((ros::Time::now() - contactList.second.back()->timestamp) < ros::Duration(300))
         {
-            ret.lineTo((*p)->location_local);
+            auto p = contactList.second.begin();
+            ret.moveTo((*p)->location_local);
             p++;
-        }
-        auto last = *(contactList.second.rbegin());
+            while(p != contactList.second.end())
+            {
+                ret.lineTo((*p)->location_local);
+                p++;
+            }
+            auto last = *(contactList.second.rbegin());
 
-        auto bgr = autonomousVehicleProject()->getBackgroundRaster();
-        if(bgr)
-        {
-            qreal pixel_size = bgr->scaledPixelSize();
-            if(pixel_size > 1)
-                drawTriangle(ret,last->location,last->heading,pixel_size);
-            else
-                drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
+            auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+            if(bgr)
+            {
+                qreal pixel_size = bgr->scaledPixelSize();
+                if(pixel_size > 1)
+                    drawTriangle(ret,last->location,last->heading,pixel_size);
+                else
+                    drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
+            }
         }
     }
         
@@ -380,6 +386,18 @@ void ROSLink::posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& mess
     QMetaObject::invokeMethod(this,"updatePosmvLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
+void ROSLink::rangeCallback(const std_msgs::Float32::ConstPtr& message)
+{
+    m_range_timestamp = ros::Time::now();
+    m_range = message->data;
+}
+
+void ROSLink::bearingCallback(const std_msgs::Float32::ConstPtr& message)
+{
+    m_bearing_timestamp = ros::Time::now();
+    m_bearing = message->data;
+}
+
 void ROSLink::baseNavSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr& message)
 {
     QGeoCoordinate position(message->latitude, message->longitude, message->altitude);
@@ -415,6 +433,7 @@ void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
 {
     qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
     ROSAISContact *c = new ROSAISContact();
+    c->timestamp = message->header.stamp;
     c->mmsi = message->mmsi;
     c->name = message->name;
     c->location.setLatitude(message->position.latitude);
@@ -464,6 +483,7 @@ void ROSLink::watchdogUpdate()
         //std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
 
         m_details->heartbeatDelay(diff.toSec());
+        m_details->rangeAndBearingUpdate(m_range,m_range_timestamp,m_bearing,m_bearing_timestamp);
     }
     else
         m_details->heartbeatDelay(1000.0);
@@ -633,8 +653,10 @@ void ROSLink::addAISContact(ROSAISContact *c)
         c->location_local = geoToPixel(c->location,autonomousVehicleProject())-m_local_reference_position;
     }
     m_contacts[c->mmsi].push_back(c);
-    while(m_contacts[c->mmsi].size() > 50)
+    while(!m_contacts[c->mmsi].empty() && (ros::Time::now() - m_contacts[c->mmsi].front()->timestamp) > ros::Duration(600))
         m_contacts[c->mmsi].pop_front();
+//     while(m_contacts[c->mmsi].size() > 50)
+//         m_contacts[c->mmsi].pop_front();
     update();
 }
 
