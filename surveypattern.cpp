@@ -247,7 +247,10 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         painter->save();
 
         QPen p;
-        p.setColor(Qt::red);
+        if(locked())
+            p.setColor(m_lockedColor);
+        else
+            p.setColor(m_unlockedColor);
         p.setCosmetic(true);
         p.setWidth(3);
         painter->setPen(p);
@@ -264,7 +267,10 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
                 painter->setPen(p);
                 painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
                 p.setWidth(3);
-                p.setColor(Qt::red);
+                if(locked())
+                    p.setColor(m_lockedColor);
+                else
+                    p.setColor(m_unlockedColor);
                 painter->setPen(p);
                 painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
                 first++;

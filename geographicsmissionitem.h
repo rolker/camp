@@ -15,12 +15,23 @@ public:
 
     QGraphicsItem * findParentGraphicsItem() override;
     
+    bool locked() const;
+    QList<GeoGraphicsMissionItem*> childrenGeoGraphicsMissionItems() const;
+    
 public slots:
     void updateBackground(BackgroundRaster * bg);
+    void lock();
+    void unlock();
     
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
     void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
+    
+    QColor m_lockedColor;
+    QColor m_unlockedColor;
+    
+private:
+    bool m_locked;
 };
 
 #endif // GEOGRAPHICSMISSIONITEM_H

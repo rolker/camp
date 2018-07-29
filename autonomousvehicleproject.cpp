@@ -381,6 +381,9 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
     }
 #endif
 
+    GeoGraphicsMissionItem * gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);
+    if(gmi)
+        gmi->lock();
 }
 
 

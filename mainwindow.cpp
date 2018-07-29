@@ -118,6 +118,22 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     {
         QAction *deleteItemAction = menu.addAction("Delete");
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(ui->treeView->selectionModel()->selectedRows());});
+        
+        MissionItem  *mi = project->itemFromIndex(index);
+        GeoGraphicsMissionItem *gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);
+        if(gmi)
+        {
+            if(gmi->locked())
+            {
+                QAction *unlockItemAction = menu.addAction("Unlock");
+                connect(unlockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::unlock);
+            }
+            else
+            {
+                QAction *lockItemAction = menu.addAction("Lock");
+                connect(lockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::lock);
+            }
+        }
     }
 
     menu.exec(ui->treeView->mapToGlobal(pos));

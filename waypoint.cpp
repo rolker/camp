@@ -33,7 +33,10 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     painter->save();
 
     QPen p;
-    p.setColor(Qt::red);
+    if(locked())
+        p.setColor(m_lockedColor);
+    else
+        p.setColor(m_unlockedColor);
     p.setCosmetic(true);
     p.setWidth(3);
     painter->setPen(p);
