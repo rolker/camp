@@ -69,7 +69,7 @@ void ROSDetails::heartbeatDelay(double seconds)
 
 void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_timestamp, double bearing, ros::Time const & bearing_timestamp)
 {
-    QString rblabel = "Range: " + QString::number(range) + " m, Bearing: " + QString::number(bearing) + " degs";
+    QString rblabel = "Range: " + QString::number(int(range)) + " m, Bearing: " + QString::number(int(bearing)) + " degs";
     ui->rangeBearingLabel->setText(rblabel);
 
     ros::Time now = ros::Time::now();

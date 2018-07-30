@@ -307,7 +307,7 @@ void SurveyPattern::updateLabel()
         }
 
     double distanceInNMs = cumulativeDistance*0.000539957;
-    QString label = "Distance: "+QString::number(cumulativeDistance)+" (m), "+QString::number(distanceInNMs)+" (nm)";
+    QString label = "Distance: "+QString::number(int(cumulativeDistance))+" (m), "+QString::number(distanceInNMs,'f',1)+" (nm)";
 
     AutonomousVehicleProject* avp = autonomousVehicleProject();
     if(avp)
@@ -316,7 +316,10 @@ void SurveyPattern::updateLabel()
         if(platform)
         {
             double time = distanceInNMs/platform->speed();
-            label += " ETE: "+QString::number(time)+" (h)";
+            if(time < 1.0)
+                label += " ETE: "+QString::number(int(time*60))+" (min)";
+            else
+                label += " ETE: "+QString::number(time,'f',2)+" (h)";
         }
     }
 

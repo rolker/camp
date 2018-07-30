@@ -2,6 +2,7 @@
 #include "backgroundraster.h"
 #include <QPainter>
 #include <QDebug>
+#include "platform.h"
 
 MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
 {
@@ -47,9 +48,23 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     m_finish = finish;
     auto azimuth = m_start.azimuthTo(m_finish);
     auto distance = m_start.distanceTo(m_finish);
-    QString labelString = QString::number(distance)+" meters bearing "+QString::number(azimuth)+" degrees";
+    QString labelString = QString::number(int(distance))+" meters bearing "+QString::number(int(azimuth))+" degrees";
+    
+    BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
+    AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
+    Platform *platform = avp->currentPlatform();
+    if(platform)
+    {
+        double distanceInNMs = distance*0.000539957;
+        double time = distanceInNMs/platform->speed();
+        if (time < 1.0)
+            labelString += " ETE: "+QString::number(int(time*60))+" (min)";
+        else
+            labelString += " ETE: "+QString::number(time,'f',2)+" (h)";
+    }
+    
     setLabel(labelString);
-    auto halfDistance = (geoToPixel(m_finish,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject())-geoToPixel(m_start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject()))/2.0;
+    auto halfDistance = (geoToPixel(m_finish,avp)-geoToPixel(m_start,avp))/2.0;
     setLabelPosition(halfDistance);
     update();
 }
