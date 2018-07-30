@@ -95,6 +95,7 @@ Waypoint * TrackLine::createWaypoint()
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    wp->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
     return wp;
 }
 
