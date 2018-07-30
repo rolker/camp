@@ -34,16 +34,6 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
         painter->setPen(p);
         painter->drawPath(shape());
 
-//         auto first = children.begin();
-//         auto second = first;
-//         second++;
-//         while(second != children.end())
-//         {
-//             painter->drawLine((*first)->pos(),(*second)->pos());
-//             first++;
-//             second++;
-//         }
-
         painter->restore();
 
     }
@@ -64,10 +54,6 @@ QPainterPath TrackLine::shape() const
             i++;
         }
         return ret;
-        //QPainterPathStroker pps;
-        //pps.setWidth(5);
-        //return pps.createStroke(ret);
-
     }
     return QGraphicsItem::shape();
 }
