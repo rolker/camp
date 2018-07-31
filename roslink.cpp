@@ -785,53 +785,92 @@ void ROSLink::viewPointCallback(const std_msgs::String::ConstPtr& message)
     //qDebug() << "view point" << std::string(message->data).c_str();
     auto parsed = parseViewString(QString(std::string(message->data).c_str()));
     //qDebug() << parsed;
+    bool view_point_active;
     if(parsed.contains("active"))
-        m_view_point_active = (parsed["active"] == "true");
+        view_point_active = (parsed["active"] == "true");
     else
-        m_view_point_active = true;
-    m_view_point = rosMapToGeo(QPointF(parsed["x"].toFloat(),parsed["y"].toFloat()));
+        view_point_active = true;
+    QGeoCoordinate view_point = rosMapToGeo(QPointF(parsed["x"].toFloat(),parsed["y"].toFloat()));
     //qDebug() << m_view_point;
-    m_local_view_point = geoToPixel(m_view_point,autonomousVehicleProject())-m_local_reference_position;
+    QPointF local_view_point = geoToPixel(m_view_point,autonomousVehicleProject())-m_local_reference_position;
     //qDebug() << m_local_view_point;
+    QMetaObject::invokeMethod(this,"updateViewPoint", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, view_point), Q_ARG(QPointF, local_view_point), Q_ARG(bool, view_point_active));
 }
+
+void ROSLink::updateViewPoint(QGeoCoordinate view_point, QPointF local_view_point, bool view_point_active)
+{
+    prepareGeometryChange();
+    m_view_point = view_point;
+    m_local_view_point = local_view_point;
+    m_view_point_active = view_point_active;
+    update();
+}
+
 
 void ROSLink::viewPolygonCallback(const std_msgs::String::ConstPtr& message)
 {
-    qDebug() << "view polygon" << std::string(message->data).c_str();
+    //qDebug() << "view polygon" << std::string(message->data).c_str();
     auto parsed = parseViewString(QString(std::string(message->data).c_str()));
-    qDebug() << parsed;
+    //qDebug() << parsed;
+    bool view_polygon_active;
     if(parsed.contains("active"))
-        m_view_polygon_active = (parsed["active"] == "true");
+        view_polygon_active = (parsed["active"] == "true");
     else
-        m_view_polygon_active = true;
+        view_polygon_active = true;
     auto points = parseViewPointList(parsed["pts"]);
     //qDebug() << points;
-    m_view_polygon.clear();
-    m_local_view_polygon.clear();
+    //m_view_polygon.clear();
+    QList<QGeoCoordinate> view_polygon;
+    //m_local_view_polygon.clear();
+    QList<QPointF> local_view_polygon;
     for(auto p: points)
     {
-        m_view_polygon.append(rosMapToGeo(p));
-        m_local_view_polygon.append(geoToPixel(m_view_polygon.back(),autonomousVehicleProject())-m_local_reference_position);
+        view_polygon.append(rosMapToGeo(p));
+        local_view_polygon.append(geoToPixel(view_polygon.back(),autonomousVehicleProject())-m_local_reference_position);
     }
+    QMetaObject::invokeMethod(this,"updateViewPolygon", Qt::QueuedConnection, Q_ARG(QList<QGeoCoordinate>, view_polygon), Q_ARG(QList<QPointF>, local_view_polygon), Q_ARG(bool, view_polygon_active));
+
+}
+
+void ROSLink::updateViewPolygon(QList<QGeoCoordinate> view_polygon, QList<QPointF> local_view_polygon, bool view_polygon_active)
+{
+    prepareGeometryChange();
+    m_view_polygon = view_polygon;
+    m_local_view_polygon = local_view_polygon;
+    m_view_polygon_active = view_polygon_active;
+    update();
 }
 
 void ROSLink::viewSeglistCallback(const std_msgs::String::ConstPtr& message)
 {
-    qDebug() << "view seglist" << std::string(message->data).c_str();
+    //qDebug() << "view seglist" << std::string(message->data).c_str();
     auto parsed = parseViewString(QString(std::string(message->data).c_str()));
     //qDebug() << parsed;
+    bool view_seglist_active;
     if(parsed.contains("active"))
-        m_view_seglist_active = (parsed["active"] == "true");
+        view_seglist_active = (parsed["active"] == "true");
     else
-        m_view_seglist_active = true;
+        view_seglist_active = true;
     auto points = parseViewPointList(parsed["pts"]);
     //qDebug() << points;
-    m_view_seglist.clear();
-    m_local_view_seglist.clear();
+    //m_view_seglist.clear();
+    //m_local_view_seglist.clear();
+    QList<QGeoCoordinate> view_seglist;
+    QList<QPointF> local_view_seglist;
     for(auto p: points)
     {
-        m_view_seglist.append(rosMapToGeo(p));
-        m_local_view_seglist.append(geoToPixel(m_view_seglist.back(),autonomousVehicleProject())-m_local_reference_position);
+        view_seglist.append(rosMapToGeo(p));
+        local_view_seglist.append(geoToPixel(view_seglist.back(),autonomousVehicleProject())-m_local_reference_position);
     }
+    QMetaObject::invokeMethod(this,"updateViewSeglist", Qt::QueuedConnection, Q_ARG(QList<QGeoCoordinate>, view_seglist), Q_ARG(QList<QPointF>, local_view_seglist), Q_ARG(bool, view_seglist_active));
+}
+
+void ROSLink::updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPointF> local_view_seglist, bool view_seglist_active)
+{
+    prepareGeometryChange();
+    m_view_seglist = view_seglist;
+    m_local_view_seglist = local_view_seglist;
+    m_view_seglist_active = view_seglist_active;
+    update();
 }
 

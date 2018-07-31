@@ -78,6 +78,9 @@ public slots:
     void updatePosmvHeading(double heading);
     void updateBaseHeading(double heading);
     void updateBackground(BackgroundRaster *bgr);
+    void updateViewPoint(QGeoCoordinate view_point, QPointF local_view_point, bool view_point_active);
+    void updateViewPolygon(QList<QGeoCoordinate> view_polygon, QList<QPointF> local_view_polygon, bool view_polygon_active);
+    void updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPointF> local_view_seglist, bool view_seglist_active);
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
