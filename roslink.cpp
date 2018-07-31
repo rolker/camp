@@ -565,6 +565,17 @@ void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
     sendWaypoints(wps);
 }
 
+void ROSLink::sendWaypointIndexUpdate(int waypoint_index)
+{
+    std::stringstream updates;
+    updates << "currix=" << waypoint_index;
+    
+    std_msgs::String rosUpdates;
+    rosUpdates.data = updates.str();
+    if(m_node)
+        m_wpt_updates_publisher.publish(rosUpdates);
+}
+
 
 void ROSLink::updateLocation(const QGeoCoordinate& location)
 {

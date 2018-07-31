@@ -87,6 +87,7 @@ public slots:
     void sendMissionPlan(QString const &plan);
     void sendLoiter(QGeoCoordinate const &loiterLocation);
     void sendGoto(QGeoCoordinate const &loiterLocation);
+    void sendWaypointIndexUpdate(int waypoint_index);
     void connectROS();
     void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
     void watchdogUpdate();

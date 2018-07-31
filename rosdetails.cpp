@@ -54,6 +54,13 @@ void ROSDetails::updateVehicleStatus(const QString& status)
     ui->vehicleStatusTextBrowser->setText(status);
 }
 
+void ROSDetails::on_sendWaypointIndexPushButton_clicked(bool checked)
+{
+    qDebug() << "send current index: " << ui->sendWaypointSpinBox->value();
+    m_rosLink->sendWaypointIndexUpdate(ui->sendWaypointSpinBox->value());
+}
+
+
 void ROSDetails::heartbeatDelay(double seconds)
 {
     QPalette pal = palette();

@@ -35,6 +35,7 @@ private slots:
     void on_surveyPushButton_clicked(bool checked);
     void on_loiterPushButton_clicked(bool checked);
     void updateVehicleStatus(QString const &status);
+    void on_sendWaypointIndexPushButton_clicked(bool checked);
     
     
 private:
