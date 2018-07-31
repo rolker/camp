@@ -41,6 +41,7 @@ signals:
 
 public slots:
     void updateProjectedPoints();
+    void reverseDirection();
 
 private:
 };

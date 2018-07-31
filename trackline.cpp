@@ -198,6 +198,21 @@ void TrackLine::updateProjectedPoints()
         wp->updateProjectedPoints();
 }
 
+void TrackLine::reverseDirection()
+{
+    prepareGeometryChange();
+    QList<QGeoCoordinate> points;
+    for(auto wp: waypoints())
+        points.push_back(wp->location());
+    for(auto wp: waypoints())
+    {
+        wp->setLocation(points.back());
+        points.pop_back();
+    }
+    update();
+}
+
+
 bool TrackLine::canAcceptChildType(const std::string& childType) const
 {
     return childType == "Waypoint";

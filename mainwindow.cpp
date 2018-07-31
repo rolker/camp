@@ -10,6 +10,7 @@
 #include "roslink.h"
 #include <modeltest.h>
 #include "backgroundraster.h"
+#include "trackline.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -120,6 +121,14 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(ui->treeView->selectionModel()->selectedRows());});
         
         MissionItem  *mi = project->itemFromIndex(index);
+        
+        TrackLine *tl = qobject_cast<TrackLine*>(mi);
+        if(tl)
+        {
+            QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
+            connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
+        }
+        
         GeoGraphicsMissionItem *gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);
         if(gmi)
         {
