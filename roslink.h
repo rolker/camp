@@ -11,6 +11,7 @@
 #include "asv_msgs/AISContact.h"
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
+#include "geometry_msgs/TwistStamped.h"
 
 
 Q_DECLARE_METATYPE(ros::Time);
@@ -91,6 +92,7 @@ public slots:
     void connectROS();
     void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
     void watchdogUpdate();
+    void updateSog(qreal sog);
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
@@ -107,6 +109,7 @@ private:
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
+    void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -132,6 +135,7 @@ private:
     ros::Subscriber m_posmv_orientation;
     ros::Subscriber m_range_subscriber;
     ros::Subscriber m_bearing_subscriber;
+    ros::Subscriber m_sog_subscriber;
     
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
@@ -185,6 +189,10 @@ private:
     ros::Time m_range_timestamp;
     double m_bearing;
     ros::Time m_bearing_timestamp;
+    
+    QList<qreal> m_sog_history;
+    qreal m_sog;
+    qreal m_sog_avg;
 };
 
 #endif // ROSNODE_H

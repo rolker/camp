@@ -317,9 +317,9 @@ void SurveyPattern::updateLabel()
         {
             double time = distanceInNMs/platform->speed();
             if(time < 1.0)
-                label += " ETE: "+QString::number(int(time*60))+" (min)";
+                label += "\nETE: "+QString::number(int(time*60))+" (min)";
             else
-                label += " ETE: "+QString::number(time,'f',2)+" (h)";
+                label += "\nETE: "+QString::number(time,'f',2)+" (h)";
         }
     }
 

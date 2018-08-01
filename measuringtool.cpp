@@ -48,7 +48,7 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     m_finish = finish;
     auto azimuth = m_start.azimuthTo(m_finish);
     auto distance = m_start.distanceTo(m_finish);
-    QString labelString = QString::number(int(distance))+" meters bearing "+QString::number(int(azimuth))+" degrees";
+    QString labelString = QString::number(int(distance))+" meters\nbearing "+QString::number(int(azimuth))+" degrees";
     
     BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
     AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
@@ -58,9 +58,12 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
         double distanceInNMs = distance*0.000539957;
         double time = distanceInNMs/platform->speed();
         if (time < 1.0)
-            labelString += " ETE: "+QString::number(int(time*60))+" (min)";
+            if(time*60 < 1.0)
+                labelString += "\nETE: "+QString::number(int(time*60*60))+" (s)";
+            else
+                labelString += "\nETE: "+QString::number(int(time*60))+" (min)";
         else
-            labelString += " ETE: "+QString::number(time,'f',2)+" (h)";
+            labelString += "\nETE: "+QString::number(time,'f',2)+" (h)";
     }
     
     setLabel(labelString);

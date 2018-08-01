@@ -28,6 +28,7 @@ public:
 public slots:
     void heartbeatDelay(double seconds);
     void rangeAndBearingUpdate(double range, ros::Time const &range_timestamp, double bearing, ros::Time const &bearing_timestamp);
+    void sogUpdate(qreal sog, qreal sog_avg);
 
 private slots:
     void on_activeCheckBox_stateChanged(int state);

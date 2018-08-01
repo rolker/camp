@@ -92,5 +92,10 @@ void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_tim
         pal.setColor(QPalette::Background, Qt::yellow);
     }
     ui->rangeBearingLineEdit->setPalette(pal);
-    
+}
+
+void ROSDetails::sogUpdate(qreal sog, qreal sog_avg)
+{
+    QString sogLabel = "SOG: " + QString::number(sog,'f',1) + ", avg: " + QString::number(sog_avg,'f',1);
+    ui->sogLineEdit->setText(sogLabel);
 }

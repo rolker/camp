@@ -56,6 +56,7 @@ void ROSLink::connectROS()
             m_posmv_orientation = m_node->subscribe("/udp/posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
             m_range_subscriber = m_node->subscribe("/range", 10, &ROSLink::rangeCallback, this);
             m_bearing_subscriber = m_node->subscribe("/bearing",10, &ROSLink::bearingCallback, this);
+            m_sog_subscriber = m_node->subscribe("/udp/sog",10, &ROSLink::sogCallback, this);
             
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
@@ -394,6 +395,27 @@ void ROSLink::bearingCallback(const std_msgs::Float32::ConstPtr& message)
     m_bearing_timestamp = ros::Time::now();
     m_bearing = message->data;
 }
+
+void ROSLink::sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message)
+{
+    QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(qreal, message->twist.linear.x));  
+}
+
+void ROSLink::updateSog(qreal sog)
+{
+    // 1852m per NM
+    m_sog = sog*1.9438;
+    m_sog_history.append(m_sog);
+    if(m_sog_history.length() > 20)
+        m_sog_history.pop_front();
+    qreal sog_sum = 0;
+    for(auto s: m_sog_history)
+        sog_sum += s;
+    m_sog_avg = sog_sum/m_sog_history.length();
+    //qDebug() << m_sog << " knts, " << m_sog_avg << " knts avg";
+    m_details->sogUpdate(m_sog,m_sog_avg);
+}
+
 
 void ROSLink::baseNavSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr& message)
 {
