@@ -64,9 +64,9 @@
     </layout>
    </item>
    <item>
-    <widget class="QLabel" name="rangeBearingLabel">
-     <property name="text">
-      <string/>
+    <widget class="QLineEdit" name="rangeBearingLineEdit">
+     <property name="readOnly">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
