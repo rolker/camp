@@ -8,7 +8,7 @@
 #include "marine_msgs/NavEulerStamped.h"
 #include "marine_msgs/Heartbeat.h"
 #include "ros/ros.h"
-#include "asv_msgs/AISContact.h"
+#include "marine_msgs/Contact.h"
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/TwistStamped.h"
@@ -100,7 +100,7 @@ private:
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
     void headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
-    void aisCallback(const asv_msgs::AISContact::ConstPtr& message);
+    void contactCallback(const marine_msgs::Contact::ConstPtr& message);
     void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void viewPointCallback(const std_msgs::String::ConstPtr&message);
     void viewPolygonCallback(const std_msgs::String::ConstPtr&message);

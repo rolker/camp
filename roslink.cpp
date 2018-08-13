@@ -47,7 +47,7 @@ void ROSLink::connectROS()
             m_origin_subscriber = m_node->subscribe("/udp/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/udp/heading", 10, &ROSLink::headingCallback, this);
             m_base_heading_subscriber = m_node->subscribe("/base/orientation", 10, &ROSLink::baseHeadingCallback, this);
-            m_ais_subscriber = m_node->subscribe("/udp/ais", 10, &ROSLink::aisCallback, this);
+            m_ais_subscriber = m_node->subscribe("/udp/contact", 10, &ROSLink::contactCallback, this);
             m_heartbeat_subscriber = m_node->subscribe("/udp/heartbeat", 10, &ROSLink::heartbeatCallback, this);
             m_view_point_subscriber = m_node->subscribe("/udp/view_point", 10, &ROSLink::viewPointCallback, this);
             m_view_polygon_subscriber = m_node->subscribe("/udp/view_polygon", 10, &ROSLink::viewPolygonCallback, this);
@@ -448,7 +448,7 @@ void ROSLink::baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& 
 }
 
 
-void ROSLink::aisCallback(const asv_msgs::AISContact::ConstPtr& message)
+void ROSLink::contactCallback(const marine_msgs::Contact::ConstPtr& message)
 {
     qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
     qDebug() << "\t\t" << message->position.latitude << ", " << message->position.longitude;
