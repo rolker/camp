@@ -835,7 +835,7 @@ void ROSLink::updateViewPoint(QGeoCoordinate view_point, QPointF local_view_poin
     prepareGeometryChange();
     m_view_point = view_point;
     m_local_view_point = local_view_point;
-    m_view_point_active = view_point_active;
+    m_view_point_active = true;//view_point_active;
     update();
 }
 
