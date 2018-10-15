@@ -7,7 +7,11 @@
 
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
+
+#ifdef AMP_ROS
 #include "roslink.h"
+#endif
+
 #include <modeltest.h>
 #include "backgroundraster.h"
 #include "trackline.h"
@@ -34,12 +38,14 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
     ui->rosDetails->setEnabled(false);
+#ifdef AMP_ROS
     connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
     ui->rosDetails->setROSLink(project->rosLink());
 
-    connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
-
     project->rosLink()->connectROS();
+#endif
+    
+    connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 }
 
 MainWindow::~MainWindow()

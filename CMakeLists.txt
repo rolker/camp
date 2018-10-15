@@ -62,6 +62,7 @@ set(SOURCES
     measuringtool.cpp
     behavior.cpp
     behaviordetails.cpp
+    rosdetails.cpp
 )
 
 set(HEADERS
@@ -92,11 +93,12 @@ set(HEADERS
     measuringtool.h
     behavior.h
     behaviordetails.h
+    rosdetails.h
 )
 
 if(AMP_USE_ROS)
-    list(APPEND SOURCES roslink.cpp rosdetails.cpp)
-    list(APPEND HEADERS roslink.h rosdetails.h)
+    list(APPEND SOURCES roslink.cpp )
+    list(APPEND HEADERS roslink.h)
 endif()
 
 set ( RESOURCES
