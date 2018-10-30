@@ -12,7 +12,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/TwistStamped.h"
-
+#include "geographic_msgs/GeoPath.h"
 
 Q_DECLARE_METATYPE(ros::Time);
 
@@ -51,6 +51,8 @@ public:
     QPainterPath baseShape() const;
     QPainterPath aisShape() const;
     QPainterPath viewShape() const;
+    QPainterPath coverageShape() const;
+    QPainterPath pingsShape() const;
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
@@ -82,6 +84,8 @@ public slots:
     void updateViewPoint(QGeoCoordinate view_point, QPointF local_view_point, bool view_point_active);
     void updateViewPolygon(QList<QGeoCoordinate> view_polygon, QList<QPointF> local_view_polygon, bool view_polygon_active);
     void updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPointF> local_view_seglist, bool view_seglist_active);
+    void updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage);
+    void addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping);
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
@@ -110,6 +114,8 @@ private:
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
     void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
+    void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
+    void pingCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -136,6 +142,8 @@ private:
     ros::Subscriber m_range_subscriber;
     ros::Subscriber m_bearing_subscriber;
     ros::Subscriber m_sog_subscriber;
+    ros::Subscriber m_coverage_subscriber;
+    ros::Subscriber m_ping_subscriber;
     
     ros::Publisher m_active_publisher;
     ros::Publisher m_helmMode_publisher;
@@ -179,7 +187,13 @@ private:
     QList<QGeoCoordinate> m_view_polygon;
     QList<QPointF> m_local_view_polygon;
     bool m_view_polygon_active;
-    
+
+    QList<QList<QGeoCoordinate> > m_coverage;
+    QList<QPolygonF> m_local_coverage;
+
+    QList<QList<QGeoCoordinate> > m_pings;
+    QList<QList<QPointF> > m_local_pings;
+
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;
     

@@ -87,7 +87,10 @@ public:
     
     QSvgRenderer * symbols() const;
     
+    
+#ifdef AMP_ROS
     ROSLink * rosLink() const;
+#endif
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
     

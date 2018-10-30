@@ -31,8 +31,10 @@ signals:
     void scaleChanged(qreal scale);
 
 public slots:
+#ifdef AMP_ROS
     void sendLoiterAt();
     void sendGotoAt();
+#endif
     void updateBackground(BackgroundRaster * bg);
 
 

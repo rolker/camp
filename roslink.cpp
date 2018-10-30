@@ -57,6 +57,8 @@ void ROSLink::connectROS()
             m_range_subscriber = m_node->subscribe("/range", 10, &ROSLink::rangeCallback, this);
             m_bearing_subscriber = m_node->subscribe("/bearing",10, &ROSLink::bearingCallback, this);
             m_sog_subscriber = m_node->subscribe("/udp/sog",10, &ROSLink::sogCallback, this);
+            m_coverage_subscriber = m_node->subscribe("/udp/coverage", 10, &ROSLink::coverageCallback, this);
+            m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             
             m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
             m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
@@ -94,13 +96,15 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     QPen p;
     p.setCosmetic(true);
 
-    if(m_node)
-        p.setColor(Qt::darkGreen);
-    else
-        p.setColor(Qt::darkRed);
-    p.setWidth(3);
+    
+    p.setColor(Qt::green);
+    p.setWidth(4);
     painter->setPen(p);
-    painter->drawPath(vehicleShape());
+    painter->setBrush(Qt::cyan);
+    painter->drawPath(coverageShape());
+    //painter->drawPath(pingsShape());
+    painter->setBrush(Qt::NoBrush);
+
 
     
     p.setColor(Qt::blue);
@@ -121,7 +125,8 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     p.setColor(Qt::lightGray);
     painter->setPen(p);
     painter->drawPath(baseShape());
-    
+
+   
     p.setWidth(8);
     p.setColor(Qt::yellow);
     painter->setPen(p);
@@ -134,6 +139,14 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(vehicleShapePosmv());
 
+    if(m_node)
+        p.setColor(Qt::darkGreen);
+    else
+        p.setColor(Qt::darkRed);
+    p.setWidth(3);
+    painter->setPen(p);
+    painter->drawPath(vehicleShape());
+
     painter->restore();
 }
 
@@ -144,6 +157,8 @@ QPainterPath ROSLink::shape() const
     ret.addPath(aisShape());
     ret.addPath(viewShape());
     ret.addPath(baseShape());
+    ret.addPath(coverageShape());
+    ret.addPath(pingsShape());
         
     return ret;
 }
@@ -311,6 +326,55 @@ QPainterPath ROSLink::viewShape() const
         ret.lineTo(m_local_view_polygon.front());
     }
 
+    
+    return ret;
+}
+
+QPainterPath ROSLink::coverageShape() const
+{
+    QPainterPath ret;
+    for(auto p: m_local_coverage)
+        ret.addPolygon(p);
+//     QPolygonF poly;
+//     if(!m_local_coverage.empty())
+//     {
+//         auto p = m_local_coverage.begin();
+//         poly << *p;
+//         //ret.moveTo(*p);
+//         p++;
+//         while(p != m_local_coverage.end())
+//         {
+//             poly << *p;
+//             //ret.lineTo(*p);
+//             p++;
+//         }
+//         ret.addPolygon(poly);
+//         //ret.lineTo(m_local_coverage.front());
+//     }
+    
+    return ret;
+}
+
+QPainterPath ROSLink::pingsShape() const
+{
+    QPainterPath ret;
+    QPolygonF poly;
+    for(auto p: m_local_pings)
+        if(!p.empty())
+        {
+            auto pp = p.begin();
+            poly << *pp;
+            //ret.moveTo(*p);
+            pp++;
+            while(pp != p.end())
+            {
+                poly << *pp;
+                //ret.lineTo(*p);
+                pp++;
+            }
+            ret.addPolygon(poly);
+            //ret.lineTo(m_local_coverage.front());
+        }
     
     return ret;
 }
@@ -836,7 +900,7 @@ void ROSLink::updateViewPoint(QGeoCoordinate view_point, QPointF local_view_poin
     prepareGeometryChange();
     m_view_point = view_point;
     m_local_view_point = local_view_point;
-    m_view_point_active = view_point_active;
+    m_view_point_active = true;//view_point_active;
     update();
 }
 
@@ -908,3 +972,59 @@ void ROSLink::updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPoint
     update();
 }
 
+void ROSLink::coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message)
+{
+    QList<QList<QGeoCoordinate> > coverage;
+    QList<QPolygonF> local_coverage;
+    coverage.push_back(QList<QGeoCoordinate>());
+    local_coverage.push_back(QPolygonF());
+    for(auto gp: message->poses)
+    {
+        QGeoCoordinate gc;
+        gc.setLatitude(gp.pose.position.latitude);
+        gc.setLongitude(gp.pose.position.longitude);
+        if(gc.isValid())
+        {
+            coverage.back().append(gc);
+            local_coverage.back().append(geoToPixel(gc,autonomousVehicleProject())-m_local_reference_position);
+        }
+        else
+        {
+            coverage.push_back(QList<QGeoCoordinate>());
+            local_coverage.push_back(QPolygonF());
+        }
+    }
+    QMetaObject::invokeMethod(this,"updateCoverage", Qt::QueuedConnection, Q_ARG(QList<QList<QGeoCoordinate> >, coverage), Q_ARG(QList<QPolygonF>, local_coverage));
+}
+
+void ROSLink::pingCallback(const geographic_msgs::GeoPath::ConstPtr& message)
+{
+    QList<QGeoCoordinate> ping;
+    QList<QPointF> local_ping;
+    for(auto gp: message->poses)
+    {
+        QGeoCoordinate gc;
+        gc.setLatitude(gp.pose.position.latitude);
+        gc.setLongitude(gp.pose.position.longitude);
+        ping.append(gc);
+        local_ping.append(geoToPixel(gc,autonomousVehicleProject())-m_local_reference_position);
+    }
+    QMetaObject::invokeMethod(this,"addPing", Qt::QueuedConnection, Q_ARG(QList<QGeoCoordinate>, ping), Q_ARG(QList<QPointF>, local_ping));
+}
+
+
+void ROSLink::updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage)
+{
+    prepareGeometryChange();
+    m_coverage = coverage;
+    m_local_coverage = local_coverage;
+    update();
+}
+
+void ROSLink::addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping)
+{
+    prepareGeometryChange();
+    m_pings.append(ping);
+    m_local_pings.append(local_ping);
+    update();
+}

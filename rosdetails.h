@@ -41,7 +41,9 @@ private slots:
     
 private:
     Ui::ROSDetails* ui;
+#ifdef AMP_ROS
     ROSLink *m_rosLink;
+#endif
 };
 
 #endif // ROSNODEDETAILS_H

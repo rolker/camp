@@ -629,10 +629,12 @@ bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropActio
         
 }
 
+#ifdef AMP_ROS
 ROSLink * AutonomousVehicleProject::rosLink() const
 {
     return m_ROSLink;
 }
+#endif
 
 void AutonomousVehicleProject::updateMapScale(qreal scale)
 {

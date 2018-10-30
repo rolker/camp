@@ -12,8 +12,12 @@
 #include "surveyarea.h"
 #include <QDebug>
 #include <QMenu>
-#include "roslink.h"
 #include "measuringtool.h"
+
+#ifdef AMP_ROS
+#include "roslink.h"
+#endif
+
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
     statusBar(0), positionLabel(new QLabel()), modeLabel(new QLabel()), mouseMode(MouseMode::pan), currentTrackLine(nullptr), pendingTrackLineWaypoint(nullptr), pendingSurveyPattern(nullptr), pendingSurveyArea(nullptr),pendingSurveyAreaWaypoint(nullptr),measuringTool(nullptr)
@@ -264,6 +268,7 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 
 }
 
+#ifdef AMP_ROS
 void ProjectView::sendLoiterAt()
 {
     m_project->rosLink()->sendLoiter(m_contextMenuLocation);
@@ -275,6 +280,7 @@ void ProjectView::sendGotoAt()
     m_project->rosLink()->sendGoto(m_contextMenuLocation);
     m_project->rosLink()->setHelmMode("survey");
 }
+#endif
 
 void ProjectView::updateBackground(BackgroundRaster* bg)
 {
