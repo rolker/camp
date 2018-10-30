@@ -398,7 +398,8 @@ void ROSLink::bearingCallback(const std_msgs::Float32::ConstPtr& message)
 
 void ROSLink::sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message)
 {
-    QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(qreal, message->twist.linear.x));  
+    qreal sog = sqrt(message->twist.linear.x*message->twist.linear.x+message->twist.linear.y*message->twist.linear.y);
+    QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(qreal, sog));  
 }
 
 void ROSLink::updateSog(qreal sog)
