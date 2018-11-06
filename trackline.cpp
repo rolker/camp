@@ -30,15 +30,21 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
         painter->save();
 
         QPen p;
+        p.setCosmetic(true);
+        
+        if(selected)
+        {
+            p.setColor(Qt::white);
+            p.setWidth(7);
+            painter->setPen(p);
+            painter->drawPath(shape());
+        }
+        
         if(locked())
             p.setColor(m_lockedColor);
         else
             p.setColor(m_unlockedColor);
-        p.setCosmetic(true);
-        if (selected)
-            p.setWidth(5);
-        else
-            p.setWidth(3);
+        p.setWidth(3);
         painter->setPen(p);
         painter->drawPath(shape());
 
