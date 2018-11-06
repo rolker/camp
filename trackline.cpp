@@ -33,8 +33,8 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
         
         if(selected)
         {
-            p.setColor(Qt::white);
-            p.setWidth(7);
+            p.setColor(Qt::black);
+            p.setWidth(8);
             painter->setPen(p);
             painter->drawPath(shape());
         }

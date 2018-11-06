@@ -270,8 +270,8 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
                     p.setColor(Qt::blue);
                     painter->setPen(p);
                     painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
-                    p.setWidth(7);
-                    p.setColor(Qt::white);
+                    p.setWidth(8);
+                    p.setColor(Qt::black);
                     painter->setPen(p);
                     painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
                     
@@ -528,6 +528,7 @@ void SurveyPattern::reverseDirection()
     
     setDirectionAndSpacing(direction+180,spacing);
     calculateFromWaypoints();
+    emit surveyPatternUpdated();
 
     update();
 }
