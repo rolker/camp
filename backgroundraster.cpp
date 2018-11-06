@@ -49,7 +49,7 @@ BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraph
                     else
                     {
                         scanline[i*4+3] = 255; // hack to make sure alpha is solid in case no alpha channel is present
-                        scanline[i*4 + bandNumber-1] = buffer[i];
+                        scanline[i*4 + 2-(bandNumber-1)] = buffer[i];
                     }
                 }
             }
