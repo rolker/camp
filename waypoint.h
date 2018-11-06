@@ -28,7 +28,7 @@ public:
     
     
 public slots:
-    void updateProjectedPoints();
+    void updateProjectedPoints() override;
 
 signals:
     void waypointMoved(Waypoint *wp);

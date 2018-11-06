@@ -24,6 +24,9 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
     auto children = waypoints();
     if (children.length() > 1)
     {
+        bool selected = false;
+        if(autonomousVehicleProject()->currentSelected() == this)
+            selected = true;
         painter->save();
 
         QPen p;
@@ -32,7 +35,10 @@ void TrackLine::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
         else
             p.setColor(m_unlockedColor);
         p.setCosmetic(true);
-        p.setWidth(3);
+        if (selected)
+            p.setWidth(5);
+        else
+            p.setWidth(3);
         painter->setPen(p);
         painter->drawPath(shape());
 

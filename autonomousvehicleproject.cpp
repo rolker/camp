@@ -450,6 +450,11 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
     }
 }
 
+MissionItem * AutonomousVehicleProject::currentSelected() const
+{
+    return m_currentSelected;
+}
+
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
 {
     if(m_currentBackground)
