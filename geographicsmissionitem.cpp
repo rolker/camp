@@ -2,6 +2,7 @@
 
 #include "backgroundraster.h"
 #include <QDebug>
+#include <QVector2D>
 
 GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent):MissionItem(parent),m_lockedColor(50,200,50),m_unlockedColor(Qt::red), m_locked(false)
 {
@@ -75,4 +76,26 @@ void GeoGraphicsMissionItem::unlock()
 bool GeoGraphicsMissionItem::locked() const
 {
     return m_locked;
+}
+
+void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, const QPointF& to) const
+{
+    qreal scale = 1.0;
+    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
+    if(bgr)
+        scale = 1.0/bgr->mapScale();// scaledPixelSize();
+    //qDebug() << "scale: " << scale;
+    scale = std::max(0.05,scale);
+    
+    path.moveTo(to);
+    QVector2D v(to-from);
+    v.normalize();
+    QVector2D left(-v.y(),v.x());
+    QVector2D right(v.y(),-v.x());
+    QVector2D back = -v;
+    path.lineTo(to+(left+back*2).toPointF()*10*scale);
+    path.moveTo(to);
+    path.lineTo(to+(right+back*2).toPointF()*10*scale);
+    path.moveTo(to);
+    
 }

@@ -17,6 +17,7 @@ public:
     
     bool locked() const;
     QList<GeoGraphicsMissionItem*> childrenGeoGraphicsMissionItems() const;
+    void drawArrow(QPainterPath &path, QPointF const &from, QPointF const &to) const;
     
 public slots:
     void updateBackground(BackgroundRaster * bg);

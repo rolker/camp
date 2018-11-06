@@ -15,6 +15,7 @@
 #include <modeltest.h>
 #include "backgroundraster.h"
 #include "trackline.h"
+#include "surveypattern.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -134,6 +135,13 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
+        }
+
+        SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
+        if(sp)
+        {
+            QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
+            connect(reverseDirectionAction, &QAction::triggered, sp, &SurveyPattern::reverseDirection);
         }
         
         GeoGraphicsMissionItem *gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);

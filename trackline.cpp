@@ -6,7 +6,6 @@
 #include <QStandardItem>
 #include <QDebug>
 #include "autonomousvehicleproject.h"
-#include <QVector2D>
 #include "backgroundraster.h"
 
 TrackLine::TrackLine(MissionItem *parent) :GeoGraphicsMissionItem(parent)
@@ -73,28 +72,6 @@ QPainterPath TrackLine::shape() const
         return ret;
     }
     return QGraphicsItem::shape();
-}
-
-void TrackLine::drawArrow(QPainterPath& path, const QPointF& from, const QPointF& to) const
-{
-    qreal scale = 1.0;
-    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
-    if(bgr)
-        scale = 1.0/bgr->mapScale();// scaledPixelSize();
-    //qDebug() << "scale: " << scale;
-    scale = std::max(0.05,scale);
-    
-    path.moveTo(to);
-    QVector2D v(to-from);
-    v.normalize();
-    QVector2D left(-v.y(),v.x());
-    QVector2D right(v.y(),-v.x());
-    QVector2D back = -v;
-    path.lineTo(to+(left+back*2).toPointF()*10*scale);
-    path.moveTo(to);
-    path.lineTo(to+(right+back*2).toPointF()*10*scale);
-    path.moveTo(to);
-    
 }
 
 

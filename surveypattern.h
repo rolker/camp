@@ -57,6 +57,7 @@ public slots:
     void waypointAboutToChange();
     void updateProjectedPoints();
     void onCurrentPlatformUpdated();
+    void reverseDirection();
 
 protected:
     Waypoint * createWaypoint();

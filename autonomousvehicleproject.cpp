@@ -224,7 +224,8 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern()
 {
     SurveyPattern *sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>("pattern");
     connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&SurveyPattern::onCurrentPlatformUpdated);
-
+    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
+  
     return sp;
 
 }
@@ -233,7 +234,7 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
 {
     SurveyPattern *sp = createSurveyPattern();
     sp->setStartLocation(position);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
+//    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
     return sp;
 }
 
@@ -427,6 +428,8 @@ void AutonomousVehicleProject::deleteItem(MissionItem *item)
 
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 {
+    auto last_selected = m_currentSelected;
+    
     m_currentSelected = itemFromIndex(index);
     if(m_currentSelected)
     {
@@ -447,7 +450,13 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
             m_currentGroup = g;
         else
             m_currentGroup = m_root;
+        GeoGraphicsMissionItem * ggmi = qobject_cast<GeoGraphicsMissionItem*>(m_currentSelected);
+        if(ggmi)
+            ggmi->update();
     }
+    GeoGraphicsMissionItem * ggmi = qobject_cast<GeoGraphicsMissionItem*>(last_selected);
+    if(ggmi)
+        ggmi->update();
 }
 
 MissionItem * AutonomousVehicleProject::currentSelected() const

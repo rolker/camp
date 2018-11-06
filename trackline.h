@@ -18,7 +18,7 @@ public:
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPainterPath shape() const override;
     
-    void drawArrow(QPainterPath &path, QPointF const &from, QPointF const &to) const;
+    //void drawArrow(QPainterPath &path, QPointF const &from, QPointF const &to) const;
 
     Waypoint * createWaypoint();
     Waypoint * addWaypoint(QGeoCoordinate const &location);
