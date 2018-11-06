@@ -91,6 +91,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
     QMenu menu(this);
 
+#ifdef AMP_ROS
+    QAction *sendToROSAction = menu.addAction("Send to ROS");
+    connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
+#endif
+
+
     QAction *exportHypackAction = menu.addAction("Export Hypack");
     connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
 
@@ -98,11 +104,6 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
 
     
-#ifdef AMP_ROS
-    QAction *sendToROSAction = menu.addAction("Send to ROS");
-    connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
-#endif
-
     QAction *openBackgroundAction = menu.addAction("Open Background");
     connect(openBackgroundAction, &QAction::triggered, this, &MainWindow::on_actionOpenBackground_triggered);
 
