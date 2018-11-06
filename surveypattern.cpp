@@ -251,15 +251,42 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
             selected = true;
 
         QPen p;
+        p.setCosmetic(true);
+        if (selected)
+        {
+            p.setWidth(7);
+            p.setColor(Qt::white);
+            painter->setPen(p);
+            
+            for (auto l:lines)
+            {
+                auto first = l.begin();
+                auto second = first;
+                second++;
+                while(second != l.end())
+                {
+                    p.setWidth(10);
+                    p.setColor(Qt::blue);
+                    painter->setPen(p);
+                    painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+                    p.setWidth(7);
+                    p.setColor(Qt::white);
+                    painter->setPen(p);
+                    painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
+                    first++;
+                    second++;
+                }
+                p.setWidth(10);
+                p.setColor(Qt::blue);
+                painter->setPen(p);
+                painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+            }
+        }
         if(locked())
             p.setColor(m_lockedColor);
         else
             p.setColor(m_unlockedColor);
-        p.setCosmetic(true);
-        if (selected)
-            p.setWidth(5);
-        else
-            p.setWidth(3);
+        p.setWidth(3);
         painter->setPen(p);
         
         for (auto l:lines)
