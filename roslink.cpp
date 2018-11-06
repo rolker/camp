@@ -695,10 +695,11 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
 void ROSLink::updateBaseLocation(const QGeoCoordinate& location)
 {
     prepareGeometryChange();
-    if(m_have_local_reference)
+//    if(m_have_local_reference)
     {
         m_base_location_history.push_back(location);
-        m_local_base_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
+        //m_local_base_location_history.push_back(geoToPixel(location,autonomousVehicleProject())-m_local_reference_position);
+        m_local_base_location_history.push_back(geoToPixel(location,autonomousVehicleProject()));
         while (m_local_base_location_history.size()>100)
             m_local_base_location_history.pop_front();
         m_base_location = location;
@@ -779,17 +780,17 @@ void ROSLink::recalculatePositions()
         {
             m_local_posmv_location_history.push_back(geoToPixel(l,autonomousVehicleProject())-m_local_reference_position);            
         }
-        m_local_base_location_history.clear();
-        for(auto l: m_base_location_history)
-        {
-            m_local_base_location_history.push_back(geoToPixel(l,autonomousVehicleProject())-m_local_reference_position);            
-        }
         for(auto contactList: m_contacts)
         {
             for(auto contact: contactList.second)
                 contact->location_local = geoToPixel(contact->location,autonomousVehicleProject())-m_local_reference_position;
         }
     }
+        m_local_base_location_history.clear();
+        for(auto l: m_base_location_history)
+        {
+            m_local_base_location_history.push_back(geoToPixel(l,autonomousVehicleProject()));            
+        }
 }
 
 

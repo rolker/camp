@@ -84,6 +84,7 @@ public:
     void import(QString const &fname);
 
     void setCurrent(const QModelIndex &index);
+    MissionItem *currentSelected() const;
     
     QSvgRenderer * symbols() const;
     
