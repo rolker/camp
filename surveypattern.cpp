@@ -316,12 +316,12 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
                 painter->setPen(p);
                 painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
                 
-                if(!turn || m_arcCount < 2)
-                {
-                    QPainterPath ret(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
-                    drawArrow(ret,m_startLocation->geoToPixel(*second,autonomousVehicleProject()),m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
-                    painter->drawPath(ret);
-                }
+//                 if(!turn || m_arcCount < 2)
+//                 {
+//                     QPainterPath ret(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+//                     drawArrow(ret,m_startLocation->geoToPixel(*second,autonomousVehicleProject()),m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+//                     painter->drawPath(ret);
+//                 }
                 
                 first++;
                 second++;
