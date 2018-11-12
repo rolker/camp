@@ -99,7 +99,18 @@ void Waypoint::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject waypointObject;
     writeBehaviorsToMissionPlanObject(waypointObject);
+    
+    waypointObject["pathtype"] = "waypoint";
+    
+    QJsonArray wpNavArray;
+    writeNavToMissionPlan(wpNavArray);
+    waypointObject["nav"] = wpNavArray;
+    
+    navArray.append(waypointObject);
+}
 
+void Waypoint::writeNavToMissionPlan(QJsonArray& navArray) const
+{
     QJsonObject navObject;
 
     QJsonObject orientationObject;
@@ -114,10 +125,7 @@ void Waypoint::writeToMissionPlan(QJsonArray& navArray) const
     positionObject["longitude"] = m_location.longitude();
     navObject["position"] = positionObject;
     
-    waypointObject["nav"] = navObject;
-    QJsonObject navItem;
-    navItem["waypoint"] = waypointObject;
-    navArray.append(navItem);
+    navArray.append(navObject);
 }
 
 

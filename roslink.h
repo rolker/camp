@@ -13,6 +13,7 @@
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/TwistStamped.h"
 #include "geographic_msgs/GeoPath.h"
+#include "sensor_msgs/PointCloud.h"
 
 Q_DECLARE_METATYPE(ros::Time);
 
@@ -64,6 +65,8 @@ public:
     
     std::string const &helmMode() const;
     void setHelmMode(const std::string& helmMode);
+    void sendCommand(const std::string& command);
+    
     void setROSDetails(ROSDetails *details);
 
     
@@ -115,7 +118,7 @@ private:
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
     void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
-    void pingCallback(const geographic_msgs::GeoPath::ConstPtr& message);
+    void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -150,6 +153,7 @@ private:
     ros::Publisher m_wpt_updates_publisher;
     ros::Publisher m_loiter_updates_publisher;
     ros::Publisher m_mission_plan_publisher;
+    ros::Publisher m_send_command_publisher;
     
     ros::AsyncSpinner *m_spinner;
     QGeoCoordinate m_location;

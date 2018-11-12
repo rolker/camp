@@ -65,6 +65,30 @@ void ROSDetails::on_loiterPushButton_clicked(bool checked)
 #endif
 }
 
+void ROSDetails::on_stopPingingPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSDetails stop pinging";
+#ifdef AMP_ROS
+    m_rosLink->sendCommand("sonar_control 0 -1");
+#endif
+}
+
+void ROSDetails::on_startPingingPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSDetails start pinging";
+#ifdef AMP_ROS
+    m_rosLink->sendCommand("sonar_control 1 -1");
+#endif
+}
+
+void ROSDetails::on_pingAndLogPushButton_clicked(bool checked)
+{
+    qDebug() << "ROSDetails ping and log";
+#ifdef AMP_ROS
+    m_rosLink->sendCommand("sonar_control 2 -1");
+#endif
+}
+
 void ROSDetails::updateVehicleStatus(const QString& status)
 {
     ui->vehicleStatusTextBrowser->setText(status);
@@ -117,6 +141,6 @@ void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_tim
 
 void ROSDetails::sogUpdate(qreal sog, qreal sog_avg)
 {
-    QString sogLabel = "SOG: " + QString::number(sog,'f',1) + ", avg: " + QString::number(sog_avg,'f',1);
+    QString sogLabel = "SOG: " + QString::number(sog,'f',1) + ", avg: " + QString::number(sog_avg,'f',1) + " (200 samples)";
     ui->sogLineEdit->setText(sogLabel);
 }

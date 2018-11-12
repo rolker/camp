@@ -32,9 +32,15 @@ public slots:
 
 private slots:
     void on_activeCheckBox_stateChanged(int state);
+
     void on_standbyPushButton_clicked(bool checked);
     void on_surveyPushButton_clicked(bool checked);
     void on_loiterPushButton_clicked(bool checked);
+
+    void on_stopPingingPushButton_clicked(bool checked);
+    void on_startPingingPushButton_clicked(bool checked);
+    void on_pingAndLogPushButton_clicked(bool checked);
+
     void updateVehicleStatus(QString const &status);
     void on_sendWaypointIndexPushButton_clicked(bool checked);
     

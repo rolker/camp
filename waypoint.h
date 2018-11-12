@@ -20,6 +20,7 @@ public:
 
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
+    void writeNavToMissionPlan(QJsonArray & navArray) const;
     void read(const QJsonObject &json);
     
     int type() const {return WaypointType;}

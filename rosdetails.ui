@@ -51,6 +51,31 @@
     </widget>
    </item>
    <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_3">
+     <item>
+      <widget class="QPushButton" name="stopPingingPushButton">
+       <property name="text">
+        <string>Stop Pinging</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="startPingingPushButton">
+       <property name="text">
+        <string>Ping no logging</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="pingAndLogPushButton">
+       <property name="text">
+        <string>Ping and Log</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
     <widget class="QTextBrowser" name="vehicleStatusTextBrowser"/>
    </item>
    <item>

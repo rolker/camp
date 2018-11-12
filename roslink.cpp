@@ -65,6 +65,7 @@ void ROSLink::connectROS()
             m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
             m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
             m_mission_plan_publisher = m_node->advertise<std_msgs::String>("/udp/mission_plan",1);
+            m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
             m_spinner->start();
             m_watchdog_timer->start(500);
             emit rosConnected(true);
@@ -471,7 +472,7 @@ void ROSLink::updateSog(qreal sog)
     // 1852m per NM
     m_sog = sog*1.9438;
     m_sog_history.append(m_sog);
-    if(m_sog_history.length() > 20)
+    if(m_sog_history.length() > 200)
         m_sog_history.pop_front();
     qreal sog_sum = 0;
     for(auto s: m_sog_history)
@@ -821,6 +822,14 @@ void ROSLink::setHelmMode(const std::string& helmMode)
     m_helmMode_publisher.publish(hm);
 }
 
+void ROSLink::sendCommand(const std::string& command)
+{
+    std_msgs::String cmd;
+    cmd.data = command;
+    qDebug() << command.c_str();
+    m_send_command_publisher.publish(cmd);
+}
+
 AutonomousVehicleProject * ROSLink::autonomousVehicleProject() const
 {
     return qobject_cast<AutonomousVehicleProject*>(parent());
@@ -998,19 +1007,19 @@ void ROSLink::coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message
     QMetaObject::invokeMethod(this,"updateCoverage", Qt::QueuedConnection, Q_ARG(QList<QList<QGeoCoordinate> >, coverage), Q_ARG(QList<QPolygonF>, local_coverage));
 }
 
-void ROSLink::pingCallback(const geographic_msgs::GeoPath::ConstPtr& message)
+void ROSLink::pingCallback(const sensor_msgs::PointCloud::ConstPtr& message)
 {
     QList<QGeoCoordinate> ping;
     QList<QPointF> local_ping;
-    for(auto gp: message->poses)
-    {
-        QGeoCoordinate gc;
-        gc.setLatitude(gp.pose.position.latitude);
-        gc.setLongitude(gp.pose.position.longitude);
-        ping.append(gc);
-        local_ping.append(geoToPixel(gc,autonomousVehicleProject())-m_local_reference_position);
-    }
-    QMetaObject::invokeMethod(this,"addPing", Qt::QueuedConnection, Q_ARG(QList<QGeoCoordinate>, ping), Q_ARG(QList<QPointF>, local_ping));
+//     for(auto gp: message->poses)
+//     {
+//         QGeoCoordinate gc;
+//         gc.setLatitude(gp.pose.position.latitude);
+//         gc.setLongitude(gp.pose.position.longitude);
+//         ping.append(gc);
+//         local_ping.append(geoToPixel(gc,autonomousVehicleProject())-m_local_reference_position);
+//     }
+//     QMetaObject::invokeMethod(this,"addPing", Qt::QueuedConnection, Q_ARG(QList<QGeoCoordinate>, ping), Q_ARG(QList<QPointF>, local_ping));
 }
 
 

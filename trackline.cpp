@@ -147,8 +147,8 @@ void TrackLine::write(QJsonObject &json) const
 void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject navItem;
-    QJsonObject pathObject;
-    writeBehaviorsToMissionPlanObject(pathObject);
+    navItem["pathtype"] = "trackline";
+    writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;
     auto children = childItems();
     for(auto child: children)
@@ -156,11 +156,10 @@ void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
         if(child->type() == GeoGraphicsItem::WaypointType)
         {
             Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
-            wp->writeToMissionPlan(pathNavArray);
+            wp->writeNavToMissionPlan(pathNavArray);
         }
     }
-    pathObject["nav"] = pathNavArray;
-    navItem["path"] = pathObject;
+    navItem["nav"] = pathNavArray;
     navArray.append(navItem);
 }
 

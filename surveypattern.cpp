@@ -128,22 +128,21 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
     {
         auto l = lines[i];
         QJsonObject navItem;
-        QJsonObject pathObject;
-        writeBehaviorsToMissionPlanObject(pathObject);
+        navItem["pathtype"] = "trackline";
+        writeBehaviorsToMissionPlanObject(navItem);
         QJsonArray pathNavArray;
         for(auto wp: l)
         {
             Waypoint * temp_wp = new Waypoint();
             temp_wp->setLocation(wp);
-            temp_wp->writeToMissionPlan(pathNavArray);
+            temp_wp->writeNavToMissionPlan(pathNavArray);
             delete temp_wp;
         }
-        pathObject["nav"] = pathNavArray;
+        navItem["nav"] = pathNavArray;
         if(m_arcCount>0 && i%2 == 1)
-            pathObject["type"] = "turn";
+            navItem["type"] = "turn";
         else
-            pathObject["type"] = "survey_line";
-        navItem["path"] = pathObject;
+            navItem["type"] = "survey_line";
         navArray.append(navItem);
     }    
 }
@@ -356,7 +355,7 @@ void SurveyPattern::updateLabel()
             }
         }
 
-    double distanceInNMs = cumulativeDistance*0.000539957;
+    double distanceInNMs = cumulativeDistance*0.000539957; // meters to NMs.
     QString label = "Distance: "+QString::number(int(cumulativeDistance))+" (m), "+QString::number(distanceInNMs,'f',1)+" (nm)";
 
     AutonomousVehicleProject* avp = autonomousVehicleProject();
