@@ -284,5 +284,6 @@ void ProjectView::sendGotoAt()
 
 void ProjectView::updateBackground(BackgroundRaster* bg)
 {
-    setSceneRect(bg->boundingRect());
+    auto bgRect = bg->boundingRect();
+    setSceneRect(bgRect.marginsAdded(QMarginsF(bgRect.width()*.75,bgRect.height()*.75,bgRect.width()*.75,bgRect.height()*.75)));
 }

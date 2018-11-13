@@ -14,8 +14,8 @@ class BackgroundRaster: public MissionItem, public QGraphicsItem, public Georefe
     Q_INTERFACES(QGraphicsItem)
 public:
     BackgroundRaster(const QString &fname = QString(), QObject *parent = 0, QGraphicsItem *parentItem =0);
-    QRectF boundingRect() const;
-    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
     QPixmap topLevelPixmap() const;
     QString const &filename() const;
 
