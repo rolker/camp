@@ -8,6 +8,8 @@
 
 Waypoint::Waypoint(MissionItem *parent) :GeoGraphicsMissionItem(parent), m_internalPositionChangeFlag(false)
 {
+    m_unlockedColor = Qt::darkRed;
+    m_lockedColor = Qt::darkGreen;
 }
 
 QGeoCoordinate const &Waypoint::location() const
@@ -38,7 +40,7 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     else
         p.setColor(m_unlockedColor);
     p.setCosmetic(true);
-    p.setWidth(3);
+    p.setWidth(5);
     painter->setPen(p);
     
     painter->drawPath(shape());
