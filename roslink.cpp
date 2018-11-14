@@ -811,7 +811,7 @@ void ROSLink::setActive(bool active)
     if(m_active)
         sendCommand("active True");
     else
-        ("active False");
+        sendCommand("active False");
 //     std_msgs::Bool b;
 //     b.data = active;
 //     m_active_publisher.publish(b);
