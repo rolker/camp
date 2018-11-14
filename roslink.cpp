@@ -60,11 +60,11 @@ void ROSLink::connectROS()
             m_coverage_subscriber = m_node->subscribe("/udp/coverage", 10, &ROSLink::coverageCallback, this);
             m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             
-            m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
-            m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
-            m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
-            m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
-            m_mission_plan_publisher = m_node->advertise<std_msgs::String>("/udp/mission_plan",1);
+            //m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
+            //m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
+            //m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
+            //m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
+            //m_mission_plan_publisher = m_node->advertise<std_msgs::String>("/udp/mission_plan",1);
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
             m_spinner->start();
             m_watchdog_timer->start(500);
@@ -608,18 +608,20 @@ void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
         updates << position[0] << ", " << position[1] << ":";
     }
     
-    std_msgs::String rosUpdates;
-    rosUpdates.data = updates.str();
-    if(m_node)
-        m_wpt_updates_publisher.publish(rosUpdates);
+    sendCommand("moos_wpt_updates "+updates.str());
+//     std_msgs::String rosUpdates;
+//     rosUpdates.data = updates.str();
+//     if(m_node)
+//         m_wpt_updates_publisher.publish(rosUpdates);
 }
 
 void ROSLink::sendMissionPlan(const QString& plan)
 {
-    std_msgs::String mp;
-    mp.data = plan.toStdString();
-    if(m_node)
-        m_mission_plan_publisher.publish(mp);
+    sendCommand("mission_plan "+plan.toStdString());
+//     std_msgs::String mp;
+//     mp.data = plan.toStdString();
+//     if(m_node)
+//         m_mission_plan_publisher.publish(mp);
 }
 
 
@@ -640,10 +642,11 @@ void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
     qDebug() << "ecef: " << ecef[0] << ", " << ecef[1] << ", " << ecef[2];
     gz4d::Point<double> position = geoReference.toLocal(ecef);
     updates << position[0] << ", " << position[1] << ":";
-    
-    std_msgs::String rosUpdates;
-    rosUpdates.data = updates.str();
-    m_loiter_updates_publisher.publish(rosUpdates);
+
+    sendCommand("moos_loiter_updates "+updates.str());
+//     std_msgs::String rosUpdates;
+//     rosUpdates.data = updates.str();
+//     m_loiter_updates_publisher.publish(rosUpdates);
 }
 
 void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
@@ -657,11 +660,12 @@ void ROSLink::sendWaypointIndexUpdate(int waypoint_index)
 {
     std::stringstream updates;
     updates << "currix=" << waypoint_index;
-    
-    std_msgs::String rosUpdates;
-    rosUpdates.data = updates.str();
-    if(m_node)
-        m_wpt_updates_publisher.publish(rosUpdates);
+        
+    sendCommand("moos_wpt_updates "+updates.str());
+//     std_msgs::String rosUpdates;
+//     rosUpdates.data = updates.str();
+//     if(m_node)
+//         m_wpt_updates_publisher.publish(rosUpdates);
 }
 
 
@@ -804,9 +808,13 @@ bool ROSLink::active() const
 void ROSLink::setActive(bool active)
 {
     m_active = active;
-    std_msgs::Bool b;
-    b.data = active;
-    m_active_publisher.publish(b);
+    if(m_active)
+        sendCommand("active True");
+    else
+        ("active False");
+//     std_msgs::Bool b;
+//     b.data = active;
+//     m_active_publisher.publish(b);
 }
 
 const std::string& ROSLink::helmMode() const
@@ -817,9 +825,10 @@ const std::string& ROSLink::helmMode() const
 void ROSLink::setHelmMode(const std::string& helmMode)
 {
     m_helmMode = helmMode;
-    std_msgs::String hm;
-    hm.data = helmMode;
-    m_helmMode_publisher.publish(hm);
+    sendCommand("helm_mode "+helmMode);
+//     std_msgs::String hm;
+//     hm.data = helmMode;
+//     m_helmMode_publisher.publish(hm);
 }
 
 void ROSLink::sendCommand(const std::string& command)

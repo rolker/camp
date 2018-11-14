@@ -148,11 +148,11 @@ private:
     ros::Subscriber m_coverage_subscriber;
     ros::Subscriber m_ping_subscriber;
     
-    ros::Publisher m_active_publisher;
-    ros::Publisher m_helmMode_publisher;
-    ros::Publisher m_wpt_updates_publisher;
-    ros::Publisher m_loiter_updates_publisher;
-    ros::Publisher m_mission_plan_publisher;
+    //ros::Publisher m_active_publisher;
+    //ros::Publisher m_helmMode_publisher;
+    //ros::Publisher m_wpt_updates_publisher;
+    //ros::Publisher m_loiter_updates_publisher;
+    //ros::Publisher m_mission_plan_publisher;
     ros::Publisher m_send_command_publisher;
     
     ros::AsyncSpinner *m_spinner;

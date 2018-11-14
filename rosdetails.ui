@@ -97,7 +97,7 @@
      <item>
       <widget class="QPushButton" name="sendWaypointIndexPushButton">
        <property name="text">
-        <string>Send it!</string>
+        <string>Send wpt index</string>
        </property>
       </widget>
      </item>
