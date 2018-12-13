@@ -105,9 +105,17 @@ void AutonomousVehicleProject::openBackground(const QString &fname)
 {
     beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
     BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
-    bgr->setObjectName(fname);
-    setCurrentBackground(bgr);
-    endInsertRows();
+    if(bgr->valid())
+    {        
+        bgr->setObjectName(fname);
+        setCurrentBackground(bgr);
+        endInsertRows();
+    }
+    else
+    {
+        endInsertRows();
+        deleteItem(bgr);
+    }
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname)
@@ -335,6 +343,11 @@ QJsonDocument AutonomousVehicleProject::generateMissionPlan(const QModelIndex& i
     QJsonDocument plan;
     QJsonObject topLevel;
     QJsonObject defaultParameters;
+    Platform *platform = currentPlatform();
+    if(platform)
+    {
+        defaultParameters["defaultspeed_ms"] = platform->speed()*0.514444; // knots to m/s
+    }
     topLevel["DEFAULT_PARAMETERS"] = defaultParameters;
     QJsonArray navArray;
     item->writeToMissionPlan(navArray);
@@ -359,19 +372,19 @@ void AutonomousVehicleProject::exportMissionPlan(const QModelIndex& index)
 
 void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 {
-    MissionItem *mi = itemFromIndex(index);
-    QList<QGeoCoordinate> wps;
-    auto lines = mi->getLines();
-    for (auto l: lines)
-        for (auto p: l)
-            wps.append(p);
-
-#ifdef AMP_ROS
-    if(m_ROSLink)
-    {
-        m_ROSLink->sendWaypoints(wps);
-    }
-#endif
+     MissionItem *mi = itemFromIndex(index);
+//     QList<QGeoCoordinate> wps;
+//     auto lines = mi->getLines();
+//     for (auto l: lines)
+//         for (auto p: l)
+//             wps.append(p);
+// 
+// #ifdef AMP_ROS
+//     if(m_ROSLink)
+//     {
+//         m_ROSLink->sendWaypoints(wps);
+//     }
+// #endif
     // mission_plan format
     QJsonDocument plan = generateMissionPlan(index);
     

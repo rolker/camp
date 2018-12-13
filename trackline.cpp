@@ -148,6 +148,7 @@ void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject navItem;
     navItem["pathtype"] = "trackline";
+    navItem["type"] = "survey_line";
     writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;
     auto children = childItems();

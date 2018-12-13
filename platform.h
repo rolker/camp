@@ -22,7 +22,7 @@ signals:
 public slots:
 
 private:
-    double m_speed;
+    double m_speed; //knots
 };
 
 #endif // PLATFORM_H

@@ -6,7 +6,7 @@
 #include <QDebug>
 
 BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraphicsItem *parentItem)
-    : MissionItem(parent), QGraphicsItem(parentItem), m_filename(fname)
+    : MissionItem(parent), QGraphicsItem(parentItem), m_filename(fname),m_valid(false)
 {
     GDALDataset * dataset = reinterpret_cast<GDALDataset*>(GDALOpen(fname.toStdString().c_str(),GA_ReadOnly));
     if (dataset)
@@ -77,7 +77,13 @@ BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraph
         {
             backgroundImages[i] = QPixmap::fromImage(image.scaledToWidth(width/float(i),Qt::SmoothTransformation));
         }
+        m_valid = true;
     }
+}
+
+bool BackgroundRaster::valid() const
+{
+    return m_valid;
 }
 
 QRectF BackgroundRaster::boundingRect() const

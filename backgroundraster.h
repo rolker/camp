@@ -28,6 +28,8 @@ public:
     qreal mapScale() const;
     
     bool canAcceptChildType(const std::string & childType) const override;
+    
+    bool valid() const;
 
 public slots:
     void updateMapScale(qreal scale); 
@@ -38,6 +40,7 @@ private:
     QString m_filename;
     qreal m_pixel_size; // size of a pixel in meters.
     qreal m_map_scale;
+    bool m_valid;
 
 };
 

@@ -54,6 +54,7 @@ public:
     QPainterPath viewShape() const;
     QPainterPath coverageShape() const;
     QPainterPath pingsShape() const;
+    QPainterPath currentPathShape() const;
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
@@ -89,6 +90,8 @@ public slots:
     void updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPointF> local_view_seglist, bool view_seglist_active);
     void updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage);
     void addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping);
+    void updateCurrentPath(QList<QGeoCoordinate> current_path, QList<QPointF> local_current_path);
+
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
@@ -119,6 +122,7 @@ private:
     void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
+    void currentPathCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -147,6 +151,7 @@ private:
     ros::Subscriber m_sog_subscriber;
     ros::Subscriber m_coverage_subscriber;
     ros::Subscriber m_ping_subscriber;
+    ros::Subscriber m_current_path_subscriber;
     
     //ros::Publisher m_active_publisher;
     //ros::Publisher m_helmMode_publisher;
@@ -197,6 +202,9 @@ private:
 
     QList<QList<QGeoCoordinate> > m_pings;
     QList<QList<QPointF> > m_local_pings;
+
+    QList<QGeoCoordinate> m_current_path;
+    QList<QPointF> m_local_current_path;
 
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;
