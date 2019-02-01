@@ -99,8 +99,8 @@ void SurveyArea::write(QJsonObject& json) const
 void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
 {
     QJsonObject navItem;
-    QJsonObject pathObject;
-    writeBehaviorsToMissionPlanObject(pathObject);
+    navItem["pathtype"] = "area";
+    writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;
     auto children = childItems();
     for(auto child: children)
@@ -108,11 +108,10 @@ void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
         if(child->type() == GeoGraphicsItem::WaypointType)
         {
             Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
-            wp->writeToMissionPlan(pathNavArray);
+            wp->writeNavToMissionPlan(pathNavArray);
         }
     }
-    pathObject["nav"] = pathNavArray;
-    navItem["area"] = pathObject;
+    navItem["nav"] = pathNavArray;
     navArray.append(navItem);
 }
 
