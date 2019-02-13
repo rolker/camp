@@ -1,5 +1,6 @@
-<!DOCTYPE RCC><RCC version="1.0">
-    <qresource>
-        <file>symbols.svg</file>
-    </qresource>
+<RCC>
+  <qresource>
+    <file>ccom.png</file>
+    <file>symbols.svg</file>
+  </qresource>
 </RCC>
