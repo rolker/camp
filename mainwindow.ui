@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Autonomous Mission Planner</string>
+   <string>CCOM Autonomous Mission Planner</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <layout class="QVBoxLayout" name="verticalLayout_2">
@@ -181,7 +181,7 @@
   </action>
   <action name="actionPlatform">
    <property name="text">
-    <string>Platform</string>
+    <string>&amp;Platform</string>
    </property>
    <property name="iconText">
     <string>P</string>
@@ -205,7 +205,7 @@
   </action>
   <action name="actionImport">
    <property name="text">
-    <string>Import</string>
+    <string>&amp;Import</string>
    </property>
   </action>
   <action name="actionSurveyArea">
@@ -213,7 +213,7 @@
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>Survey Area</string>
+    <string>S&amp;urvey Area</string>
    </property>
    <property name="iconText">
     <string>SA</string>
@@ -221,7 +221,7 @@
   </action>
   <action name="actionBehavior">
    <property name="text">
-    <string>Behavior</string>
+    <string>&amp;Behavior</string>
    </property>
    <property name="iconText">
     <string>B</string>
