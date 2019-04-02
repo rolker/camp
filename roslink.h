@@ -61,9 +61,6 @@ public:
     
     int type() const {return ROSLinkType;}
     
-    bool active() const;
-    void setActive(bool active);
-    
     std::string const &helmMode() const;
     void setHelmMode(const std::string& helmMode);
     void sendCommand(const std::string& command);
@@ -96,9 +93,10 @@ public slots:
     void addAISContact(ROSAISContact *c);
     void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     void sendMissionPlan(QString const &plan);
-    void sendLoiter(QGeoCoordinate const &loiterLocation);
-    void sendGoto(QGeoCoordinate const &loiterLocation);
-    void sendWaypointIndexUpdate(int waypoint_index);
+    void sendHover(QGeoCoordinate const &targetLocation);
+    void sendGoto(QGeoCoordinate const &targetLocation);
+    void sendGotoLine(int waypoint_index);
+    void sendStartLine(int waypoint_index);
     void connectROS();
     void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
     void watchdogUpdate();
@@ -176,7 +174,6 @@ private:
     double m_heading;
     double m_posmv_heading;
     double m_base_heading;
-    bool m_active;
     std::string m_helmMode;
     
     typedef std::list<ROSAISContact*> ContactList;

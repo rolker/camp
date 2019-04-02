@@ -31,18 +31,16 @@ public slots:
     void sogUpdate(qreal sog, qreal sog_avg);
 
 private slots:
-    void on_activeCheckBox_stateChanged(int state);
-
     void on_standbyPushButton_clicked(bool checked);
-    void on_surveyPushButton_clicked(bool checked);
-    void on_loiterPushButton_clicked(bool checked);
+    void on_autonomousPushButton_clicked(bool checked);
 
     void on_stopPingingPushButton_clicked(bool checked);
     void on_startPingingPushButton_clicked(bool checked);
     void on_pingAndLogPushButton_clicked(bool checked);
 
     void updateVehicleStatus(QString const &status);
-    void on_sendWaypointIndexPushButton_clicked(bool checked);
+    void on_gotoLinePushButton_clicked(bool checked);
+    void on_startLinePushButton_clicked(bool checked);
     
     
 private:

@@ -18,6 +18,7 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
+    void open(QString const &fname);
 public slots:
 
     void setCurrent(QModelIndex &index);

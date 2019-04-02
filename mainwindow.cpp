@@ -54,6 +54,14 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+void MainWindow::open(const QString& fname)
+{
+    setCursor(Qt::WaitCursor);
+    project->open(fname);
+    unsetCursor();
+}
+
+
 void MainWindow::setCurrent(QModelIndex &index)
 {
     ui->treeView->setCurrentIndex(index);
@@ -63,9 +71,7 @@ void MainWindow::setCurrent(QModelIndex &index)
 void MainWindow::on_actionOpen_triggered()
 {
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
-    setCursor(Qt::WaitCursor);
-    project->open(fname);
-    unsetCursor();
+    open(fname);
 }
 
 void MainWindow::on_actionImport_triggered()

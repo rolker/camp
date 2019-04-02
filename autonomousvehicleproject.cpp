@@ -190,6 +190,7 @@ Platform * AutonomousVehicleProject::createPlatform()
     RowInserter ri(*this,m_currentGroup);
     Platform *p = new Platform(m_currentGroup);
     p->setObjectName("platform");
+    m_currentPlatform = p;
     return p;
 }
 

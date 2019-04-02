@@ -16,7 +16,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 }
 
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_active(false),m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
 {
     setAcceptHoverEvents(false);
     setOpacity(1.0);
@@ -114,7 +114,7 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(aisShape());
     
-    p.setColor(Qt::darkYellow);
+    p.setColor(Qt::darkRed);
     p.setWidth(4);
     painter->setPen(p);
     painter->drawPath(viewShape());
@@ -654,49 +654,37 @@ void ROSLink::sendMissionPlan(const QString& plan)
 }
 
 
-void ROSLink::sendLoiter(const QGeoCoordinate& loiterLocation)
+void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 {
-    qDebug() << "origin: " << m_origin;
-    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
-    qDebug() << "as gz4d::geo::Point: " << gr[0] << ", " << gr[1] << ", " << gr[2];
-    gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
-
     std::stringstream updates;
-    updates << "center_assign = ";
-
-    qDebug() << "loiterLocation: " << loiterLocation;
-    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> ggp(loiterLocation.latitude(),loiterLocation.longitude(),0.0);
-    qDebug() << "ggp: " << ggp[0] << ", " << ggp[1] << ", " << ggp[2];
-    gz4d::geo::Point<double,gz4d::geo::WGS84::ECEF> ecef(ggp);
-    qDebug() << "ecef: " << ecef[0] << ", " << ecef[1] << ", " << ecef[2];
-    gz4d::Point<double> position = geoReference.toLocal(ecef);
-    updates << position[0] << ", " << position[1] << ":";
-
-    sendCommand("moos_loiter_updates "+updates.str());
-//     std_msgs::String rosUpdates;
-//     rosUpdates.data = updates.str();
-//     m_loiter_updates_publisher.publish(rosUpdates);
-}
+    updates << "hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
+        
+    sendCommand(updates.str());
+}  
 
 void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
 {
-    QList<QGeoCoordinate> wps;
-    wps.append(gotoLocation);
-    sendWaypoints(wps);
+    std::stringstream updates;
+    updates << "goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
+        
+    sendCommand(updates.str());
 }
 
-void ROSLink::sendWaypointIndexUpdate(int waypoint_index)
+void ROSLink::sendGotoLine(int waypoint_index)
 {
     std::stringstream updates;
-    updates << "currix=" << waypoint_index;
+    updates << "goto_line " << waypoint_index;
         
-    sendCommand("moos_wpt_updates "+updates.str());
-//     std_msgs::String rosUpdates;
-//     rosUpdates.data = updates.str();
-//     if(m_node)
-//         m_wpt_updates_publisher.publish(rosUpdates);
+    sendCommand(updates.str());
 }
 
+void ROSLink::sendStartLine(int waypoint_index)
+{
+    std::stringstream updates;
+    updates << "start_line " << waypoint_index;
+        
+    sendCommand(updates.str());
+}
 
 void ROSLink::updateLocation(const QGeoCoordinate& location)
 {
@@ -846,24 +834,6 @@ void ROSLink::recalculatePositions()
         m_local_base_location_history.push_back(geoToPixel(l,autonomousVehicleProject()));            
     }
     update();
-}
-
-
-bool ROSLink::active() const
-{
-    return m_active;
-}
-
-void ROSLink::setActive(bool active)
-{
-    m_active = active;
-    if(m_active)
-        sendCommand("active True");
-    else
-        sendCommand("active False");
-//     std_msgs::Bool b;
-//     b.data = active;
-//     m_active_publisher.publish(b);
 }
 
 const std::string& ROSLink::helmMode() const

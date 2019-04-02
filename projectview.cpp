@@ -255,11 +255,11 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         QMenu menu(this);
 
 #ifdef AMP_ROS
-        QAction *loiterAtAction = menu.addAction("Loiter Here");
-        connect(loiterAtAction, &QAction::triggered, this, &ProjectView::sendLoiterAt);
+        QAction *hoverAction = menu.addAction("Hover Here");
+        connect(hoverAction, &QAction::triggered, this, &ProjectView::sendHover);
 
         QAction *gotoAction = menu.addAction("Goto Here");
-        connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGotoAt);
+        connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGoto);
 #endif
 
         menu.exec(event->globalPos());
@@ -269,16 +269,16 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 }
 
 #ifdef AMP_ROS
-void ProjectView::sendLoiterAt()
+void ProjectView::sendHover()
 {
-    m_project->rosLink()->sendLoiter(m_contextMenuLocation);
-    m_project->rosLink()->setHelmMode("loiter");
+    m_project->rosLink()->sendHover(m_contextMenuLocation);
+    m_project->rosLink()->setHelmMode("autonomous");
 }
 
-void ProjectView::sendGotoAt()
+void ProjectView::sendGoto()
 {
     m_project->rosLink()->sendGoto(m_contextMenuLocation);
-    m_project->rosLink()->setHelmMode("survey");
+    m_project->rosLink()->setHelmMode("autonomous");
 }
 #endif
 

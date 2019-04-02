@@ -14,13 +14,6 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_2">
      <item>
-      <widget class="QCheckBox" name="activeCheckBox">
-       <property name="text">
-        <string>Active</string>
-       </property>
-      </widget>
-     </item>
-     <item>
       <widget class="QLineEdit" name="sogLineEdit">
        <property name="readOnly">
         <bool>true</bool>
@@ -37,16 +30,9 @@
     </widget>
    </item>
    <item>
-    <widget class="QPushButton" name="surveyPushButton">
+    <widget class="QPushButton" name="autonomousPushButton">
      <property name="text">
-      <string>Survey</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QPushButton" name="loiterPushButton">
-     <property name="text">
-      <string>Loiter</string>
+      <string>Autonomous</string>
      </property>
     </widget>
    </item>
@@ -81,23 +67,30 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QLabel" name="sendWaypointIndexLabel">
+      <widget class="QLabel" name="lineNumberLabel">
        <property name="text">
-        <string>Waypoint Index</string>
+        <string>Line Number</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QSpinBox" name="sendWaypointSpinBox">
+      <widget class="QSpinBox" name="lineNumberSpinBox">
        <property name="maximum">
         <number>999999</number>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="sendWaypointIndexPushButton">
+      <widget class="QPushButton" name="gotoLinePushButton">
        <property name="text">
-        <string>Send wpt index</string>
+        <string>Goto Line</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="startLinePushButton">
+       <property name="text">
+        <string>Start Line</string>
        </property>
       </widget>
      </item>

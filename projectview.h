@@ -32,8 +32,8 @@ signals:
 
 public slots:
 #ifdef AMP_ROS
-    void sendLoiterAt();
-    void sendGotoAt();
+    void sendHover();
+    void sendGoto();
 #endif
     void updateBackground(BackgroundRaster * bg);
 

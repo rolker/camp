@@ -25,20 +25,6 @@ void ROSDetails::setROSLink(ROSLink* rosLink)
     m_rosLink = rosLink;
     rosLink->setROSDetails(this);
 #endif
-    Qt::CheckState s = Qt::Unchecked;
-#ifdef AMP_ROS
-    if(rosLink->active())
-        s = Qt::Checked;
-#endif
-    ui->activeCheckBox->setCheckState(s);
-}
-
-void ROSDetails::on_activeCheckBox_stateChanged(int state)
-{
-    qDebug() << "ROSDetails active: " << state;
-#ifdef AMP_ROS
-    m_rosLink->setActive(state);
-#endif
 }
 
 void ROSDetails::on_standbyPushButton_clicked(bool checked)
@@ -49,19 +35,11 @@ void ROSDetails::on_standbyPushButton_clicked(bool checked)
 #endif
 }
 
-void ROSDetails::on_surveyPushButton_clicked(bool checked)
+void ROSDetails::on_autonomousPushButton_clicked(bool checked)
 {
-    qDebug() << "ROSDetails helm mode: survey";
+    qDebug() << "ROSDetails helm mode: autonomous";
 #ifdef AMP_ROS
-    m_rosLink->setHelmMode("survey");
-#endif
-}
-
-void ROSDetails::on_loiterPushButton_clicked(bool checked)
-{
-    qDebug() << "ROSDetails helm mode: loiter";
-#ifdef AMP_ROS
-    m_rosLink->setHelmMode("loiter");
+    m_rosLink->setHelmMode("autonomous");
 #endif
 }
 
@@ -94,14 +72,15 @@ void ROSDetails::updateVehicleStatus(const QString& status)
     ui->vehicleStatusTextBrowser->setText(status);
 }
 
-void ROSDetails::on_sendWaypointIndexPushButton_clicked(bool checked)
+void ROSDetails::on_gotoLinePushButton_clicked(bool checked)
 {
-    qDebug() << "send current index: " << ui->sendWaypointSpinBox->value();
-#ifdef AMP_ROS
-    m_rosLink->sendWaypointIndexUpdate(ui->sendWaypointSpinBox->value());
-#endif
+    m_rosLink->sendGotoLine(ui->lineNumberSpinBox->value());
 }
 
+void ROSDetails::on_startLinePushButton_clicked(bool checked)
+{
+    m_rosLink->sendStartLine(ui->lineNumberSpinBox->value());
+}
 
 void ROSDetails::heartbeatDelay(double seconds)
 {
