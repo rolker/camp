@@ -20,7 +20,7 @@
 #include "platform.h"
 #include "group.h"
 #include <gdal_priv.h>
-#include "vectordataset.h"
+#include "vector/vectordataset.h"
 #include "behavior.h"
 
 #ifdef AMP_ROS

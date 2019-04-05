@@ -14,6 +14,8 @@
 #include "geometry_msgs/TwistStamped.h"
 #include "geographic_msgs/GeoPath.h"
 #include "sensor_msgs/PointCloud.h"
+#include "locationposition.h"
+#include "geographic_visualization_msgs/GeoVizItem.h"
 
 Q_DECLARE_METATYPE(ros::Time);
 
@@ -36,6 +38,38 @@ public:
     float dimension_to_stern; 
 };
 
+namespace geoviz
+{
+
+    struct PointList
+    {
+        std::vector<LocationPosition> points;
+        QColor color;
+        float size;
+    };
+
+    struct Polygon
+    {
+        std::vector<LocationPosition> outer;
+        std::vector<std::vector<LocationPosition> > inner;
+        QColor fill_color;
+        QColor edge_color;
+        float edge_size;
+    };
+
+    struct Item: public QObject
+    {
+        Q_OBJECT
+    public:
+        std::string id;
+        std::string label;
+        LocationPosition label_position;
+        std::vector<PointList> point_groups;
+        std::vector<PointList> lines;
+        std::vector<Polygon> polygons;
+    };
+}
+
 
 class ROSLink : public QObject, public GeoGraphicsItem
 {
@@ -47,14 +81,13 @@ public:
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     QPainterPath shape() const override;
+    QPainterPath shape(std::vector<LocationPosition> const &lps) const;
     QPainterPath vehicleShape() const;
     QPainterPath vehicleShapePosmv() const;
     QPainterPath baseShape() const;
     QPainterPath aisShape() const;
-    QPainterPath viewShape() const;
     QPainterPath coverageShape() const;
     QPainterPath pingsShape() const;
-    QPainterPath currentPathShape() const;
 
     void write(QJsonObject &json) const;
     void read(const QJsonObject &json);
@@ -82,12 +115,9 @@ public slots:
     void updatePosmvHeading(double heading);
     void updateBaseHeading(double heading);
     void updateBackground(BackgroundRaster *bgr);
-    void updateViewPoint(QGeoCoordinate view_point, QPointF local_view_point, bool view_point_active);
-    void updateViewPolygon(QList<QGeoCoordinate> view_polygon, QList<QPointF> local_view_polygon, bool view_polygon_active);
-    void updateViewSeglist(QList<QGeoCoordinate> view_seglist, QList<QPointF> local_view_seglist, bool view_seglist_active);
     void updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage);
     void addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping);
-    void updateCurrentPath(QList<QGeoCoordinate> current_path, QList<QPointF> local_current_path);
+    void updateDisplayItem(geoviz::Item *item);
 
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
@@ -110,9 +140,6 @@ private:
     void baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void contactCallback(const marine_msgs::Contact::ConstPtr& message);
     void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
-    void viewPointCallback(const std_msgs::String::ConstPtr&message);
-    void viewPolygonCallback(const std_msgs::String::ConstPtr&message);
-    void viewSeglistCallback(const std_msgs::String::ConstPtr&message);
     void posmvOrientationCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
@@ -120,12 +147,10 @@ private:
     void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
-    void currentPathCallback(const geographic_msgs::GeoPath::ConstPtr& message);
+    void geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizItem::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
-    QMap<QString,QString> parseViewString(QString const &vs) const;
-    QList<QPointF> parseViewPointList(QString const &pointList) const;
     
     QGeoCoordinate rosMapToGeo(QPointF const &location) const;
     
@@ -139,9 +164,6 @@ private:
     ros::Subscriber m_base_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
     ros::Subscriber m_heartbeat_subscriber;
-    ros::Subscriber m_view_point_subscriber;
-    ros::Subscriber m_view_polygon_subscriber;
-    ros::Subscriber m_view_seglist_subscriber;
     ros::Subscriber m_posmv_position;
     ros::Subscriber m_posmv_orientation;
     ros::Subscriber m_range_subscriber;
@@ -149,13 +171,8 @@ private:
     ros::Subscriber m_sog_subscriber;
     ros::Subscriber m_coverage_subscriber;
     ros::Subscriber m_ping_subscriber;
-    ros::Subscriber m_current_path_subscriber;
+    ros::Subscriber m_display_subscriber;
     
-    //ros::Publisher m_active_publisher;
-    //ros::Publisher m_helmMode_publisher;
-    //ros::Publisher m_wpt_updates_publisher;
-    //ros::Publisher m_loiter_updates_publisher;
-    //ros::Publisher m_mission_plan_publisher;
     ros::Publisher m_send_command_publisher;
     
     ros::AsyncSpinner *m_spinner;
@@ -202,6 +219,8 @@ private:
 
     QList<QGeoCoordinate> m_current_path;
     QList<QPointF> m_local_current_path;
+    
+    std::map<std::string,std::shared_ptr<geoviz::Item> > m_display_items;
 
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;

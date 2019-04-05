@@ -25,7 +25,6 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
 {
-    //AutonomousVehicleProject *p;// =  dynamic_cast<MissionItem*>(this)->autonomousVehicleProject();
     if(p)
     {
         BackgroundRaster *bg = p->getBackgroundRaster();
