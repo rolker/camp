@@ -651,7 +651,7 @@ void ROSLink::sendMissionPlan(const QString& plan)
 void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 {
     std::stringstream updates;
-    updates << "hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
+    updates << std::fixed << std::setprecision(7) << "hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
         
     sendCommand(updates.str());
 }  
@@ -659,7 +659,7 @@ void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
 {
     std::stringstream updates;
-    updates << "goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
+    updates << std::fixed << std::setprecision(7) << "goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
         
     sendCommand(updates.str());
 }
