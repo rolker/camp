@@ -115,15 +115,14 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     {
         // todo: points and polygons
         
-        // following was from old view point code
-//         qreal scale = 1.0;
-//         auto bgr = autonomousVehicleProject()->getBackgroundRaster();
-//         if(bgr)
-//             scale = 1.0/bgr->mapScale();
-//         scale = std::max(0.05,scale);
-//         //drawOctagon(ret,m_view_point,autonomousVehicleProject()->getBackgroundRaster()->scaledPixelSize());
-//         ret.addEllipse(m_local_view_point,10*scale,10*scale);
-
+        for (auto point_group: display_item.second->point_groups)
+        {
+            p.setColor(point_group.color);
+            p.setWidth(point_group.size);
+            painter->setPen(p);
+            for(auto point: point_group.points)
+                painter->drawPoint(point.pos);
+        }
         
         for(auto line: display_item.second->lines)
         {
@@ -132,6 +131,16 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
             painter->setPen(p);
             painter->drawPath(shape(line.points));
         }
+        
+        for(auto polygon: display_item.second->polygons)
+        {
+            p.setColor(polygon.edge_color);
+            p.setWidth(polygon.edge_size);
+            painter->setPen(p);
+            painter->setBrush(QBrush(polygon.fill_color));
+            painter->drawPath(polygon.path);
+        }
+        painter->setBrush(Qt::NoBrush);
     }
     
     
@@ -179,9 +188,18 @@ QPainterPath ROSLink::shape() const
     
     for(auto display_item: m_display_items)
     {
+        for(auto plist: display_item.second->point_groups)
+        {
+            for(auto p: plist.points)
+                ret.addEllipse(p.pos,plist.size,plist.size);
+        }
         for(auto line: display_item.second->lines)
         {
             ret.addPath(shape(line.points));
+        }
+        for(auto polygon: display_item.second->polygons)
+        {
+            ret.addPath(polygon.path);
         }
     }
     
@@ -931,26 +949,34 @@ void ROSLink::geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizI
     for(auto p: message->polygons)
     {
         geoviz::Polygon polygon;
+        QPolygonF qPoly;
         for(auto op: p.outer.points) // outer points
         {
             LocationPosition lp;
             lp.location.setLatitude(op.latitude);
             lp.location.setLongitude(op.longitude);
             lp.pos = geoToPixel(lp.location,avp);
+            qPoly << lp.pos;
             polygon.outer.push_back(lp);
         }
+        polygon.path.addPolygon(qPoly);
+        QPainterPath innerPath;
         for(auto ir: p.inner) //inner rings
         {
             polygon.inner.push_back(std::vector<LocationPosition>());
+            QPolygonF innerPoly;
             for(auto ip: ir.points) // inner ring points
             {
                 LocationPosition lp;
                 lp.location.setLatitude(ip.latitude);
                 lp.location.setLongitude(ip.longitude);
                 lp.pos = geoToPixel(lp.location,avp);
+                innerPoly << lp.pos;
                 polygon.inner.back().push_back(lp);
             }
+            innerPath.addPolygon(innerPoly);
         }
+        polygon.path = polygon.path.subtracted(innerPath);
         polygon.fill_color.setRedF(p.fill_color.r);
         polygon.fill_color.setGreenF(p.fill_color.g);
         polygon.fill_color.setBlueF(p.fill_color.b);

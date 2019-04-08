@@ -52,6 +52,7 @@ namespace geoviz
     {
         std::vector<LocationPosition> outer;
         std::vector<std::vector<LocationPosition> > inner;
+        QPainterPath path;
         QColor fill_color;
         QColor edge_color;
         float edge_size;
