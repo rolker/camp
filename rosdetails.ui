@@ -62,7 +62,14 @@
     </layout>
    </item>
    <item>
-    <widget class="QTextBrowser" name="vehicleStatusTextBrowser"/>
+    <widget class="QTextBrowser" name="vehicleStatusTextBrowser">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>175</height>
+      </size>
+     </property>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
