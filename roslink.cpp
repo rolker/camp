@@ -113,8 +113,6 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
 
     for(auto display_item: m_display_items)
     {
-        // todo: points and polygons
-        
         for (auto point_group: display_item.second->point_groups)
         {
             p.setColor(point_group.color);
@@ -181,6 +179,7 @@ QPainterPath ROSLink::shape() const
 {
     QPainterPath ret;
     ret.addPath(vehicleShape());
+    ret.addPath(vehicleShapePosmv());
     ret.addPath(aisShape());
     ret.addPath(baseShape());
     ret.addPath(coverageShape());
