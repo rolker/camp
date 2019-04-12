@@ -192,6 +192,12 @@ private:
     double m_heading;
     double m_posmv_heading;
     double m_base_heading;
+    
+    float m_base_dimension_to_stbd; 
+    float m_base_dimension_to_port;
+    float m_base_dimension_to_bow;
+    float m_base_dimension_to_stern; 
+    
     std::string m_helmMode;
     
     typedef std::list<ROSAISContact*> ContactList;

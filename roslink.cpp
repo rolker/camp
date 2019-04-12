@@ -18,6 +18,11 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 
 ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
 {
+    m_base_dimension_to_bow = 1.0;
+    m_base_dimension_to_stern = 1.0;
+    m_base_dimension_to_port = 1.0;
+    m_base_dimension_to_stbd = 1.0;
+    
     setAcceptHoverEvents(false);
     setOpacity(1.0);
     setFlag(QGraphicsItem::ItemIsMovable, false);
@@ -305,7 +310,7 @@ QPainterPath ROSLink::baseShape() const
                 drawTriangle(ret,m_base_location,m_base_heading,pixel_size);
             else
                 // fairweather estimates: 70m by 12.70m
-                drawShipOutline(ret,m_base_location,m_base_heading,20,6.35,6.35,49);
+                drawShipOutline(ret,m_base_location,m_base_heading,m_base_dimension_to_bow,m_base_dimension_to_port,m_base_dimension_to_stbd,m_base_dimension_to_stern);
         }
 
     }
