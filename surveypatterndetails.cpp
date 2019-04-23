@@ -8,6 +8,9 @@ SurveyPatternDetails::SurveyPatternDetails(QWidget *parent) :
     updating(false)
 {
     ui->setupUi(this);
+    ui->alignmentComboBox->addItem("Start");
+    ui->alignmentComboBox->addItem("Center");
+    ui->alignmentComboBox->addItem("Finish");
 }
 
 SurveyPatternDetails::~SurveyPatternDetails()
@@ -22,6 +25,7 @@ void SurveyPatternDetails::setSurveyPattern(SurveyPattern *surveyPattern)
     ui->startPoint->setWaypoint(surveyPattern->startLocationWaypoint());
     if(surveyPattern->endLocationWaypoint())
         ui->oppositePoint->setWaypoint(surveyPattern->endLocationWaypoint());
+    ui->alignmentComboBox->setAutoCompletion(surveyPattern->alignment());
     onSurveyPatternUpdated();
 }
 
@@ -46,6 +50,18 @@ void SurveyPatternDetails::updateSurveyPattern()
     m_surveyPattern->setMaxSegmentLength(ui->maxSegmentLengthLineEdit->text().toDouble());
     m_surveyPattern->setLineLength(ui->lineLengthLineEdit->text().toDouble());
     m_surveyPattern->setTotalWidth(ui->totalWidthLineEdit->text().toDouble());
+    switch(ui->alignmentComboBox->currentIndex())
+    {
+        case 0:
+            m_surveyPattern->setAlignment(SurveyPattern::Alignment::start);
+            break;
+        case 1:
+            m_surveyPattern->setAlignment(SurveyPattern::Alignment::center);
+            break;
+        case 2:
+            m_surveyPattern->setAlignment(SurveyPattern::Alignment::finish);
+            break;
+    }
     updating = false;
 }
 
@@ -75,6 +91,11 @@ void SurveyPatternDetails::on_totalWidthLineEdit_editingFinished()
 }
 
 void SurveyPatternDetails::on_maxSegmentLengthLineEdit_editingFinished()
+{
+    updateSurveyPattern();
+}
+
+void SurveyPatternDetails::on_alignmentComboBox_activated()
 {
     updateSurveyPattern();
 }

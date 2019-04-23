@@ -35,6 +35,8 @@ private slots:
     void on_totalWidthLineEdit_editingFinished();
     
     void on_maxSegmentLengthLineEdit_editingFinished();
+    
+    void on_alignmentComboBox_activated();
 
 private:
     Ui::SurveyPatternDetails *ui;

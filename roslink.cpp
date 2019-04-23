@@ -63,12 +63,22 @@ void ROSLink::connectROS()
             m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/udp/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
-            //m_active_publisher = m_node->advertise<std_msgs::Bool>("/udp/active",1);
-            //m_helmMode_publisher = m_node->advertise<std_msgs::String>("/udp/helm_mode",1);
-            //m_wpt_updates_publisher = m_node->advertise<std_msgs::String>("/udp/wpt_updates",1);
-            //m_loiter_updates_publisher = m_node->advertise<std_msgs::String>("/udp/loiter_updates",1);
-            //m_mission_plan_publisher = m_node->advertise<std_msgs::String>("/udp/mission_plan",1);
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
+            
+            m_node->param("/base/dimension_to_bow",m_base_dimension_to_bow,m_base_dimension_to_bow);
+            m_node->param("/base/dimension_to_stern",m_base_dimension_to_stern,m_base_dimension_to_stern);
+            m_node->param("/base/dimension_to_stbd",m_base_dimension_to_stbd,m_base_dimension_to_stbd);
+            m_node->param("/base/dimension_to_port",m_base_dimension_to_port,m_base_dimension_to_port);
+            
+            double latitude, longitude;
+            if(m_node->getParam("/base/latitude",latitude) && m_node->getParam("/base/longitude",longitude))
+            {
+                m_base_location.setLatitude(latitude);
+                m_base_location.setLongitude(longitude);
+            }
+            
+            m_node->param("/base/heading", m_base_heading, m_base_heading);
+            
             m_spinner->start();
             m_watchdog_timer->start(500);
             emit rosConnected(true);
@@ -301,7 +311,9 @@ QPainterPath ROSLink::baseShape() const
             p++;
         }
         auto last = *(m_local_base_location_history.rbegin());
-        
+    }
+    if(m_base_location.isValid())
+    {
         auto bgr = autonomousVehicleProject()->getBackgroundRaster();
         if(bgr)
         {
@@ -312,7 +324,6 @@ QPainterPath ROSLink::baseShape() const
                 // fairweather estimates: 70m by 12.70m
                 drawShipOutline(ret,m_base_location,m_base_heading,m_base_dimension_to_bow,m_base_dimension_to_port,m_base_dimension_to_stbd,m_base_dimension_to_stern);
         }
-
     }
     return ret;
 }
