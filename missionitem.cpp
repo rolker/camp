@@ -75,6 +75,8 @@ void MissionItem::readChildren(const QJsonArray& json)
         QJsonObject object = json[childIndex].toObject();
         if(object["type"] == "BackgroundRaster")
             project->openBackground(object["filename"].toString());
+        if(object["type"] == "VectorDataset")
+            project->openGeometry(object["filename"].toString());
         MissionItem *item = nullptr;
         if(object["type"] == "Waypoint")
             item = createMissionItem<Waypoint>("waypoint");

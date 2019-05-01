@@ -9,6 +9,7 @@
 #include <ogrsf_frmts.h>
 #include <QDebug>
 #include <QStandardItem>
+#include <QJsonObject>
 
 VectorDataset::VectorDataset(MissionItem* parent):Group(parent)
 {
@@ -138,7 +139,8 @@ void VectorDataset::open(const QString& fname)
 
 void VectorDataset::write(QJsonObject& json) const
 {
-
+    json["type"] = "VectorDataset";
+    json["filename"] = m_filename;
 }
 
 void VectorDataset::read(const QJsonObject& json)
