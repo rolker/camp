@@ -9,7 +9,7 @@
 #include "autonomousvehicleproject.h"
 
 SurveyPattern::SurveyPattern(MissionItem *parent):GeoGraphicsMissionItem(parent),
-    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_alignment(Alignment::start), m_arcCount(0),m_spacingLocation(nullptr),m_maxSegmentLength(0.0),m_internalUpdateFlag(false)
+    m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_alignment(Alignment::start),m_spacingLocation(nullptr),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
 }
@@ -90,18 +90,6 @@ void SurveyPattern::calculateFromWaypoints()
 }
 
 
-void SurveyPattern::setArcCount(int ac)
-{
-    m_arcCount = ac;
-    update();
-}
-
-void SurveyPattern::setMaxSegmentLength(double maxLength)
-{
-    m_maxSegmentLength = maxLength;
-    update();
-}
-
 void SurveyPattern::write(QJsonObject &json) const
 {
     json["type"] = "SurveyPattern";
@@ -162,10 +150,7 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
             delete temp_wp;
         }
         navItem["nav"] = pathNavArray;
-        if(m_arcCount>0 && i%2 == 1)
-            navItem["type"] = "turn";
-        else
-            navItem["type"] = "survey_line";
+        navItem["type"] = "survey_line";
         navArray.append(navItem);
     }    
 }
@@ -219,16 +204,6 @@ double SurveyPattern::lineLength() const
 double SurveyPattern::totalWidth() const
 {
     return m_totalWidth;
-}
-
-int SurveyPattern::arcCount() const
-{
-    return m_arcCount;
-}
-
-double SurveyPattern::maxSegmentLength() const
-{
-    return m_maxSegmentLength;
 }
 
 Waypoint * SurveyPattern::startLocationWaypoint() const
@@ -448,84 +423,39 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
     if(m_startLocation && m_endLocation)
     {
 
-        qreal ab_distance = m_startLocation->location().distanceTo(m_endLocation->location());
-        qreal ab_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
+        qreal diagonal_distance = m_startLocation->location().distanceTo(m_endLocation->location());
+        qreal diagonal_angle = m_startLocation->location().azimuthTo(m_endLocation->location());
 
-        qreal ac_distance = 1.0;
-        qreal ac_angle = 90.0;
+        qreal line_spacing = 1.0;
+        qreal spacing_angle = 90.0;
         if(m_spacingLocation)
         {
-            ac_distance = m_startLocation->location().distanceTo(m_spacingLocation->location());
-            ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
+            line_spacing = m_startLocation->location().distanceTo(m_spacingLocation->location());
+            spacing_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
         }
         else
-            ac_distance = ab_distance/10.0;
-        qreal leg_heading = ac_angle-90.0;
-        qreal leg_length = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));
-        //qDebug() << "getPath: leg_length: " << leg_length << " leg_heading: " << leg_heading;
-        qreal surveyWidth = ab_distance*qSin(qDegreesToRadians(ab_angle-leg_heading));
+            line_spacing = diagonal_distance/10.0;
 
-        int line_count = qCeil(surveyWidth/ac_distance);
+        qreal leg_heading = spacing_angle-90.0;
+        qreal leg_length = diagonal_distance*qCos(qDegreesToRadians(diagonal_angle-leg_heading));
+
+        qreal surveyWidth = diagonal_distance*qSin(qDegreesToRadians(diagonal_angle-leg_heading));
+
+        int line_count = qCeil(surveyWidth/line_spacing);
         
-        qreal residual_distance = surveyWidth - ((line_count-1)*ac_distance);
+        qreal residual_distance = surveyWidth - ((line_count-1)*line_spacing);
 
         QList<QGeoCoordinate> line;
-        line.append(m_startLocation->location().atDistanceAndAzimuth(m_alignment*residual_distance/2.0,ac_angle));
-        QGeoCoordinate lastLocation = line.back();
+        line.append(m_startLocation->location().atDistanceAndAzimuth(m_alignment*residual_distance/2.0,spacing_angle));
+        line.append(line.back().atDistanceAndAzimuth(leg_length,leg_heading));
+        ret.append(line);
         
-        for (int i = 0; i < line_count; i++)
+        for (int i = 1; i < line_count; i++)
         {
-            int dir = i%2;
-            if(m_maxSegmentLength > 0.0 && fabs(leg_length) > m_maxSegmentLength)
-            {
-                int segCount = ceil(fabs(leg_length)/m_maxSegmentLength);
-                double segLength = leg_length/double(segCount);
-                for(int j = 0; j < segCount; j++)
-                {
-                    line.append(lastLocation.atDistanceAndAzimuth(segLength,leg_heading+dir*180));
-                    lastLocation = line.back();
-                }
-            }
-            else
-                line.append(lastLocation.atDistanceAndAzimuth(leg_length,leg_heading+dir*180));
-            ret.append(line);
             line = QList<QGeoCoordinate>();
-            if (i < line_count-1)
-            {
-                lastLocation = ret.back().back();
-                if (m_arcCount > 1)
-                {
-                    QList<QGeoCoordinate> arc;
-                    qreal deltaAngle = 180.0/float(m_arcCount);
-                    qreal r = ac_distance/2.0;
-                    qreal h = r*cos(deltaAngle*M_PI/360.0);
-                    qreal d = 2.0*h*tan(deltaAngle*M_PI/360.0);
-                    qreal currentAngle = leg_heading+dir*180;
-                    if(leg_length < 0.0)
-                    {
-                        currentAngle += 180.0;
-                        deltaAngle = -deltaAngle;
-                    }
-                    arc.append(lastLocation.atDistanceAndAzimuth(d,currentAngle));
-                    if(dir)
-                        currentAngle += deltaAngle/2.0;
-                    else
-                        currentAngle -= deltaAngle/2.0;
-                    for(int j = 0; j < m_arcCount; j++)
-                    {
-                        if(dir)
-                            currentAngle -= deltaAngle;
-                        else
-                            currentAngle += deltaAngle;
-                        arc.append(arc.back().atDistanceAndAzimuth(d,currentAngle));
-                    }
-                    ret.append(arc);
-                }
-                line.append(lastLocation.atDistanceAndAzimuth(ac_distance,ac_angle));
-                lastLocation = lastLocation.atDistanceAndAzimuth(ac_distance,ac_angle);
-            }
-            else
-                lastLocation = ret.back().back();
+            line.append(ret.back().back().atDistanceAndAzimuth(line_spacing,spacing_angle));
+            line.append(ret.back().front().atDistanceAndAzimuth(line_spacing,spacing_angle));
+            ret.append(line);
         }
     }
     return ret;

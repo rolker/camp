@@ -318,7 +318,6 @@ void AutonomousVehicleProject::exportHypack(const QModelIndex &index)
             QFile outfile(fname);
             if(outfile.open(QFile::WriteOnly))
             {
-                int arcCount = sp->arcCount();
                 auto lines = sp->getLines();
                 QTextStream outstream(&outfile);
                 outstream.setRealNumberPrecision(8);

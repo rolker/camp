@@ -31,6 +31,14 @@ if(AMP_USE_ROS)
     add_definitions(-DAMP_ROS)
 endif()
 
+find_package(Doxygen)
+
+if (DOXYGEN_FOUND)
+    doxygen_add_docs(
+        docs
+        ${PROJECT_SOURCE_DIR}
+    )
+endif()
 
 set(SOURCES
     main.cpp

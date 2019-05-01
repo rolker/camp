@@ -26,82 +26,6 @@
    <string>Form</string>
   </property>
   <layout class="QFormLayout" name="formLayout">
-   <item row="2" column="0">
-    <widget class="QLabel" name="lineSpacingLabel">
-     <property name="text">
-      <string>Line spacing</string>
-     </property>
-    </widget>
-   </item>
-   <item row="2" column="1">
-    <widget class="QLineEdit" name="lineSpacingEdit"/>
-   </item>
-   <item row="3" column="0">
-    <widget class="QLabel" name="firstLineHeadingLabel">
-     <property name="text">
-      <string>First line heading</string>
-     </property>
-    </widget>
-   </item>
-   <item row="3" column="1">
-    <widget class="QLineEdit" name="headingEdit"/>
-   </item>
-   <item row="8" column="1">
-    <widget class="WaypointDetails" name="startPoint" native="true">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>68</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="9" column="1">
-    <widget class="WaypointDetails" name="oppositePoint" native="true">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>68</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item row="5" column="0">
-    <widget class="QLabel" name="turnArcCountLabel">
-     <property name="text">
-      <string>Turn arc point count</string>
-     </property>
-    </widget>
-   </item>
-   <item row="5" column="1">
-    <widget class="QLineEdit" name="turnArcPointCountLineEdit"/>
-   </item>
-   <item row="9" column="0">
-    <widget class="QLabel" name="oppositePointLabel">
-     <property name="text">
-      <string>Opposite Point</string>
-     </property>
-    </widget>
-   </item>
-   <item row="8" column="0">
-    <widget class="QLabel" name="startPointLabel">
-     <property name="text">
-      <string>Start Point</string>
-     </property>
-    </widget>
-   </item>
    <item row="0" column="0">
     <widget class="QLabel" name="lineLengthLabel">
      <property name="text">
@@ -122,15 +46,25 @@
    <item row="1" column="1">
     <widget class="QLineEdit" name="totalWidthLineEdit"/>
    </item>
-   <item row="6" column="0">
-    <widget class="QLabel" name="maxSegemtntLengthLabel">
+   <item row="2" column="0">
+    <widget class="QLabel" name="lineSpacingLabel">
      <property name="text">
-      <string>Max Segment Length</string>
+      <string>Line spacing</string>
      </property>
     </widget>
    </item>
-   <item row="6" column="1">
-    <widget class="QLineEdit" name="maxSegmentLengthLineEdit"/>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="lineSpacingEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="firstLineHeadingLabel">
+     <property name="text">
+      <string>First line heading</string>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QLineEdit" name="headingEdit"/>
    </item>
    <item row="4" column="0">
     <widget class="QLabel" name="alignmentLabel">
@@ -141,6 +75,52 @@
    </item>
    <item row="4" column="1">
     <widget class="QComboBox" name="alignmentComboBox"/>
+   </item>
+   <item row="6" column="0">
+    <widget class="QLabel" name="startPointLabel">
+     <property name="text">
+      <string>Start Point</string>
+     </property>
+    </widget>
+   </item>
+   <item row="6" column="1">
+    <widget class="WaypointDetails" name="startPoint" native="true">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>68</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="0">
+    <widget class="QLabel" name="oppositePointLabel">
+     <property name="text">
+      <string>Opposite Point</string>
+     </property>
+    </widget>
+   </item>
+   <item row="7" column="1">
+    <widget class="WaypointDetails" name="oppositePoint" native="true">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>68</height>
+      </size>
+     </property>
+    </widget>
    </item>
   </layout>
  </widget>

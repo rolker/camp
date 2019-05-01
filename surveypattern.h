@@ -51,12 +51,8 @@ public:
     void setAlignment(Alignment alignment);
     void setLineLength(double lineLength);
     void setTotalWidth(double totalWidth);
-    void setArcCount(int ac);
-    void setMaxSegmentLength(double maxLength);
 
-    //QList<QGeoCoordinate> getPath() const;
     QList<QList<QGeoCoordinate> > getLines() const override;
-    
     
 signals:
     void surveyPatternUpdated();
@@ -81,8 +77,6 @@ private:
     double m_spacing;
     double m_direction;
     Alignment m_alignment;
-    int m_arcCount;
-    double m_maxSegmentLength;
 
     Waypoint * m_spacingLocation;
 

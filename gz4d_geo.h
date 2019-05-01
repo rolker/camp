@@ -13,6 +13,8 @@
 #include <utility>
 #include <string>
 #include <limits>
+#include <boost/math/quaternion.hpp>
+#include <memory>
 
 namespace gz4d
 {
@@ -57,7 +59,7 @@ namespace gz4d
 //     }
     
     template<typename T> inline T Nan(){return std::numeric_limits<T>::quiet_NaN();}
-    template<typename T> inline bool IsNan(T value){return (boost::math::isnan)(value);}
+    template<typename T> inline bool IsNan(T value){return (std::isnan)(value);}
 
     /// Used by std::shared_ptr's to hold pointers it shouldn't auto-delete.
     struct NullDeleter
@@ -1146,6 +1148,148 @@ namespace gz4d
                     ret[LatLon::Longitude] = Degrees(atan2(p[1],p[0]));
                     return ret;
                 }
+                
+                /// Calculates the postion P2 from azimuth and distance from P1 on the specified ellipsoid.
+                /// @param p1 starting point
+                /// @param azimuth clockwise angle in degrees relative to north.
+                /// @param distance distance in meters.
+                template <typename ET> static Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > direct(Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p1, double azimuth, double distance)
+                {
+                    double phi1 = Radians(p1[0]);
+                    double alpha1 = Radians(azimuth);
+                    
+                    double epsilon = 1e-12;
+                    
+                    //U is 'reduced latitude'
+                    double tanU1 = (1.0-S::f())*tan(phi1);
+                    double cosU1 = 1/sqrt(1+tanU1*tanU1);
+                    double sinU1 = tanU1*cosU1;
+
+                    double cosAlpha1 = cos(alpha1);
+                    double sinAlpha1 = sin(alpha1);
+
+                    double sigma1 = atan2(tanU1, cosAlpha1); // angular distance on sphere from equator to P1 along geodesic
+                    double sinAlpha = cosU1*sinAlpha1;
+                    double cos2Alpha = 1.0-sinAlpha*sinAlpha;
+                    
+                    double a = S::a();
+                    double b = S::b();
+                    double f = S::f();
+
+                    double u2 = cos2Alpha*(a*a-b*b)/(b*b);
+
+                    double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
+                    double A = (1.0+k1*k1/4.0)/(1.0-k1);
+                    double B = k1*(1.0-3.0*k1*k1/8.0);
+
+                    double sigma = distance/(b*A);
+                    double last_sigma;
+                    double cos2Sigmam;
+                    while (true)
+                    {
+                        cos2Sigmam = cos(2.0*sigma1+sigma);
+                        double sinSigma = sin(sigma);
+                        double cosSigma = cos(sigma);
+        
+                        double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
+                        last_sigma = sigma;
+                        sigma = (distance/(b*A))+deltaSigma;
+                        if (fabs(last_sigma-sigma) <= epsilon)
+                            break;
+                    }
+
+                    cos2Sigmam = cos(2.0*sigma1+sigma);
+            
+                    double phi2 = atan2(sinU1*cos(sigma)+cosU1*sin(sigma)*cosAlpha1,(1-f)*sqrt(sinAlpha*sinAlpha+pow(sinU1*sin(sigma)-cosU1*cos(sigma)*cosAlpha1,2)));
+                    double l = atan2(sin(sigma)*sinAlpha1,cosU1*cos(sigma)-sinU1*sin(sigma)*cosAlpha1);
+                    double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
+                    double L = l-(1.0-C)*f*sinAlpha*(sigma+C*sin(sigma)*(cos2Sigmam+C*cos(sigma)*(-1+2.0*cos2Sigmam*cos2Sigmam)));
+
+                    double lat2 = Degrees(phi2);
+                    double lon2 = Degrees(Radians(p1[1]) + L);
+                    
+                    Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > ret;
+                    ret[0] = lat2;
+                    ret[1] = lon2;
+                    ret[2] = p1[2];
+                    return ret;
+                }
+                
+                /// Calculates the azimuth and distance from P1 to P2 on the WGS84 ellipsoid.
+                /// @param p1: Position P1 in degrees
+                /// @param p2: Position P2 in degrees
+                /// @return: azimuth in degrees, distance in meters
+                template <typename ET> static std::pair<double,double> inverse(Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p1,Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p2)
+                {
+                    if(p1 == p2)
+                        return std::pair<double,double>(0.0,0.0);
+                    
+                    double a = S::a();
+                    double b = S::b();
+                    double f = S::f();
+                    
+                    double epsilon = 1e-12;   
+                    
+                    double phi1 = Radians(p1[0]);
+                    double phi2 = Radians(p2[0]);
+                    
+                    double L = Radians(p2[1]-p1[1]);
+
+                    double U1 = atan((1.0-f)*tan(phi1));
+                    double U2 = atan((1.0-f)*tan(phi2));
+                    double cosU1 = cos(U1);
+                    double cosU2 = cos(U2);
+                    double sinU1 = sin(U1);
+                    double sinU2 = sin(U2);
+    
+                    double l = L;
+                    double last_l = Nan<double>();
+                    double cosl;
+                    double sinl;
+                    double sinSigma;
+                    double cosSigma;
+                    double sigma;
+                    double cos2Alpha;
+                    double cos2Sigmam;
+
+                    while (true)
+                    {
+                        cosl = cos(l);
+                        sinl = sin(l);
+    
+                        sinSigma = sqrt((pow((cosU2*sinl),2))+pow((cosU1*sinU2-sinU1*cosU2*cosl),2));
+                        cosSigma = sinU1*sinU2+cosU1*cosU2*cosl;
+                        sigma = atan2(sinSigma,cosSigma);
+                        double sinAlpha = (cosU1*cosU2*sinl)/sinSigma;
+
+                        cos2Alpha = 1-sinAlpha*sinAlpha;
+                        if (cos2Alpha == 0)
+                            cos2Sigmam = 0;
+                        else
+                            cos2Sigmam = cosSigma-((2.0*sinU1*sinU2)/cos2Alpha);
+
+                        if (!IsNan(last_l) && fabs(last_l - l) <= epsilon)
+                            break;
+                        last_l = l;
+            
+                        double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
+                        l = L+(1.0-C)*f*sinAlpha*(sigma+C*sinSigma*(cos2Sigmam+C*cosSigma*(-1.0+2.0*pow(cos2Sigmam,2))));
+                    }
+
+                    double u2 = cos2Alpha*(a*a-b*b)/(b*b);
+                    double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
+                    double A = (1.0+k1*k1/4.0)/(1.0-k1);
+                    double B = k1*(1.0-3.0*k1*k1/8.0);
+                    double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
+                    double s = b*A*(sigma-deltaSigma);
+                    double alpha1 = atan2(cosU2*sinl,cosU1*sinU2-sinU1*cosU2*cosl);
+
+                    double azimuth = Degrees(alpha1);
+                    if (azimuth < 0.0)
+                        azimuth += 360.0;
+
+                    return std::pair<double,double>(azimuth,s);
+                }
         };
 
         namespace WGS84
@@ -1154,6 +1298,7 @@ namespace gz4d
             {
                 static double a() {return 6378137.0;}
                 static double b() {return 6356752.3142;}
+                static double f() {return 1.0/298.257223563;}
                 static double w() {return 7292115e-11;}
                 static double e2() { return 1.0-( 6356752.3142* 6356752.3142)/(6378137.0*6378137.0);}
             };
@@ -1237,12 +1382,25 @@ namespace gz4d
                     return Point<double, ReferenceFrame<ECEF<>, ET> >(Vector<double,3>(t,0));
                 }
 
+                Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > toLatLong(gz4d::Point<double> const &p) const
+                {
+                    auto ecef = toECEF(p);
+                    Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > ret(ecef);
+                    return ret;
+                }
+
                 gz4d::Point<double> toLocal(Point<double, ReferenceFrame<ECEF<>, ET> > const &p) const
                 {
                     Vector<double,4> t(p,0);
                     t[3] = 1.0;
                     t = transform*t;
                     return Vector<double,3>(t,0);
+                }
+                
+                gz4d::Point<double> toLocal(Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > const &p) const
+                {
+                    Point<double,ReferenceFrame<ECEF<>, ET> > p_ecef(p);
+                    return toLocal(p_ecef);
                 }
 
                 std::vector<gz4d::Point<double> > toLocal(std::vector<Point<double, ReferenceFrame<ECEF<>, ET> > > const &pv) const
@@ -1261,6 +1419,140 @@ namespace gz4d
                 }
         };
     }
+    
+    typedef geo::Point<double,gz4d::geo::WGS84::LatLon> GeoPointLatLong;
+    typedef geo::Point<double, gz4d::geo::WGS84::ECEF> GeoPointECEF;
+    typedef geo::LocalENU<> LocalENU;
+    
+    template <typename T, std::size_t N> T norm2(Vector<T, N> const &v)
+    {
+        T ret = v[0]*v[0];
+        for(std::size_t i = 1; i < N; ++i)
+            ret += v[i]*v[i];
+        return ret;
+    }
+
+    template <typename T, std::size_t N> T norm(Vector<T, N> const &v)
+    {
+        return sqrt(norm2(v));
+    }
+
+    template <typename T, std::size_t N> Vector<T, N> normalize(Vector<T, N> const &v)
+    {
+        return v/norm(v);
+    }
+
+    template <typename T> Vector<T, 3> cross(Vector<T, 3> const &a, Vector<T, 3> const &b)
+    {
+        return Vector<T, 3>(a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]);
+    }
+
+    template <typename T> Vector<T, 3> cross(Vector<T, 2> const &a, Vector<T, 2> const &b)
+    {
+        return Vector<T,3>(0,0,(a[0]*b[1])-(a[1]*b[0]));
+    }  
+    
+    template<typename T>
+    class Rotation: public boost::math::quaternion<T>
+    {
+        public:
+            Rotation()
+            :boost::math::quaternion<T>(1)
+            {}
+
+            template<typename T2> Rotation(Rotation<T2> const &r)
+            :boost::math::quaternion<T>(r)
+            {}
+
+            template<typename T2> Rotation(boost::math::quaternion<T2> const &q)
+            :boost::math::quaternion<T>(q)
+            {}
+
+            template<typename AT, typename RT> Rotation(Angle<AT,Degree,RT> angle, Point<T> const &axis)
+            {
+                Rotation<T>::Set(Angle<AT,Radian,RT>(angle),axis);
+            }
+
+            template<typename AT, typename RT> Rotation(Angle<AT,Radian,RT> angle, Point<T> const &axis)
+            {
+                Rotation<T>::Set(angle ,axis);
+            }
+            
+            
+            template<typename T2> Rotation(Point<T2> const &v1, Point<T2> const &v2)
+            :boost::math::quaternion<T>(1)
+            {
+                T2 n = norm(v1)*norm(v2);
+                if(n > 0.0)
+                {
+                    Angle<T2,Radian> angle  = acos(v1.dot(v2)/n);
+                    Point<T2> axis = cross(v1,v2);
+                    Rotation<T>::Set(angle,axis);
+                }
+            }
+
+
+            Angle<T,Radian,ZeroCenteredPeriod> angle() const
+            {
+                return acos(boost::math::quaternion<T>::real())*2.0;
+            }
+
+            /// Sets rotation using angle around axis
+            /// angle is in radians
+            template<typename T2, typename RT> void Set(Angle<T2,Radian,RT> angle, Point<T2> const &axis)
+            {
+                if(norm2(axis) > 0.0)
+                {
+                    Point<T2> a = normalize(axis) * sin(angle/2.0);
+                    *this = boost::math::quaternion<T>(cos(angle/2.0),a[0],a[1],a[2]);
+                }
+            }
+
+            Point<T> operator()(Point<T> const &vector) const
+            {
+                boost::math::quaternion<T> v(0.0,vector[0],vector[1],vector[2]);
+                v = (*this) * v * conj(*this);
+                return Point<T>(v.R_component_2(),v.R_component_3(),v.R_component_4());
+            }
+
+            Rotation<T> Inverse() const
+            {
+                return conj(*this);
+            }
+
+            Matrix<T,4,4> GetMatrix() const
+            {
+                Matrix<T,4,4> ret = Matrix<T,4,4>::Identity();
+
+                T a = this->R_component_1();
+                T b = this->R_component_2();
+                T c = this->R_component_3();
+                T d = this->R_component_4();
+                T a2 = a*a;
+                T b2 = b*b;
+                T c2 = c*c;
+                T d2 = d*d;
+
+                ret(0,0) = a2 + b2 - c2 - d2;
+                ret(1,0) = 2.0*(a*d + b*c);
+                ret(2,0) = 2.0*(b*d - a*c);
+
+                ret(0,1) = 2.0*(b*c - a*d);
+                ret(1,1) = a2 - b2 + c2 - d2;
+                ret(2,1) = 2.0*(a*b + c*d);
+
+                ret(0,2) = 2.0*(a*c + b*d);
+                ret(1,2) = 2.0*(c*d - a*b);
+                ret(2,2) = a2 - b2 - c2 + d2;
+                return ret;
+            }
+
+            Matrix<T,4,4> GetInverseMatrix() const
+            {
+                return Inverse().GetMatrix();
+            }
+    };
+    
 }
 
 template <typename T, std::size_t N> gz4d::Vector<T,N> operator+(T l, gz4d::Vector<T,N> const &r)
