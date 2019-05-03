@@ -7,6 +7,13 @@
 #include <QDebug>
 #include "platform.h"
 #include "autonomousvehicleproject.h"
+#include "surveyarea.h"
+
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
+
+namespace bg = boost::geometry;
 
 SurveyPattern::SurveyPattern(MissionItem *parent):GeoGraphicsMissionItem(parent),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_alignment(Alignment::start),m_spacingLocation(nullptr),m_internalUpdateFlag(false)
@@ -456,6 +463,48 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
             line.append(ret.back().back().atDistanceAndAzimuth(line_spacing,spacing_angle));
             line.append(ret.back().front().atDistanceAndAzimuth(line_spacing,spacing_angle));
             ret.append(line);
+        }
+        
+        // Check if we are a child of a SurveyArea.
+        SurveyArea * surveyAreaParent = qobject_cast<SurveyArea*>(parent());
+        if(surveyAreaParent)
+        {
+            typedef bg::model::d2::point_xy<double> BPoint;
+            typedef bg::model::multi_point<BPoint> BMultiPoint;
+            typedef bg::model::linestring<BPoint> BLineString;
+            typedef bg::model::polygon<BPoint> BPolygon;
+            typedef bg::model::multi_linestring<BLineString> BMultiLineString;
+
+            BPolygon area_poly;
+            
+            for(auto wp: surveyAreaParent->waypoints())
+            {
+                BPoint p(wp->location().latitude(), wp->location().longitude());
+                area_poly.outer().push_back(p);
+            }
+            
+            QList<QList<QGeoCoordinate> > clipped_ret;
+            for(auto line: ret)
+            {
+                BPoint p1(line.front().latitude(),line.front().longitude());
+                BPoint p2(line.back().latitude(),line.back().longitude());
+                BLineString bline;
+                bline.push_back(p1);
+                bline.push_back(p2);
+                
+                BMultiLineString mls;
+                bg::intersection(bline, area_poly, mls);
+                
+                for(auto l: mls)
+                {
+                    QList<QGeoCoordinate> clipped_line;
+                    for(auto p: l)
+                        clipped_line.push_back(QGeoCoordinate(p.x(), p.y()));
+                    clipped_ret.push_back(clipped_line);
+                }
+            }
+            
+            return clipped_ret;
         }
     }
     return ret;

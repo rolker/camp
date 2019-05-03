@@ -80,8 +80,8 @@ QList<Waypoint *> SurveyArea::waypoints() const
     for(auto child: children)
     {
         Waypoint *wp = qobject_cast<Waypoint*>(child);
-            if(wp)
-                ret.append(wp);
+        if(wp)
+            ret.append(wp);
     }
     return ret;
 }
@@ -127,5 +127,7 @@ void SurveyArea::updateProjectedPoints()
 
 bool SurveyArea::canAcceptChildType(const std::string& childType) const
 {
-    return childType == "Waypoint";
+    if (childType == "Waypoint") return true;
+    if (childType == "SurveyPattern") return true;
+    return false;
 }
