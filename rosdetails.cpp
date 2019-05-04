@@ -95,6 +95,42 @@ void ROSDetails::heartbeatDelay(double seconds)
     this->setPalette(pal);
 }
 
+void ROSDetails::updateHelmMode(QString const &helm_mode)
+{
+    if(helm_mode == "standby")
+    {
+        QPalette pal = ui->standbyPushButton->palette();
+        pal.setColor(QPalette::Button, Qt::green);
+        ui->standbyPushButton->setPalette(pal);
+        ui->standbyPushButton->setAutoFillBackground(true);
+        ui->autonomousPushButton->setPalette(this->style()->standardPalette());
+    } 
+    else if(helm_mode == "autonomous")
+    {
+        QPalette pal = ui->autonomousPushButton->palette();
+        pal.setColor(QPalette::Button, Qt::green);
+        ui->autonomousPushButton->setPalette(pal);
+        ui->autonomousPushButton->setAutoFillBackground(true);
+        ui->standbyPushButton->setPalette(this->style()->standardPalette());
+    }
+    else if(helm_mode == "manual")
+    {
+        QPalette pal = ui->standbyPushButton->palette();
+        pal.setColor(QPalette::Button, Qt::blue);
+        ui->standbyPushButton->setPalette(pal);
+        ui->standbyPushButton->setAutoFillBackground(true);
+        pal = ui->autonomousPushButton->palette();
+        pal.setColor(QPalette::Button, Qt::blue);
+        ui->autonomousPushButton->setPalette(pal);
+        ui->autonomousPushButton->setAutoFillBackground(true);
+    }
+    else
+    {
+        ui->standbyPushButton->setPalette(this->style()->standardPalette());
+        ui->autonomousPushButton->setPalette(this->style()->standardPalette());
+    }
+}
+
 void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_timestamp, double bearing, ros::Time const & bearing_timestamp)
 {
 #ifdef AMP_ROS

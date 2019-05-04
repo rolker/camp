@@ -581,16 +581,20 @@ void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
     ros::Time last_heartbeat_timestamp = message->header.stamp;
     
     QString status_string;
+    QString helm_mode;
     for(auto kv: message->values)
     {
         status_string += kv.key.c_str();
         status_string += ": ";
         status_string += kv.value.c_str();
         status_string += "\n";
+        if (kv.key == "helm_mode")
+            helm_mode = kv.value.c_str();
     }
     
     QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
     QMetaObject::invokeMethod(this,"updateHeartbeatTimes", Qt::QueuedConnection, Q_ARG(ros::Time const&, last_heartbeat_timestamp), Q_ARG(ros::Time const&, last_heartbeat_receive_time));
+    QMetaObject::invokeMethod(m_details,"updateHelmMode", Qt::QueuedConnection, Q_ARG(QString const&, helm_mode));
 }
 
 void ROSLink::updateHeartbeatTimes(const ros::Time& last_heartbeat_timestamp, const ros::Time& last_heartbeat_receive_time)
