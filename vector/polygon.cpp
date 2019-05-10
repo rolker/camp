@@ -89,10 +89,10 @@ QPainterPath Polygon::shape() const
 
 void Polygon::updateProjectedPoints()
 {
-    for(auto p: m_exteriorRing)
+    for(auto& p: m_exteriorRing)
         p.pos = geoToPixel(p.location,autonomousVehicleProject());
-    for(auto ir: m_interiorRings)
-        for(auto p: ir)
+    for(auto& ir: m_interiorRings)
+        for(auto& p: ir)
             p.pos = geoToPixel(p.location,autonomousVehicleProject());
     updateBBox();
 }
