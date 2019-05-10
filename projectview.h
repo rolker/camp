@@ -34,6 +34,8 @@ public slots:
 #ifdef AMP_ROS
     void sendHover();
     void sendGoto();
+    void sendLookAt();
+    void sendLookAtASV();
 #endif
     void updateBackground(BackgroundRaster * bg);
 
