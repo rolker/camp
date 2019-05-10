@@ -260,6 +260,12 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 
         QAction *gotoAction = menu.addAction("Goto Here");
         connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGoto);
+        
+        QAction *lookAtAction = menu.addAction("Look Here");
+        connect(lookAtAction, &QAction::triggered, this, &ProjectView::sendLookAt);
+        
+        QAction *lookAtASVAction = menu.addAction("Look at ASV");
+        connect(lookAtASVAction, &QAction::triggered, this, &ProjectView::sendLookAtASV);
 #endif
 
         menu.exec(event->globalPos());
@@ -280,6 +286,18 @@ void ProjectView::sendGoto()
     m_project->rosLink()->sendGoto(m_contextMenuLocation);
     m_project->rosLink()->setHelmMode("autonomous");
 }
+
+void ProjectView::sendLookAt()
+{
+    m_project->rosLink()->sendLookAt(m_contextMenuLocation);
+}
+
+void ProjectView::sendLookAtASV()
+{
+    m_project->rosLink()->sendLookAtMode("follow_vehicle");
+}
+
+
 #endif
 
 void ProjectView::updateBackground(BackgroundRaster* bg)

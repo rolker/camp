@@ -7,6 +7,7 @@
 #include "sensor_msgs/NavSatFix.h"
 #include "marine_msgs/NavEulerStamped.h"
 #include "marine_msgs/Heartbeat.h"
+#include "marine_msgs/RadarSectorStamped.h"
 #include "ros/ros.h"
 #include "marine_msgs/Contact.h"
 #include "std_msgs/String.h"
@@ -126,6 +127,8 @@ public slots:
     void sendMissionPlan(QString const &plan);
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);
+    void sendLookAt(QGeoCoordinate const &targetLocation);
+    void sendLookAtMode(std::string const &mode);
     void sendGotoLine(int waypoint_index);
     void sendStartLine(int waypoint_index);
     void connectROS();
@@ -149,6 +152,7 @@ private:
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
     void geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizItem::ConstPtr& message);
+    void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr& message);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -173,8 +177,11 @@ private:
     ros::Subscriber m_coverage_subscriber;
     ros::Subscriber m_ping_subscriber;
     ros::Subscriber m_display_subscriber;
+    ros::Subscriber m_radar_subscriber;
     
     ros::Publisher m_send_command_publisher;
+    ros::Publisher m_look_at_publisher;
+    ros::Publisher m_look_at_mode_publisher;
     
     ros::AsyncSpinner *m_spinner;
     QGeoCoordinate m_location;

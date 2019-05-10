@@ -94,6 +94,18 @@ QList<QList<QGeoCoordinate> > SurveyArea::getLines() const
 
 void SurveyArea::write(QJsonObject& json) const
 {
+    MissionItem::write(json);
+    json["type"] = "SurveyArea";
+
+    QJsonArray childrenArray;
+    for(MissionItem *item: childMissionItems())
+    {
+        QJsonObject miObject;
+        item->write(miObject);
+        childrenArray.append(miObject);
+    }
+    
+    json["children"] = childrenArray;
 }
 
 void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const

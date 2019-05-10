@@ -15,7 +15,6 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 
 }
 
-
 ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
 {
     m_base_dimension_to_bow = 1.0;
@@ -62,8 +61,11 @@ void ROSLink::connectROS()
             m_coverage_subscriber = m_node->subscribe("/udp/coverage", 10, &ROSLink::coverageCallback, this);
             m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/udp/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
+            m_radar_subscriber = m_node->subscribe("/udp/radar", 10, &ROSLink::radarCallback, this);
             
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
+            m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("/base/camera/look_at",1);
+            m_look_at_mode_publisher = m_node->advertise<std_msgs::String>("/base/camera/look_at_mode",1);
             
             m_node->param("/base/dimension_to_bow",m_base_dimension_to_bow,m_base_dimension_to_bow);
             m_node->param("/base/dimension_to_stern",m_base_dimension_to_stern,m_base_dimension_to_stern);
@@ -349,8 +351,11 @@ QPainterPath ROSLink::aisShape() const
             auto bgr = autonomousVehicleProject()->getBackgroundRaster();
             if(bgr)
             {
+                bool forceTriangle = false;
+                if (last->dimension_to_bow + last->dimension_to_stern == 0 || last->dimension_to_port + last->dimension_to_stbd == 0)
+                    forceTriangle = true;
                 qreal pixel_size = bgr->scaledPixelSize();
-                if(pixel_size > 1)
+                if(pixel_size > 1 || forceTriangle)
                     drawTriangle(ret,last->location,last->heading,pixel_size);
                 else
                     drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
@@ -888,6 +893,21 @@ void ROSLink::sendCommand(const std::string& command)
     m_send_command_publisher.publish(cmd);
 }
 
+void ROSLink::sendLookAt(QGeoCoordinate const &targetLocation)
+{
+    geographic_msgs::GeoPoint gp;
+    gp.latitude = targetLocation.latitude();
+    gp.longitude = targetLocation.longitude();
+    m_look_at_publisher.publish(gp);
+}
+
+void ROSLink::sendLookAtMode(std::string const &mode)
+{
+    std_msgs::String mode_string;
+    mode_string.data = mode;
+    m_look_at_mode_publisher.publish(mode_string);
+}
+
 AutonomousVehicleProject * ROSLink::autonomousVehicleProject() const
 {
     return qobject_cast<AutonomousVehicleProject*>(parent());
@@ -1017,6 +1037,12 @@ void ROSLink::updateDisplayItem(geoviz::Item *item)
     m_display_items[item->id] = std::shared_ptr<geoviz::Item>(item);
     update();   
 }
+
+void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr& message)
+{
+    
+}
+
 
 void ROSLink::pingCallback(const sensor_msgs::PointCloud::ConstPtr& message)
 {
