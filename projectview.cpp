@@ -260,6 +260,13 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 
         QAction *gotoAction = menu.addAction("Goto Here");
         connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGoto);
+
+        menu.addSeparator();
+        menu.addAction("(Above moves boat)");
+        menu.addSeparator();
+        menu.addAction("(Below moves camera)");
+        menu.addSeparator();
+        
         
         QAction *lookAtAction = menu.addAction("Look Here");
         connect(lookAtAction, &QAction::triggered, this, &ProjectView::sendLookAt);
