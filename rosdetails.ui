@@ -66,7 +66,7 @@
      <property name="minimumSize">
       <size>
        <width>0</width>
-       <height>175</height>
+       <height>165</height>
       </size>
      </property>
     </widget>
@@ -107,6 +107,13 @@
     <widget class="QLineEdit" name="rangeBearingLineEdit">
      <property name="readOnly">
       <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="timeLatencyLabel">
+     <property name="text">
+      <string/>
      </property>
     </widget>
    </item>

@@ -617,11 +617,14 @@ void ROSLink::watchdogUpdate()
         ros::Duration diff = now-m_last_heartbeat_timestamp;
         //std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
 
-        m_details->heartbeatDelay(diff.toSec());
+        m_details->heartbeatDelay(diff.toSec(), m_last_heartbeat_timestamp, m_last_heartbeat_receive_time);
         m_details->rangeAndBearingUpdate(m_range,m_range_timestamp,m_bearing,m_bearing_timestamp);
     }
     else
-        m_details->heartbeatDelay(1000.0);
+    {
+        ros::Time uninit_time;
+        m_details->heartbeatDelay(1000.0, uninit_time, uninit_time);
+    }
 }
 
 

@@ -26,7 +26,7 @@ public:
     void setROSLink(ROSLink *rosLink);
     
 public slots:
-    void heartbeatDelay(double seconds);
+    void heartbeatDelay(double seconds, ros::Time const & last_heartbeat_timestamp, ros::Time const & last_heartbeat_receive_time);
     void rangeAndBearingUpdate(double range, ros::Time const &range_timestamp, double bearing, ros::Time const &bearing_timestamp);
     void sogUpdate(qreal sog, qreal sog_avg);
     void updateHelmMode(QString const &helm_mode);

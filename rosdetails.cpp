@@ -82,7 +82,7 @@ void ROSDetails::on_startLinePushButton_clicked(bool checked)
     m_rosLink->sendStartLine(ui->lineNumberSpinBox->value());
 }
 
-void ROSDetails::heartbeatDelay(double seconds)
+void ROSDetails::heartbeatDelay(double seconds, ros::Time const & last_heartbeat_timestamp, ros::Time const & last_heartbeat_receive_time)
 {
     QPalette pal = palette();
     if(seconds < 2.0)
@@ -93,6 +93,15 @@ void ROSDetails::heartbeatDelay(double seconds)
         pal.setColor(QPalette::Background, Qt::red);
     this->setAutoFillBackground(true);
     this->setPalette(pal);
+
+    if(last_heartbeat_timestamp.isValid())
+    {
+        ros::Time now = ros::Time::now();
+        ros::Duration last_receive_duration = now-last_heartbeat_receive_time;
+        ros::Duration latency = last_heartbeat_receive_time - last_heartbeat_timestamp;
+        QString msg = "Last HB: " + QString::number(last_receive_duration.toSec()) + "s Latency: " + QString::number(latency.toSec()) +"s";
+        ui->timeLatencyLabel->setText(msg);
+    }
 }
 
 void ROSDetails::updateHelmMode(QString const &helm_mode)
