@@ -84,3 +84,4 @@ QString const &Georeferenced::projection() const
 {
     return m_projection;
 }
+

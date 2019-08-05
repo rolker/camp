@@ -9,13 +9,14 @@
 #include <QTimer>
 #include "gz4d_geo.h"
 #include "rosdetails.h"
+#include "boost/date_time/posix_time/posix_time.hpp"
 
 ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading(0.0)
 {
 
 }
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_radar_pixmap(1024,1024), m_radar_scale(1.0),m_range(0.0),m_bearing(0.0)
 {
     m_base_dimension_to_bow = 1.0;
     m_base_dimension_to_stern = 1.0;
@@ -33,6 +34,8 @@ ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphics
     
     qRegisterMetaType<QGeoCoordinate>();
     //connectROS();
+    
+    m_radar_pixmap.fill(Qt::transparent);
     
     m_watchdog_timer = new QTimer(this);
     connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
@@ -157,7 +160,24 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
         }
         painter->setBrush(Qt::NoBrush);
     }
-    
+
+    auto avp = autonomousVehicleProject();
+    if(avp)
+    {
+        auto bg = avp->getBackgroundRaster();
+        if(bg)
+        {
+            painter->save();
+            painter->translate(geoToPixel(m_location,avp));
+            double pixelSize = bg->pixelSize();
+            painter->scale(m_radar_scale/pixelSize,m_radar_scale/pixelSize);
+            painter->rotate(m_heading);
+            painter->translate(-512,-512);
+            painter->setOpacity(.5);
+            painter->drawPixmap(0,0,m_radar_pixmap);
+            painter->restore();
+        }
+    }
     
     p.setColor(Qt::darkBlue);
     p.setWidth(5);
@@ -218,6 +238,15 @@ QPainterPath ROSLink::shape() const
             ret.addPath(polygon.path);
         }
     }
+
+//     for(auto radar_sector: m_radar_sectors)
+//     {
+//         //ret.moveTo(radar_sector.second->origin.pos);
+//         //ret.addPixmap(radar_sector.second->sector);
+//         ret.addRect(radar_sector.second->origin.pos.x(),radar_sector.second->origin.pos.y(),radar_sector.second->sector.width(),radar_sector.second->sector.height());
+//     }
+    
+    ret.addRect(QRectF(geoToPixel(m_location,autonomousVehicleProject())+QPointF(-512,-512),QSizeF(1024,1024)));
     
     return ret;
 }
@@ -1043,9 +1072,65 @@ void ROSLink::updateDisplayItem(geoviz::Item *item)
 
 void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr& message)
 {
+    RadarSectorDisplay * sectorDisplay = new RadarSectorDisplay();
+    sectorDisplay->range = message->sector.scanlines[0].range;
     
+    double tan_half_beamwidth = tan(0.05*M_PI/180.0);
+    
+    for(auto scanline: message->sector.scanlines)
+    {
+        // a1 and a2 are the edges of the beam, assuming 0.1 degree beams
+        double a1 = (scanline.angle-0.05)*M_PI/180.0;
+        double a2 = (scanline.angle+0.05)*M_PI/180.0;
+        double cos_a1 = cos(a1);
+        double sin_a1 = sin(a1);
+        double cos_a2 = cos(a2);
+        double sin_a2 = sin(a2);
+
+        QPolygonF blankPoly;
+        blankPoly << QPointF(sin_a1*0,cos_a1*0);
+        blankPoly << QPointF(sin_a2*0,cos_a2*0);
+        blankPoly << QPointF(sin_a2*512,cos_a2*512);
+        blankPoly << QPointF(sin_a1*512,cos_a1*512);
+
+        sectorDisplay->paths[0].addPolygon(blankPoly);
+
+        
+        for(int i = 0; i < scanline.intensities.size(); i++)
+        {
+            if(scanline.intensities[i] > 0)
+            {
+                QPolygonF poly;
+                poly << QPointF(sin_a1*i,cos_a1*i);
+                poly << QPointF(sin_a2*i,cos_a2*i);
+                poly << QPointF(sin_a2*(i+1),cos_a2*(i+1));
+                poly << QPointF(sin_a1*(i+1),cos_a1*(i+1));
+                
+                sectorDisplay->paths[scanline.intensities[i]].addPolygon(poly);
+            }
+        }
+    }
+    
+    QMetaObject::invokeMethod(this,"updateRadarSector", Qt::QueuedConnection, Q_ARG(RadarSectorDisplay*, sectorDisplay));
 }
 
+void ROSLink::updateRadarSector(RadarSectorDisplay *sector)
+{
+    prepareGeometryChange();
+    QPainter painter(&m_radar_pixmap);
+    painter.translate(512,512);
+    painter.scale(1.0,-1.0);
+    painter.setCompositionMode(QPainter::CompositionMode_Source);
+    for(auto path: sector->paths)
+    {
+        QPen p;
+        p.setColor(QColor(0,255,0,path.first));
+        painter.setPen(p);
+        painter.drawPath(path.second);
+    }
+    m_radar_scale = sector->range/512.0;
+    update();     
+}
 
 void ROSLink::pingCallback(const sensor_msgs::PointCloud::ConstPtr& message)
 {

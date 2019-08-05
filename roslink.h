@@ -36,7 +36,9 @@ public:
     float dimension_to_stbd; 
     float dimension_to_port;
     float dimension_to_bow;
-    float dimension_to_stern; 
+    float dimension_to_stern;
+    float cog;
+    float sog;
 };
 
 namespace geoviz
@@ -72,6 +74,13 @@ namespace geoviz
     };
 }
 
+struct RadarSectorDisplay: public QObject
+{
+    Q_OBJECT
+public:
+    double range;
+    std::map<int,QPainterPath> paths;
+};
 
 class ROSLink : public QObject, public GeoGraphicsItem
 {
@@ -120,6 +129,7 @@ public slots:
     void updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage);
     void addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping);
     void updateDisplayItem(geoviz::Item *item);
+    void updateRadarSector(RadarSectorDisplay *sector);
 
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
@@ -178,6 +188,7 @@ private:
     ros::Subscriber m_ping_subscriber;
     ros::Subscriber m_display_subscriber;
     ros::Subscriber m_radar_subscriber;
+    ros::Subscriber m_clock_subscriber;
     
     ros::Publisher m_send_command_publisher;
     ros::Publisher m_look_at_publisher;
@@ -235,6 +246,9 @@ private:
     QList<QPointF> m_local_current_path;
     
     std::map<std::string,std::shared_ptr<geoviz::Item> > m_display_items;
+
+    QPixmap m_radar_pixmap;
+    double m_radar_scale;
 
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;

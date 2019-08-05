@@ -26,7 +26,7 @@ endif(CMAKE_COMPILER_IS_GNUCXX)
 option(AMP_USE_ROS "Build ROS components")
 
 if(AMP_USE_ROS)
-    find_package(catkin REQUIRED COMPONENTS roscpp marine_msgs geographic_visualization_msgs)
+    find_package(catkin REQUIRED COMPONENTS roscpp marine_msgs geographic_visualization_msgs rosgraph_msgs)
     include_directories(${catkin_INCLUDE_DIRS})
     add_definitions(-DAMP_ROS)
 endif()
