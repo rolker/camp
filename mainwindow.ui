@@ -167,8 +167,15 @@
     <addaction name="actionPlatform"/>
     <addaction name="actionBehavior"/>
    </widget>
+   <widget class="QMenu" name="menuSettings">
+    <property name="title">
+     <string>Setti&amp;ngs</string>
+    </property>
+    <addaction name="actionRadar"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
+   <addaction name="menuSettings"/>
   </widget>
   <widget class="QToolBar" name="mainToolBar">
    <attribute name="toolBarArea">
@@ -280,6 +287,17 @@
    </property>
    <property name="iconText">
     <string>B</string>
+   </property>
+  </action>
+  <action name="actionRadar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Radar</string>
    </property>
   </action>
  </widget>

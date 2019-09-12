@@ -242,6 +242,13 @@ void MainWindow::on_actionGroup_triggered()
     project->addGroup();
 }
 
+void MainWindow::on_actionRadar_triggered()
+{
+    std::cerr << "radar: " << ui->actionRadar->isChecked() << std::endl;
+    emit project->showRadar(ui->actionRadar->isChecked());
+}
+
+
 void MainWindow::onROSConnected(bool connected)
 {
     ui->rosDetails->setEnabled(connected);

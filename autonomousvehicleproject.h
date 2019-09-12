@@ -98,6 +98,7 @@ public:
 signals:
     void currentPlaformUpdated();
     void backgroundUpdated(BackgroundRaster *bg);
+    void showRadar(bool show);
 
 public slots:
 

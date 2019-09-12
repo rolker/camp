@@ -42,6 +42,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
 #ifdef AMP_ROS
     m_ROSLink =  new ROSLink(this);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,m_ROSLink ,&ROSLink::updateBackground);
+    connect(this,&AutonomousVehicleProject::showRadar,m_ROSLink, &ROSLink::showRadar);
 #endif
 }
 

@@ -80,6 +80,10 @@ struct RadarSectorDisplay: public QObject
 public:
     double range;
     std::map<int,QPainterPath> paths;
+    
+    double start_angle;
+    double heading;
+    LocationPosition location;
 };
 
 class ROSLink : public QObject, public GeoGraphicsItem
@@ -145,6 +149,7 @@ public slots:
     void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
     void watchdogUpdate();
     void updateSog(qreal sog);
+    void showRadar(bool show);
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
@@ -247,9 +252,15 @@ private:
     
     std::map<std::string,std::shared_ptr<geoviz::Item> > m_display_items;
 
+    std::map<double,std::shared_ptr<RadarSectorDisplay> > m_radar_sectors;
     QPixmap m_radar_pixmap;
     double m_radar_scale;
+    LocationPosition m_radar_location;
+    bool m_show_radar;
 
+    static int s_radar_image_size;
+    static int s_radar_half_image_size;
+    
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;
     

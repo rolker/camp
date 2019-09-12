@@ -23,6 +23,7 @@ public slots:
 
     void setCurrent(QModelIndex &index);
     void onROSConnected(bool connected);
+    
 
 private slots:
     void on_actionOpen_triggered();
@@ -39,6 +40,7 @@ private slots:
     void on_actionGroup_triggered();
     void on_actionImport_triggered();
     void on_actionBehavior_triggered();
+    void on_actionRadar_triggered();
 
 private:
     Ui::MainWindow *ui;
