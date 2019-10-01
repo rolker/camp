@@ -72,6 +72,11 @@ void ROSDetails::updateVehicleStatus(const QString& status)
     ui->vehicleStatusTextBrowser->setText(status);
 }
 
+void ROSDetails::updateMissionStatus(const QString& status)
+{
+    ui->missionStatusTextBrowser->setText(status);
+}
+
 void ROSDetails::on_gotoLinePushButton_clicked(bool checked)
 {
     m_rosLink->sendGotoLine(ui->lineNumberSpinBox->value());

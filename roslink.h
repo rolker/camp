@@ -137,10 +137,10 @@ public slots:
 
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
-    void sendWaypoints(QList<QGeoCoordinate> const &waypoints);
     void sendMissionPlan(QString const &plan);
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);
+    void sendNextItem();
     void sendLookAt(QGeoCoordinate const &targetLocation);
     void sendLookAtMode(std::string const &mode);
     void sendGotoLine(int waypoint_index);
@@ -159,6 +159,7 @@ private:
     void baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void contactCallback(const marine_msgs::Contact::ConstPtr& message);
     void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
+    void missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void posmvOrientationCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
@@ -184,6 +185,7 @@ private:
     ros::Subscriber m_base_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
     ros::Subscriber m_heartbeat_subscriber;
+    ros::Subscriber m_mission_status_subscriber;
     ros::Subscriber m_posmv_position;
     ros::Subscriber m_posmv_orientation;
     ros::Subscriber m_range_subscriber;

@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>420</width>
-    <height>534</height>
+    <height>475</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -66,7 +66,17 @@
      <property name="minimumSize">
       <size>
        <width>0</width>
-       <height>165</height>
+       <height>75</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextBrowser" name="missionStatusTextBrowser">
+     <property name="minimumSize">
+      <size>
+       <width>0</width>
+       <height>175</height>
       </size>
      </property>
     </widget>

@@ -40,6 +40,7 @@ private slots:
     void on_pingAndLogPushButton_clicked(bool checked);
 
     void updateVehicleStatus(QString const &status);
+    void updateMissionStatus(QString const &status);
     void on_gotoLinePushButton_clicked(bool checked);
     void on_startLinePushButton_clicked(bool checked);
     

@@ -373,20 +373,7 @@ void AutonomousVehicleProject::exportMissionPlan(const QModelIndex& index)
 
 void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 {
-     MissionItem *mi = itemFromIndex(index);
-//     QList<QGeoCoordinate> wps;
-//     auto lines = mi->getLines();
-//     for (auto l: lines)
-//         for (auto p: l)
-//             wps.append(p);
-// 
-// #ifdef AMP_ROS
-//     if(m_ROSLink)
-//     {
-//         m_ROSLink->sendWaypoints(wps);
-//     }
-// #endif
-    // mission_plan format
+    MissionItem *mi = itemFromIndex(index);
     QJsonDocument plan = generateMissionPlan(index);
     
 #ifdef AMP_ROS

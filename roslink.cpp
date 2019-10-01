@@ -59,6 +59,7 @@ void ROSLink::connectROS()
             m_base_heading_subscriber = m_node->subscribe("/base/orientation", 10, &ROSLink::baseHeadingCallback, this);
             m_ais_subscriber = m_node->subscribe("/udp/contact", 10, &ROSLink::contactCallback, this);
             m_heartbeat_subscriber = m_node->subscribe("/udp/heartbeat", 10, &ROSLink::heartbeatCallback, this);
+            m_mission_status_subscriber = m_node->subscribe("/udp/project11/mission_manager/status", 10, &ROSLink::missionStatusCallback, this);
             m_posmv_position = m_node->subscribe("/udp/posmv/position", 10, &ROSLink::posmvPositionCallback, this);
             m_posmv_orientation = m_node->subscribe("/udp/posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
             m_range_subscriber = m_node->subscribe("/range", 10, &ROSLink::rangeCallback, this);
@@ -647,6 +648,21 @@ void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
     QMetaObject::invokeMethod(m_details,"updateHelmMode", Qt::QueuedConnection, Q_ARG(QString const&, helm_mode));
 }
 
+void ROSLink::missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message)
+{
+    QString status_string;
+    for(auto kv: message->values)
+    {
+        status_string += kv.key.c_str();
+        status_string += ": ";
+        status_string += kv.value.c_str();
+        status_string += "\n";
+    }
+    
+    QMetaObject::invokeMethod(m_details,"updateMissionStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
+}
+
+
 void ROSLink::updateHeartbeatTimes(const ros::Time& last_heartbeat_timestamp, const ros::Time& last_heartbeat_receive_time)
 {
     m_last_heartbeat_timestamp = last_heartbeat_timestamp;
@@ -683,33 +699,6 @@ QGeoCoordinate ROSLink::rosMapToGeo(const QPointF& location) const
 }
 
 
-void ROSLink::sendWaypoints(const QList<QGeoCoordinate>& waypoints)
-{
-    qDebug() << "origin: " << m_origin;
-    gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> gr(m_origin.latitude(),m_origin.longitude(),m_origin.altitude());
-    qDebug() << "as gz4d::geo::Point: " << gr[0] << ", " << gr[1] << ", " << gr[2];
-    gz4d::geo::LocalENU<> geoReference(gr);    //geoReference = gz4d::geo::LocalENU<>(gr);
-
-    std::stringstream updates;
-    updates << "points = " << std::fixed;
-    for(auto wp: waypoints)
-    {
-        qDebug() << "wp: " << wp;
-        gz4d::geo::Point<double,gz4d::geo::WGS84::LatLon> ggp(wp.latitude(),wp.longitude(),0.0);
-        qDebug() << "ggp: " << ggp[0] << ", " << ggp[1] << ", " << ggp[2];
-        gz4d::geo::Point<double,gz4d::geo::WGS84::ECEF> ecef(ggp);
-        qDebug() << "ecef: " << ecef[0] << ", " << ecef[1] << ", " << ecef[2];
-        gz4d::Point<double> position = geoReference.toLocal(ecef);
-        updates << position[0] << ", " << position[1] << ":";
-    }
-    
-    sendCommand("moos_wpt_updates "+updates.str());
-//     std_msgs::String rosUpdates;
-//     rosUpdates.data = updates.str();
-//     if(m_node)
-//         m_wpt_updates_publisher.publish(rosUpdates);
-}
-
 void ROSLink::sendMissionPlan(const QString& plan)
 {
     //sendCommand("mission_plan "+plan.toStdString());
@@ -724,7 +713,7 @@ void ROSLink::sendMissionPlan(const QString& plan)
 void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 {
     std::stringstream updates;
-    updates << std::fixed << std::setprecision(7) << "hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
+    updates << std::fixed << std::setprecision(7) << "mission_manager override hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
         
     sendCommand(updates.str());
 }  
@@ -732,7 +721,15 @@ void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 void ROSLink::sendGoto(const QGeoCoordinate& gotoLocation)
 {
     std::stringstream updates;
-    updates << std::fixed << std::setprecision(7) << "goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
+    updates << std::fixed << std::setprecision(7) << "mission_manager override goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
+        
+    sendCommand(updates.str());
+}
+
+void ROSLink::sendNextItem()
+{
+    std::stringstream updates;
+    updates << "mission_manager next_task";
         
     sendCommand(updates.str());
 }
