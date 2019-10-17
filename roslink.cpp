@@ -840,7 +840,7 @@ void ROSLink::addAISContact(ROSAISContact *c)
     m_contacts[c->mmsi].push_back(c);
     while(!m_contacts[c->mmsi].empty() && (ros::Time::now() - m_contacts[c->mmsi].front()->timestamp) > ros::Duration(600))
         m_contacts[c->mmsi].pop_front();
-    while(m_contacts.size()>500)
+    while(m_contacts[c->mmsi].size()>100)
         m_contacts[c->mmsi].pop_front();
     update();
 }
