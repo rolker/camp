@@ -709,6 +709,20 @@ void ROSLink::sendMissionPlan(const QString& plan)
 //         m_mission_plan_publisher.publish(mp);
 }
 
+void ROSLink::appendMission(const QString& plan)
+{
+    sendCommand("mission_manager append_task mission_plan "+plan.toStdString());
+}
+
+void ROSLink::prependMission(const QString& plan)
+{
+    sendCommand("mission_manager prepend_task mission_plan "+plan.toStdString());
+}
+
+void ROSLink::updateMission(const QString& plan)
+{
+    sendCommand("mission_manager update_task mission_plan "+plan.toStdString());
+}
 
 void ROSLink::sendHover(const QGeoCoordinate& hoverLocation)
 {
@@ -825,6 +839,8 @@ void ROSLink::addAISContact(ROSAISContact *c)
     c->location_local = geoToPixel(c->location,autonomousVehicleProject());
     m_contacts[c->mmsi].push_back(c);
     while(!m_contacts[c->mmsi].empty() && (ros::Time::now() - m_contacts[c->mmsi].front()->timestamp) > ros::Duration(600))
+        m_contacts[c->mmsi].pop_front();
+    while(m_contacts.size()>500)
         m_contacts[c->mmsi].pop_front();
     update();
 }

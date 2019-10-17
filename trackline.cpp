@@ -128,6 +128,7 @@ QList<QList<QGeoCoordinate> > TrackLine::getLines() const
 
 void TrackLine::write(QJsonObject &json) const
 {
+    MissionItem::write(json);
     json["type"] = "TrackLine";
     QJsonArray wpArray;
     auto children = childItems();

@@ -49,6 +49,9 @@ private:
     void exportHypack() const;
     void exportMissionPlan() const;
     void sendToROS() const;
+    void appendMission() const;
+    void prependMission() const;
+    void updateMission() const;
 };
 
 #endif // MAINWINDOW_H

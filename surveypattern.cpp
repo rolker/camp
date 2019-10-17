@@ -99,6 +99,7 @@ void SurveyPattern::calculateFromWaypoints()
 
 void SurveyPattern::write(QJsonObject &json) const
 {
+    MissionItem::write(json);
     json["type"] = "SurveyPattern";
     if(m_startLocation)
     {
@@ -126,6 +127,24 @@ void SurveyPattern::write(QJsonObject &json) const
             json["alignment"] = "finish";
             break;
     }
+    QJsonArray tracklineArray;
+    auto lines = getLines();
+    for (auto line: lines){
+        QJsonObject tracklineObject;
+        tracklineObject["type"] = "TrackLine";
+        QJsonArray wpArray;
+        for (auto wp: line)
+        {
+            QJsonObject wpObject;
+            wpObject["type"] = "Waypoint";
+            wpObject["latitude"] = wp.latitude();
+            wpObject["longitude"] = wp.longitude();
+            wpArray.append(wpObject);
+        }
+        tracklineObject["waypoints"] = wpArray;
+        tracklineArray.append(tracklineObject);
+    }
+    json["children"] = tracklineArray;
 }
 
 void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const

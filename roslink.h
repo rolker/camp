@@ -137,7 +137,12 @@ public slots:
 
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
+    
     void sendMissionPlan(QString const &plan);
+    void appendMission(QString const &plan);
+    void prependMission(QString const &plan);
+    void updateMission(QString const &plan);
+    
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);
     void sendNextItem();
