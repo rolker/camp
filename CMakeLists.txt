@@ -23,7 +23,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions(-std=c++11)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
-option(AMP_USE_ROS "Build ROS components")
+option(AMP_USE_ROS "Build ROS components" ON)
 
 if(AMP_USE_ROS)
     find_package(catkin REQUIRED COMPONENTS roscpp marine_msgs geographic_visualization_msgs rosgraph_msgs)
