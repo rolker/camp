@@ -605,8 +605,8 @@ void ROSLink::baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& 
 
 void ROSLink::contactCallback(const marine_msgs::Contact::ConstPtr& message)
 {
-    qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
-    qDebug() << "\t\t" << message->position.latitude << ", " << message->position.longitude;
+    //qDebug() << message->mmsi << ": " << message->name.c_str() << " heading: " << message->heading << " cog: " << message->cog << " dimensions: port: " << message->dimension_to_port << " strbd: " << message->dimension_to_stbd << " bow " << message->dimension_to_bow << " stern: " << message->dimension_to_stern;
+    //qDebug() << "\t\t" << message->position.latitude << ", " << message->position.longitude;
     if(message->position.latitude > 90 || message->position.longitude > 180)
         return;
     ROSAISContact *c = new ROSAISContact();
