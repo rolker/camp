@@ -35,6 +35,7 @@ public slots:
     void sendHover();
     void sendGoto();
     void sendNextItem();
+    void restartMission();
     void sendLookAt();
     void sendLookAtASV();
 #endif

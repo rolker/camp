@@ -54,6 +54,11 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+void MainWindow::setWorkspace(const QString& path)
+{
+    m_workspace_path = path;
+}
+
 void MainWindow::open(const QString& fname)
 {
     setCursor(Qt::WaitCursor);
@@ -70,13 +75,13 @@ void MainWindow::setCurrent(QModelIndex &index)
 
 void MainWindow::on_actionOpen_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),m_workspace_path);
     open(fname);
 }
 
 void MainWindow::on_actionImport_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Import"));
+    QString fname = QFileDialog::getOpenFileName(this,tr("Import"),m_workspace_path);
 
     project->import(fname);
 }
@@ -228,7 +233,7 @@ void MainWindow::on_actionSaveAs_triggered()
 
 void MainWindow::on_actionOpenBackground_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));//,"/home/roland/data/BSB_ROOT/13283");
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),m_workspace_path);
 
     if(!fname.isEmpty())
     {
@@ -261,7 +266,7 @@ void MainWindow::on_actionBehavior_triggered()
 
 void MainWindow::on_actionOpenGeometry_triggered()
 {
-    QString fname = QFileDialog::getOpenFileName(this,tr("Open"));
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open"),m_workspace_path);
 
     if(!fname.isEmpty())
         project->openGeometry(fname);

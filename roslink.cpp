@@ -748,6 +748,15 @@ void ROSLink::sendNextItem()
     sendCommand(updates.str());
 }
 
+void ROSLink::restartMission()
+{
+    std::stringstream updates;
+    updates << "mission_manager restart_mission";
+        
+    sendCommand(updates.str());
+}
+
+
 void ROSLink::sendGotoLine(int waypoint_index)
 {
     std::stringstream updates;
