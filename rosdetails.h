@@ -30,6 +30,8 @@ public slots:
     void rangeAndBearingUpdate(double range, ros::Time const &range_timestamp, double bearing, ros::Time const &bearing_timestamp);
     void sogUpdate(qreal sog, qreal sog_avg);
     void updateHelmMode(QString const &helm_mode);
+    void sendNextItem();
+    void restartMission();
 
 private slots:
     void on_standbyPushButton_clicked(bool checked);
@@ -44,6 +46,7 @@ private slots:
     void on_gotoLinePushButton_clicked(bool checked);
     void on_startLinePushButton_clicked(bool checked);
     
+    void on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos);
     
 private:
     Ui::ROSDetails* ui;
