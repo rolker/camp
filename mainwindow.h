@@ -19,6 +19,7 @@ public:
     ~MainWindow();
 
     void open(QString const &fname);
+    void setWorkspace(QString const &dir);
 public slots:
 
     void setCurrent(QModelIndex &index);
@@ -45,6 +46,7 @@ private slots:
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;
+    QString m_workspace_path;
 
     void exportHypack() const;
     void exportMissionPlan() const;

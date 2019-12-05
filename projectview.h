@@ -34,7 +34,6 @@ public slots:
 #ifdef AMP_ROS
     void sendHover();
     void sendGoto();
-    void sendNextItem();
     void sendLookAt();
     void sendLookAtASV();
 #endif

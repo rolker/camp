@@ -146,6 +146,7 @@ public slots:
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);
     void sendNextItem();
+    void restartMission();
     void sendLookAt(QGeoCoordinate const &targetLocation);
     void sendLookAtMode(std::string const &mode);
     void sendGotoLine(int waypoint_index);

@@ -261,10 +261,6 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         QAction *gotoAction = menu.addAction("Goto Here");
         connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGoto);
 
-        QAction *nextItemAction = menu.addAction("Next Mission Item");
-        connect(nextItemAction, &QAction::triggered, this, &ProjectView::sendNextItem);
-
-        
         menu.addSeparator();
         menu.addAction("(Above moves boat)");
         menu.addSeparator();
@@ -296,11 +292,6 @@ void ProjectView::sendGoto()
 {
     m_project->rosLink()->sendGoto(m_contextMenuLocation);
     m_project->rosLink()->setHelmMode("autonomous");
-}
-
-void ProjectView::sendNextItem()
-{
-    m_project->rosLink()->sendNextItem();
 }
 
 void ProjectView::sendLookAt()

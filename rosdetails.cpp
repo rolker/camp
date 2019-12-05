@@ -1,5 +1,6 @@
 #include "rosdetails.h"
 #include "ui_rosdetails.h"
+#include <QMenu>
 
 #ifdef AMP_ROS
 #include "roslink.h"
@@ -173,3 +174,28 @@ void ROSDetails::sogUpdate(qreal sog, qreal sog_avg)
     QString sogLabel = "SOG: " + QString::number(sog,'f',1) + ", avg: " + QString::number(sog_avg,'f',1) + " (200 samples)";
     ui->sogLineEdit->setText(sogLabel);
 }
+
+void ROSDetails::on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos)
+{
+        QMenu menu(this);
+
+        QAction *nextItemAction = menu.addAction("Next Mission Item");
+        connect(nextItemAction, &QAction::triggered, this, &ROSDetails::sendNextItem);
+
+        QAction *restartMissionAction = menu.addAction("Restart Mission");
+        connect(restartMissionAction, &QAction::triggered, this, &ROSDetails::restartMission);
+
+        menu.exec(ui->missionStatusTextBrowser->mapToGlobal(pos));
+}
+
+void ROSDetails::sendNextItem()
+{
+    m_rosLink->sendNextItem();
+}
+
+void ROSDetails::restartMission()
+{
+    m_rosLink->restartMission();
+}
+
+
