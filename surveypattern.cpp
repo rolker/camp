@@ -502,6 +502,8 @@ QList<QList<QGeoCoordinate> > SurveyPattern::getLines() const
                 area_poly.outer().push_back(p);
             }
             
+            bg::correct(area_poly);
+            
             QList<QList<QGeoCoordinate> > clipped_ret;
             for(auto line: ret)
             {
