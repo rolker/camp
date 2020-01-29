@@ -35,6 +35,7 @@ public:
     QGraphicsScene *scene() const;
     void openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
+    BackgroundRaster * getDepthRaster() const;
     MissionItem *potentialParentItemFor(std::string const &childType);
 
     Waypoint *addWaypoint(QGeoCoordinate position);
@@ -121,6 +122,7 @@ private:
     QGraphicsScene* m_scene;
     QString m_filename;
     BackgroundRaster* m_currentBackground;
+    BackgroundRaster* m_currentDepthRaster;
     Platform* m_currentPlatform;
     Group* m_currentGroup;
     Group* m_root;

@@ -29,7 +29,7 @@
 
 #include <iostream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentDepthRaster(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
 {
     GDALAllRegister();
 
@@ -185,6 +185,12 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 {
     return m_currentBackground;
 }
+
+BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
+{
+    return m_currentDepthRaster;
+}
+
 
 Platform * AutonomousVehicleProject::createPlatform()
 {
@@ -465,6 +471,8 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
         m_scene->removeItem(bgr);
         if(m_currentBackground == bgr)
             m_currentBackground = nullptr;
+        if(m_currentDepthRaster == bgr)
+            m_currentDepthRaster = nullptr;
     }
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
@@ -528,6 +536,8 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
         bgr->updateMapScale(m_map_scale);
         m_scene->addItem(bgr);
         emit backgroundUpdated(bgr);
+        if(bgr->depthValid())
+            m_currentDepthRaster = bgr;
     }
 }
 

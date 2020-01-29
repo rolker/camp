@@ -6,28 +6,28 @@
 
 #include <QDebug>
 
-Georeferenced::Georeferenced(): geoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, inverseGeoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, projectTransformation(0), unprojectTransformation(0)
+Georeferenced::Georeferenced(): m_geoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, m_inverseGeoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, m_projectTransformation(0), m_unprojectTransformation(0)
 {
 
 }
 
 QPointF Georeferenced::pixelToProjectedPoint(const QPointF &point) const
 {
-    return QPointF(geoTransform[0]+point.x()*geoTransform[1]+point.y()*geoTransform[2],
-                   geoTransform[3]+point.x()*geoTransform[4]+point.y()*geoTransform[5]);
+    return QPointF(m_geoTransform[0]+point.x()*m_geoTransform[1]+point.y()*m_geoTransform[2],
+                   m_geoTransform[3]+point.x()*m_geoTransform[4]+point.y()*m_geoTransform[5]);
 }
 
 QPointF Georeferenced::projectedPointToPixel(const QPointF &point) const
 {
-    return QPointF(inverseGeoTransform[0]+point.x()*inverseGeoTransform[1]+point.y()*inverseGeoTransform[2],
-                   inverseGeoTransform[3]+point.x()*inverseGeoTransform[4]+point.y()*inverseGeoTransform[5]);
+    return QPointF(m_inverseGeoTransform[0]+point.x()*m_inverseGeoTransform[1]+point.y()*m_inverseGeoTransform[2],
+                   m_inverseGeoTransform[3]+point.x()*m_inverseGeoTransform[4]+point.y()*m_inverseGeoTransform[5]);
 }
 
 void Georeferenced::extractGeoreference(GDALDataset *dataset)
 {
-    dataset->GetGeoTransform(geoTransform);
-    qDebug() << "geoTransform: " << geoTransform[0] << ", " << geoTransform[1] << ", " << geoTransform[2] << ", " << geoTransform[3] << ", " << geoTransform[4] << ", " << geoTransform[5];
-    GDALInvGeoTransform(geoTransform,inverseGeoTransform);
+    dataset->GetGeoTransform(m_geoTransform);
+    qDebug() << "geoTransform: " << m_geoTransform[0] << ", " << m_geoTransform[1] << ", " << m_geoTransform[2] << ", " << m_geoTransform[3] << ", " << m_geoTransform[4] << ", " << m_geoTransform[5];
+    GDALInvGeoTransform(m_geoTransform,m_inverseGeoTransform);
 
     OGRSpatialReference projected, wgs84;
 
@@ -42,17 +42,17 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
 
     wgs84.SetWellKnownGeogCS("WGS84");
 
-    unprojectTransformation = OGRCreateCoordinateTransformation(&projected,&wgs84);
-    projectTransformation = OGRCreateCoordinateTransformation(&wgs84,&projected);
+    m_unprojectTransformation = OGRCreateCoordinateTransformation(&projected,&wgs84);
+    m_projectTransformation = OGRCreateCoordinateTransformation(&wgs84,&projected);
 }
 
 QPointF Georeferenced::project(const QGeoCoordinate &point) const
 {
-    if(projectTransformation)
+    if(m_projectTransformation)
     {
         double x = point.longitude();
         double y = point.latitude();
-        projectTransformation->Transform(1,&x,&y);
+        m_projectTransformation->Transform(1,&x,&y);
         return QPointF(x,y);
     }
     return QPointF();
@@ -60,11 +60,11 @@ QPointF Georeferenced::project(const QGeoCoordinate &point) const
 
 QGeoCoordinate Georeferenced::unproject(const QPointF &point) const
 {
-    if(unprojectTransformation)
+    if(m_unprojectTransformation)
     {
         double x = point.x();
         double y = point.y();
-        unprojectTransformation->Transform(1,&x,&y);
+        m_unprojectTransformation->Transform(1,&x,&y);
         return QGeoCoordinate(y, x);
     }
     return QGeoCoordinate();

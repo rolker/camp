@@ -195,7 +195,27 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(baseShape());
 
-   
+    p.setWidth(9);
+    p.setColor(Qt::black);
+    painter->setPen(p);
+    painter->drawPath(vehicleShape());
+    p.setWidth(6);
+    p.setColor(Qt::yellow);
+    painter->setPen(p);
+    painter->drawPath(vehicleShape());
+    p.setWidth(3);
+    if(m_node)
+        p.setColor(Qt::darkGreen);
+    else
+        p.setColor(Qt::darkRed);
+    p.setWidth(3);
+    painter->setPen(p);
+    painter->drawPath(vehicleShape());
+
+    p.setWidth(11);
+    p.setColor(Qt::black);
+    painter->setPen(p);
+    painter->drawPath(vehicleShapePosmv());
     p.setWidth(8);
     p.setColor(Qt::yellow);
     painter->setPen(p);
@@ -208,13 +228,6 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(vehicleShapePosmv());
 
-    if(m_node)
-        p.setColor(Qt::darkGreen);
-    else
-        p.setColor(Qt::darkRed);
-    p.setWidth(3);
-    painter->setPen(p);
-    painter->drawPath(vehicleShape());
 
     painter->restore();
 }
