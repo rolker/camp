@@ -481,9 +481,6 @@ void ROSLink::drawTriangle(QPainterPath& path, const QGeoCoordinate& location, d
     QGeoCoordinate llcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees-150);
     QGeoCoordinate lrcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees+150);
 
-//     QPointF ltip = geoToPixel(tip,autonomousVehicleProject())-m_local_reference_position;
-//     QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject())-m_local_reference_position;
-//     QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject())-m_local_reference_position;
     QPointF ltip = geoToPixel(tip,autonomousVehicleProject());
     QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject());
     QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject());
@@ -505,11 +502,6 @@ void ROSLink::drawShipOutline(QPainterPath& path, const QGeoCoordinate& location
         QGeoCoordinate rkink = lrcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
         QGeoCoordinate lkink = llcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
         QGeoCoordinate bow = ulcorner.atDistanceAndAzimuth(width/2.0,90+heading_degrees);
-//         QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject())-m_local_reference_position;
-//         QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject())-m_local_reference_position;
-//         QPointF lkinkl = geoToPixel(lkink,autonomousVehicleProject())-m_local_reference_position;
-//         QPointF rkinkl = geoToPixel(rkink,autonomousVehicleProject())-m_local_reference_position;
-//         QPointF bowl = geoToPixel(bow,autonomousVehicleProject())-m_local_reference_position;
         QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject());
         QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject());
         QPointF lkinkl = geoToPixel(lkink,autonomousVehicleProject());
@@ -906,9 +898,9 @@ void ROSLink::recalculatePositions()
         {
             for(auto p: l.points)
             {
-                std::cerr << "old pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
+                //std::cerr << "old pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
                 p.pos = geoToPixel(p.location,avp);
-                std::cerr << "new pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
+                //std::cerr << "new pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
             }
         }
         for(auto poly: display_item.second->polygons)
@@ -996,7 +988,7 @@ void ROSLink::coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message
         if(gc.isValid())
         {
             coverage.back().append(gc);
-            local_coverage.back().append(geoToPixel(gc,autonomousVehicleProject())-m_local_reference_position);
+            local_coverage.back().append(geoToPixel(gc,autonomousVehicleProject()));
         }
         else
         {

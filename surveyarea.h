@@ -35,8 +35,10 @@ signals:
     
 public slots:
     void updateProjectedPoints();
+    void generateAdaptiveTrackLines();
     
 private:
+    std::vector<QGeoCoordinate> generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side);
 };
 
 #endif

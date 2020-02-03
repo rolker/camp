@@ -230,3 +230,9 @@ float BackgroundRaster::getDepth(int x, int y) const
         return m_depth_data[y*m_width+x];
     return nan("");
 }
+
+float BackgroundRaster::getDepth(QGeoCoordinate const &location) const
+{
+    auto index = geoToPixel(location);
+    return getDepth(index.x(), index.y());
+}

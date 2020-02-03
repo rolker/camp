@@ -99,3 +99,19 @@ void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, 
     path.moveTo(to);
     
 }
+
+void GeoGraphicsMissionItem::drawTriangle(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, double scale) const
+{
+    QGeoCoordinate tip = location.atDistanceAndAzimuth(15*scale,heading_degrees);
+    QGeoCoordinate llcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees-150);
+    QGeoCoordinate lrcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees+150);
+
+    QPointF ltip = geoToPixel(tip,autonomousVehicleProject());
+    QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject());
+    QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject());
+
+    path.moveTo(ltip);
+    path.lineTo(lllocal);
+    path.lineTo(lrlocal);
+    path.lineTo(ltip);
+}

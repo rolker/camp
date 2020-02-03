@@ -16,6 +16,7 @@
 #include "backgroundraster.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include "surveyarea.h"
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -182,6 +183,16 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
             {
                 QAction *lockItemAction = menu.addAction("Lock");
                 connect(lockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::lock);
+            }
+        }
+        
+        SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
+        if(sa)
+        {
+            if(project->getBackgroundRaster() && project->getDepthRaster())
+            {
+                QAction *generateAdaptiveTrackLinesAction = menu.addAction("Generate Adaptive Track Lines");
+                connect(generateAdaptiveTrackLinesAction, &QAction::triggered, sa, &SurveyArea::generateAdaptiveTrackLines);
             }
         }
     }

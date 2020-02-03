@@ -33,6 +33,7 @@ public:
     bool depthValid() const;
 
     float getDepth(int x, int y) const;
+    float getDepth(QGeoCoordinate const &location) const;
 public slots:
     void updateMapScale(qreal scale); 
 
