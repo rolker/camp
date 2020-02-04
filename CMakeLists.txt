@@ -117,7 +117,10 @@ set ( RESOURCES
 )
 
 add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
-add_dependencies(AutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
+
+if(AMP_USE_ROS)
+    add_dependencies(AutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
+endif()
 
 qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg Test)
 

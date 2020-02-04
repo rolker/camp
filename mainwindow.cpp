@@ -18,6 +18,8 @@
 #include "surveypattern.h"
 #include "surveyarea.h"
 
+#include <QDebug>
+
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
     ui(new Ui::MainWindow)
@@ -290,7 +292,7 @@ void MainWindow::on_actionGroup_triggered()
 
 void MainWindow::on_actionRadar_triggered()
 {
-    std::cerr << "radar: " << ui->actionRadar->isChecked() << std::endl;
+    qDebug() << "radar: " << ui->actionRadar->isChecked();
     emit project->showRadar(ui->actionRadar->isChecked());
 }
 

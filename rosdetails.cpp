@@ -80,16 +80,21 @@ void ROSDetails::updateMissionStatus(const QString& status)
 
 void ROSDetails::on_gotoLinePushButton_clicked(bool checked)
 {
+#ifdef AMP_ROS
     m_rosLink->sendGotoLine(ui->lineNumberSpinBox->value());
+#endif
 }
 
 void ROSDetails::on_startLinePushButton_clicked(bool checked)
 {
+#ifdef AMP_ROS
     m_rosLink->sendStartLine(ui->lineNumberSpinBox->value());
+#endif
 }
 
 void ROSDetails::heartbeatDelay(double seconds, ros::Time const & last_heartbeat_timestamp, ros::Time const & last_heartbeat_receive_time)
 {
+#ifdef AMP_ROS
     QPalette pal = palette();
     if(seconds < 2.0)
         pal.setColor(QPalette::Background, Qt::green);
@@ -108,6 +113,7 @@ void ROSDetails::heartbeatDelay(double seconds, ros::Time const & last_heartbeat
         QString msg = "Last HB: " + QString::number(last_receive_duration.toSec()) + "s Latency: " + QString::number(latency.toSec()) +"s";
         ui->timeLatencyLabel->setText(msg);
     }
+#endif
 }
 
 void ROSDetails::updateHelmMode(QString const &helm_mode)
@@ -190,12 +196,16 @@ void ROSDetails::on_missionStatusTextBrowser_customContextMenuRequested(const QP
 
 void ROSDetails::sendNextItem()
 {
+#ifdef AMP_ROS
     m_rosLink->sendNextItem();
+#endif
 }
 
 void ROSDetails::restartMission()
 {
+#ifdef AMP_ROS
     m_rosLink->restartMission();
+#endif
 }
 
 
