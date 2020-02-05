@@ -271,7 +271,12 @@ std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordin
         BMultiPoint intersection;
         boost::geometry::intersection(s1,s2,intersection);
         qDebug() << "SurveyArea::generateNextLine: intersection count: " << intersection.size();
-        ret.push_back(QGeoCoordinate(s2.front().y(),s2.front().x()));
+        if(intersection.size() > 0)
+            ret.push_back(QGeoCoordinate(intersection.front().y(),intersection.front().x()));
+        else
+        {
+            ret.push_back(QGeoCoordinate((s1.back().y()+s2.front().y())/2.0,(s1.back().x()+s2.front().x())/2.0));
+        }
     }
     ret.push_back(segments.back().second);
     return ret;
