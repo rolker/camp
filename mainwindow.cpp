@@ -164,6 +164,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
+            if(project->getBackgroundRaster() && project->getDepthRaster())
+            {
+                QAction *planPathAction = menu.addAction("Plan path");
+                connect(planPathAction, &QAction::triggered, tl, &TrackLine::planPath);
+            }
+
         }
 
         SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);

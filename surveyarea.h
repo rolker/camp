@@ -2,6 +2,9 @@
 #define SURVEYAREA_H
 
 #include "geographicsmissionitem.h"
+#include <boost/geometry.hpp>
+#include <boost/geometry/geometries/point_xy.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
 class SurveyArea : public GeoGraphicsMissionItem
 {
@@ -38,7 +41,14 @@ public slots:
     void generateAdaptiveTrackLines();
     
 private:
-    std::vector<QGeoCoordinate> generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side);
+    typedef boost::geometry::model::d2::point_xy<double> BPoint;
+    typedef boost::geometry::model::multi_point<BPoint> BMultiPoint;
+    typedef boost::geometry::model::segment<BPoint> BSegment;
+    typedef boost::geometry::model::linestring<BPoint> BLineString;
+    typedef boost::geometry::model::polygon<BPoint> BPolygon;
+    typedef boost::geometry::model::multi_linestring<BLineString> BMultiLineString;
+
+    std::vector<QGeoCoordinate> generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines);
 };
 
 #endif

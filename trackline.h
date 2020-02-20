@@ -42,6 +42,7 @@ signals:
 public slots:
     void updateProjectedPoints();
     void reverseDirection();
+    void planPath();
 
 private:
 };

@@ -34,6 +34,9 @@ public:
 
     float getDepth(int x, int y) const;
     float getDepth(QGeoCoordinate const &location) const;
+    
+    int width() const {return m_width;}
+    int height() const {return m_height;}
 public slots:
     void updateMapScale(qreal scale); 
 

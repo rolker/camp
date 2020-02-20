@@ -7,6 +7,7 @@
 #include <QDebug>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
+#include "astar.h"
 
 TrackLine::TrackLine(MissionItem *parent) :GeoGraphicsMissionItem(parent)
 {
@@ -206,4 +207,44 @@ void TrackLine::reverseDirection()
 bool TrackLine::canAcceptChildType(const std::string& childType) const
 {
     return childType == "Waypoint";
+}
+
+void TrackLine::planPath()
+{
+    auto wps = waypoints();
+    
+    BackgroundRaster *depthRaster = autonomousVehicleProject()->getDepthRaster();
+
+    std::vector<QGeoCoordinate> newWaypoints;
+    
+    for (int i = 0; i <  wps.size()-1; i++)
+    {
+        auto start = depthRaster->geoToPixel(wps[i]->location());
+        auto finish = depthRaster->geoToPixel(wps[i+1]->location());
+        qDebug() << "start: " << start << " finish: " << finish;
+        astar::Context c;
+        c.start.x = start.x();
+        c.start.y = start.y();
+        c.finish.x = finish.x();
+        c.finish.y = finish.y();
+        c.map = depthRaster;
+        c.maxDepth = 15.0;
+        c.minDepth = 3.0;
+        c.shipDraft = 1.0;
+        astar::AStar as;
+        auto result = as.search(c);
+        if(result.empty())
+        {
+            newWaypoints.push_back(wps[i]->location());
+            newWaypoints.push_back(wps[i+1]->location());
+        }
+        else
+            for(auto p: result)
+                newWaypoints.push_back(depthRaster->pixelToGeo(QPointF(p.x,p.y)));
+    }
+    for(auto wp: wps)
+        removeWaypoint(wp);
+
+    for(auto nwp: newWaypoints)
+        addWaypoint(nwp);
 }

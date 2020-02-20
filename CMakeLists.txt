@@ -74,6 +74,7 @@ set(SOURCES
     behavior.cpp
     behaviordetails.cpp
     rosdetails.cpp
+    astar.cpp
 )
 
 set(HEADERS
@@ -105,6 +106,7 @@ set(HEADERS
     behavior.h
     behaviordetails.h
     rosdetails.h
+    astar.h
 )
 
 if(AMP_USE_ROS)
