@@ -9,17 +9,16 @@
 #include <QTimer>
 #include "gz4d_geo.h"
 #include "rosdetails.h"
-#include "boost/date_time/posix_time/posix_time.hpp"
+//#include "boost/date_time/posix_time/posix_time.hpp"
+#include "radardisplay.h"
+
 
 ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading(0.0)
 {
 
 }
 
-int ROSLink::s_radar_image_size = 1200;
-int ROSLink::s_radar_half_image_size = 600;
-
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_radar_pixmap(s_radar_image_size,s_radar_image_size), m_radar_scale(1.0),m_range(0.0),m_bearing(0.0)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
 {
     m_base_dimension_to_bow = 1.0;
     m_base_dimension_to_stern = 1.0;
@@ -37,8 +36,6 @@ ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphics
     
     qRegisterMetaType<QGeoCoordinate>();
     //connectROS();
-    
-    m_radar_pixmap.fill(Qt::transparent);
     
     m_watchdog_timer = new QTimer(this);
     connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
@@ -68,7 +65,9 @@ void ROSLink::connectROS()
             m_coverage_subscriber = m_node->subscribe("/udp/coverage", 10, &ROSLink::coverageCallback, this);
             m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/udp/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
-            m_radar_subscriber = m_node->subscribe("/udp/radar", 10, &ROSLink::radarCallback, this);
+            
+            m_radar_displays["/radar/HaloA/data"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/radar/HaloA/data"));
             
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("/base/camera/look_at",1);
@@ -82,11 +81,15 @@ void ROSLink::connectROS()
             double latitude, longitude;
             if(m_node->getParam("/base/latitude",latitude) && m_node->getParam("/base/longitude",longitude))
             {
-                m_base_location.setLatitude(latitude);
-                m_base_location.setLongitude(longitude);
+                m_base_location.location.setLatitude(latitude);
+                m_base_location.location.setLongitude(longitude);
+                m_base_location.pos = geoToPixel(m_base_location.location,autonomousVehicleProject());
             }
             
             m_node->param("/base/heading", m_base_heading, m_base_heading);
+            
+            m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
+            m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
             
             m_spinner->start();
             m_watchdog_timer->start(500);
@@ -174,12 +177,11 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
             if(bg)
             {
                 painter->save();
-                painter->translate(m_radar_location.pos);
-                double pixelSize = bg->pixelSize();
-                painter->scale(m_radar_scale/pixelSize,m_radar_scale/pixelSize);
-                painter->translate(-s_radar_half_image_size,-s_radar_half_image_size);
-                painter->setOpacity(.5);
-                painter->drawPixmap(0,0,m_radar_pixmap);
+                painter->translate(m_base_location.pos);
+                for(auto rd:m_radar_displays)
+                {
+                    //rd.second->paint(painter, option, widget);
+                }
                 painter->restore();
             }
         }
@@ -272,9 +274,9 @@ QPainterPath ROSLink::shape() const
         auto bg = avp->getBackgroundRaster();
         if(bg)
         {
-            double pixelSize = bg->pixelSize();
-            double s = m_radar_scale/pixelSize;
-            ret.addRect(QRectF(geoToPixel(m_location,autonomousVehicleProject())+QPointF(-512*s*1.1,-512*s*1.1),QSizeF(1024*s*1.1,1024*s*1.1)));
+//             double pixelSize = bg->pixelSize();
+//             double s = m_radar_scale/pixelSize;
+//             ret.addRect(QRectF(geoToPixel(m_location,autonomousVehicleProject())+QPointF(-512*s*1.1,-512*s*1.1),QSizeF(1024*s*1.1,1024*s*1.1)));
         }
     }
     
@@ -361,29 +363,29 @@ QPainterPath ROSLink::vehicleShapePosmv() const
 QPainterPath ROSLink::baseShape() const
 {
     QPainterPath ret;
-    if (m_local_base_location_history.size() > 1)
+    if (m_base_location_history.size() > 1)
     {
-        auto p = m_local_base_location_history.begin();
-        ret.moveTo(*p);
+        auto p = m_base_location_history.begin();
+        ret.moveTo(p->pos);
         p++;
-        while(p != m_local_base_location_history.end())
+        while(p != m_base_location_history.end())
         {
-            ret.lineTo(*p);
+            ret.lineTo(p->pos);
             p++;
         }
-        auto last = *(m_local_base_location_history.rbegin());
+        //auto last = *(m_base_location_history.rbegin());
     }
-    if(m_base_location.isValid())
+    if(m_base_location.location.isValid())
     {
         auto bgr = autonomousVehicleProject()->getBackgroundRaster();
         if(bgr)
         {
             qreal pixel_size = bgr->scaledPixelSize();
             if(pixel_size > 1)
-                drawTriangle(ret,m_base_location,m_base_heading,pixel_size);
+                drawTriangle(ret,m_base_location.location,m_base_heading,pixel_size);
             else
                 // fairweather estimates: 70m by 12.70m
-                drawShipOutline(ret,m_base_location,m_base_heading,m_base_dimension_to_bow,m_base_dimension_to_port,m_base_dimension_to_stbd,m_base_dimension_to_stern);
+                drawShipOutline(ret,m_base_location.location,m_base_heading,m_base_dimension_to_bow,m_base_dimension_to_port,m_base_dimension_to_stbd,m_base_dimension_to_stern);
         }
     }
     return ret;
@@ -804,11 +806,11 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
 void ROSLink::updateBaseLocation(const QGeoCoordinate& location)
 {
     prepareGeometryChange();
-    m_base_location_history.push_back(location);
-    m_local_base_location_history.push_back(geoToPixel(location,autonomousVehicleProject()));
-    while (m_local_base_location_history.size()>100)
-        m_local_base_location_history.pop_front();
-    m_base_location = location;
+    m_base_location.location = location;
+    m_base_location.pos = geoToPixel(location,autonomousVehicleProject());
+    m_base_location_history.push_back(m_base_location);
+    while (m_base_location_history.size()>100)
+        m_base_location_history.pop_front();
     update();
 }
 
@@ -868,7 +870,6 @@ void ROSLink::updateBackground(BackgroundRaster *bgr)
 void ROSLink::recalculatePositions()
 {
     prepareGeometryChange();
-    //setPos(geoToPixel(m_origin,autonomousVehicleProject()));
     setPos(0,0);
     m_local_location_history.clear();
     
@@ -876,13 +877,13 @@ void ROSLink::recalculatePositions()
     
     for(auto l: m_location_history)
     {
-        m_local_location_history.push_back(geoToPixel(l,autonomousVehicleProject()));            
+        m_local_location_history.push_back(geoToPixel(l,avp));            
     }
 
     m_local_posmv_location_history.clear();
     for(auto l: m_posmv_location_history)
     {
-        m_local_posmv_location_history.push_back(geoToPixel(l,autonomousVehicleProject()));            
+        m_local_posmv_location_history.push_back(geoToPixel(l,avp));            
     }
 
     
@@ -916,19 +917,29 @@ void ROSLink::recalculatePositions()
     for(auto contactList: m_contacts)
     {
         for(auto contact: contactList.second)
-            contact->location_local = geoToPixel(contact->location,autonomousVehicleProject());
+            contact->location_local = geoToPixel(contact->location,avp);
     }
 
     if(m_have_local_reference)
     {
-        m_local_reference_position = geoToPixel(m_origin,autonomousVehicleProject());
+        m_local_reference_position = geoToPixel(m_origin,avp);
     }
     
-    m_local_base_location_history.clear();
-    for(auto l: m_base_location_history)
+    m_base_location.pos = geoToPixel(m_base_location.location,avp);
+    for(LocationPosition &l: m_base_location_history)
     {
-        m_local_base_location_history.push_back(geoToPixel(l,autonomousVehicleProject()));            
+        l.pos = geoToPixel(l.location,avp);            
     }
+    
+    for(auto rd: m_radar_displays)
+    {
+        rd.second->setPos(m_base_location.pos);
+        
+        auto bgr = avp->getBackgroundRaster();
+        if(bgr)
+            rd.second->setPixelSize(bgr->pixelSize());
+    }
+    
     update();
 }
 
@@ -1105,124 +1116,21 @@ void ROSLink::showRadar(bool show)
     update();
 }
 
-void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr& message)
+void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic)
 {
-    RadarSectorDisplay * sectorDisplay = new RadarSectorDisplay();
-    
-    sectorDisplay->range = message->sector.scanlines[0].range;
-    sectorDisplay->start_angle = message->sector.scanlines[0].angle;
-    
-    double tan_half_beamwidth = tan(0.05*M_PI/180.0);
-    
-    for(auto scanline: message->sector.scanlines)
+    if (m_show_radar && !message->sector.scanlines.empty())
     {
-        // a1 and a2 are the edges of the beam, assuming 0.1 degree beams
-        double a1 = (scanline.angle-0.05)*M_PI/180.0;
-        double a2 = (scanline.angle+0.05)*M_PI/180.0;
-        double cos_a1 = cos(a1);
-        double sin_a1 = sin(a1);
-        double cos_a2 = cos(a2);
-        double sin_a2 = sin(a2);
-        
-        for(int i = 0; i < scanline.intensities.size(); i++)
-        {
-            QPolygonF poly;
-            poly << QPointF(sin_a1*i,cos_a1*i);
-            poly << QPointF(sin_a2*i,cos_a2*i);
-            poly << QPointF(sin_a2*(i+1),cos_a2*(i+1));
-            poly << QPointF(sin_a1*(i+1),cos_a1*(i+1));
-            
-            sectorDisplay->paths[scanline.intensities[i]].addPolygon(poly);
-        }
-    }
-    
-    QMetaObject::invokeMethod(this,"updateRadarSector", Qt::QueuedConnection, Q_ARG(RadarSectorDisplay*, sectorDisplay));
-}
-
-void ROSLink::updateRadarSector(RadarSectorDisplay *sector)
-{
-    if(m_show_radar)
-    {
-        bool refresh_radar_image = false;
-        
-        sector->heading = m_heading;
-        sector->location.location = m_location;
-        auto avp = autonomousVehicleProject();
-        if(avp)
-        {
-            auto bg = avp->getBackgroundRaster();
-            if(bg)
-                sector->location.pos = geoToPixel(sector->location.location,avp);
-        }
-        
-        if(m_radar_sectors.empty())
-        {
-            refresh_radar_image = true;
-            m_radar_location = sector->location;
-        }
-            
-        m_radar_sectors[sector->start_angle] = std::shared_ptr<RadarSectorDisplay>(sector);
-
-        m_radar_scale = sector->range/512.0;
-        
-        auto deltaPosition = sector->location.pos-m_radar_location.pos;
-        
-        if(fabs(deltaPosition.x())/m_radar_scale > s_radar_half_image_size-512 ||
-            fabs(deltaPosition.y())/m_radar_scale > s_radar_half_image_size-512)
-        {
-            refresh_radar_image = true;
-            m_radar_location = sector->location;
-        }
-        
-                
-        prepareGeometryChange();
-
-        if(refresh_radar_image)
-            m_radar_pixmap.fill(Qt::transparent);
-        
-        QPainter painter(&m_radar_pixmap);
-        painter.setCompositionMode(QPainter::CompositionMode_Source);
-
-        if(refresh_radar_image)
-            for(auto angle_sector: m_radar_sectors)
-            {
-                painter.save();
-                
-                auto deltaPosition = angle_sector.second->location.pos-m_radar_location.pos;
-
-                //painter.rotate(angle_sector.second->heading);
-
-                painter.translate(s_radar_half_image_size + deltaPosition.x()/m_radar_scale, s_radar_half_image_size+deltaPosition.y()/m_radar_scale);
-                
-                painter.scale(1.0,-1.0);
-                for(auto path: angle_sector.second->paths)
-                {
-                    QPen p;
-                    p.setColor(QColor(0,255,0,path.first));
-                    painter.setPen(p);
-                    painter.drawPath(path.second);
-                }
-                painter.restore();
-            }
-        else
-        {
-            auto deltaPosition = sector->location.pos-m_radar_location.pos;
-
-            //painter.rotate(sector->heading);
-        
-            painter.translate(s_radar_half_image_size + deltaPosition.x()/m_radar_scale, s_radar_half_image_size+deltaPosition.y()/m_radar_scale);
-            
-            painter.scale(1.0,-1.0);
-            for(auto path: sector->paths)
-            {
-                QPen p;
-                p.setColor(QColor(0,255,0,path.first));
-                painter.setPen(p);
-                painter.drawPath(path.second);
-            }
-        }
-        
-        update();     
+        double angle1 = message->sector.scanlines[0].angle;
+        double angle2 = message->sector.scanlines.back().angle;
+        double range = message->sector.scanlines[0].range;
+        int w = message->sector.scanlines[0].intensities.size();
+        int h = message->sector.scanlines.size();
+        QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
+        sector->fill(Qt::darkGray);
+        for(int i = 0; i < h; i++)
+            for(int j = 0; j < w; j++)
+                sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
+        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector));
     }
 }
 

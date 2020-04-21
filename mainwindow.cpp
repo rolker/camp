@@ -4,6 +4,7 @@
 #include <QStandardItemModel>
 #include <gdal_priv.h>
 #include <cstdint>
+#include <QOpenGLWidget>
 
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
@@ -33,6 +34,7 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->treeView->setModel(project);
     ui->projectView->setStatusBar(statusBar());
     ui->projectView->setProject(project);
+    //ui->projectView->setViewport(new QOpenGLWidget()); this causes map to go balck at certain zoom levels
 
     ui->detailsView->setProject(project);
     connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);

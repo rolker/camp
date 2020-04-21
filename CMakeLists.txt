@@ -75,6 +75,7 @@ set(SOURCES
     behaviordetails.cpp
     rosdetails.cpp
     astar.cpp
+    radardisplay.cpp
 )
 
 set(HEADERS
@@ -107,6 +108,7 @@ set(HEADERS
     behaviordetails.h
     rosdetails.h
     astar.h
+    radardisplay.h
 )
 
 if(AMP_USE_ROS)

@@ -21,6 +21,7 @@
 Q_DECLARE_METATYPE(ros::Time);
 
 class ROSDetails;
+class RadarDisplay;
 
 struct ROSAISContact: public QObject
 {
@@ -74,17 +75,6 @@ namespace geoviz
     };
 }
 
-struct RadarSectorDisplay: public QObject
-{
-    Q_OBJECT
-public:
-    double range;
-    std::map<int,QPainterPath> paths;
-    
-    double start_angle;
-    double heading;
-    LocationPosition location;
-};
 
 class ROSLink : public QObject, public GeoGraphicsItem
 {
@@ -133,7 +123,6 @@ public slots:
     void updateCoverage(QList<QList<QGeoCoordinate> > coverage, QList<QPolygonF> local_coverage);
     void addPing(QList<QGeoCoordinate> ping, QList<QPointF> local_ping);
     void updateDisplayItem(geoviz::Item *item);
-    void updateRadarSector(RadarSectorDisplay *sector);
 
     void recalculatePositions();
     void addAISContact(ROSAISContact *c);
@@ -174,7 +163,7 @@ private:
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
     void geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizItem::ConstPtr& message);
-    void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr& message);
+    void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;
@@ -210,14 +199,13 @@ private:
     ros::AsyncSpinner *m_spinner;
     QGeoCoordinate m_location;
     QGeoCoordinate m_posmv_location;
-    QGeoCoordinate m_base_location; // location of the base operator station (ship, shore station, etc)
+    LocationPosition m_base_location; // location of the base operator station (ship, shore station, etc)
     QGeoCoordinate m_origin;
     std::vector<QGeoCoordinate> m_location_history;
     std::list<QPointF> m_local_location_history;
     std::vector<QGeoCoordinate> m_posmv_location_history;
     std::list<QPointF> m_local_posmv_location_history;
-    std::vector<QGeoCoordinate> m_base_location_history;
-    std::list<QPointF> m_local_base_location_history;
+    std::list<LocationPosition> m_base_location_history;
     QPointF m_local_reference_position;
     bool m_have_local_reference;
     double m_heading;
@@ -260,15 +248,10 @@ private:
     
     std::map<std::string,std::shared_ptr<geoviz::Item> > m_display_items;
 
-    std::map<double,std::shared_ptr<RadarSectorDisplay> > m_radar_sectors;
-    QPixmap m_radar_pixmap;
-    double m_radar_scale;
-    LocationPosition m_radar_location;
+    std::map<std::string,RadarDisplay*> m_radar_displays;
+    
     bool m_show_radar;
 
-    static int s_radar_image_size;
-    static int s_radar_half_image_size;
-    
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;
     
