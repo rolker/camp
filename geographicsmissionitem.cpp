@@ -1,6 +1,7 @@
 #include "geographicsmissionitem.h"
 
 #include "backgroundraster.h"
+#include "platform.h"
 #include <QDebug>
 #include <QVector2D>
 
@@ -115,3 +116,54 @@ void GeoGraphicsMissionItem::drawTriangle(QPainterPath& path, const QGeoCoordina
     path.lineTo(lrlocal);
     path.lineTo(ltip);
 }
+
+void GeoGraphicsMissionItem::updateETE()
+{
+    double cumulativeDistance = 0.0;
+    
+    QGeoCoordinate lastPosition;
+    
+    auto lines = getLines();
+    
+    for (auto l: lines)
+        if (l.length() > 1)
+        {
+            auto first = l.begin();
+            if (lastPosition.isValid())
+                cumulativeDistance += lastPosition.distanceTo(*first);
+            auto second = first;
+            second++;
+            while(second != l.end())
+            {
+                cumulativeDistance += first->distanceTo(*second);
+                lastPosition = *second;
+                first++;
+                second++;
+            }
+        }
+        
+    double distanceInNMs = cumulativeDistance*0.000539957; // meters to NMs.
+    QString label = "Distance: "+QString::number(int(cumulativeDistance))+" (m), "+QString::number(distanceInNMs,'f',1)+" (nm)";
+
+    AutonomousVehicleProject* avp = autonomousVehicleProject();
+    if(avp)
+    {
+        Platform *platform = avp->currentPlatform();
+        if(platform)
+        {
+            double time = distanceInNMs/platform->speed();
+            if(time < 1.0)
+                label += "\nETE: "+QString::number(int(time*60))+" (min)";
+            else
+                label += "\nETE: "+QString::number(time,'f',2)+" (h)";
+        }
+    }
+
+    setLabel(label);
+}
+
+void GeoGraphicsMissionItem::onCurrentPlatformUpdated()
+{
+    updateETE();
+}
+

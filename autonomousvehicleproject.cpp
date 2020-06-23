@@ -240,7 +240,7 @@ Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
 SurveyPattern * AutonomousVehicleProject::createSurveyPattern()
 {
     SurveyPattern *sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(generateUniqueLabel("pattern"));
-    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&SurveyPattern::onCurrentPlatformUpdated);
+    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
   
     return sp;
@@ -258,6 +258,7 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
 SurveyArea * AutonomousVehicleProject::createSurveyArea()
 {
     SurveyArea *sa = potentialParentItemFor("SurveyArea")->createMissionItem<SurveyArea>(generateUniqueLabel("area"));
+    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sa,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     return sa;
 }
 

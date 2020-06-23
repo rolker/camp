@@ -32,8 +32,6 @@ public:
     
     bool canAcceptChildType(const std::string & childType) const override;
     
-    QList<QList<QGeoCoordinate> > getLines() const override;
-    
 signals:
     
 public slots:

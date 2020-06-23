@@ -10,6 +10,7 @@
 
 SurveyArea::SurveyArea(MissionItem *parent) :GeoGraphicsMissionItem(parent)
 {
+    setShowLabelFlag(true);
 }
 
 QRectF SurveyArea::boundingRect() const
@@ -91,12 +92,6 @@ QList<Waypoint *> SurveyArea::waypoints() const
         if(wp)
             ret.append(wp);
     }
-    return ret;
-}
-
-QList<QList<QGeoCoordinate> > SurveyArea::getLines() const
-{
-    QList<QList<QGeoCoordinate> > ret;
     return ret;
 }
 
@@ -231,6 +226,7 @@ void SurveyArea::generateAdaptiveTrackLines()
             side *= -1;
         }
     }
+    updateETE();
 }
 
 std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines)

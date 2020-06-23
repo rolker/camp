@@ -384,45 +384,6 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
 
 }
 
-void SurveyPattern::updateLabel()
-{
-    double cumulativeDistance = 0.0;
-    
-    auto lines = getLines();
-    for (auto l: lines)
-        if (l.length() > 1)
-        {
-            auto first = l.begin();
-            auto second = first;
-            second++;
-            while(second != l.end())
-            {
-                cumulativeDistance += first->distanceTo(*second);
-                first++;
-                second++;
-            }
-        }
-
-    double distanceInNMs = cumulativeDistance*0.000539957; // meters to NMs.
-    QString label = "Distance: "+QString::number(int(cumulativeDistance))+" (m), "+QString::number(distanceInNMs,'f',1)+" (nm)";
-
-    AutonomousVehicleProject* avp = autonomousVehicleProject();
-    if(avp)
-    {
-        Platform *platform = avp->currentPlatform();
-        if(platform)
-        {
-            double time = distanceInNMs/platform->speed();
-            if(time < 1.0)
-                label += "\nETE: "+QString::number(int(time*60))+" (min)";
-            else
-                label += "\nETE: "+QString::number(time,'f',2)+" (h)";
-        }
-    }
-
-    setLabel(label);
-}
-
 QPainterPath SurveyPattern::shape() const
 {
     auto lines = getLines();
@@ -541,7 +502,7 @@ void SurveyPattern::waypointHasChanged(Waypoint *wp)
 {
     if(!m_internalUpdateFlag)
         calculateFromWaypoints();
-    updateLabel();
+    updateETE();
     emit surveyPatternUpdated();
 }
 
@@ -555,10 +516,6 @@ void SurveyPattern::updateProjectedPoints()
         m_spacingLocation->updateProjectedPoints();
 }
 
-void SurveyPattern::onCurrentPlatformUpdated()
-{
-    updateLabel();
-}
 
 void SurveyPattern::reverseDirection()
 {

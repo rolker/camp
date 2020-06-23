@@ -24,6 +24,8 @@ public slots:
     void updateBackground(BackgroundRaster * bg);
     void lock();
     void unlock();
+    void updateETE();
+    void onCurrentPlatformUpdated();
     
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
