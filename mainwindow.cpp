@@ -34,7 +34,6 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->treeView->setModel(project);
     ui->projectView->setStatusBar(statusBar());
     ui->projectView->setProject(project);
-    //ui->projectView->setViewport(new QOpenGLWidget()); this causes map to go balck at certain zoom levels
 
     ui->detailsView->setProject(project);
     connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
@@ -304,6 +303,10 @@ void MainWindow::on_actionRadar_triggered()
     emit project->showRadar(ui->actionRadar->isChecked());
 }
 
+void MainWindow::on_actionShowTail_triggered()
+{
+    emit project->showTail(ui->actionShowTail->isChecked());
+}
 
 void MainWindow::onROSConnected(bool connected)
 {

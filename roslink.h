@@ -145,6 +145,7 @@ public slots:
     void watchdogUpdate();
     void updateSog(qreal sog);
     void showRadar(bool show);
+    void showTail(bool show);
     
 private:
     void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
@@ -251,6 +252,7 @@ private:
     std::map<std::string,RadarDisplay*> m_radar_displays;
     
     bool m_show_radar;
+    bool m_show_tail;
 
     ros::Time m_last_heartbeat_timestamp;
     ros::Time m_last_heartbeat_receive_time;

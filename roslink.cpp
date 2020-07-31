@@ -18,7 +18,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 
 }
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0),m_show_tail(true)
 {
     m_base_dimension_to_bow = 1.0;
     m_base_dimension_to_stern = 1.0;
@@ -306,13 +306,16 @@ QPainterPath ROSLink::vehicleShape() const
     QPainterPath ret;
     if (m_local_location_history.size() > 1)
     {
-        auto p = m_local_location_history.begin();
-        ret.moveTo(*p);
-        p++;
-        while(p != m_local_location_history.end())
+        if(m_show_tail)
         {
-            ret.lineTo(*p);
+            auto p = m_local_location_history.begin();
+            ret.moveTo(*p);
             p++;
+            while(p != m_local_location_history.end())
+            {
+                ret.lineTo(*p);
+                p++;
+            }
         }
         auto last = *(m_local_location_history.rbegin());
         
@@ -336,15 +339,18 @@ QPainterPath ROSLink::vehicleShapePosmv() const
     QPainterPath ret;
     if (m_local_posmv_location_history.size() > 1)
     {
-        auto p = m_local_posmv_location_history.begin();
-        ret.moveTo(*p);
-        p++;
-        while(p != m_local_posmv_location_history.end())
+        if(m_show_tail)
         {
-            ret.lineTo(*p);
+            auto p = m_local_posmv_location_history.begin();
+            ret.moveTo(*p);
             p++;
+            while(p != m_local_posmv_location_history.end())
+            {
+                ret.lineTo(*p);
+                p++;
+            }
+            auto last = *(m_local_posmv_location_history.rbegin());
         }
-        auto last = *(m_local_posmv_location_history.rbegin());
         
         auto bgr = autonomousVehicleProject()->getBackgroundRaster();
         if(bgr)
@@ -1115,6 +1121,13 @@ void ROSLink::showRadar(bool show)
     m_show_radar = show;
     update();
 }
+
+void ROSLink::showTail(bool show)
+{
+    m_show_tail = show;
+    update();
+}
+
 
 void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic)
 {

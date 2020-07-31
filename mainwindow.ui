@@ -172,6 +172,7 @@
      <string>Setti&amp;ngs</string>
     </property>
     <addaction name="actionRadar"/>
+    <addaction name="actionShowTail"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -298,6 +299,17 @@
    </property>
    <property name="text">
     <string>Radar</string>
+   </property>
+  </action>
+  <action name="actionShowTail">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Show tail</string>
    </property>
   </action>
  </widget>
