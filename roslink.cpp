@@ -791,7 +791,7 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     prepareGeometryChange();
     m_location_history.push_back(location);
     m_local_location_history.push_back(geoToPixel(location,autonomousVehicleProject()));
-    while (m_local_location_history.size()>500)
+    while (m_local_location_history.size()>500|| (!m_show_tail && m_local_location_history.size()>2))
         m_local_location_history.pop_front();
     m_location = location;
     update();
@@ -802,7 +802,7 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
     prepareGeometryChange();
     m_posmv_location_history.push_back(location);
     m_local_posmv_location_history.push_back(geoToPixel(location,autonomousVehicleProject()));
-    while (m_local_posmv_location_history.size()>1500)
+    while (m_local_posmv_location_history.size()>1500 || (!m_show_tail && m_local_posmv_location_history.size()>2))
         m_local_posmv_location_history.pop_front();
     m_posmv_location = location;
     update();
