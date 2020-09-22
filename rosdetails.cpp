@@ -1,6 +1,7 @@
 #include "rosdetails.h"
 #include "ui_rosdetails.h"
 #include <QMenu>
+#include <QStyle>
 
 #ifdef AMP_ROS
 #include "roslink.h"
