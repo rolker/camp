@@ -421,8 +421,9 @@ QPainterPath ROSLink::aisShape() const
                 bool forceTriangle = false;
                 if (last->dimension_to_bow + last->dimension_to_stern == 0 || last->dimension_to_port + last->dimension_to_stbd == 0)
                     forceTriangle = true;
+                float max_size = std::max(last->dimension_to_bow + last->dimension_to_stern,last->dimension_to_port + last->dimension_to_stbd);
                 qreal pixel_size = bgr->scaledPixelSize();
-                if(pixel_size > 1 || forceTriangle)
+                if(pixel_size > max_size/10.0 || forceTriangle)
                     drawTriangle(ret,last->location,last->heading,pixel_size);
                 else
                     drawShipOutline(ret,last->location,last->heading,last->dimension_to_bow,last->dimension_to_port,last->dimension_to_stbd,last->dimension_to_stern);
