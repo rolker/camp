@@ -116,7 +116,7 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     if(!m_sectors.empty())
     {
         double r = m_sectors.back().range;
-        qDebug() << "range: " << r;
+        //qDebug() << "range: " << r;
         r /= m_pixel_size;
         QPen p;
         p.setColor(Qt::green);

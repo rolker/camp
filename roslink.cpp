@@ -69,6 +69,9 @@ void ROSLink::connectROS()
             m_radar_displays["/radar/HaloA/data"] = new RadarDisplay(this);
             m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/radar/HaloA/data"));
             
+            m_radar_displays["/radar"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/radar"));
+            
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("/base/camera/look_at",1);
             m_look_at_mode_publisher = m_node->advertise<std_msgs::String>("/base/camera/look_at_mode",1);
@@ -88,8 +91,8 @@ void ROSLink::connectROS()
             
             m_node->param("/base/heading", m_base_heading, m_base_heading);
             
-            m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
-            m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
+            //m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
+            //m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
             
             m_spinner->start();
             m_watchdog_timer->start(500);
@@ -795,6 +798,11 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     while (m_local_location_history.size()>500|| (!m_show_tail && m_local_location_history.size()>2))
         m_local_location_history.pop_front();
     m_location = location;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setPos(m_local_location_history.back());
+    }
+
     update();
 }
 
@@ -806,6 +814,10 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
     while (m_local_posmv_location_history.size()>1500 || (!m_show_tail && m_local_posmv_location_history.size()>2))
         m_local_posmv_location_history.pop_front();
     m_posmv_location = location;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setPos(m_local_posmv_location_history.back());
+    }
     update();
 }
 
@@ -839,6 +851,10 @@ void ROSLink::updateHeading(double heading)
 {
     prepareGeometryChange();
     m_heading = heading;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setRotation(heading);
+    }
     update();
 }
 
@@ -846,6 +862,10 @@ void ROSLink::updatePosmvHeading(double heading)
 {
     prepareGeometryChange();
     m_posmv_heading = heading;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setRotation(heading);
+    }
     update();
 }
 
