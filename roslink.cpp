@@ -68,7 +68,12 @@ void ROSLink::connectROS()
             m_coverage_subscriber = m_node->subscribe("/udp/coverage", 10, &ROSLink::coverageCallback, this);
             m_ping_subscriber = m_node->subscribe("/udp/mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/udp/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
-            m_radar_subscriber = m_node->subscribe("/udp/radar", 10, &ROSLink::radarCallback, this);
+            
+            m_radar_displays["/radar/HaloA/data"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/radar/HaloA/data"));
+            
+            m_radar_displays["/udp/radar"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/udp/radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/udp/radar"));
             
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("/base/camera/look_at",1);
