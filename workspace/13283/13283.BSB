@@ -1,0 +1,19 @@
+!
+CRR/This electronic chart was produced under the authority of USA-NOAA/NOS.
+    By using this chart you acknowledge that you have read, understood
+    and accepted the terms and conditions stated in the User Agreement:
+    http://www.nauticalcharts.noaa.gov/mcd/Raster/download_agreement.htm
+CHT/NA=PORTSMOUTH HBR CAPE NEDDICK HBR TO ISLES OF SHOALS,NU=13283
+CHF/HARBOR
+CED/SE=23,RE=01,ED=12/01/2014
+NTM/NE=23.71,ND=04/27/2019
+VER/3.0
+CHK/3,2062,2063,2064
+CGD/1
+ORG/USA-NOAA/NOS
+MFR/USA-NOAA/NOS
+RGN/2
+K01/NA=PORTSMOUTH HBR CAPE NEDDICK HBR TO ISLES OF SHOALS,NU=2062,TY=BASE
+    FN=13283_1.KAP
+K02/NA=PORTSMOUTH HARBOR,NU=2063,TY=INSET,FN=13283_2.KAP
+K03/NA=CONTINUATION TO CAPE NEDDICK HARBOR,NU=2064,TY=EXTENSION,FN=13283_3.KAP

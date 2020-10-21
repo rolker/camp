@@ -30,7 +30,13 @@ public:
     bool canAcceptChildType(const std::string & childType) const override;
     
     bool valid() const;
+    bool depthValid() const;
 
+    float getDepth(int x, int y) const;
+    float getDepth(QGeoCoordinate const &location) const;
+    
+    int width() const {return m_width;}
+    int height() const {return m_height;}
 public slots:
     void updateMapScale(qreal scale); 
 
@@ -41,6 +47,10 @@ private:
     qreal m_pixel_size; // size of a pixel in meters.
     qreal m_map_scale;
     bool m_valid;
+
+    int m_width;
+    int m_height;
+    std::vector<float> m_depth_data;
 
 };
 

@@ -18,11 +18,14 @@ public:
     bool locked() const;
     QList<GeoGraphicsMissionItem*> childrenGeoGraphicsMissionItems() const;
     void drawArrow(QPainterPath &path, QPointF const &from, QPointF const &to) const;
+    void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     
 public slots:
     void updateBackground(BackgroundRaster * bg);
     void lock();
     void unlock();
+    void updateETE();
+    void onCurrentPlatformUpdated();
     
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;

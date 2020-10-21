@@ -21,7 +21,8 @@ public:
             PolygonType,
             ROSLinkType,
             SurveyAreaType,
-            MeasuringToolType
+            MeasuringToolType,
+            RadarDisplayType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

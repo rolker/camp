@@ -61,12 +61,10 @@ public slots:
     void waypointHasChanged(Waypoint *wp);
     void waypointAboutToChange();
     void updateProjectedPoints();
-    void onCurrentPlatformUpdated();
     void reverseDirection();
 
 protected:
     Waypoint * createWaypoint();
-    void updateLabel();
     void updateEndLocation();
 
 private:

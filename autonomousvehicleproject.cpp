@@ -28,8 +28,9 @@
 #endif
 
 #include <iostream>
+#include <sstream>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentDepthRaster(nullptr), m_currentPlatform(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
 {
     GDALAllRegister();
 
@@ -43,6 +44,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     m_ROSLink =  new ROSLink(this);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,m_ROSLink ,&ROSLink::updateBackground);
     connect(this,&AutonomousVehicleProject::showRadar,m_ROSLink, &ROSLink::showRadar);
+    connect(this,&AutonomousVehicleProject::showTail,m_ROSLink, &ROSLink::showTail);
 #endif
 }
 
@@ -186,6 +188,12 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
     return m_currentBackground;
 }
 
+BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
+{
+    return m_currentDepthRaster;
+}
+
+
 Platform * AutonomousVehicleProject::createPlatform()
 {
     RowInserter ri(*this,m_currentGroup);
@@ -233,7 +241,7 @@ Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
 SurveyPattern * AutonomousVehicleProject::createSurveyPattern()
 {
     SurveyPattern *sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(generateUniqueLabel("pattern"));
-    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&SurveyPattern::onCurrentPlatformUpdated);
+    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
   
     return sp;
@@ -251,6 +259,7 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
 SurveyArea * AutonomousVehicleProject::createSurveyArea()
 {
     SurveyArea *sa = potentialParentItemFor("SurveyArea")->createMissionItem<SurveyArea>(generateUniqueLabel("area"));
+    connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sa,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     return sa;
 }
 
@@ -465,6 +474,8 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
         m_scene->removeItem(bgr);
         if(m_currentBackground == bgr)
             m_currentBackground = nullptr;
+        if(m_currentDepthRaster == bgr)
+            m_currentDepthRaster = nullptr;
     }
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
@@ -528,6 +539,8 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
         bgr->updateMapScale(m_map_scale);
         m_scene->addItem(bgr);
         emit backgroundUpdated(bgr);
+        if(bgr->depthValid())
+            m_currentDepthRaster = bgr;
     }
 }
 

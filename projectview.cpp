@@ -151,12 +151,25 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
 
     QPointF transformedMouse = mapToScene(event->pos());
     BackgroundRaster *bg =  m_project->getBackgroundRaster();
+    BackgroundRaster *dr =  m_project->getDepthRaster();
     if(bg)
     {
         QPointF projectedMouse = bg->pixelToProjectedPoint(transformedMouse);
         posText += " Projected mouse: "+QString::number(projectedMouse.x(),'f')+","+QString::number(projectedMouse.y(),'f');
         QGeoCoordinate llMouse = bg->unproject(projectedMouse);
         posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees);
+        
+        if(dr)
+        {
+            if(dr == bg)
+                posText += " Depth: " +QString::number(dr->getDepth(transformedMouse.x(),transformedMouse.y()));
+            else 
+            {
+                auto p = dr->geoToPixel(llMouse);
+                posText += " Depth: " +QString::number(dr->getDepth(p.x(),p.y()));
+            }
+        }
+        
         if(pendingSurveyPattern)
         {
             if(pendingSurveyPattern->hasSpacingLocation())
@@ -175,6 +188,7 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         if(measuringTool)
             measuringTool->setFinish(llMouse);
     }
+    
     positionLabel->setText(posText);
     QGraphicsView::mouseMoveEvent(event);
 }

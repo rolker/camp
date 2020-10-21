@@ -20,9 +20,9 @@ public:
 protected:
     void extractGeoreference(GDALDataset *dataset);
 private:
-    double geoTransform[6];
-    double inverseGeoTransform[6];
-    OGRCoordinateTransformation *projectTransformation,*unprojectTransformation;
+    double m_geoTransform[6];
+    double m_inverseGeoTransform[6];
+    OGRCoordinateTransformation *m_projectTransformation,*m_unprojectTransformation;
     QString m_projection;
 };
 

@@ -4,6 +4,7 @@
 #include <QStandardItemModel>
 #include <gdal_priv.h>
 #include <cstdint>
+#include <QOpenGLWidget>
 
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
@@ -16,6 +17,9 @@
 #include "backgroundraster.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include "surveyarea.h"
+
+#include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
@@ -161,6 +165,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
+            if(project->getBackgroundRaster() && project->getDepthRaster())
+            {
+                QAction *planPathAction = menu.addAction("Plan path");
+                connect(planPathAction, &QAction::triggered, tl, &TrackLine::planPath);
+            }
+
         }
 
         SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
@@ -182,6 +192,16 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
             {
                 QAction *lockItemAction = menu.addAction("Lock");
                 connect(lockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::lock);
+            }
+        }
+        
+        SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
+        if(sa)
+        {
+            if(project->getBackgroundRaster() && project->getDepthRaster())
+            {
+                QAction *generateAdaptiveTrackLinesAction = menu.addAction("Generate Adaptive Track Lines");
+                connect(generateAdaptiveTrackLinesAction, &QAction::triggered, sa, &SurveyArea::generateAdaptiveTrackLines);
             }
         }
     }
@@ -279,10 +299,14 @@ void MainWindow::on_actionGroup_triggered()
 
 void MainWindow::on_actionRadar_triggered()
 {
-    std::cerr << "radar: " << ui->actionRadar->isChecked() << std::endl;
+    qDebug() << "radar: " << ui->actionRadar->isChecked();
     emit project->showRadar(ui->actionRadar->isChecked());
 }
 
+void MainWindow::on_actionShowTail_triggered()
+{
+    emit project->showTail(ui->actionShowTail->isChecked());
+}
 
 void MainWindow::onROSConnected(bool connected)
 {

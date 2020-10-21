@@ -74,6 +74,8 @@ set(SOURCES
     behavior.cpp
     behaviordetails.cpp
     rosdetails.cpp
+    astar.cpp
+    radardisplay.cpp
 )
 
 set(HEADERS
@@ -105,6 +107,8 @@ set(HEADERS
     behavior.h
     behaviordetails.h
     rosdetails.h
+    astar.h
+    radardisplay.h
 )
 
 if(AMP_USE_ROS)
@@ -117,7 +121,10 @@ set ( RESOURCES
 )
 
 add_executable(AutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
-add_dependencies(AutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
+
+if(AMP_USE_ROS)
+    add_dependencies(AutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
+endif()
 
 qt5_use_modules(AutonomousMissionPlanner Widgets Positioning Svg Test)
 

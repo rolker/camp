@@ -86,30 +86,14 @@ void VectorDataset::open(const QString& fname)
                     else if(gtype == wkbPolygon)
                     {
                         OGRPolygon *op = dynamic_cast<OGRPolygon*>(geometry);
-                        Polygon *p = new Polygon(group);
-                        p->setObjectName("polygon");
                         OGRLinearRing *lr = op->getExteriorRing();
-                        qDebug() << "polygon exterior ring point count " << lr->getNumPoints();
-                        OGRPointIterator *pi = lr->getPointIterator();
-                        OGRPoint pt;
-                        while(pi->getNextPoint(&pt))
+                        if(lr)
                         {
-                            if(unprojectTransformation)
-                            {
-                                double x = pt.getX();
-                                double y = pt.getY();
-                                unprojectTransformation->Transform(1,&x,&y);
-                                pt.setX(x);
-                                pt.setY(y);
-                            }
-                            QGeoCoordinate location(pt.getY(),pt.getX());
-                            p->addExteriorPoint(location);
-                        }                        
-                        for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ringNum++)
-                        {
-                            p->addInteriorRing();
-                            lr = op->getInteriorRing(ringNum);
-                            pi = lr->getPointIterator();
+                            Polygon *p = new Polygon(group);
+                            p->setObjectName("polygon");
+                            qDebug() << "polygon exterior ring point count " << lr->getNumPoints();
+                            OGRPointIterator *pi = lr->getPointIterator();
+                            OGRPoint pt;
                             while(pi->getNextPoint(&pt))
                             {
                                 if(unprojectTransformation)
@@ -121,11 +105,30 @@ void VectorDataset::open(const QString& fname)
                                     pt.setY(y);
                                 }
                                 QGeoCoordinate location(pt.getY(),pt.getX());
-                                p->addInteriorPoint(location);
+                                p->addExteriorPoint(location);
                             }                        
+                            for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ringNum++)
+                            {
+                                p->addInteriorRing();
+                                lr = op->getInteriorRing(ringNum);
+                                pi = lr->getPointIterator();
+                                while(pi->getNextPoint(&pt))
+                                {
+                                    if(unprojectTransformation)
+                                    {
+                                        double x = pt.getX();
+                                        double y = pt.getY();
+                                        unprojectTransformation->Transform(1,&x,&y);
+                                        pt.setX(x);
+                                        pt.setY(y);
+                                    }
+                                    QGeoCoordinate location(pt.getY(),pt.getX());
+                                    p->addInteriorPoint(location);
+                                }                        
+                            }
+                            p->updateBBox();
+                            connect(autonomousVehicleProject(),&AutonomousVehicleProject::backgroundUpdated,p,&Polygon::updateBackground);
                         }
-                        p->updateBBox();
-                        connect(autonomousVehicleProject(),&AutonomousVehicleProject::backgroundUpdated,p,&Polygon::updateBackground);
                     }
                     else
                         qDebug() << "type: " << gtype;
