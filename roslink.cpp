@@ -91,8 +91,8 @@ void ROSLink::connectROS()
             
             m_node->param("/base/heading", m_base_heading, m_base_heading);
             
-            m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
-            m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
+            //m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
+            //m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
             
             m_spinner->start();
             m_watchdog_timer->start(500);
@@ -205,7 +205,7 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(vehicleShape());
     p.setWidth(6);
-    p.setColor(Qt::yellow);
+    p.setColor(Qt::darkYellow);
     painter->setPen(p);
     painter->drawPath(vehicleShape());
     p.setWidth(3);
@@ -798,6 +798,11 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     while (m_local_location_history.size()>500|| (!m_show_tail && m_local_location_history.size()>2))
         m_local_location_history.pop_front();
     m_location = location;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setPos(m_local_location_history.back());
+    }
+
     update();
 }
 
@@ -809,6 +814,10 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
     while (m_local_posmv_location_history.size()>1500 || (!m_show_tail && m_local_posmv_location_history.size()>2))
         m_local_posmv_location_history.pop_front();
     m_posmv_location = location;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setPos(m_local_posmv_location_history.back());
+    }
     update();
 }
 
@@ -842,6 +851,10 @@ void ROSLink::updateHeading(double heading)
 {
     prepareGeometryChange();
     m_heading = heading;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setRotation(heading);
+    }
     update();
 }
 
@@ -849,6 +862,10 @@ void ROSLink::updatePosmvHeading(double heading)
 {
     prepareGeometryChange();
     m_posmv_heading = heading;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setRotation(heading);
+    }
     update();
 }
 
