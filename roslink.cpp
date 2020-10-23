@@ -205,7 +205,7 @@ void ROSLink::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, Q
     painter->setPen(p);
     painter->drawPath(vehicleShape());
     p.setWidth(6);
-    p.setColor(Qt::yellow);
+    p.setColor(Qt::darkYellow);
     painter->setPen(p);
     painter->drawPath(vehicleShape());
     p.setWidth(3);
