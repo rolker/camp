@@ -800,7 +800,7 @@ void ROSLink::updateLocation(const QGeoCoordinate& location)
     m_location = location;
     for(auto rd:m_radar_displays)
     {
-        rd.second->setPos(m_local_location_history.back());
+        //rd.second->setPos(m_local_location_history.back());
     }
 
     update();
@@ -853,7 +853,7 @@ void ROSLink::updateHeading(double heading)
     m_heading = heading;
     for(auto rd:m_radar_displays)
     {
-        rd.second->setRotation(heading);
+        //rd.second->setRotation(heading);
     }
     update();
 }
@@ -1140,6 +1140,10 @@ void ROSLink::updateDisplayItem(geoviz::Item *item)
 void ROSLink::showRadar(bool show)
 {
     m_show_radar = show;
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->showRadar(show);
+    }
     update();
 }
 

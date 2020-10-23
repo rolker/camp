@@ -30,7 +30,8 @@ public:
     
 public slots:
     void addSector(double angle1, double angle2, double range, QImage *sector);    
-    
+    void showRadar(bool show);
+
 private:
     void initializeGL();
     
@@ -53,6 +54,8 @@ private:
     QOpenGLContext* m_context = nullptr;
     QOpenGLFramebufferObject* m_fbo = nullptr;
     QOpenGLBuffer m_vbo;
+    
+    bool m_show_radar = true;
 };
 
 #endif

@@ -113,7 +113,7 @@ QRectF RadarDisplay::boundingRect() const
 
 void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
-    if(!m_sectors.empty())
+    if(m_show_radar && !m_sectors.empty())
     {
         double r = m_sectors.back().range;
         //qDebug() << "range: " << r;
@@ -184,3 +184,10 @@ void RadarDisplay::addSector(double angle1, double angle2, double range, QImage 
     m_sectors.push_back(s);
     update();
 }
+
+void RadarDisplay::showRadar(bool show)
+{
+    m_show_radar = show;
+    update();
+}
+
