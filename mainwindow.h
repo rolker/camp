@@ -19,6 +19,7 @@ public:
     ~MainWindow();
 
     void open(QString const &fname);
+    void openBackground(QString const &fname);
     void setWorkspace(QString const &dir);
 public slots:
 
