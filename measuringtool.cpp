@@ -48,7 +48,10 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     m_finish = finish;
     auto azimuth = m_start.azimuthTo(m_finish);
     auto distance = m_start.distanceTo(m_finish);
-    QString labelString = QString::number(int(distance))+" meters\nbearing "+QString::number(int(azimuth))+" degrees";
+    QString distanceString = QString::number(distance,'f',0);
+    if (distance < 10) distanceString = QString::number(distance,'f',1);
+    if (distance < 1) distanceString = QString::number(distance,'f',2);
+    QString labelString = distanceString+" meters\nbearing "+QString::number(int(azimuth))+" degrees";
     
     BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
     AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
