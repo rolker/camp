@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.5.1)
 project(camp)
 
 if(CMAKE_COMPILER_IS_GNUCXX)
-    add_definitions(-std=c++11)
+    add_definitions(-std=gnu++11)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 option(AMP_USE_ROS "Build ROS components" ON)

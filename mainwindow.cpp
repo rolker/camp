@@ -70,6 +70,14 @@ void MainWindow::open(const QString& fname)
     unsetCursor();
 }
 
+void MainWindow::openBackground(const QString& fname)
+{
+    setCursor(Qt::WaitCursor);
+    project->openBackground(fname);
+    unsetCursor();
+}
+
+
 
 void MainWindow::setCurrent(QModelIndex &index)
 {

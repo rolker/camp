@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include <QApplication>
 #include <QString>
+#include <QFileInfo>
 
 #ifdef AMP_ROS
 #include "ros/ros.h"
@@ -21,8 +22,10 @@ int main(int argc, char *argv[])
         QString arg(argv[i]);
         if(arg.endsWith(".json", Qt::CaseInsensitive))
             w.open(arg);
-        else
+        else if(QFileInfo(arg).isDir())
             w.setWorkspace(arg);
+        else // try background
+            w.openBackground(arg);
     }
 
     return a.exec();
