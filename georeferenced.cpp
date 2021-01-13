@@ -27,14 +27,15 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
 {
     dataset->GetGeoTransform(m_geoTransform);
     qDebug() << "geoTransform: " << m_geoTransform[0] << ", " << m_geoTransform[1] << ", " << m_geoTransform[2] << ", " << m_geoTransform[3] << ", " << m_geoTransform[4] << ", " << m_geoTransform[5];
-    GDALInvGeoTransform(m_geoTransform,m_inverseGeoTransform);
+    if(!GDALInvGeoTransform(m_geoTransform,m_inverseGeoTransform))
+        qDebug() << "Error inverting geoTransform";
 
     OGRSpatialReference projected, wgs84;
 
     qDebug() << "projection:" << dataset->GetProjectionRef();
     qDebug() << "gcp projection:" << dataset->GetGCPProjection();
 
-    char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
+    const char * wktProjection = const_cast<char *>(dataset->GetProjectionRef());
     if(wktProjection[0] == 0)
         wktProjection = const_cast<char *>(dataset->GetGCPProjection());
     m_projection = wktProjection;
@@ -50,8 +51,8 @@ QPointF Georeferenced::project(const QGeoCoordinate &point) const
 {
     if(m_projectTransformation)
     {
-        double x = point.longitude();
-        double y = point.latitude();
+        double x = point.latitude();
+        double y = point.longitude();
         m_projectTransformation->Transform(1,&x,&y);
         return QPointF(x,y);
     }
@@ -65,7 +66,7 @@ QGeoCoordinate Georeferenced::unproject(const QPointF &point) const
         double x = point.x();
         double y = point.y();
         m_unprojectTransformation->Transform(1,&x,&y);
-        return QGeoCoordinate(y, x);
+        return QGeoCoordinate(x, y);
     }
     return QGeoCoordinate();
 }
