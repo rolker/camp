@@ -49,47 +49,47 @@ void ROSLink::connectROS()
         {
             m_node = new ros::NodeHandle;
             m_spinner = new ros::AsyncSpinner(0);
-            m_geopoint_subscriber = m_node->subscribe("/position", 10, &ROSLink::geoPointStampedCallback, this);
-            m_base_navsatfix_subscriber = m_node->subscribe("/base/position", 10, &ROSLink::baseNavSatFixCallback, this);
-            m_origin_subscriber = m_node->subscribe("/origin", 10, &ROSLink::originCallback, this);
-            m_heading_subscriber = m_node->subscribe("/heading", 10, &ROSLink::headingCallback, this);
-            m_base_heading_subscriber = m_node->subscribe("/orientation", 10, &ROSLink::baseHeadingCallback, this);
-            m_ais_subscriber = m_node->subscribe("/contact", 10, &ROSLink::contactCallback, this);
-            m_heartbeat_subscriber = m_node->subscribe("/heartbeat", 10, &ROSLink::heartbeatCallback, this);
-            m_mission_status_subscriber = m_node->subscribe("/project11/mission_manager/status", 10, &ROSLink::missionStatusCallback, this);
-            m_posmv_position = m_node->subscribe("/posmv/position", 10, &ROSLink::posmvPositionCallback, this);
-            m_posmv_orientation = m_node->subscribe("/posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
-            m_range_subscriber = m_node->subscribe("/range", 10, &ROSLink::rangeCallback, this);
-            m_bearing_subscriber = m_node->subscribe("/bearing",10, &ROSLink::bearingCallback, this);
-            m_sog_subscriber = m_node->subscribe("/sog",10, &ROSLink::sogCallback, this);
-            m_coverage_subscriber = m_node->subscribe("/coverage", 10, &ROSLink::coverageCallback, this);
-            m_ping_subscriber = m_node->subscribe("/mbes_ping", 10, &ROSLink::pingCallback, this);
-            m_display_subscriber = m_node->subscribe("/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
+            m_geopoint_subscriber = m_node->subscribe("position", 10, &ROSLink::geoPointStampedCallback, this);
+            m_base_navsatfix_subscriber = m_node->subscribe("base/position", 10, &ROSLink::baseNavSatFixCallback, this);
+            m_origin_subscriber = m_node->subscribe("project11/origin", 10, &ROSLink::originCallback, this);
+            m_heading_subscriber = m_node->subscribe("heading", 10, &ROSLink::headingCallback, this);
+            m_base_heading_subscriber = m_node->subscribe("orientation", 10, &ROSLink::baseHeadingCallback, this);
+            m_ais_subscriber = m_node->subscribe("contact", 10, &ROSLink::contactCallback, this);
+            m_heartbeat_subscriber = m_node->subscribe("project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
+            m_mission_status_subscriber = m_node->subscribe("project11/mission_manager/status", 10, &ROSLink::missionStatusCallback, this);
+            m_posmv_position = m_node->subscribe("posmv/position", 10, &ROSLink::posmvPositionCallback, this);
+            m_posmv_orientation = m_node->subscribe("posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
+            m_range_subscriber = m_node->subscribe("range", 10, &ROSLink::rangeCallback, this);
+            m_bearing_subscriber = m_node->subscribe("bearing",10, &ROSLink::bearingCallback, this);
+            m_sog_subscriber = m_node->subscribe("sog",10, &ROSLink::sogCallback, this);
+            m_coverage_subscriber = m_node->subscribe("coverage", 10, &ROSLink::coverageCallback, this);
+            m_ping_subscriber = m_node->subscribe("mbes_ping", 10, &ROSLink::pingCallback, this);
+            m_display_subscriber = m_node->subscribe("project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
-            m_radar_displays["/radar/HaloA/data"] = new RadarDisplay(this);
-            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/radar/HaloA/data"));
+            m_radar_displays["radar/HaloA/data"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar/HaloA/data"));
             
-            m_radar_displays["/udp/radar"] = new RadarDisplay(this);
-            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/udp/radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/udp/radar"));
+            m_radar_displays["radar"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
             
-            m_send_command_publisher = m_node->advertise<std_msgs::String>("/send_command",1);
-            m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("/base/camera/look_at",1);
-            m_look_at_mode_publisher = m_node->advertise<std_msgs::String>("/base/camera/look_at_mode",1);
+            m_send_command_publisher = m_node->advertise<std_msgs::String>("project11/send_command",1);
+            m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
+            m_look_at_mode_publisher = m_node->advertise<std_msgs::String>("base/camera/look_at_mode",1);
             
-            m_node->param("/base/dimension_to_bow",m_base_dimension_to_bow,m_base_dimension_to_bow);
-            m_node->param("/base/dimension_to_stern",m_base_dimension_to_stern,m_base_dimension_to_stern);
-            m_node->param("/base/dimension_to_stbd",m_base_dimension_to_stbd,m_base_dimension_to_stbd);
-            m_node->param("/base/dimension_to_port",m_base_dimension_to_port,m_base_dimension_to_port);
+            m_node->param("base/dimension_to_bow",m_base_dimension_to_bow,m_base_dimension_to_bow);
+            m_node->param("base/dimension_to_stern",m_base_dimension_to_stern,m_base_dimension_to_stern);
+            m_node->param("base/dimension_to_stbd",m_base_dimension_to_stbd,m_base_dimension_to_stbd);
+            m_node->param("base/dimension_to_port",m_base_dimension_to_port,m_base_dimension_to_port);
             
             double latitude, longitude;
-            if(m_node->getParam("/base/latitude",latitude) && m_node->getParam("/base/longitude",longitude))
+            if(m_node->getParam("base/latitude",latitude) && m_node->getParam("base/longitude",longitude))
             {
                 m_base_location.location.setLatitude(latitude);
                 m_base_location.location.setLongitude(longitude);
                 m_base_location.pos = geoToPixel(m_base_location.location,autonomousVehicleProject());
             }
             
-            m_node->param("/base/heading", m_base_heading, m_base_heading);
+            m_node->param("base/heading", m_base_heading, m_base_heading);
             
             //m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
             //m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
