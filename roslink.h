@@ -5,6 +5,7 @@
 
 #include "geographic_msgs/GeoPointStamped.h"
 #include "sensor_msgs/NavSatFix.h"
+#include "sensor_msgs/Imu.h"
 #include "marine_msgs/NavEulerStamped.h"
 #include "marine_msgs/Heartbeat.h"
 #include "marine_msgs/RadarSectorStamped.h"
@@ -13,6 +14,7 @@
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
 #include "geometry_msgs/TwistStamped.h"
+#include "geometry_msgs/Quaternion.h"
 #include "geographic_msgs/GeoPath.h"
 #include "sensor_msgs/PointCloud.h"
 #include "locationposition.h"
@@ -148,15 +150,15 @@ public slots:
     void showTail(bool show);
     
 private:
-    void geoPointStampedCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
+    void gpsPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void baseNavSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void originCallback(const geographic_msgs::GeoPoint::ConstPtr& message);
-    void headingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
+    void headingCallback(const sensor_msgs::Imu::ConstPtr& message);
     void baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void contactCallback(const marine_msgs::Contact::ConstPtr& message);
     void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message);
-    void posmvOrientationCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
+    void posmvOrientationCallback(const sensor_msgs::Imu::ConstPtr& message);
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
@@ -174,7 +176,7 @@ private:
     AutonomousVehicleProject *autonomousVehicleProject() const;
     
     ros::NodeHandle *m_node;
-    ros::Subscriber m_geopoint_subscriber;
+    ros::Subscriber m_gps_position_subscriber;
     ros::Subscriber m_base_navsatfix_subscriber;
     ros::Subscriber m_origin_subscriber;
     ros::Subscriber m_heading_subscriber;
