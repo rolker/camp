@@ -57,9 +57,9 @@ void ROSLink::connectROS()
             m_base_heading_subscriber = m_node->subscribe("orientation", 10, &ROSLink::baseHeadingCallback, this);
             m_ais_subscriber = m_node->subscribe("contact", 10, &ROSLink::contactCallback, this);
             m_heartbeat_subscriber = m_node->subscribe("project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
-            m_mission_status_subscriber = m_node->subscribe("project11/mission_manager/status", 10, &ROSLink::missionStatusCallback, this);
-            m_posmv_position = m_node->subscribe("sensors/posmv/position", 10, &ROSLink::posmvPositionCallback, this);
-            m_posmv_orientation = m_node->subscribe("sensors/posmv/orientation", 10, &ROSLink::posmvOrientationCallback, this);
+            m_mission_status_subscriber = m_node->subscribe("project11/status/mission_manager", 10, &ROSLink::missionStatusCallback, this);
+            m_posmv_position = m_node->subscribe("nav/position", 10, &ROSLink::posmvPositionCallback, this);
+            m_posmv_orientation = m_node->subscribe("nav/orientation", 10, &ROSLink::posmvOrientationCallback, this);
             m_range_subscriber = m_node->subscribe("range", 10, &ROSLink::rangeCallback, this);
             m_bearing_subscriber = m_node->subscribe("bearing",10, &ROSLink::bearingCallback, this);
             m_sog_subscriber = m_node->subscribe("sog",10, &ROSLink::sogCallback, this);
