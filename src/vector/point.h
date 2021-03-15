@@ -1,7 +1,7 @@
 #ifndef POINT_H
 #define POINT_H
 
-#include "geographicsmissionitem.h"
+#include "../geographicsmissionitem.h"
 
 
 class Point : public GeoGraphicsMissionItem

@@ -1,8 +1,8 @@
 #ifndef VECTORDATASET_H
 #define VECTORDATASET_H
 
-#include "georeferenced.h"
-#include "group.h"
+#include "../georeferenced.h"
+#include "../group.h"
 
 class VectorDataset :public Group, public Georeferenced
 {

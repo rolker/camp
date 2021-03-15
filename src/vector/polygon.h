@@ -1,8 +1,8 @@
 #ifndef POLYGON_H
 #define POLYGON_H
 
-#include "geographicsmissionitem.h"
-#include "locationposition.h"
+#include "../geographicsmissionitem.h"
+#include "../locationposition.h"
 
 class Polygon : public GeoGraphicsMissionItem
 {

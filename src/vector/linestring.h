@@ -1,8 +1,8 @@
 #ifndef LINESTRING_H
 #define LINESTRING_H
 
-#include "geographicsmissionitem.h"
-#include "locationposition.h"
+#include "../geographicsmissionitem.h"
+#include "../locationposition.h"
 
 class LineString : public GeoGraphicsMissionItem
 {
