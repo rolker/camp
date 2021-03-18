@@ -1,7 +1,16 @@
-# AutonomousMissionPlanner
+# CCOM Autonomous Mission Planner
+
 Planning software for autonomous surface and underwater vehicles.
 
-Building on Windows 10 
+This was initially a stand-alone offline application for planning missions. A ROS based monitoring component got added and this is now a ROS package part of Project11.
+
+## Build
+
+Include into a ROS workspace and it should build alonside your other packages.
+
+### Building on Windows 10 (old instructions)
+
+Initially, CAMP was a cross-platform application. It may still compile on system other than Ubuntu, but this has not been tested in a while.
 
 These were the steps followed using the lastest versions at the time. May also work with different versions.
 
