@@ -13,7 +13,7 @@
 #include "marine_msgs/Contact.h"
 #include "std_msgs/String.h"
 #include "std_msgs/Float32.h"
-#include "geometry_msgs/TwistStamped.h"
+#include "geometry_msgs/TwistWithCovarianceStamped.h"
 #include "geometry_msgs/Quaternion.h"
 #include "geographic_msgs/GeoPath.h"
 #include "sensor_msgs/PointCloud.h"
@@ -162,7 +162,7 @@ private:
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
     void rangeCallback(const std_msgs::Float32::ConstPtr& message);
     void bearingCallback(const std_msgs::Float32::ConstPtr& message);
-    void sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message);
+    void sogCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message);
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
     void geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizItem::ConstPtr& message);

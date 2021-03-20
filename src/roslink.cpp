@@ -50,22 +50,25 @@ void ROSLink::connectROS()
         {
             m_node = new ros::NodeHandle;
             m_spinner = new ros::AsyncSpinner(0);
-            m_gps_position_subscriber = m_node->subscribe("sensors/gps/position", 10, &ROSLink::gpsPositionCallback, this);
+
+            std::string robotNamespace = ros::param::param<std::string>("robotNamespace","ben");
+
+            m_gps_position_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/position", 10, &ROSLink::gpsPositionCallback, this);
             m_base_navsatfix_subscriber = m_node->subscribe("base/position", 10, &ROSLink::baseNavSatFixCallback, this);
             m_origin_subscriber = m_node->subscribe("project11/origin", 10, &ROSLink::originCallback, this);
-            m_heading_subscriber = m_node->subscribe("sensors/heading", 10, &ROSLink::headingCallback, this);
+            m_heading_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/orientation", 10, &ROSLink::headingCallback, this);
             m_base_heading_subscriber = m_node->subscribe("orientation", 10, &ROSLink::baseHeadingCallback, this);
             m_ais_subscriber = m_node->subscribe("contact", 10, &ROSLink::contactCallback, this);
-            m_heartbeat_subscriber = m_node->subscribe("project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
-            m_mission_status_subscriber = m_node->subscribe("project11/status/mission_manager", 10, &ROSLink::missionStatusCallback, this);
-            m_posmv_position = m_node->subscribe("nav/position", 10, &ROSLink::posmvPositionCallback, this);
-            m_posmv_orientation = m_node->subscribe("nav/orientation", 10, &ROSLink::posmvOrientationCallback, this);
+            m_heartbeat_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
+            m_mission_status_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/status/mission_manager", 10, &ROSLink::missionStatusCallback, this);
+            m_posmv_position = m_node->subscribe("/"+robotNamespace+"/nav/position", 10, &ROSLink::posmvPositionCallback, this);
+            m_posmv_orientation = m_node->subscribe("/"+robotNamespace+"/nav/orientation", 10, &ROSLink::posmvOrientationCallback, this);
             m_range_subscriber = m_node->subscribe("range", 10, &ROSLink::rangeCallback, this);
             m_bearing_subscriber = m_node->subscribe("bearing",10, &ROSLink::bearingCallback, this);
-            m_sog_subscriber = m_node->subscribe("sog",10, &ROSLink::sogCallback, this);
+            m_sog_subscriber = m_node->subscribe("/"+robotNamespace+"/nav/velocity",10, &ROSLink::sogCallback, this);
             m_coverage_subscriber = m_node->subscribe("coverage", 10, &ROSLink::coverageCallback, this);
             m_ping_subscriber = m_node->subscribe("mbes_ping", 10, &ROSLink::pingCallback, this);
-            m_display_subscriber = m_node->subscribe("project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
+            m_display_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
             m_radar_displays["radar/HaloA/data"] = new RadarDisplay(this);
             m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar/HaloA/data"));
@@ -568,9 +571,9 @@ void ROSLink::bearingCallback(const std_msgs::Float32::ConstPtr& message)
     m_bearing = message->data;
 }
 
-void ROSLink::sogCallback(const geometry_msgs::TwistStamped::ConstPtr& message)
+void ROSLink::sogCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message)
 {
-    qreal sog = sqrt(message->twist.linear.x*message->twist.linear.x+message->twist.linear.y*message->twist.linear.y);
+    qreal sog = sqrt(message->twist.twist.linear.x*message->twist.twist.linear.x+message->twist.twist.linear.y*message->twist.twist.linear.y);
     QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(qreal, sog));  
 }
 
