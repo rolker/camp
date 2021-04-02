@@ -58,7 +58,7 @@ void ROSLink::connectROS()
             m_origin_subscriber = m_node->subscribe("project11/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/orientation", 10, &ROSLink::headingCallback, this);
             m_base_heading_subscriber = m_node->subscribe("orientation", 10, &ROSLink::baseHeadingCallback, this);
-            m_ais_subscriber = m_node->subscribe("contact", 10, &ROSLink::contactCallback, this);
+            m_ais_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/ais/contact", 10, &ROSLink::contactCallback, this);
             m_heartbeat_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
             m_mission_status_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/status/mission_manager", 10, &ROSLink::missionStatusCallback, this);
             m_posmv_position = m_node->subscribe("/"+robotNamespace+"/nav/position", 10, &ROSLink::posmvPositionCallback, this);
