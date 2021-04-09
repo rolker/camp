@@ -70,11 +70,11 @@ void ROSLink::connectROS()
             m_ping_subscriber = m_node->subscribe("mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
-            m_radar_displays["radar/HaloA/data"] = new RadarDisplay(this);
-            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar/HaloA/data"));
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"] = new RadarDisplay(this);
+            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloA/data"));
             
-            m_radar_displays["radar"] = new RadarDisplay(this);
-            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
+            //m_radar_displays["radar"] = new RadarDisplay(this);
+            //m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
             
             m_send_command_publisher = m_node->advertise<std_msgs::String>("project11/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
