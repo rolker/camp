@@ -1,5 +1,6 @@
 #include "detailsview.h"
 #include <QStandardItemModel>
+#include <QVBoxLayout>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "backgrounddetails.h"
@@ -30,6 +31,15 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     platformDetails->hide();
     behaviorDetails = new BehaviorDetails(this);
     behaviorDetails->hide();
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout->addWidget(backgroundDetails);
+    layout->addWidget(waypointDetails);
+    layout->addWidget(trackLineDetails);
+    layout->addWidget(surveyPatternDetails);
+    layout->addWidget(platformDetails);
+    layout->addWidget(behaviorDetails);
+    setLayout(layout);
 }
 
 QSize DetailsView::sizeHint() const

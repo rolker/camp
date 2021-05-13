@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HelmManager</class>
+ <widget class="QWidget" name="HelmManager">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>118</width>
+    <height>121</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Form</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QPushButton" name="standbyPushButton">
+     <property name="text">
+      <string>Standby</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="autonomousPushButton">
+     <property name="text">
+      <string>Autonomous</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextBrowser" name="robotStatusTextBrowser">
+     <property name="minimumSize">
+      <size>
+       <width>100</width>
+       <height>25</height>
+      </size>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="timeLatencyLabel">
+     <property name="toolTip">
+      <string>Last HB shows how many seconds since we last received a heartbeat while latency is the differnece in the heartbeat's timestamp and the received time.</string>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

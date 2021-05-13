@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>420</width>
-    <height>575</height>
+    <width>353</width>
+    <height>161</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -21,20 +21,6 @@
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <widget class="QPushButton" name="standbyPushButton">
-     <property name="text">
-      <string>Standby</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QPushButton" name="autonomousPushButton">
-     <property name="text">
-      <string>Autonomous</string>
-     </property>
-    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -62,21 +48,11 @@
     </layout>
    </item>
    <item>
-    <widget class="QTextBrowser" name="vehicleStatusTextBrowser">
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>100</height>
-      </size>
-     </property>
-    </widget>
-   </item>
-   <item>
     <widget class="QTextBrowser" name="missionStatusTextBrowser">
      <property name="minimumSize">
       <size>
        <width>0</width>
-       <height>250</height>
+       <height>20</height>
       </size>
      </property>
      <property name="contextMenuPolicy">
@@ -120,13 +96,6 @@
     <widget class="QLineEdit" name="rangeBearingLineEdit">
      <property name="readOnly">
       <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QLabel" name="timeLatencyLabel">
-     <property name="text">
-      <string/>
      </property>
     </widget>
    </item>

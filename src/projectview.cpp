@@ -13,6 +13,8 @@
 #include <QDebug>
 #include <QMenu>
 #include "measuringtool.h"
+#include <QAbstractSlider>
+#include <QScrollBar>
 
 #ifdef AMP_ROS
 #include "roslink.h"
@@ -26,6 +28,8 @@ ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
     positionLabel->setText("(,)");
     modeLabel->setText("Mode: pan");
 
+    connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &ProjectView::sendViewport);
+    connect(verticalScrollBar(), &QAbstractSlider::valueChanged, this , &ProjectView::sendViewport);
 }
 
 void ProjectView::wheelEvent(QWheelEvent *event)
@@ -35,6 +39,7 @@ void ProjectView::wheelEvent(QWheelEvent *event)
     if(event->angleDelta().y()>0)
         scale(1.25,1.25);
     emit scaleChanged(matrix().m11());
+    sendViewport();
     event->accept();
 }
 
@@ -321,8 +326,44 @@ void ProjectView::sendLookAtASV()
 
 #endif
 
+void ProjectView::beforeUpdateBackground()
+{
+    BackgroundRaster *bg =  m_project->getBackgroundRaster();
+    if(bg)
+    {
+        QRect view = frameRect();
+        QPointF center = mapToScene(view.center());
+        m_savedCenter = bg->pixelToGeo(center);
+    }
+    else
+    {
+        // clear saved position
+        m_savedCenter = QGeoCoordinate();
+    }
+    qDebug() << "saved center: " << m_savedCenter;
+
+}
+
 void ProjectView::updateBackground(BackgroundRaster* bg)
 {
     auto bgRect = bg->boundingRect();
     setSceneRect(bgRect.marginsAdded(QMarginsF(bgRect.width()*.75,bgRect.height()*.75,bgRect.width()*.75,bgRect.height()*.75)));
+    if(m_savedCenter.isValid())
+    {
+        QPointF center = bg->geoToPixel(m_savedCenter);
+        centerOn(center);
+    }
+}
+
+void ProjectView::sendViewport()
+{
+    QGeoCoordinate lowerLeft, upperRight;
+    BackgroundRaster *bg =  m_project->getBackgroundRaster();
+    if(bg)
+    {
+        QRect view = frameRect();
+        lowerLeft = bg->pixelToGeo(mapToScene(view.bottomLeft()));
+        upperRight = bg->pixelToGeo(mapToScene(view.topRight()));
+        emit viewportChanged(lowerLeft, upperRight);
+    }
 }

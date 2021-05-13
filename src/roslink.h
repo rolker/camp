@@ -101,7 +101,6 @@ public:
     
     int type() const {return ROSLinkType;}
     
-    std::string const &helmMode() const;
     void setHelmMode(const std::string& helmMode);
     void sendCommand(const std::string& command);
     
@@ -112,6 +111,7 @@ signals:
 
     void rosConnected(bool connected);
     void originUpdated();
+    void robotNamespaceUpdated(QString robot_namespace);
     
 public slots:
     void updateLocation(QGeoCoordinate const &location);
@@ -143,7 +143,7 @@ public slots:
     void sendGotoLine(int waypoint_index);
     void sendStartLine(int waypoint_index);
     void connectROS();
-    void updateHeartbeatTimes(ros::Time const &last_heartbeat_timestamp, ros::Time const &last_heartbeat_receive_time);
+
     void watchdogUpdate();
     void updateSog(qreal sog);
     void showRadar(bool show);
@@ -156,7 +156,6 @@ private:
     void headingCallback(const sensor_msgs::Imu::ConstPtr& message);
     void baseHeadingCallback(const marine_msgs::NavEulerStamped::ConstPtr& message);
     void contactCallback(const marine_msgs::Contact::ConstPtr& message);
-    void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message);
     void posmvOrientationCallback(const sensor_msgs::Imu::ConstPtr& message);
     void posmvPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
@@ -182,7 +181,6 @@ private:
     ros::Subscriber m_heading_subscriber;
     ros::Subscriber m_base_heading_subscriber;
     ros::Subscriber m_ais_subscriber;
-    ros::Subscriber m_heartbeat_subscriber;
     ros::Subscriber m_mission_status_subscriber;
     ros::Subscriber m_posmv_position;
     ros::Subscriber m_posmv_orientation;
@@ -220,8 +218,6 @@ private:
     float m_base_dimension_to_bow;
     float m_base_dimension_to_stern; 
     
-    std::string m_helmMode;
-    
     typedef std::list<ROSAISContact*> ContactList;
     typedef std::map<uint32_t,ContactList> ContactMap;
     
@@ -256,9 +252,6 @@ private:
     bool m_show_radar;
     bool m_show_tail;
 
-    ros::Time m_last_heartbeat_timestamp;
-    ros::Time m_last_heartbeat_receive_time;
-    
     QTimer * m_watchdog_timer;
     
     double m_range;

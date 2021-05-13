@@ -12,23 +12,27 @@ class GeoGraphicsItem : public QGraphicsItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    enum {  BackgroundRasterType = UserType+1,
-            WaypointType,
-            TrackLineType,
-            SurveyPatternType,
-            PointType,
-            LineStringType,
-            PolygonType,
-            ROSLinkType,
-            SurveyAreaType,
-            MeasuringToolType,
-            RadarDisplayType
+    enum
+    {
+        BackgroundRasterType = UserType+1,
+        WaypointType,
+        TrackLineType,
+        SurveyPatternType,
+        PointType,
+        LineStringType,
+        PolygonType,
+        ROSLinkType,
+        SurveyAreaType,
+        MeasuringToolType,
+        RadarDisplayType,
+        AISContactType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
 
     
     QPointF geoToPixel(QGeoCoordinate const &point, AutonomousVehicleProject *p) const;
+    QPointF geoToPixel(QGeoCoordinate const &point, BackgroundRaster *bg) const;
     QGeoCoordinate pixelToGeo(QPointF const &point) const;
 
     void prepareGeometryChange();
@@ -39,7 +43,10 @@ public:
     void setLabelPosition(QPointF pos);
     
     int type() const override=0;
-  
+
+protected:
+    BackgroundRaster* findParentBackgroundRaster() const;
+
 private:
     QGraphicsSimpleTextItem *m_label;
     QString m_labelText;

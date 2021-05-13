@@ -19,7 +19,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 
 }
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_helmMode("standby"),m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0),m_show_tail(true)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0),m_show_tail(true)
 {
     m_base_dimension_to_bow = 1.0;
     m_base_dimension_to_stern = 1.0;
@@ -52,14 +52,15 @@ void ROSLink::connectROS()
             m_spinner = new ros::AsyncSpinner(0);
 
             std::string robotNamespace = ros::param::param<std::string>("robotNamespace","ben");
+            emit robotNamespaceUpdated(robotNamespace.c_str());
 
             m_gps_position_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/position", 10, &ROSLink::gpsPositionCallback, this);
             m_base_navsatfix_subscriber = m_node->subscribe("base/position", 10, &ROSLink::baseNavSatFixCallback, this);
             m_origin_subscriber = m_node->subscribe("project11/origin", 10, &ROSLink::originCallback, this);
             m_heading_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/orientation", 10, &ROSLink::headingCallback, this);
             m_base_heading_subscriber = m_node->subscribe("orientation", 10, &ROSLink::baseHeadingCallback, this);
-            m_ais_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/ais/contact", 10, &ROSLink::contactCallback, this);
-            m_heartbeat_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/heartbeat", 10, &ROSLink::heartbeatCallback, this);
+            //m_ais_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/ais/contact", 10, &ROSLink::contactCallback, this);
+
             m_mission_status_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/status/mission_manager", 10, &ROSLink::missionStatusCallback, this);
             m_posmv_position = m_node->subscribe("/"+robotNamespace+"/nav/position", 10, &ROSLink::posmvPositionCallback, this);
             m_posmv_orientation = m_node->subscribe("/"+robotNamespace+"/nav/orientation", 10, &ROSLink::posmvOrientationCallback, this);
@@ -76,7 +77,7 @@ void ROSLink::connectROS()
             //m_radar_displays["radar"] = new RadarDisplay(this);
             //m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
             
-            m_send_command_publisher = m_node->advertise<std_msgs::String>("project11/send_command",1);
+            m_send_command_publisher = m_node->advertise<std_msgs::String>("/"+robotNamespace+"/project11/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
             m_look_at_mode_publisher = m_node->advertise<std_msgs::String>("base/camera/look_at_mode",1);
             
@@ -653,27 +654,6 @@ void ROSLink::contactCallback(const marine_msgs::Contact::ConstPtr& message)
     QMetaObject::invokeMethod(this,"addAISContact", Qt::QueuedConnection, Q_ARG(ROSAISContact*, c));
 }
 
-void ROSLink::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
-{
-    ros::Time last_heartbeat_receive_time = ros::Time::now();
-    ros::Time last_heartbeat_timestamp = message->header.stamp;
-    
-    QString status_string;
-    QString helm_mode;
-    for(auto kv: message->values)
-    {
-        status_string += kv.key.c_str();
-        status_string += ": ";
-        status_string += kv.value.c_str();
-        status_string += "\n";
-        if (kv.key == "piloting_mode")
-            helm_mode = kv.value.c_str();
-    }
-    
-    QMetaObject::invokeMethod(m_details,"updateVehicleStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
-    QMetaObject::invokeMethod(this,"updateHeartbeatTimes", Qt::QueuedConnection, Q_ARG(ros::Time const&, last_heartbeat_timestamp), Q_ARG(ros::Time const&, last_heartbeat_receive_time));
-    QMetaObject::invokeMethod(m_details,"updateHelmMode", Qt::QueuedConnection, Q_ARG(QString const&, helm_mode));
-}
 
 void ROSLink::missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message)
 {
@@ -689,29 +669,11 @@ void ROSLink::missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& mess
     QMetaObject::invokeMethod(m_details,"updateMissionStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
 }
 
-
-void ROSLink::updateHeartbeatTimes(const ros::Time& last_heartbeat_timestamp, const ros::Time& last_heartbeat_receive_time)
-{
-    m_last_heartbeat_timestamp = last_heartbeat_timestamp;
-    m_last_heartbeat_receive_time = last_heartbeat_receive_time;
-
-}
-
 void ROSLink::watchdogUpdate()
 {
     if(m_node)
     {
-        ros::Time now = ros::Time::now();
-        ros::Duration diff = now-m_last_heartbeat_timestamp;
-        //std::cerr << "timestamp: " << m_last_heartbeat_timestamp << "\tnow: " << now << "\tdiff:" << diff << std::endl;
-
-        m_details->heartbeatDelay(diff.toSec(), m_last_heartbeat_timestamp, m_last_heartbeat_receive_time);
         m_details->rangeAndBearingUpdate(m_range,m_range_timestamp,m_bearing,m_bearing_timestamp);
-    }
-    else
-    {
-        ros::Time uninit_time;
-        m_details->heartbeatDelay(1000.0, uninit_time, uninit_time);
     }
 }
 
@@ -929,24 +891,24 @@ void ROSLink::recalculatePositions()
         display_item.second->label_position.pos = geoToPixel(display_item.second->label_position.location,avp);
         for(auto pl: display_item.second->point_groups)
         {
-            for(auto p: pl.points)
+            for(auto& p: pl.points)
                 p.pos = geoToPixel(p.location,avp);
         }
-        for(auto l: display_item.second->lines)
+        for(auto& l: display_item.second->lines)
         {
-            for(auto p: l.points)
+            for(auto& p: l.points)
             {
                 //std::cerr << "old pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
                 p.pos = geoToPixel(p.location,avp);
                 //std::cerr << "new pos: " << p.pos.x() << ", " << p.pos.y() << std::endl;
             }
         }
-        for(auto poly: display_item.second->polygons)
+        for(auto& poly: display_item.second->polygons)
         {
-            for(auto op: poly.outer)
+            for(auto& op: poly.outer)
                 op.pos = geoToPixel(op.location,avp);
-            for(auto ir: poly.inner)
-                for(auto ip: ir)
+            for(auto& ir: poly.inner)
+                for(auto& ip: ir)
                     ip.pos = geoToPixel(ip.location,avp);
         }
     }
@@ -980,18 +942,9 @@ void ROSLink::recalculatePositions()
     update();
 }
 
-const std::string& ROSLink::helmMode() const
-{
-    return m_helmMode;
-}
-
 void ROSLink::setHelmMode(const std::string& helmMode)
 {
-    m_helmMode = helmMode;
     sendCommand("piloting_mode "+helmMode);
-//     std_msgs::String hm;
-//     hm.data = helmMode;
-//     m_helmMode_publisher.publish(hm);
 }
 
 void ROSLink::sendCommand(const std::string& command)

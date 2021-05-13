@@ -42,8 +42,6 @@ public:
 public slots:
     virtual void updateProjectedPoints();
 
-public slots:
-
 protected:
 
     

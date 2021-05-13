@@ -26,20 +26,23 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
 {
     if(p)
-    {
-        BackgroundRaster *bg = p->getBackgroundRaster();
-        if(bg)
-        {
-            QPointF ret = bg->geoToPixel(point);
-            QGraphicsItem *pi = parentItem();
-            if(pi)
-            {
-                return ret - pi->scenePos();
-            }
-            return ret;
-        }
-    }
+        return geoToPixel(point, p->getBackgroundRaster());
     return QPointF();
+
+}
+
+QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
+{
+    if(bg)
+    {
+        QPointF ret = bg->geoToPixel(point);
+        QGraphicsItem *pi = parentItem();
+        if(pi)
+        {
+            return ret - pi->scenePos();
+        }
+        return ret;
+    }
 }
 
 void GeoGraphicsItem::prepareGeometryChange()
@@ -73,5 +76,17 @@ void GeoGraphicsItem::setShowLabelFlag(bool show)
         m_label->setText("");
 }
 
-
+BackgroundRaster* GeoGraphicsItem::findParentBackgroundRaster() const
+{
+    BackgroundRaster* ret = nullptr;
+    QGraphicsItem* parent = parentItem();
+    while(parent)
+    {
+        ret = dynamic_cast<BackgroundRaster*>(parent);
+        if(ret)
+            return ret;
+        parent = parent->parentItem();
+    }
+    return ret;
+}
 

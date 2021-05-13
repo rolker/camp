@@ -26,9 +26,11 @@ public:
     void setAddSurveyAreaMode();
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
+
 signals:
     void currentChanged(QModelIndex &index);
     void scaleChanged(qreal scale);
+    void viewportChanged(QGeoCoordinate lowerLeft, QGeoCoordinate upperRight);
 
 public slots:
 #ifdef AMP_ROS
@@ -37,8 +39,9 @@ public slots:
     void sendLookAt();
     void sendLookAtASV();
 #endif
+    void beforeUpdateBackground();
     void updateBackground(BackgroundRaster * bg);
-
+    void sendViewport(); 
 
 protected:
     void wheelEvent(QWheelEvent *event) override;
@@ -62,6 +65,8 @@ private:
     MeasuringTool * measuringTool;
 
     QGeoCoordinate m_contextMenuLocation;
+
+    QGeoCoordinate m_savedCenter;
 
 };
 

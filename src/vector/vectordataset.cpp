@@ -127,7 +127,7 @@ void VectorDataset::open(const QString& fname)
                                 }                        
                             }
                             p->updateBBox();
-                            connect(autonomousVehicleProject(),&AutonomousVehicleProject::backgroundUpdated,p,&Polygon::updateBackground);
+                            connect(autonomousVehicleProject(),&AutonomousVehicleProject::updatingBackground,p,&Polygon::updateBackground);
                         }
                     }
                     else

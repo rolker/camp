@@ -8,6 +8,8 @@ namespace Ui {
 class MainWindow;
 }
 
+class AISManager;
+
 class AutonomousVehicleProject;
 
 class MainWindow : public QMainWindow
@@ -44,11 +46,13 @@ private slots:
     void on_actionBehavior_triggered();
     void on_actionRadar_triggered();
     void on_actionShowTail_triggered();
+    void on_actionAISManager_triggered();
 
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;
     QString m_workspace_path;
+    AISManager* m_ais_manager;
 
     void exportHypack() const;
     void exportMissionPlan() const;

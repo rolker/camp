@@ -42,7 +42,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     
 #ifdef AMP_ROS
     m_ROSLink =  new ROSLink(this);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,m_ROSLink ,&ROSLink::updateBackground);
+    connect(this,&AutonomousVehicleProject::updatingBackground,m_ROSLink ,&ROSLink::updateBackground);
     connect(this,&AutonomousVehicleProject::showRadar,m_ROSLink, &ROSLink::showRadar);
     connect(this,&AutonomousVehicleProject::showTail,m_ROSLink, &ROSLink::showTail);
 #endif
@@ -127,7 +127,7 @@ void AutonomousVehicleProject::openGeometry(const QString& fname)
     VectorDataset * vd = new VectorDataset(m_currentGroup);
     vd->setObjectName(fname);
     vd->open(fname);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,vd,&VectorDataset::updateProjectedPoints);
+    connect(this,&AutonomousVehicleProject::updatingBackground,vd,&VectorDataset::updateProjectedPoints);
 }
 
 void AutonomousVehicleProject::import(const QString& fname)
@@ -233,7 +233,7 @@ Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
     
     Waypoint *wp = potentialParentItemFor("Waypoint")->createMissionItem<Waypoint>(generateUniqueLabel("waypoint"));
     wp->setLocation(position);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,wp,&Waypoint::updateBackground);
+    connect(this,&AutonomousVehicleProject::updatingBackground,wp,&Waypoint::updateBackground);
     return wp;
 }
 
@@ -242,7 +242,7 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern()
 {
     SurveyPattern *sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(generateUniqueLabel("pattern"));
     connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
+    connect(this,&AutonomousVehicleProject::updatingBackground,sp,&SurveyPattern::updateBackground);
   
     return sp;
 
@@ -252,7 +252,7 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
 {
     SurveyPattern *sp = createSurveyPattern();
     sp->setStartLocation(position);
-//    connect(this,&AutonomousVehicleProject::backgroundUpdated,sp,&SurveyPattern::updateBackground);
+//    connect(this,&AutonomousVehicleProject::updatingBackground,sp,&SurveyPattern::updateBackground);
     return sp;
 }
 
@@ -268,7 +268,7 @@ SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
     SurveyArea *sa = createSurveyArea();
     sa->setPos(sa->geoToPixel(position,this));
     sa->addWaypoint(position);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,sa,&SurveyArea::updateBackground);
+    connect(this,&AutonomousVehicleProject::updatingBackground,sa,&SurveyArea::updateBackground);
     return sa;
 }
 
@@ -285,7 +285,7 @@ TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position)
     TrackLine *tl = createTrackLine();
     tl->setPos(tl->geoToPixel(position,this));
     tl->addWaypoint(position);
-    connect(this,&AutonomousVehicleProject::backgroundUpdated,tl,&TrackLine::updateBackground);
+    connect(this,&AutonomousVehicleProject::updatingBackground,tl,&TrackLine::updateBackground);
     return tl;
 }
 
@@ -531,6 +531,7 @@ MissionItem * AutonomousVehicleProject::currentSelected() const
 
 void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
 {
+    emit aboutToUpdateBackground();
     if(m_currentBackground)
         m_scene->removeItem(m_currentBackground);
     m_currentBackground = bgr;
@@ -538,6 +539,7 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
     {
         bgr->updateMapScale(m_map_scale);
         m_scene->addItem(bgr);
+        emit updatingBackground(bgr);
         emit backgroundUpdated(bgr);
         if(bgr->depthValid())
             m_currentDepthRaster = bgr;

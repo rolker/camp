@@ -31,6 +31,7 @@ set(SOURCES
     rosdetails.cpp
     astar.cpp
     radardisplay.cpp
+    ship_track.cpp
 )
 
 set(HEADERS
@@ -64,11 +65,22 @@ set(HEADERS
     rosdetails.h
     astar.h
     radardisplay.h
+    ship_track.h
 )
 
 if(AMP_USE_ROS)
-    list(APPEND SOURCES roslink.cpp )
-    list(APPEND HEADERS roslink.h)
+    list(APPEND SOURCES
+        ais/ais_contact.cpp
+        ais/ais_manager.cpp
+        helm_manager/helm_manager.cpp
+        roslink.cpp
+    )
+    list(APPEND HEADERS
+        ais/ais_contact.h
+        ais/ais_manager.h
+        helm_manager/helm_manager.h
+        roslink.h
+    )
 endif()
 
 set ( RESOURCES
@@ -86,3 +98,10 @@ qt5_use_modules(CCOMAutonomousMissionPlanner Widgets Positioning Svg Test)
 target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})
 
 INSTALL(TARGETS CCOMAutonomousMissionPlanner RUNTIME DESTINATION bin)
+
+
+#rqt plugins
+
+find_package(class_loader)
+
+add_subdirectory(helm_manager)

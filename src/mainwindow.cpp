@@ -19,6 +19,8 @@
 #include "surveypattern.h"
 #include "surveyarea.h"
 
+#include "ais/ais_manager.h"
+
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -39,11 +41,13 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
 
     connect(project, &AutonomousVehicleProject::backgroundUpdated, ui->projectView, &ProjectView::updateBackground);
+    connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, ui->projectView, &ProjectView::beforeUpdateBackground);
 
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
     ui->rosDetails->setEnabled(false);
 #ifdef AMP_ROS
+    connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, ui->helmManager, &HelmManager::updateRobotNamespace);
     connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
     ui->rosDetails->setROSLink(project->rosLink());
 
@@ -51,11 +55,17 @@ MainWindow::MainWindow(QWidget *parent) :
 #endif
     
     connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
+
+    m_ais_manager = new AISManager();
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
+    //m_ais_manager->setWindowFlag(Qt::Window);
+
 }
 
 MainWindow::~MainWindow()
 {
     delete ui;
+    delete m_ais_manager;
 }
 
 void MainWindow::setWorkspace(const QString& path)
@@ -321,4 +331,7 @@ void MainWindow::onROSConnected(bool connected)
     ui->rosDetails->setEnabled(connected);
 }
 
-
+void MainWindow::on_actionAISManager_triggered()
+{
+    m_ais_manager->show();
+}
