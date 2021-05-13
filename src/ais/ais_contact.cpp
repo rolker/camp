@@ -50,7 +50,7 @@ AISReport::AISReport(const marine_msgs::Contact::ConstPtr& message, QObject *par
 
 AISContact::AISContact(QObject *parent, QGraphicsItem *parentItem):QObject(parent), ShipTrack(parentItem)
 {
-
+  setAcceptHoverEvents(true);
 }
 
 AISContact::AISContact(AISReport* report, QObject *parent, QGraphicsItem *parentItem):
@@ -58,6 +58,7 @@ AISContact::AISContact(AISReport* report, QObject *parent, QGraphicsItem *parent
   ShipTrack(parentItem),
   AISContactDetails(*report)
 {
+  setAcceptHoverEvents(true);
 }
 
 AISContact::~AISContact()
@@ -68,11 +69,23 @@ AISContact::~AISContact()
 void AISContact::newReport(AISReport *report)
 {
   prepareGeometryChange();
+  mmsi = report->mmsi;
+  name = report->name;
+  if(!name.empty())
+    setLabel(name.c_str());
+  else
+    setLabel(QString::number(mmsi));
+
+  dimension_to_bow = report->dimension_to_bow;
+  dimension_to_port = report->dimension_to_port;
+  dimension_to_stbd = report->dimension_to_stbd;
+  dimension_to_stern = report->dimension_to_stern;
   m_states[report->timestamp] = *report;
   BackgroundRaster* bg = findParentBackgroundRaster();
   if(bg)
   {
     m_states[report->timestamp].location.pos = geoToPixel(report->location.location, bg);
+    setLabelPosition(m_states[report->timestamp].location.pos);
   }
 }
 
@@ -81,6 +94,8 @@ void AISContact::updateProjectedPoints()
   BackgroundRaster* bg = dynamic_cast<BackgroundRaster*>(parentItem());
   for (auto& s: m_states)
     s.second.location.pos = geoToPixel(s.second.location.location, bg);
+  if (!m_states.empty())
+    setLabelPosition(m_states.rbegin()->second.location.pos);
 }
 
 QRectF AISContact::boundingRect() const
@@ -168,4 +183,16 @@ QPainterPath AISContact::predictionShape() const
     }
   }
   return ret;
+}
+
+void AISContact::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
+{
+  setShowLabelFlag(true);
+
+}
+
+void AISContact::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
+{
+  setShowLabelFlag(false);
+  
 }
