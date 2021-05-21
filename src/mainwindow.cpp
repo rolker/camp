@@ -58,7 +58,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     m_ais_manager = new AISManager();
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
-    //m_ais_manager->setWindowFlag(Qt::Window);
+    connect(ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
 }
 

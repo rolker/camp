@@ -357,13 +357,7 @@ void ProjectView::updateBackground(BackgroundRaster* bg)
 
 void ProjectView::sendViewport()
 {
-    QGeoCoordinate lowerLeft, upperRight;
-    BackgroundRaster *bg =  m_project->getBackgroundRaster();
-    if(bg)
-    {
-        QRect view = frameRect();
-        lowerLeft = bg->pixelToGeo(mapToScene(view.bottomLeft()));
-        upperRight = bg->pixelToGeo(mapToScene(view.topRight()));
-        emit viewportChanged(lowerLeft, upperRight);
-    }
+    QPointF ll = mapToScene(frameRect().bottomLeft());
+    QPointF ur = mapToScene(frameRect().topRight());
+    emit viewportChanged(ll,ur);
 }

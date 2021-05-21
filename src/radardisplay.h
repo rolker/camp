@@ -7,8 +7,10 @@
 #include <QOpenGLTexture>
 #include <QOpenGLBuffer>
 #include <deque>
+#include <ros/ros.h>
 
 Q_DECLARE_METATYPE(QImage*)
+Q_DECLARE_METATYPE(ros::Time)
 
 class ROSLink;
 class QOffscreenSurface;
@@ -29,7 +31,7 @@ public:
     void setPixelSize(double s);
     
 public slots:
-    void addSector(double angle1, double angle2, double range, QImage *sector);    
+    void addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp);    
     void showRadar(bool show);
 
 private:
@@ -40,6 +42,7 @@ private:
         Sector():angle1(0),angle2(0),range(0),sectorImage(nullptr),sectorTexture(nullptr)
         {}
         
+        ros::Time timestamp;
         double angle1, angle2, range, half_scanline_angle;
         QImage *sectorImage;
         QOpenGLTexture *sectorTexture;

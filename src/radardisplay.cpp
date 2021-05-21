@@ -75,6 +75,7 @@ void RadarDisplay::initializeGL()
         "varying mediump vec4 texc;\n"
         "uniform float minAngle;\n"
         "uniform float maxAngle;\n"
+        "uniform float fade;\n"
         "void main(void)\n"
         "{\n"
         "    if(texc.x == 0.0) discard;\n"
@@ -85,7 +86,7 @@ void RadarDisplay::initializeGL()
         "    if(theta < minAngle) discard;\n"
         "    if(theta > maxAngle) discard;\n"
         "    vec4 radarData = texture2D(texture, vec2(r, (theta-minAngle)/(maxAngle-minAngle)));\n"
-        "    gl_FragColor.ga = radarData.rg;\n"
+        "    gl_FragColor.ga = radarData.rg*fade;\n"
         "}\n";
     fshader->compileSourceCode(fsrc);
 
@@ -140,7 +141,9 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
         m_program->enableAttributeArray(PROGRAM_VERTEX_ATTRIBUTE);
         m_program->setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 3 * sizeof(GLfloat));
     
-        while(m_sectors.size() > 75)
+        ros::Time now = ros::Time::now();
+        float persistance = 3.0;
+        while(!m_sectors.empty() && m_sectors.front().timestamp + ros::Duration(3.0) < now)
         {
             if(m_sectors.front().sectorImage)
                 delete m_sectors.front().sectorImage;
@@ -149,17 +152,19 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
             m_sectors.pop_front();
         }
         for(Sector &s: m_sectors)
-        if(s.sectorImage)
-        {
-            if(!s.sectorTexture)
+            if(s.sectorImage)
             {
-                s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
+                float fade = 1.0-((now-s.timestamp).toSec()/persistance);
+                if(!s.sectorTexture)
+                {
+                    s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
+                }
+                m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
+                m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
+                m_program->setUniformValue("fade", GLfloat(fade));
+                s.sectorTexture->bind();
+                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
             }
-            m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
-            m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
-            s.sectorTexture->bind();
-            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-        }
         
         painter->drawImage(radarRect, m_fbo->toImage());
         
@@ -168,7 +173,7 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 }
 
 
-void RadarDisplay::addSector(double angle1, double angle2, double range, QImage *sector)
+void RadarDisplay::addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp)
 {
     prepareGeometryChange();
     //std::cerr << angle1 << " - " << angle2 << " degs, " << range << " meters" << std::endl;
@@ -181,6 +186,7 @@ void RadarDisplay::addSector(double angle1, double angle2, double range, QImage 
     s.half_scanline_angle = (s.angle2 - s.angle1)/(2.0*sector->height());
     s.range = range;
     s.sectorImage = sector;
+    s.timestamp = stamp;
     m_sectors.push_back(s);
     update();
 }

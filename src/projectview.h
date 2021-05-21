@@ -30,7 +30,7 @@ public:
 signals:
     void currentChanged(QModelIndex &index);
     void scaleChanged(qreal scale);
-    void viewportChanged(QGeoCoordinate lowerLeft, QGeoCoordinate upperRight);
+    void viewportChanged(QPointF ll, QPointF ur);
 
 public slots:
 #ifdef AMP_ROS

@@ -19,8 +19,9 @@
 #include "sensor_msgs/PointCloud.h"
 #include "locationposition.h"
 #include "geographic_visualization_msgs/GeoVizItem.h"
+#include <tf2_ros/transform_listener.h>
 
-Q_DECLARE_METATYPE(ros::Time);
+//Q_DECLARE_METATYPE(ros::Time);
 
 class ROSDetails;
 class RadarDisplay;
@@ -190,7 +191,7 @@ private:
     ros::Subscriber m_coverage_subscriber;
     ros::Subscriber m_ping_subscriber;
     ros::Subscriber m_display_subscriber;
-    ros::Subscriber m_radar_subscriber;
+    std::map<std::string, ros::Subscriber> m_radar_subscribers;
     ros::Subscriber m_clock_subscriber;
     
     ros::Publisher m_send_command_publisher;
@@ -262,6 +263,10 @@ private:
     QList<qreal> m_sog_history;
     qreal m_sog;
     qreal m_sog_avg;
+
+    tf2_ros::Buffer m_tf_buffer;
+    tf2_ros::TransformListener m_tf_listener;
+    std::string m_mapFrame;
 };
 
 #endif // ROSNODE_H

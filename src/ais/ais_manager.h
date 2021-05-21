@@ -26,6 +26,7 @@ signals:
 
 public slots:
   void updateBackground(BackgroundRaster * bg);
+  void updateViewport(QPointF ll, QPointF ur);
 
 private slots:
   void scanForSources();

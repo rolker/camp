@@ -69,3 +69,8 @@ void AISManager::updateBackground(BackgroundRaster * bg)
   }
 
 }
+
+void AISManager::updateViewport(QPointF ll, QPointF ur)
+{
+  //ROS_INFO_STREAM( "viewport: " << ll.x() << ", " << ll.y() << " - " << ur.x() << ", " << ur.y());
+}

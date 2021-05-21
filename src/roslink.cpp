@@ -19,7 +19,7 @@ ROSAISContact::ROSAISContact(QObject* parent): QObject(parent), mmsi(0), heading
 
 }
 
-ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0),m_show_tail(true)
+ROSLink::ROSLink(AutonomousVehicleProject* parent): QObject(parent), GeoGraphicsItem(),m_node(nullptr), m_spinner(nullptr),m_have_local_reference(false),m_heading(0.0),m_posmv_heading(0.0),m_base_heading(0.0), m_view_point_active(false),m_view_seglist_active(false),m_view_polygon_active(false),m_range(0.0),m_bearing(0.0),m_show_tail(true),m_tf_listener(m_tf_buffer)
 {
     m_base_dimension_to_bow = 1.0;
     m_base_dimension_to_stern = 1.0;
@@ -52,6 +52,7 @@ void ROSLink::connectROS()
             m_spinner = new ros::AsyncSpinner(0);
 
             std::string robotNamespace = ros::param::param<std::string>("robotNamespace","ben");
+            m_mapFrame = robotNamespace+"/map";
             emit robotNamespaceUpdated(robotNamespace.c_str());
 
             m_gps_position_subscriber = m_node->subscribe("/"+robotNamespace+"/sensors/oem/position", 10, &ROSLink::gpsPositionCallback, this);
@@ -72,7 +73,10 @@ void ROSLink::connectROS()
             m_display_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
             m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"] = new RadarDisplay(this);
-            m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloA/data"));
+            m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloA/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloA/data"));
+
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"] = new RadarDisplay(this);
+            m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloB/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloB/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloB/data"));
             
             //m_radar_displays["radar"] = new RadarDisplay(this);
             //m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
@@ -1121,6 +1125,10 @@ void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &mes
 {
     if (m_show_radar && !message->sector.scanlines.empty())
     {
+        if(m_tf_buffer.canTransform(m_mapFrame, message->header.frame_id, message->header.stamp, ros::Duration(0.5)))
+        {
+
+        }
         double angle1 = message->sector.scanlines[0].angle;
         double angle2 = message->sector.scanlines.back().angle;
         double range = message->sector.scanlines[0].range;
@@ -1131,7 +1139,7 @@ void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &mes
         for(int i = 0; i < h; i++)
             for(int j = 0; j < w; j++)
                 sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
-        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector));
+        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector), Q_ARG(ros::Time, message->header.stamp));
     }
 }
 
