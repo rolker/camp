@@ -1125,10 +1125,10 @@ void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &mes
 {
     if (m_show_radar && !message->sector.scanlines.empty())
     {
-        if(m_tf_buffer.canTransform(m_mapFrame, message->header.frame_id, message->header.stamp, ros::Duration(0.5)))
-        {
+        // if(m_tf_buffer.canTransform(m_mapFrame, message->header.frame_id, message->header.stamp, ros::Duration(0.5)))
+        // {
 
-        }
+        // }
         double angle1 = message->sector.scanlines[0].angle;
         double angle2 = message->sector.scanlines.back().angle;
         double range = message->sector.scanlines[0].range;
