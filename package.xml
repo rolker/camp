@@ -19,6 +19,7 @@
   <depend>tf2_geometry_msgs</depend>
   <depend>rqt_gui_cpp</depend>
   <depend>rqt_gui</depend>
+  <depend>sound_play</depend>
 
   <export>
     <rqt_gui plugin="${prefix}/src/helm_manager/plugin.xml"/>

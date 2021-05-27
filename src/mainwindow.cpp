@@ -20,6 +20,7 @@
 #include "surveyarea.h"
 
 #include "ais/ais_manager.h"
+#include "sound_play/sound_play_widget.h"
 
 #include <QDebug>
 
@@ -60,6 +61,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
+    m_sound_play = new SoundPlay();
 }
 
 MainWindow::~MainWindow()
@@ -334,4 +336,9 @@ void MainWindow::onROSConnected(bool connected)
 void MainWindow::on_actionAISManager_triggered()
 {
     m_ais_manager->show();
+}
+
+void MainWindow::on_actionSay_something_triggered()
+{
+    m_sound_play->show();
 }

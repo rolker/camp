@@ -144,7 +144,7 @@
      <x>0</x>
      <y>0</y>
      <width>957</width>
-     <height>20</height>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -178,6 +178,7 @@
     <addaction name="actionRadar"/>
     <addaction name="actionShowTail"/>
     <addaction name="actionAISManager"/>
+    <addaction name="actionSay_something"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -320,6 +321,11 @@
   <action name="actionAISManager">
    <property name="text">
     <string>AIS Manager</string>
+   </property>
+  </action>
+  <action name="actionSay_something">
+   <property name="text">
+    <string>Say something</string>
    </property>
   </action>
  </widget>

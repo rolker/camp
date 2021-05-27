@@ -9,6 +9,7 @@ class MainWindow;
 }
 
 class AISManager;
+class SoundPlay;
 
 class AutonomousVehicleProject;
 
@@ -47,12 +48,14 @@ private slots:
     void on_actionRadar_triggered();
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
+    void on_actionSay_something_triggered();
 
 private:
     Ui::MainWindow *ui;
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager;
+    SoundPlay* m_sound_play;
 
     void exportHypack() const;
     void exportMissionPlan() const;

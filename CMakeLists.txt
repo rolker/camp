@@ -17,6 +17,7 @@ if(AMP_USE_ROS)
         tf2_geometry_msgs
         rqt_gui
         rqt_gui_cpp
+        sound_play
     )
     include_directories(${catkin_INCLUDE_DIRS})
     add_definitions(-DAMP_ROS)

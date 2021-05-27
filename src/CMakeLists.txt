@@ -73,12 +73,14 @@ if(AMP_USE_ROS)
         ais/ais_contact.cpp
         ais/ais_manager.cpp
         helm_manager/helm_manager.cpp
+        sound_play/sound_play_widget.cpp
         roslink.cpp
     )
     list(APPEND HEADERS
         ais/ais_contact.h
         ais/ais_manager.h
         helm_manager/helm_manager.h
+        sound_play/sound_play_widget.h
         roslink.h
     )
 endif()
