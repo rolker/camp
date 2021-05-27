@@ -74,6 +74,7 @@ if(AMP_USE_ROS)
         ais/ais_manager.cpp
         helm_manager/helm_manager.cpp
         sound_play/sound_play_widget.cpp
+        sound_play/speech_alerts.cpp
         roslink.cpp
     )
     list(APPEND HEADERS
@@ -81,6 +82,7 @@ if(AMP_USE_ROS)
         ais/ais_manager.h
         helm_manager/helm_manager.h
         sound_play/sound_play_widget.h
+        sound_play/speech_alerts.h
         roslink.h
     )
 endif()

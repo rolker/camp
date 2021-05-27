@@ -21,6 +21,7 @@
 
 #include "ais/ais_manager.h"
 #include "sound_play/sound_play_widget.h"
+#include "sound_play/speech_alerts.h"
 
 #include <QDebug>
 
@@ -62,6 +63,10 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
     m_sound_play = new SoundPlay();
+
+    m_speech_alerts = new SpeechAlerts(this);
+    connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
+    connect(ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
 }
 
 MainWindow::~MainWindow()

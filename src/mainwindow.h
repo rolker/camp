@@ -10,6 +10,7 @@ class MainWindow;
 
 class AISManager;
 class SoundPlay;
+class SpeechAlerts;
 
 class AutonomousVehicleProject;
 
@@ -56,6 +57,7 @@ private:
     QString m_workspace_path;
     AISManager* m_ais_manager;
     SoundPlay* m_sound_play;
+    SpeechAlerts* m_speech_alerts;
 
     void exportHypack() const;
     void exportMissionPlan() const;

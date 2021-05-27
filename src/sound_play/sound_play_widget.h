@@ -21,8 +21,6 @@ public:
   explicit SoundPlay(QWidget *parent =0);
   ~SoundPlay();
 
-signals:
-  void tell(QString speech);
 
 public slots:
   void say(QString speech);
