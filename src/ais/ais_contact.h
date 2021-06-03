@@ -58,6 +58,7 @@ public:
 
 public slots:
   void updateProjectedPoints();
+  void updateView();
 
 protected:
   void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
@@ -65,6 +66,7 @@ protected:
 
 private:
   std::map<ros::Time, AISContactState> m_states;
+  ros::Time m_displayTime;
 };
 
 #endif

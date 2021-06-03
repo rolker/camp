@@ -14,6 +14,9 @@ AISManager::AISManager(QWidget* parent):
   m_scan_timer = new QTimer(this);
   connect(m_scan_timer, &QTimer::timeout, this, &AISManager::scanForSources);
   m_scan_timer->start(1000);
+
+  m_update_timer = new QTimer(this);
+  m_update_timer->start(200);
 }
 
 AISManager::~AISManager()
@@ -54,6 +57,7 @@ void AISManager::addAisReport(AISReport* report)
   if(m_contacts.find(report->mmsi) == m_contacts.end())
   {
     m_contacts[report->mmsi] = new AISContact(report, this, m_background);
+    connect(m_update_timer, &QTimer::timeout, m_contacts[report->mmsi], &AISContact::updateView);
     m_ui->contactListWidget->addItem(QString::number(report->mmsi));
   }
   m_contacts[report->mmsi]->newReport(report);

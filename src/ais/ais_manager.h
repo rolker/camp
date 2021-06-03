@@ -38,6 +38,7 @@ private:
   Ui::AISManager* m_ui;
   std::map<std::string, ros::Subscriber> m_sources;
   QTimer* m_scan_timer;
+  QTimer* m_update_timer;
   std::map<uint32_t, AISContact*> m_contacts;
 
   BackgroundRaster* m_background = nullptr;

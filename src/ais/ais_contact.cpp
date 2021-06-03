@@ -66,9 +66,15 @@ AISContact::~AISContact()
 
 }
 
-void AISContact::newReport(AISReport *report)
+void AISContact::updateView()
 {
   prepareGeometryChange();
+  m_displayTime = ros::Time::now();
+  update();
+}
+
+void AISContact::newReport(AISReport *report)
+{
   mmsi = report->mmsi;
   name = report->name;
   if(!name.empty())
@@ -114,7 +120,8 @@ void AISContact::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
   painter->setPen(p);
   painter->drawPath(shape());
 
-  p.setColor(Qt::red);
+  p.setColor(QColor(128, 128, 128, 128));
+  
   painter->setPen(p);
   painter->drawPath(predictionShape());
 
@@ -126,41 +133,43 @@ QPainterPath AISContact::shape() const
   QPainterPath ret;
   // History length should be configurable and displayTime could be set
   // somwhere else to support rewinding time
-  ros::Time displayTime = ros::Time::now();
-  ros::Time historyStartTime = displayTime - ros::Duration(300);
-
-  auto state = m_states.lower_bound(historyStartTime);
-  if(state != m_states.end() && state->first <= displayTime)
+  if(!m_displayTime.isZero())
   {
-    ret.moveTo(state->second.location.pos);
-    auto nextState = state;
-    nextState++;
-    while(nextState != m_states.end())
+    ros::Time historyStartTime = m_displayTime - ros::Duration(300);
+
+    auto state = m_states.lower_bound(historyStartTime);
+    if(state != m_states.end() && state->first <= m_displayTime)
     {
-      if(nextState->first <= displayTime)
+      ret.moveTo(state->second.location.pos);
+      auto nextState = state;
+      nextState++;
+      while(nextState != m_states.end())
       {
-        state = nextState;
-        nextState++;
-        ret.lineTo(state->second.location.pos);
+        if(nextState->first <= m_displayTime)
+        {
+          state = nextState;
+          nextState++;
+          ret.lineTo(state->second.location.pos);
+        }
+        else
+          break;
       }
-      else
-        break;
-    }
 
-    BackgroundRaster* bg = findParentBackgroundRaster();
-    if(bg)
-    {
-      bool forceTriangle = false;
-      if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
-        forceTriangle = true;
-      float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
-      qreal pixel_size = bg->scaledPixelSize();
-      if(pixel_size > max_size/10.0 || forceTriangle)
-        drawTriangle(ret, bg, state->second.location.location, state->second.heading, pixel_size);
-      else
-        drawShipOutline(ret, bg, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
-    }
+      BackgroundRaster* bg = findParentBackgroundRaster();
+      if(bg)
+      {
+        bool forceTriangle = false;
+        if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
+          forceTriangle = true;
+        float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
+        qreal pixel_size = bg->scaledPixelSize();
+        if(pixel_size > max_size/10.0 || forceTriangle)
+          drawTriangle(ret, bg, state->second.location.location, state->second.heading, pixel_size);
+        else
+          drawShipOutline(ret, bg, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
+      }
 
+    }
   }
   return ret;
 }
@@ -168,18 +177,32 @@ QPainterPath AISContact::shape() const
 QPainterPath AISContact::predictionShape() const
 {
   QPainterPath ret;
-  ros::Time displayTime = ros::Time::now();
-  auto state = m_states.rbegin();
-  while(state != m_states.rend() && state->first > displayTime)
-    state++;
-  if(state != m_states.rend())
+  if(!m_displayTime.isZero())
   {
-    ret.moveTo(state->second.location.pos);
-    QGeoCoordinate futureLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*300, state->second.cog);
-    BackgroundRaster* bg = findParentBackgroundRaster();
-    if(bg)
+    auto state = m_states.rbegin();
+    while(state != m_states.rend() && state->first > m_displayTime)
+      state++;
+    if(state != m_states.rend())
     {
-      ret.lineTo(geoToPixel(futureLocation, bg));
+      ret.moveTo(state->second.location.pos);
+      QGeoCoordinate futureLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*300, state->second.cog);
+      ros::Duration timeSinceReport = m_displayTime - state->first;
+      QGeoCoordinate predicatedLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*timeSinceReport.toSec(), state->second.cog);
+      BackgroundRaster* bg = findParentBackgroundRaster();
+      if(bg)
+      {
+        ret.lineTo(geoToPixel(futureLocation, bg));
+
+        bool forceTriangle = false;
+        if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
+          forceTriangle = true;
+        float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
+        qreal pixel_size = bg->scaledPixelSize();
+        if(pixel_size > max_size/10.0 || forceTriangle)
+          drawTriangle(ret, bg, predicatedLocation, state->second.heading, pixel_size);
+        else
+          drawShipOutline(ret, bg, predicatedLocation, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
+      }
     }
   }
   return ret;
@@ -188,11 +211,9 @@ QPainterPath AISContact::predictionShape() const
 void AISContact::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
 {
   setShowLabelFlag(true);
-
 }
 
 void AISContact::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
 {
   setShowLabelFlag(false);
-  
 }
