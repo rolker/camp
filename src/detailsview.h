@@ -3,6 +3,7 @@
 
 #include <QWidget>
 
+class QPushButton;
 class AutonomousVehicleProject;
 class BackgroundDetails;
 class WaypointDetails;
@@ -29,6 +30,8 @@ public slots:
 
 private:
     AutonomousVehicleProject *m_project;
+
+    QPushButton* m_executePushButton;
 
     QWidget * currentWidget;
 

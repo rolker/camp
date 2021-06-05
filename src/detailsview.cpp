@@ -1,6 +1,7 @@
 #include "detailsview.h"
 #include <QStandardItemModel>
 #include <QVBoxLayout>
+#include <QPushButton>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "backgrounddetails.h"
@@ -19,6 +20,10 @@
 
 DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),currentWidget(nullptr)
 {
+    m_executePushButton = new QPushButton(this);
+    m_executePushButton->setText("Execute");
+    m_executePushButton->setDisabled(true);
+
     backgroundDetails = new BackgroundDetails(this);
     backgroundDetails->hide();
     waypointDetails = new WaypointDetails(this);
@@ -33,6 +38,7 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     behaviorDetails->hide();
 
     QVBoxLayout *layout = new QVBoxLayout;
+    layout->addWidget(m_executePushButton);
     layout->addWidget(backgroundDetails);
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
