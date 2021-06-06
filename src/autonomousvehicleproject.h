@@ -103,6 +103,7 @@ signals:
     void aboutToUpdateBackground();
     void updatingBackground(BackgroundRaster *bg);
     void showRadar(bool show);
+    void selectRadarColor();
     void showTail(bool show);
 
 public slots:

@@ -47,6 +47,7 @@ private slots:
     void on_actionImport_triggered();
     void on_actionBehavior_triggered();
     void on_actionRadar_triggered();
+    void on_actionRadarColor_triggered();
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
     void on_actionSay_something_triggered();

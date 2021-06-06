@@ -328,6 +328,11 @@ void MainWindow::on_actionRadar_triggered()
     emit project->showRadar(ui->actionRadar->isChecked());
 }
 
+void MainWindow::on_actionRadarColor_triggered()
+{
+    emit project->selectRadarColor();
+}
+
 void MainWindow::on_actionShowTail_triggered()
 {
     emit project->showTail(ui->actionShowTail->isChecked());

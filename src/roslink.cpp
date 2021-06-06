@@ -4,6 +4,7 @@
 #include <QDebug>
 #include <QPainter>
 #include <QGraphicsSvgItem>
+#include <QColorDialog>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include <QTimer>
@@ -73,9 +74,15 @@ void ROSLink::connectROS()
             m_display_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
             m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"] = new RadarDisplay(this);
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"]->setTF2Buffer(&m_tf_buffer);
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"]->setMapFrame(m_mapFrame);
+
             m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloA/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloA/data"));
 
             m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"] = new RadarDisplay(this);
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"]->setTF2Buffer(&m_tf_buffer);
+            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"]->setMapFrame(m_mapFrame);
+
             m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloB/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloB/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloB/data"));
             
             //m_radar_displays["radar"] = new RadarDisplay(this);
@@ -1114,6 +1121,15 @@ void ROSLink::showRadar(bool show)
     update();
 }
 
+void ROSLink::selectRadarColor()
+{
+    for(auto rd:m_radar_displays)
+    {
+        rd.second->setColor(QColorDialog::getColor(rd.second->getColor() , nullptr, "Select Color", QColorDialog::DontUseNativeDialog));
+    }
+    update();   
+}
+
 void ROSLink::showTail(bool show)
 {
     m_show_tail = show;
@@ -1125,10 +1141,6 @@ void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &mes
 {
     if (m_show_radar && !message->sector.scanlines.empty())
     {
-        // if(m_tf_buffer.canTransform(m_mapFrame, message->header.frame_id, message->header.stamp, ros::Duration(0.5)))
-        // {
-
-        // }
         double angle1 = message->sector.scanlines[0].angle;
         double angle2 = message->sector.scanlines.back().angle;
         double range = message->sector.scanlines[0].range;
@@ -1139,7 +1151,7 @@ void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &mes
         for(int i = 0; i < h; i++)
             for(int j = 0; j < w; j++)
                 sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
-        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector), Q_ARG(ros::Time, message->header.stamp));
+        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector), Q_ARG(ros::Time, message->header.stamp), Q_ARG(QString, message->header.frame_id.c_str()));
     }
 }
 

@@ -148,6 +148,7 @@ public slots:
     void watchdogUpdate();
     void updateSog(qreal sog);
     void showRadar(bool show);
+    void selectRadarColor();
     void showTail(bool show);
     
 private:

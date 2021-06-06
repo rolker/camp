@@ -7,6 +7,7 @@
 #include <QOpenGLShader>
 #include <QPainter>
 #include <QOpenGLFramebufferObject>
+#include <tf2/utils.h>
 
 
 RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(parent)
@@ -15,6 +16,10 @@ RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(pa
     QSurfaceFormat surfaceFormat;
     surfaceFormat.setMajorVersion(4);
     surfaceFormat.setMinorVersion(3);
+    surfaceFormat.setAlphaBufferSize(8);
+    surfaceFormat.setRedBufferSize(8);
+    surfaceFormat.setGreenBufferSize(8);
+    surfaceFormat.setBlueBufferSize(8);
     
     m_context = new QOpenGLContext();
     m_context->setFormat(surfaceFormat);
@@ -32,6 +37,16 @@ RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(pa
 
     initializeGL();
 
+}
+
+void RadarDisplay::setTF2Buffer(tf2_ros::Buffer* buffer)
+{
+    m_tf_buffer = buffer;
+}
+
+void RadarDisplay::setMapFrame(std::string mapFrame)
+{
+    m_mapFrame = mapFrame;
 }
 
 void RadarDisplay::setPixelSize(double s)
@@ -76,6 +91,7 @@ void RadarDisplay::initializeGL()
         "uniform float minAngle;\n"
         "uniform float maxAngle;\n"
         "uniform float fade;\n"
+        "uniform vec4 color;\n"
         "void main(void)\n"
         "{\n"
         "    if(texc.x == 0.0) discard;\n"
@@ -86,7 +102,9 @@ void RadarDisplay::initializeGL()
         "    if(theta < minAngle) discard;\n"
         "    if(theta > maxAngle) discard;\n"
         "    vec4 radarData = texture2D(texture, vec2(r, (theta-minAngle)/(maxAngle-minAngle)));\n"
-        "    gl_FragColor.ga = radarData.rg*fade;\n"
+        "    if(radarData.r < 0.01) discard;\n"
+        "    gl_FragColor = color*fade*radarData.r;\n"
+        "    //gl_FragColor.a = radarData.r*fade;\n"
         "}\n";
     fshader->compileSourceCode(fsrc);
 
@@ -98,7 +116,6 @@ void RadarDisplay::initializeGL()
 
     m_program->bind();
     m_program->setUniformValue("texture", 0);
-    
 }
 
 QRectF RadarDisplay::boundingRect() const
@@ -124,7 +141,7 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
         p.setWidth(2);
         painter->setPen(p);
         QRectF radarRect(-r,-r,r*2,r*2);
-        painter->drawEllipse(radarRect);
+        //painter->drawEllipse(radarRect);
 
         
         m_context->makeCurrent(m_surface);
@@ -142,8 +159,8 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
         m_program->setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 3 * sizeof(GLfloat));
     
         ros::Time now = ros::Time::now();
-        float persistance = 3.0;
-        while(!m_sectors.empty() && m_sectors.front().timestamp + ros::Duration(3.0) < now)
+        float persistance = 5.0;
+        while(!m_sectors.empty() && m_sectors.front().timestamp + ros::Duration(persistance) < now)
         {
             if(m_sectors.front().sectorImage)
                 delete m_sectors.front().sectorImage;
@@ -159,10 +176,37 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
                 {
                     s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
                 }
-                m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
-                m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
+                if(s.heading < 0)
+                {
+                    //std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
+                    //std::cerr << "map frame: " << m_mapFrame << std::endl;
+                    //if(m_tf_buffer && !m_mapFrame.empty())
+                        //std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
+                    //std::cerr << "timestamp: " << s.timestamp << std::endl;
+                    //std::cerr << "frame_id: " << s.frame_id.toStdString() << std::endl;
+                    if(m_tf_buffer && !m_mapFrame.empty() && m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp))
+                    {
+                        geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp);
+                        double heading =  90.0-180.0*tf2::getYaw(t.transform.rotation);
+                        s.heading = heading*M_PI/180.0;
+                        std::cerr << "radar sector heading: " << s.heading << std::endl;
+                    }
+                }
+                if(s.heading >= 0.0)
+                {
+                    m_program->setUniformValue("minAngle", GLfloat(s.heading+s.angle1-s.half_scanline_angle*1.1));
+                    m_program->setUniformValue("maxAngle", GLfloat(s.heading+s.angle2+s.half_scanline_angle*1.1));
+                }
+                else
+                {
+                    m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
+                    m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
+                }
                 m_program->setUniformValue("fade", GLfloat(fade));
+                m_program->setUniformValue("color", m_color);
+                
                 s.sectorTexture->bind();
+                glDisable(GL_BLEND);
                 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
             }
         
@@ -173,7 +217,7 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
 }
 
 
-void RadarDisplay::addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp)
+void RadarDisplay::addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp, QString frame_id)
 {
     prepareGeometryChange();
     //std::cerr << angle1 << " - " << angle2 << " degs, " << range << " meters" << std::endl;
@@ -187,6 +231,7 @@ void RadarDisplay::addSector(double angle1, double angle2, double range, QImage 
     s.range = range;
     s.sectorImage = sector;
     s.timestamp = stamp;
+    s.frame_id = frame_id;
     m_sectors.push_back(s);
     update();
 }
@@ -197,3 +242,12 @@ void RadarDisplay::showRadar(bool show)
     update();
 }
 
+const QColor& RadarDisplay::getColor() const
+{
+    return m_color;
+}
+
+void RadarDisplay::setColor(QColor color)
+{
+    m_color = color;
+}

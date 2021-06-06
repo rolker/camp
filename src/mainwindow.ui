@@ -144,7 +144,7 @@
      <x>0</x>
      <y>0</y>
      <width>957</width>
-     <height>22</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -176,6 +176,7 @@
      <string>Setti&amp;ngs</string>
     </property>
     <addaction name="actionRadar"/>
+    <addaction name="actionRadarColor"/>
     <addaction name="actionShowTail"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionSay_something"/>
@@ -326,6 +327,11 @@
   <action name="actionSay_something">
    <property name="text">
     <string>Say something</string>
+   </property>
+  </action>
+  <action name="actionRadarColor">
+   <property name="text">
+    <string>Radar Color</string>
    </property>
   </action>
  </widget>
