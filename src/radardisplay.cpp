@@ -179,11 +179,11 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
                 if(s.heading < 0)
                 {
                     //std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
-                    //std::cerr << "map frame: " << m_mapFrame << std::endl;
-                    //if(m_tf_buffer && !m_mapFrame.empty())
-                        //std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
-                    //std::cerr << "timestamp: " << s.timestamp << std::endl;
-                    //std::cerr << "frame_id: " << s.frame_id.toStdString() << std::endl;
+                    std::cerr << "map frame: " << m_mapFrame << std::endl;
+                    if(m_tf_buffer && !m_mapFrame.empty())
+                        std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
+                    std::cerr << "timestamp: " << s.timestamp << std::endl;
+                    std::cerr << "frame_id: " << s.frame_id.toStdString() << std::endl;
                     if(m_tf_buffer && !m_mapFrame.empty() && m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp))
                     {
                         geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp);

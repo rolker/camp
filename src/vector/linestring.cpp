@@ -9,7 +9,7 @@ LineString::LineString(MissionItem* parent):GeoGraphicsMissionItem(parent)
 
 void LineString::updateProjectedPoints()
 {
-    for(auto p: m_points)
+    for(auto& p: m_points)
         p.pos = geoToPixel(p.location,autonomousVehicleProject());
     updateBBox();
 }

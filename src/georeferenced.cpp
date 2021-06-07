@@ -39,12 +39,15 @@ void Georeferenced::extractGeoreference(GDALDataset *dataset)
     if(wktProjection[0] == 0)
         wktProjection = const_cast<char *>(dataset->GetGCPProjection());
     m_projection = wktProjection;
-    projected.importFromWkt(&wktProjection);
+    if(wktProjection[0] != 0)
+    {
+        projected.importFromWkt(&wktProjection);
 
-    wgs84.SetWellKnownGeogCS("WGS84");
+        wgs84.SetWellKnownGeogCS("WGS84");
 
-    m_unprojectTransformation = OGRCreateCoordinateTransformation(&projected,&wgs84);
-    m_projectTransformation = OGRCreateCoordinateTransformation(&wgs84,&projected);
+        m_unprojectTransformation = OGRCreateCoordinateTransformation(&projected,&wgs84);
+        m_projectTransformation = OGRCreateCoordinateTransformation(&wgs84,&projected);
+    }
 }
 
 QPointF Georeferenced::project(const QGeoCoordinate &point) const
@@ -54,6 +57,8 @@ QPointF Georeferenced::project(const QGeoCoordinate &point) const
         double x = point.latitude();
         double y = point.longitude();
         m_projectTransformation->Transform(1,&x,&y);
+        if(m_projectTransformation->GetTargetCS()->IsGeographic())
+            return QPointF(y,x);
         return QPointF(x,y);
     }
     return QPointF();
@@ -65,6 +70,11 @@ QGeoCoordinate Georeferenced::unproject(const QPointF &point) const
     {
         double x = point.x();
         double y = point.y();
+        if(m_unprojectTransformation->GetSourceCS()->IsGeographic())
+        {
+          x = point.y();
+          y = point.x();
+        }
         m_unprojectTransformation->Transform(1,&x,&y);
         return QGeoCoordinate(x, y);
     }

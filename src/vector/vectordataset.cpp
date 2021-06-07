@@ -56,11 +56,14 @@ void VectorDataset::open(const QString& fname)
                             double x = op->getX();
                             double y = op->getY();
                             unprojectTransformation->Transform(1,&x,&y);
-                            location.setLatitude(y);
-                            location.setLongitude(x);
+                            location.setLatitude(x);
+                            location.setLongitude(y);
                         }
                         p->setLocation(location);
                         p->setObjectName("point");
+                        p->lock();
+                        connect(autonomousVehicleProject(),&AutonomousVehicleProject::updatingBackground,p,&Point::updateBackground);
+
                     }
                     else if(gtype == wkbLineString)
                     {
@@ -79,9 +82,12 @@ void VectorDataset::open(const QString& fname)
                                 p.setX(x);
                                 p.setY(y);
                             }
-                            QGeoCoordinate location(p.getY(),p.getX());
+                            QGeoCoordinate location(p.getX(),p.getY());
                             ls->addPoint(location);
-                        }                        
+                        }
+                        ls->lock();
+                        connect(autonomousVehicleProject(),&AutonomousVehicleProject::updatingBackground, ls, &LineString::updateBackground);
+                        
                     }
                     else if(gtype == wkbPolygon)
                     {
@@ -104,7 +110,7 @@ void VectorDataset::open(const QString& fname)
                                     pt.setX(x);
                                     pt.setY(y);
                                 }
-                                QGeoCoordinate location(pt.getY(),pt.getX());
+                                QGeoCoordinate location(pt.getX(),pt.getY());
                                 p->addExteriorPoint(location);
                             }                        
                             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ringNum++)
@@ -122,11 +128,12 @@ void VectorDataset::open(const QString& fname)
                                         pt.setX(x);
                                         pt.setY(y);
                                     }
-                                    QGeoCoordinate location(pt.getY(),pt.getX());
+                                    QGeoCoordinate location(pt.getX(),pt.getY());
                                     p->addInteriorPoint(location);
                                 }                        
                             }
                             p->updateBBox();
+                            p->lock();
                             connect(autonomousVehicleProject(),&AutonomousVehicleProject::updatingBackground,p,&Polygon::updateBackground);
                         }
                     }
