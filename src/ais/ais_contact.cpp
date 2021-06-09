@@ -76,11 +76,8 @@ void AISContact::updateView()
 void AISContact::newReport(AISReport *report)
 {
   mmsi = report->mmsi;
-  name = report->name;
-  if(!name.empty())
-    setLabel(name.c_str());
-  else
-    setLabel(QString::number(mmsi));
+  if (!report->name.empty())
+    name = report->name;
 
   dimension_to_bow = report->dimension_to_bow;
   dimension_to_port = report->dimension_to_port;
@@ -94,6 +91,24 @@ void AISContact::newReport(AISReport *report)
     setLabelPosition(m_states[report->timestamp].location.pos);
   }
 }
+
+void AISContact::updateLabel()
+{
+  QString label;
+  if(!name.empty())
+    label = name.c_str();
+  else
+    label = QString::number(mmsi);
+
+  if(!m_states.empty())
+  {
+    label += "\nsog: " + QString::number(int(m_states.rbegin()->second.sog*10)/10.0) + " m/s";
+    label += "\ncog: " + QString::number(int(m_states.rbegin()->second.cog));
+  }
+  setLabel(label);
+}
+  
+
 
 void AISContact::updateProjectedPoints()
 {
@@ -210,6 +225,7 @@ QPainterPath AISContact::predictionShape() const
 
 void AISContact::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
 {
+  updateLabel();
   setShowLabelFlag(true);
 }
 

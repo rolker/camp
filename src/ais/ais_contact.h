@@ -65,6 +65,8 @@ protected:
   void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
 
 private:
+  void updateLabel();
+  
   std::map<ros::Time, AISContactState> m_states;
   ros::Time m_displayTime;
 };
