@@ -73,20 +73,17 @@ void ROSLink::connectROS()
             m_ping_subscriber = m_node->subscribe("mbes_ping", 10, &ROSLink::pingCallback, this);
             m_display_subscriber = m_node->subscribe("/"+robotNamespace+"/project11/display", 10, &ROSLink::geoVizDisplayCallback, this);
             
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"] = new RadarDisplay(this);
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"]->setTF2Buffer(&m_tf_buffer);
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloA/data"]->setMapFrame(m_mapFrame);
+            std::string haloA_topic = "/"+robotNamespace+"/sensors/radar/HaloA/data";
+            m_radar_displays[haloA_topic] = new RadarDisplay(this);
+            m_radar_displays[haloA_topic]->setTF2Buffer(&m_tf_buffer);
+            m_radar_displays[haloA_topic]->setMapFrame(m_mapFrame);
+            m_radar_displays[haloA_topic]->subscribe(haloA_topic.c_str());
 
-            m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloA/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloA/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloA/data"));
-
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"] = new RadarDisplay(this);
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"]->setTF2Buffer(&m_tf_buffer);
-            m_radar_displays["/"+robotNamespace+"/sensors/radar/HaloB/data"]->setMapFrame(m_mapFrame);
-
-            m_radar_subscribers["/"+robotNamespace+"/sensors/radar/HaloB/data"] = m_node->subscribe<marine_msgs::RadarSectorStamped>("/"+robotNamespace+"/sensors/radar/HaloB/data", 10, boost::bind(&ROSLink::radarCallback, this, _1, "/"+robotNamespace+"/sensors/radar/HaloB/data"));
-            
-            //m_radar_displays["radar"] = new RadarDisplay(this);
-            //m_radar_subscriber = m_node->subscribe<marine_msgs::RadarSectorStamped>("radar", 10, boost::bind(&ROSLink::radarCallback, this, _1, "radar"));
+            std::string haloB_topic = "/"+robotNamespace+"/sensors/radar/HaloB/data";
+            m_radar_displays[haloB_topic] = new RadarDisplay(this);
+            m_radar_displays[haloB_topic]->setTF2Buffer(&m_tf_buffer);
+            m_radar_displays[haloB_topic]->setMapFrame(m_mapFrame);
+            m_radar_displays[haloB_topic]->subscribe(haloB_topic.c_str());
             
             m_send_command_publisher = m_node->advertise<std_msgs::String>("/"+robotNamespace+"/project11/send_command",1);
             m_look_at_publisher = m_node->advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
@@ -847,7 +844,7 @@ void ROSLink::updatePosmvHeading(double heading)
     m_posmv_heading = heading;
     for(auto rd:m_radar_displays)
     {
-        rd.second->setRotation(heading);
+        //rd.second->setRotation(heading);
     }
     update();
 }
@@ -1137,23 +1134,24 @@ void ROSLink::showTail(bool show)
 }
 
 
-void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic)
-{
-    if (m_show_radar && !message->sector.scanlines.empty())
-    {
-        double angle1 = message->sector.scanlines[0].angle;
-        double angle2 = message->sector.scanlines.back().angle;
-        double range = message->sector.scanlines[0].range;
-        int w = message->sector.scanlines[0].intensities.size();
-        int h = message->sector.scanlines.size();
-        QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
-        sector->fill(Qt::darkGray);
-        for(int i = 0; i < h; i++)
-            for(int j = 0; j < w; j++)
-                sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
-        QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector), Q_ARG(ros::Time, message->header.stamp), Q_ARG(QString, message->header.frame_id.c_str()));
-    }
-}
+// void ROSLink::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic)
+// {
+//     if (m_show_radar && !message->sector.scanlines.empty())
+//     {
+//         double angle1 = message->sector.scanlines[0].angle;
+//         double angle2 = message->sector.scanlines.back().angle;
+//         double range = message->sector.scanlines[0].range;
+//         int w = message->sector.scanlines[0].intensities.size();
+//         int h = message->sector.scanlines.size();
+//         QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
+//         sector->fill(Qt::darkGray);
+//         for(int i = 0; i < h; i++)
+//             for(int j = 0; j < w; j++)
+//                 sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
+//         //QMetaObject::invokeMethod(m_radar_displays[topic],"addSector", Qt::QueuedConnection, Q_ARG(double, angle1), Q_ARG(double, angle2), Q_ARG(double, range), Q_ARG(QImage *, sector), Q_ARG(ros::Time, message->header.stamp), Q_ARG(QString, message->header.frame_id.c_str()));
+//         m_radar_displays[topic]->addSector(angle1, angle2, range, sector, message->header.stamp, message->header.frame_id.c_str());
+//     }
+// }
 
 void ROSLink::pingCallback(const sensor_msgs::PointCloud::ConstPtr& message)
 {

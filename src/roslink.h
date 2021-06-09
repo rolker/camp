@@ -8,7 +8,7 @@
 #include "sensor_msgs/Imu.h"
 #include "marine_msgs/NavEulerStamped.h"
 #include "marine_msgs/Heartbeat.h"
-#include "marine_msgs/RadarSectorStamped.h"
+//#include "marine_msgs/RadarSectorStamped.h"
 #include "ros/ros.h"
 #include "marine_msgs/Contact.h"
 #include "std_msgs/String.h"
@@ -167,7 +167,7 @@ private:
     void coverageCallback(const geographic_msgs::GeoPath::ConstPtr& message);
     void pingCallback(const sensor_msgs::PointCloud::ConstPtr& message);
     void geoVizDisplayCallback(const geographic_visualization_msgs::GeoVizItem::ConstPtr& message);
-    void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic);
+    //void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message, const std::string &topic);
     
     void drawTriangle(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, double scale=1.0) const;
     void drawShipOutline(QPainterPath &path, QGeoCoordinate const &location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const;

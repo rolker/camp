@@ -7,12 +7,44 @@
 #include <QOpenGLShader>
 #include <QPainter>
 #include <QOpenGLFramebufferObject>
+#include <QThread>
 #include <tf2/utils.h>
 
 
 RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(parent)
 {
-    
+  m_radarImageThread = QThread::create(std::bind(&RadarDisplay::updateRadarImage, this));
+  m_radarImageThread->start();
+}
+
+void RadarDisplay::setTF2Buffer(tf2_ros::Buffer* buffer)
+{
+    m_tf_buffer = buffer;
+}
+
+void RadarDisplay::setMapFrame(std::string mapFrame)
+{
+    m_mapFrame = mapFrame;
+}
+
+void RadarDisplay::setPixelSize(double s)
+{
+    m_pixel_size = s;
+}
+
+void RadarDisplay::subscribe(QString topic)
+{
+    if(!m_spinner)
+    {
+        m_spinner = std::shared_ptr<ros::AsyncSpinner>(new ros::AsyncSpinner(1, &m_ros_queue));
+        m_spinner->start();
+    }
+    ros::SubscribeOptions ops = ros::SubscribeOptions::create<marine_msgs::RadarSectorStamped>(topic.toStdString(), 300, boost::bind(&RadarDisplay::radarCallback, this, _1), ros::VoidPtr(), &m_ros_queue);
+    m_subscriber = ros::NodeHandle().subscribe(ops);
+}
+
+void RadarDisplay::initializeGL()
+{
     QSurfaceFormat surfaceFormat;
     surfaceFormat.setMajorVersion(4);
     surfaceFormat.setMinorVersion(3);
@@ -35,27 +67,6 @@ RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(pa
     QOpenGLFramebufferObjectFormat fboFormat;
     m_fbo = new QOpenGLFramebufferObject(2048,2048,fboFormat);
 
-    initializeGL();
-
-}
-
-void RadarDisplay::setTF2Buffer(tf2_ros::Buffer* buffer)
-{
-    m_tf_buffer = buffer;
-}
-
-void RadarDisplay::setMapFrame(std::string mapFrame)
-{
-    m_mapFrame = mapFrame;
-}
-
-void RadarDisplay::setPixelSize(double s)
-{
-    m_pixel_size = s;
-}
-
-void RadarDisplay::initializeGL()
-{
     initializeOpenGLFunctions();
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     
@@ -71,7 +82,7 @@ void RadarDisplay::initializeGL()
     
 #define PROGRAM_VERTEX_ATTRIBUTE 0
 
-    QOpenGLShader *vshader = new QOpenGLShader(QOpenGLShader::Vertex, this);
+    QOpenGLShader *vshader = new QOpenGLShader(QOpenGLShader::Vertex, m_context);
     const char *vsrc =
         "attribute highp vec4 vertex;\n"
         "varying mediump vec4 texc;\n"
@@ -83,7 +94,7 @@ void RadarDisplay::initializeGL()
         "}\n";
     vshader->compileSourceCode(vsrc);
 
-    QOpenGLShader *fshader = new QOpenGLShader(QOpenGLShader::Fragment, this);
+    QOpenGLShader *fshader = new QOpenGLShader(QOpenGLShader::Fragment, m_context);
     const char *fsrc =
         "#define M_PI 3.1415926535897932384626433832795\n"
         "uniform sampler2D texture;\n"
@@ -116,25 +127,29 @@ void RadarDisplay::initializeGL()
 
     m_program->bind();
     m_program->setUniformValue("texture", 0);
+
+    m_opengl_initialized = true;
 }
 
 QRectF RadarDisplay::boundingRect() const
 {
-    if(!m_sectors.empty())
-    {
-        double r = m_sectors.back().range;
-        r /= m_pixel_size;
-        return QRectF(-r,-r,r*2,r*2);
-    }
-    return QRectF();
+  if (m_range > 0);
+  {
+    double r = m_range / m_pixel_size;
+    return QRectF(-r,-r,r*2,r*2);
+  }
+  return QRectF();
 }
 
 void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
     if(m_show_radar && !m_sectors.empty())
     {
-        double r = m_sectors.back().range;
-        //qDebug() << "range: " << r;
+        double r;
+        {
+            QMutexLocker lock(&m_range_mutex);
+            r = m_range;
+        }
         r /= m_pixel_size;
         QPen p;
         p.setColor(Qt::green);
@@ -143,84 +158,36 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
         QRectF radarRect(-r,-r,r*2,r*2);
         //painter->drawEllipse(radarRect);
 
-        
-        m_context->makeCurrent(m_surface);
-        m_fbo->bind();
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        QMatrix4x4 matrix;
-        matrix.ortho(-1, 1, -1, 1, 4.0f, 15.0f);
-        matrix.translate(0.0f, 0.0f, -10.0f);
-        
-        glViewport(0,0,2048,2048);
-        
-        m_program->setUniformValue("matrix", matrix);
-        m_program->enableAttributeArray(PROGRAM_VERTEX_ATTRIBUTE);
-        m_program->setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 3 * sizeof(GLfloat));
-    
-        ros::Time now = ros::Time::now();
-        float persistance = 5.0;
-        while(!m_sectors.empty() && m_sectors.front().timestamp + ros::Duration(persistance) < now)
         {
-            if(m_sectors.front().sectorImage)
-                delete m_sectors.front().sectorImage;
-            if(m_sectors.front().sectorTexture)
-                delete m_sectors.front().sectorTexture;
-            m_sectors.pop_front();
+            QMutexLocker lock(&m_radar_image_mutex);
+            painter->drawImage(radarRect, m_radar_image);
         }
-        for(Sector &s: m_sectors)
-            if(s.sectorImage)
-            {
-                float fade = 1.0-((now-s.timestamp).toSec()/persistance);
-                if(!s.sectorTexture)
-                {
-                    s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
-                }
-                if(s.heading < 0)
-                {
-                    //std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
-                    std::cerr << "map frame: " << m_mapFrame << std::endl;
-                    if(m_tf_buffer && !m_mapFrame.empty())
-                        std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
-                    std::cerr << "timestamp: " << s.timestamp << std::endl;
-                    std::cerr << "frame_id: " << s.frame_id.toStdString() << std::endl;
-                    if(m_tf_buffer && !m_mapFrame.empty() && m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp))
-                    {
-                        geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp);
-                        double heading =  90.0-180.0*tf2::getYaw(t.transform.rotation);
-                        s.heading = heading*M_PI/180.0;
-                        std::cerr << "radar sector heading: " << s.heading << std::endl;
-                    }
-                }
-                if(s.heading >= 0.0)
-                {
-                    m_program->setUniformValue("minAngle", GLfloat(s.heading+s.angle1-s.half_scanline_angle*1.1));
-                    m_program->setUniformValue("maxAngle", GLfloat(s.heading+s.angle2+s.half_scanline_angle*1.1));
-                }
-                else
-                {
-                    m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
-                    m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
-                }
-                m_program->setUniformValue("fade", GLfloat(fade));
-                m_program->setUniformValue("color", m_color);
-                
-                s.sectorTexture->bind();
-                glDisable(GL_BLEND);
-                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-            }
-        
-        painter->drawImage(radarRect, m_fbo->toImage());
-        
+
     }
     
 }
 
-
-void RadarDisplay::addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp, QString frame_id)
+void RadarDisplay::sectorAdded()
 {
-    prepareGeometryChange();
-    //std::cerr << angle1 << " - " << angle2 << " degs, " << range << " meters" << std::endl;
+    //prepareGeometryChange();
+    update();
+}
+
+void RadarDisplay::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message)
+{
+  if (m_show_radar && !message->sector.scanlines.empty())
+  {
+    double angle1 = message->sector.scanlines[0].angle;
+    double angle2 = message->sector.scanlines.back().angle;
+    double range = message->sector.scanlines[0].range;
+    int w = message->sector.scanlines[0].intensities.size();
+    int h = message->sector.scanlines.size();
+    QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
+    sector->fill(Qt::darkGray);
+    for(int i = 0; i < h; i++)
+      for(int j = 0; j < w; j++)
+        sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
+
     Sector s;
     if(angle1 > angle2)
         s.angle1 = (angle1-360.0)*M_PI/180.0;
@@ -230,11 +197,120 @@ void RadarDisplay::addSector(double angle1, double angle2, double range, QImage 
     s.half_scanline_angle = (s.angle2 - s.angle1)/(2.0*sector->height());
     s.range = range;
     s.sectorImage = sector;
-    s.timestamp = stamp;
-    s.frame_id = frame_id;
-    m_sectors.push_back(s);
-    update();
+    s.timestamp = message->header.stamp;
+    s.frame_id = message->header.frame_id.c_str();
+    QMutexLocker lock(&m_new_sectors_mutex);
+    m_new_sectors.push_back(s);
+  }
 }
+
+
+void RadarDisplay::updateRadarImage()
+{
+  while(true)
+  {
+    if ( QThread::currentThread()->isInterruptionRequested() )
+      return;
+
+    if(!m_opengl_initialized)
+      initializeGL();
+
+    m_context->makeCurrent(m_surface);
+    m_fbo->bind();
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    QMatrix4x4 matrix;
+    matrix.ortho(-1, 1, -1, 1, 4.0f, 15.0f);
+    matrix.translate(0.0f, 0.0f, -10.0f);
+    
+    glViewport(0,0,2048,2048);
+    
+    m_program->setUniformValue("matrix", matrix);
+    m_program->enableAttributeArray(PROGRAM_VERTEX_ATTRIBUTE);
+    m_program->setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 3 * sizeof(GLfloat));
+
+    ros::Time now = ros::Time::now();
+    float persistance = 2.0;
+    {
+      QMutexLocker lock(&m_new_sectors_mutex);
+      while(!m_new_sectors.empty())
+      {
+        m_sectors.push_back(m_new_sectors.front());
+        m_new_sectors.pop_front();
+      }
+    }
+    while(!m_sectors.empty() && m_sectors.front().timestamp + ros::Duration(persistance) < now)
+    {
+      if(m_sectors.front().sectorImage)
+        delete m_sectors.front().sectorImage;
+      if(m_sectors.front().sectorTexture)
+        delete m_sectors.front().sectorTexture;
+      m_sectors.pop_front();
+    }
+    {
+      QMutexLocker range_lock(&m_range_mutex);
+      if(m_sectors.empty())
+        m_range = 0.0;
+      else
+        m_range = m_sectors.back().range;
+    }
+    for(Sector &s: m_sectors)
+    {
+      if(s.sectorImage && !s.rendered)
+      {
+        float fade = 1.0-((now-s.timestamp).toSec()/persistance);
+        if(!s.sectorTexture)
+        {
+          s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
+        }
+        if(!s.have_heading)
+        {
+          //std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
+          //std::cerr << "map frame: " << m_mapFrame << " timestamp: " << s.timestamp << " frame_id: " << s.frame_id.toStdString();
+          //if(m_tf_buffer && !m_mapFrame.empty())
+          //    std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
+          //std::cerr << std::endl;
+          if(m_tf_buffer && !m_mapFrame.empty() && m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp))
+          {
+              geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp);
+              double heading =  (M_PI/2.0)-tf2::getYaw(t.transform.rotation);
+              while (heading < 0.0)
+                  heading += (2.0*M_PI);
+              s.heading = heading;
+              s.angle1 = std::fmod(s.angle1+heading,M_PI*2);
+              if(s.angle1 < 0)
+                s.angle1 += M_PI*2;
+              s.angle2 = std::fmod(s.angle2+heading,M_PI*2);
+              if(s.angle2 < 0)
+                s.angle2 += M_PI*2;
+
+              s.have_heading = true;
+              //std::cerr << "radar sector heading: " << s.heading << std::endl;
+          }
+        }
+        if(s.have_heading)
+        {
+          m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
+          m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
+          m_program->setUniformValue("fade", GLfloat(fade));
+          m_program->setUniformValue("color", m_color);
+          
+          s.sectorTexture->bind();
+          glDisable(GL_BLEND);
+          glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+          //s.rendered = true;
+        }
+      }
+    }
+
+    {
+      QMutexLocker lock(&m_radar_image_mutex);
+      m_radar_image = m_fbo->toImage();
+    }
+    QThread::currentThread()->msleep(250);
+  }
+
+} 
 
 void RadarDisplay::showRadar(bool show)
 {
@@ -249,5 +325,6 @@ const QColor& RadarDisplay::getColor() const
 
 void RadarDisplay::setColor(QColor color)
 {
+    QMutexLocker lock(&m_color_mutex);
     m_color = color;
 }

@@ -6,8 +6,11 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
 #include <QOpenGLBuffer>
+#include <QMutex>
 #include <deque>
 #include <ros/ros.h>
+#include <ros/callback_queue.h>
+#include "marine_msgs/RadarSectorStamped.h"
 
 Q_DECLARE_METATYPE(QImage*)
 Q_DECLARE_METATYPE(ros::Time)
@@ -39,12 +42,16 @@ public:
     const QColor& getColor() const;
     
 public slots:
-    void addSector(double angle1, double angle2, double range, QImage *sector, ros::Time stamp, QString frame_id);
     void showRadar(bool show);
     void setColor(QColor color);
+    void sectorAdded();
+    void subscribe(QString topic);
 
 private:
     void initializeGL();
+    void radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message);
+    void updateRadarImage();
+
     
     struct Sector
     {
@@ -55,6 +62,8 @@ private:
         QString frame_id;
         double angle1, angle2, range, half_scanline_angle;
         double heading;
+        double have_heading = false;
+        double rendered = false;
         QImage *sectorImage;
         QOpenGLTexture *sectorTexture;
     };
@@ -62,18 +71,37 @@ private:
     double m_pixel_size = 1.0;
 
     std::deque<Sector> m_sectors;
-    
+
+    std::deque<Sector> m_new_sectors;
+    QMutex m_new_sectors_mutex;
+
+    double m_range = 0.0;
+    QMutex m_range_mutex;
+
     QOpenGLShaderProgram *m_program;
     QOffscreenSurface* m_surface = nullptr;
     QOpenGLContext* m_context = nullptr;
     QOpenGLFramebufferObject* m_fbo = nullptr;
     QOpenGLBuffer m_vbo;
+
+    QImage m_radar_image;
+    QMutex m_radar_image_mutex;
+
+    bool m_opengl_initialized = false;
     
     bool m_show_radar = true;
+
     QColor m_color ={0,255,0,255};
+    QMutex m_color_mutex;
 
     tf2_ros::Buffer* m_tf_buffer = nullptr;
     std::string m_mapFrame;
+
+    ros::CallbackQueue m_ros_queue;
+    std::shared_ptr<ros::AsyncSpinner> m_spinner;
+    ros::Subscriber m_subscriber;
+
+    QThread* m_radarImageThread;
 };
 
 #endif
