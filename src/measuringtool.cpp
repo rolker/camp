@@ -2,6 +2,7 @@
 #include "backgroundraster.h"
 #include <QPainter>
 #include <QDebug>
+#include <math.h>
 #include "platform.h"
 
 MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
@@ -32,7 +33,10 @@ QPainterPath MeasuringTool::shape() const
 {
     QPainterPath ret;
     ret.moveTo(0,0);
-    ret.lineTo(geoToPixel(m_finish,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject())-geoToPixel(m_start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject()));
+    auto delta = geoToPixel(m_finish,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject())-geoToPixel(m_start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject());
+    ret.lineTo(delta);
+    auto distance =  sqrt(delta.x()*delta.x()+delta.y()*delta.y());
+    ret.addEllipse(QPointF(0, 0), distance, distance);
     return ret;
 }
 
