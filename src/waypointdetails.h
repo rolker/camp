@@ -23,9 +23,7 @@ public slots:
     void onLocationChanged();
 
 private slots:
-    void on_latitudeLineEdit_editingFinished();
-
-    void on_longitudeLineEdit_editingFinished();
+    void on_updatePushButton_clicked(bool checked);
 
 private:
     Ui::WaypointDetails *ui;

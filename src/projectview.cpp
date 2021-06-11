@@ -162,7 +162,7 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         QPointF projectedMouse = bg->pixelToProjectedPoint(transformedMouse);
         posText += " Projected mouse: "+QString::number(projectedMouse.x(),'f')+","+QString::number(projectedMouse.y(),'f');
         QGeoCoordinate llMouse = bg->unproject(projectedMouse);
-        posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees);
+        posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees) + " (" + llMouse.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
         
         if(dr)
         {

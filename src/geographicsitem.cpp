@@ -18,7 +18,7 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
     m_label->setFont(font);
     m_label->setBrush(QBrush(QColor("black")));
     QPen p(QColor("white"));
-    p.setWidth(2);
+    p.setWidth(0);
     m_label->setPen(p);
     //m_label->setFlag(QGraphicsItem::ItemIsMovable); this caused other elements to move while trying to move the label!
 }

@@ -37,7 +37,8 @@ signals:
 
 protected:
     QVariant itemChange(GraphicsItemChange change, const QVariant &value);
-
+    void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
 private:
     QGeoCoordinate m_location;
     bool m_internalPositionChangeFlag;

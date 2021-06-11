@@ -154,3 +154,17 @@ QList<QList<QGeoCoordinate> > Waypoint::getLines() const
     ret.back().append(m_location);
     return ret;
 }
+
+void Waypoint::hoverEnterEvent(QGraphicsSceneHoverEvent * event)
+{
+    GeoGraphicsMissionItem::hoverEnterEvent(event);
+    setLabel(m_location.toString(QGeoCoordinate::Degrees)+"\n"+m_location.toString(QGeoCoordinate::DegreesMinutesWithHemisphere));
+    //setLabelPosition(geoToPixel(m_location,autonomousVehicleProject()));
+    setShowLabelFlag(true);
+}
+
+void Waypoint::hoverLeaveEvent(QGraphicsSceneHoverEvent * event)
+{
+    GeoGraphicsMissionItem::hoverLeaveEvent(event);
+    setShowLabelFlag(false);
+}
