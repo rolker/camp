@@ -542,3 +542,22 @@ void SurveyPattern::reverseDirection()
     update();
 }
 
+void SurveyPattern::updateETE()
+{
+    GeoGraphicsMissionItem::updateETE();
+    AutonomousVehicleProject* avp = autonomousVehicleProject();
+    if(avp && m_startLocation && m_endLocation)
+    {
+        qreal scale = avp->mapScale();
+        qreal distance = m_startLocation->location().distanceTo(m_endLocation->location());
+        qreal bearing = m_startLocation->location().azimuthTo(m_endLocation->location());
+        qreal bearing_rad = qDegreesToRadians(bearing);
+        qreal cos_bearing = cos(bearing_rad);
+        qreal sin_bearing = sin(bearing_rad);
+        qreal dy = -cos_bearing*distance*0.2;
+        qreal dx = sin_bearing*distance*0.2;
+        //qDebug() << "scale: " << scale << " distance: " << distance << " bearing: " << bearing << " dx,dy: " << dx << "," << dy;
+        setLabelPosition(QPointF(dx*scale, dy*scale));
+    }
+
+}

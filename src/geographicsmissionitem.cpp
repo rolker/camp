@@ -4,6 +4,7 @@
 #include "platform.h"
 #include <QDebug>
 #include <QVector2D>
+#include <QtMath>
 
 GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent):MissionItem(parent),m_lockedColor(50,200,50),m_unlockedColor(Qt::red), m_locked(false)
 {
@@ -121,6 +122,8 @@ void GeoGraphicsMissionItem::updateETE()
 {
     double cumulativeDistance = 0.0;
     
+    QGeoCoordinate minPosition;
+    QGeoCoordinate maxPosition;
     QGeoCoordinate lastPosition;
     
     auto lines = getLines();
@@ -129,12 +132,21 @@ void GeoGraphicsMissionItem::updateETE()
         if (l.length() > 1)
         {
             auto first = l.begin();
+            if (!minPosition.isValid())
+            {
+                minPosition = *first;
+                maxPosition = *first;
+            }
             if (lastPosition.isValid())
                 cumulativeDistance += lastPosition.distanceTo(*first);
             auto second = first;
             second++;
             while(second != l.end())
             {
+                minPosition.setLatitude(std::min(minPosition.latitude(), second->latitude()));
+                minPosition.setLongitude(std::min(minPosition.longitude(), second->longitude()));
+                maxPosition.setLatitude(std::max(maxPosition.latitude(), second->latitude()));
+                maxPosition.setLongitude(std::max(maxPosition.longitude(), second->longitude()));
                 cumulativeDistance += first->distanceTo(*second);
                 lastPosition = *second;
                 first++;
@@ -157,6 +169,16 @@ void GeoGraphicsMissionItem::updateETE()
             else
                 label += "\nETE: "+QString::number(time,'f',2)+" (h)";
         }
+        qreal scale = avp->mapScale();
+        qreal distance = minPosition.distanceTo(maxPosition);
+        qreal bearing = minPosition.azimuthTo(maxPosition);
+        qreal bearing_rad = qDegreesToRadians(bearing);
+        qreal cos_bearing = cos(bearing_rad);
+        qreal sin_bearing = sin(bearing_rad);
+        qreal dy = cos_bearing*distance*0.2;
+        qreal dx = sin_bearing*distance*0.2;
+        qDebug() << "scale: " << scale << " distance: " << distance << " bearing: " << bearing << " dx,dy: " << dx << "," << dy;
+        setLabelPosition(QPointF(dx*scale, dy*scale));
     }
 
     setLabel(label);

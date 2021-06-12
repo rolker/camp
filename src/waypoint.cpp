@@ -158,7 +158,7 @@ QList<QList<QGeoCoordinate> > Waypoint::getLines() const
 void Waypoint::hoverEnterEvent(QGraphicsSceneHoverEvent * event)
 {
     GeoGraphicsMissionItem::hoverEnterEvent(event);
-    setLabel(m_location.toString(QGeoCoordinate::Degrees)+"\n"+m_location.toString(QGeoCoordinate::DegreesMinutesWithHemisphere));
+    setLabel(objectName() + "\n" + m_location.toString(QGeoCoordinate::Degrees)+"\n"+m_location.toString(QGeoCoordinate::DegreesMinutesWithHemisphere));
     //setLabelPosition(geoToPixel(m_location,autonomousVehicleProject()));
     setShowLabelFlag(true);
 }

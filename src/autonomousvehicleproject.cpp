@@ -728,6 +728,11 @@ void AutonomousVehicleProject::updateMapScale(qreal scale)
     
 }
 
+qreal AutonomousVehicleProject::mapScale() const
+{
+    return m_map_scale;
+}
+
 QString AutonomousVehicleProject::generateUniqueLabel(std::string const &prefix)
 {
     std::stringstream ret;

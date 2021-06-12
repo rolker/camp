@@ -35,6 +35,7 @@ private slots:
     void on_stopPingingPushButton_clicked(bool checked);
     void on_startPingingPushButton_clicked(bool checked);
     void on_pingAndLogPushButton_clicked(bool checked);
+    void on_incrementLinePushButton_clicked(bool checked);
 
     void updateMissionStatus(QString const &status);
     void on_gotoLinePushButton_clicked(bool checked);

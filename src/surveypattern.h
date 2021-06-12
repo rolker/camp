@@ -62,6 +62,7 @@ public slots:
     void waypointAboutToChange();
     void updateProjectedPoints();
     void reverseDirection();
+    virtual void updateETE();
 
 protected:
     Waypoint * createWaypoint();

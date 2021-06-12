@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>368</width>
+    <width>362</width>
     <height>169</height>
    </rect>
   </property>
@@ -34,14 +34,21 @@
      <item>
       <widget class="QPushButton" name="startPingingPushButton">
        <property name="text">
-        <string>Ping no logging</string>
+        <string>Ping</string>
        </property>
       </widget>
      </item>
      <item>
       <widget class="QPushButton" name="pingAndLogPushButton">
        <property name="text">
-        <string>Ping and Log</string>
+        <string>Log</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="incrementLinePushButton">
+       <property name="text">
+        <string>Inc Line</string>
        </property>
       </widget>
      </item>

@@ -24,7 +24,7 @@ public slots:
     void updateBackground(BackgroundRaster * bg);
     void lock();
     void unlock();
-    void updateETE();
+    virtual void updateETE();
     void onCurrentPlatformUpdated();
     
 protected:

@@ -274,6 +274,10 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         QMenu menu(this);
 
 #ifdef AMP_ROS
+        menu.addSeparator();
+        menu.addAction("(Blank to avoid accidental hover)");
+        menu.addSeparator();
+
         QAction *hoverAction = menu.addAction("Hover Here");
         connect(hoverAction, &QAction::triggered, this, &ProjectView::sendHover);
 

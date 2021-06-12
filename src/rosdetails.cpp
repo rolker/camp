@@ -53,6 +53,14 @@ void ROSDetails::on_pingAndLogPushButton_clicked(bool checked)
 #endif
 }
 
+void ROSDetails::on_incrementLinePushButton_clicked(bool checked)
+{
+    qDebug() << "ROSDetails increment line";
+#ifdef AMP_ROS
+    m_rosLink->sendCommand("sonar_control 3 -1");
+#endif
+}
+
 void ROSDetails::updateMissionStatus(const QString& status)
 {
     ui->missionStatusTextBrowser->setText(status);

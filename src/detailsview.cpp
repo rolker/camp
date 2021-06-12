@@ -15,6 +15,7 @@
 #include "platformdetails.h"
 #include "behavior.h"
 #include "behaviordetails.h"
+#include <QInputDialog>
 
 #include <QDebug>
 
@@ -23,6 +24,12 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     m_executePushButton = new QPushButton(this);
     m_executePushButton->setText("Execute");
     m_executePushButton->setDisabled(true);
+    connect(m_executePushButton, &QPushButton::clicked, this, &DetailsView::onExecutePushButton_clicked );
+
+    m_renamePushButton = new QPushButton(this);
+    m_renamePushButton->setText("Rename");
+    m_renamePushButton->setDisabled(true);
+    connect(m_renamePushButton, &QPushButton::clicked, this, &DetailsView::onRenamedPushButton_clicked );
 
     backgroundDetails = new BackgroundDetails(this);
     backgroundDetails->hide();
@@ -39,12 +46,14 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(m_executePushButton);
+    layout->addWidget(m_renamePushButton);
     layout->addWidget(backgroundDetails);
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
     layout->addWidget(surveyPatternDetails);
     layout->addWidget(platformDetails);
     layout->addWidget(behaviorDetails);
+    layout->addStretch();
     setLayout(layout);
 }
 
@@ -71,6 +80,13 @@ void DetailsView::setCurrentWidget(QWidget *widget)
         {
             currentWidget->show();
             updateGeometry();
+            m_renamePushButton->setEnabled(true);
+            m_executePushButton->setEnabled(true);
+        }
+        else
+        {
+            m_renamePushButton->setEnabled(false);
+            m_executePushButton->setEnabled(false);
         }
     }
 }
@@ -78,6 +94,11 @@ void DetailsView::setCurrentWidget(QWidget *widget)
 void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelIndex &previous)
 {
     MissionItem* mi = m_project->itemFromIndex(current);
+    if(mi)
+        m_renamePushButton->setEnabled(true);
+    else
+        m_renamePushButton->setEnabled(true);
+
     qDebug() << "metaobject class name: " << mi->metaObject()->className();
     QString itemType = mi->metaObject()->className();
 
@@ -120,4 +141,27 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
     else
         setCurrentWidget(nullptr);
     m_project->setCurrent(current);
+}
+
+void DetailsView::onRenamedPushButton_clicked()
+{
+    MissionItem* mi = m_project->currentSelected();
+    if(mi)
+    {
+        bool ok;
+        QString text = QInputDialog::getText(this, tr("Rename"),
+                                         tr("New label:"), QLineEdit::Normal,
+                                         mi->objectName(), &ok);
+    if (ok && !text.isEmpty())
+        mi->setObjectName(text);
+    }
+}
+
+void DetailsView::onExecutePushButton_clicked()
+{
+    MissionItem* mi = m_project->currentSelected();
+    if(mi)
+    {
+        m_project->sendToROS(m_project->indexFromItem(mi));        
+    }
 }

@@ -89,6 +89,7 @@ public:
     
     QSvgRenderer * symbols() const;
     
+    qreal mapScale() const;
     
 #ifdef AMP_ROS
     ROSLink * rosLink() const;
