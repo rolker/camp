@@ -105,7 +105,7 @@ void AutonomousVehicleProject::open(const QString &fname)
 }
 
 
-void AutonomousVehicleProject::openBackground(const QString &fname)
+BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname)
 {
     beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
     BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
@@ -114,12 +114,14 @@ void AutonomousVehicleProject::openBackground(const QString &fname)
         bgr->setObjectName(fname);
         setCurrentBackground(bgr);
         endInsertRows();
+        return bgr;
     }
     else
     {
         endInsertRows();
         deleteItem(bgr);
     }
+    return nullptr;
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname)

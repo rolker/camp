@@ -64,7 +64,9 @@ void MissionItem::write(QJsonObject& json) const
 
 void MissionItem::read(const QJsonObject& json)
 {
-    setObjectName(json["label"].toString());
+    QString label = json["label"].toString();
+    if(label.size() > 0)
+        setObjectName(label);
 }
 
 void MissionItem::readChildren(const QJsonArray& json)
@@ -74,7 +76,10 @@ void MissionItem::readChildren(const QJsonArray& json)
     {
         QJsonObject object = json[childIndex].toObject();
         if(object["type"] == "BackgroundRaster")
-            project->openBackground(object["filename"].toString());
+        {
+            BackgroundRaster* bgr = project->openBackground(object["filename"].toString());
+            bgr->read(object);
+        }
         if(object["type"] == "VectorDataset")
             project->openGeometry(object["filename"].toString());
         MissionItem *item = nullptr;

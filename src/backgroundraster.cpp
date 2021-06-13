@@ -197,7 +197,7 @@ void BackgroundRaster::writeToMissionPlan(QJsonArray& navArray) const
 
 void BackgroundRaster::read(const QJsonObject &json)
 {
-
+    MissionItem::read(json);
 }
 
 qreal BackgroundRaster::pixelSize() const

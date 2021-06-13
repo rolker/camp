@@ -33,7 +33,7 @@ public:
     ~AutonomousVehicleProject();
 
     QGraphicsScene *scene() const;
-    void openBackground(QString const &fname);
+    BackgroundRaster* openBackground(QString const &fname);
     BackgroundRaster * getBackgroundRaster() const;
     BackgroundRaster * getDepthRaster() const;
     MissionItem *potentialParentItemFor(std::string const &childType);
