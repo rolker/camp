@@ -177,7 +177,7 @@ void GeoGraphicsMissionItem::updateETE()
         qreal sin_bearing = sin(bearing_rad);
         qreal dy = cos_bearing*distance*0.2;
         qreal dx = sin_bearing*distance*0.2;
-        qDebug() << "scale: " << scale << " distance: " << distance << " bearing: " << bearing << " dx,dy: " << dx << "," << dy;
+        //qDebug() << "scale: " << scale << " distance: " << distance << " bearing: " << bearing << " dx,dy: " << dx << "," << dy;
         setLabelPosition(QPointF(dx*scale, dy*scale));
     }
 
