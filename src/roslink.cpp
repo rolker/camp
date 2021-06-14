@@ -798,9 +798,15 @@ void ROSLink::updatePosmvLocation(const QGeoCoordinate& location)
     {
         rd.second->setPos(m_local_posmv_location_history.back());
     }
+    if(m_follow_robot)
+        emit centerMap(location);
     update();
 }
 
+void ROSLink::followRobot(bool follow)
+{
+    m_follow_robot = follow;
+}
 
 void ROSLink::updateBaseLocation(const QGeoCoordinate& location)
 {

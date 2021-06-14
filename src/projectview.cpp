@@ -359,6 +359,16 @@ void ProjectView::updateBackground(BackgroundRaster* bg)
     }
 }
 
+void ProjectView::centerMap(QGeoCoordinate location)
+{
+    BackgroundRaster *bg =  m_project->getBackgroundRaster();
+    if(bg)
+    {
+        QPointF center = bg->geoToPixel(location);
+        centerOn(center);    
+    }  
+}
+
 void ProjectView::sendViewport()
 {
     QPointF ll = mapToScene(frameRect().bottomLeft());

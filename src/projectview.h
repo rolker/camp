@@ -42,6 +42,7 @@ public slots:
     void beforeUpdateBackground();
     void updateBackground(BackgroundRaster * bg);
     void sendViewport(); 
+    void centerMap(QGeoCoordinate location);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;

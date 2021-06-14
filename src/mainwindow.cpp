@@ -54,6 +54,8 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->rosDetails->setROSLink(project->rosLink());
 
     project->rosLink()->connectROS();
+
+    connect(project->rosLink(), &ROSLink::centerMap, ui->projectView, &ProjectView::centerMap);
 #endif
     
     connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
@@ -326,6 +328,11 @@ void MainWindow::on_actionRadar_triggered()
 {
     qDebug() << "radar: " << ui->actionRadar->isChecked();
     emit project->showRadar(ui->actionRadar->isChecked());
+}
+
+void MainWindow::on_actionFollow_triggered()
+{
+    emit project->followRobot(ui->actionFollow->isChecked());
 }
 
 void MainWindow::on_actionRadarColor_triggered()

@@ -51,6 +51,7 @@ private slots:
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
     void on_actionSay_something_triggered();
+    void on_actionFollow_triggered();
 
 private:
     Ui::MainWindow *ui;
