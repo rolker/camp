@@ -56,6 +56,8 @@ MainWindow::MainWindow(QWidget *parent) :
     project->rosLink()->connectROS();
 
     connect(project->rosLink(), &ROSLink::centerMap, ui->projectView, &ProjectView::centerMap);
+
+    connect(ui->detailsView, &DetailsView::clearTasks, project->rosLink(), &ROSLink::clearTasks);
 #endif
     
     connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);

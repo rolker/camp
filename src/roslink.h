@@ -135,6 +135,7 @@ public slots:
     void appendMission(QString const &plan);
     void prependMission(QString const &plan);
     void updateMission(QString const &plan);
+    void clearTasks();
     
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);

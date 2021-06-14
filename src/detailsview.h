@@ -24,17 +24,20 @@ public:
     QSize sizeHint() const override;
 
 signals:
+    void clearTasks();
 
 public slots:
     void onCurrentItemChanged(const QModelIndex  &current, const QModelIndex &previous);
     void onRenamedPushButton_clicked();
     void onExecutePushButton_clicked();
+    void onClearTasksPushButton_clicked();
 
 private:
     AutonomousVehicleProject *m_project;
 
     QPushButton* m_executePushButton;
     QPushButton* m_renamePushButton;
+    QPushButton* m_clearTasksButton;
 
     QWidget * currentWidget;
 

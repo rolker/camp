@@ -31,6 +31,10 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     m_renamePushButton->setDisabled(true);
     connect(m_renamePushButton, &QPushButton::clicked, this, &DetailsView::onRenamedPushButton_clicked );
 
+    m_clearTasksButton = new QPushButton(this);
+    m_clearTasksButton->setText("Clear tasks");
+    connect(m_clearTasksButton, &QPushButton::clicked, this, &DetailsView::onClearTasksPushButton_clicked);
+
     backgroundDetails = new BackgroundDetails(this);
     backgroundDetails->hide();
     waypointDetails = new WaypointDetails(this);
@@ -47,6 +51,7 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addWidget(m_executePushButton);
     layout->addWidget(m_renamePushButton);
+    layout->addWidget(m_clearTasksButton);
     layout->addWidget(backgroundDetails);
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
@@ -155,6 +160,11 @@ void DetailsView::onRenamedPushButton_clicked()
     if (ok && !text.isEmpty())
         mi->setObjectName(text);
     }
+}
+
+void DetailsView::onClearTasksPushButton_clicked()
+{
+    emit clearTasks();
 }
 
 void DetailsView::onExecutePushButton_clicked()

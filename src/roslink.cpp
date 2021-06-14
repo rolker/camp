@@ -711,6 +711,11 @@ void ROSLink::appendMission(const QString& plan)
     sendCommand("mission_manager append_task mission_plan "+plan.toStdString());
 }
 
+void ROSLink::clearTasks()
+{
+    sendCommand("mission_manager clear_tasks");
+}
+
 void ROSLink::prependMission(const QString& plan)
 {
     sendCommand("mission_manager prepend_task mission_plan "+plan.toStdString());
