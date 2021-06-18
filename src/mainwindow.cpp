@@ -137,8 +137,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     QMenu menu(this);
 
 #ifdef AMP_ROS
-    QAction *sendToROSAction = menu.addAction("Send to ROS");
-    connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
+    QAction *sendToROSAction = menu.addAction("Send to ROS (Use Execute button)");
+    sendToROSAction->setEnabled(false);
+    //connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
     
     QMenu *missionMenu = menu.addMenu("Mission");
     
