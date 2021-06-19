@@ -108,8 +108,8 @@ void AutonomousVehicleProject::open(const QString &fname)
 
 BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname, QString label)
 {
-    beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
-    BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
+    beginInsertRows(indexFromItem(m_root),m_root->childMissionItems().size(),m_root->childMissionItems().size());
+    BackgroundRaster *bgr = new BackgroundRaster(fname, m_root);
     if(bgr->valid())
     {   
         if(label.isEmpty())
