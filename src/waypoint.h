@@ -8,7 +8,7 @@ class Waypoint : public GeoGraphicsMissionItem
     Q_OBJECT
     Q_INTERFACES(QGraphicsItem)
 public:
-    explicit Waypoint(MissionItem *parent = 0);
+    explicit Waypoint(MissionItem *parent = 0, int row = -1);
 
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
@@ -27,6 +27,7 @@ public:
     
     QList<QList<QGeoCoordinate> > getLines() const override;
     
+    bool canBeSentToRobot() const override;
     
 public slots:
     void updateProjectedPoints() override;

@@ -3,9 +3,7 @@
 #include <QMenu>
 #include <QStyle>
 
-#ifdef AMP_ROS
 #include "roslink.h"
-#endif
 
 #include <QDebug>
 
@@ -23,34 +21,32 @@ ROSDetails::~ROSDetails()
 
 void ROSDetails::setROSLink(ROSLink* rosLink)
 {
-#ifdef AMP_ROS
     m_rosLink = rosLink;
     rosLink->setROSDetails(this);
-#endif
 }
 
 void ROSDetails::on_stopPingingPushButton_clicked(bool checked)
 {
     qDebug() << "ROSDetails stop pinging";
-#ifdef AMP_ROS
     m_rosLink->sendCommand("sonar_control 0 -1");
-#endif
 }
 
 void ROSDetails::on_startPingingPushButton_clicked(bool checked)
 {
     qDebug() << "ROSDetails start pinging";
-#ifdef AMP_ROS
     m_rosLink->sendCommand("sonar_control 1 -1");
-#endif
 }
 
 void ROSDetails::on_pingAndLogPushButton_clicked(bool checked)
 {
     qDebug() << "ROSDetails ping and log";
-#ifdef AMP_ROS
     m_rosLink->sendCommand("sonar_control 2 -1");
-#endif
+}
+
+void ROSDetails::on_incrementLinePushButton_clicked(bool checked)
+{
+    qDebug() << "ROSDetails increment line";
+    m_rosLink->sendCommand("sonar_control 3 -1");
 }
 
 void ROSDetails::updateMissionStatus(const QString& status)
@@ -60,22 +56,17 @@ void ROSDetails::updateMissionStatus(const QString& status)
 
 void ROSDetails::on_gotoLinePushButton_clicked(bool checked)
 {
-#ifdef AMP_ROS
     m_rosLink->sendGotoLine(ui->lineNumberSpinBox->value());
-#endif
 }
 
 void ROSDetails::on_startLinePushButton_clicked(bool checked)
 {
-#ifdef AMP_ROS
     m_rosLink->sendStartLine(ui->lineNumberSpinBox->value());
-#endif
 }
 
 
 void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_timestamp, double bearing, ros::Time const & bearing_timestamp)
 {
-#ifdef AMP_ROS
     QString rblabel = "Range: " + QString::number(int(range)) + " m, Bearing: " + QString::number(int(bearing)) + " degs";
     ui->rangeBearingLineEdit->setText(rblabel);
 
@@ -92,7 +83,6 @@ void ROSDetails::rangeAndBearingUpdate(double range, ros::Time const & range_tim
         pal.setColor(QPalette::Background, Qt::yellow);
     }
     ui->rangeBearingLineEdit->setPalette(pal);
-#endif
     
 }
 
@@ -112,21 +102,38 @@ void ROSDetails::on_missionStatusTextBrowser_customContextMenuRequested(const QP
         QAction *restartMissionAction = menu.addAction("Restart Mission");
         connect(restartMissionAction, &QAction::triggered, this, &ROSDetails::restartMission);
 
+        QAction *clearTasksAction = menu.addAction("Clear Tasks");
+        connect(clearTasksAction, &QAction::triggered, this, &ROSDetails::clearTasks);
+
         menu.exec(ui->missionStatusTextBrowser->mapToGlobal(pos));
 }
 
 void ROSDetails::sendNextItem()
 {
-#ifdef AMP_ROS
     m_rosLink->sendNextItem();
-#endif
 }
 
 void ROSDetails::restartMission()
 {
-#ifdef AMP_ROS
     m_rosLink->restartMission();
-#endif
 }
 
+void ROSDetails::clearTasks()
+{
+    m_rosLink->clearTasks();
+}
 
+void ROSDetails::on_nextMissionItemPushButton_clicked(bool checked)
+{
+    m_rosLink->sendNextItem();
+}
+
+void ROSDetails::on_restartMissionPushButton_clicked(bool checked)
+{
+    m_rosLink->restartMission();
+}
+
+void ROSDetails::on_clearTasksPushButton_clicked(bool checked)
+{
+    m_rosLink->clearTasks();
+}

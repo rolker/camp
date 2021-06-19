@@ -5,27 +5,21 @@ if(CMAKE_COMPILER_IS_GNUCXX)
     add_definitions(-std=gnu++11)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
-option(AMP_USE_ROS "Build ROS components" ON)
+find_package(catkin REQUIRED COMPONENTS
+    roscpp
+    marine_msgs
+    geographic_visualization_msgs
+    rosgraph_msgs
+    tf2
+    tf2_geometry_msgs
+    rqt_gui
+    rqt_gui_cpp
+    sound_play
+)
+include_directories(${catkin_INCLUDE_DIRS})
 
-if(AMP_USE_ROS)
-    find_package(catkin REQUIRED COMPONENTS
-        roscpp
-        marine_msgs
-        geographic_visualization_msgs
-        rosgraph_msgs
-        tf2
-        tf2_geometry_msgs
-        rqt_gui
-        rqt_gui_cpp
-        sound_play
-    )
-    include_directories(${catkin_INCLUDE_DIRS})
-    add_definitions(-DAMP_ROS)
-    
-    catkin_package(
-    )
-
-endif()
+catkin_package(
+)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)

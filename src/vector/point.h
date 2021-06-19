@@ -22,6 +22,8 @@ public:
     void read(const QJsonObject &json) override;
 
     int type() const override {return PointType;}
+
+    bool canBeSentToRobot() const override;
     
 public slots:
     void updateProjectedPoints() override;

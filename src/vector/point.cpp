@@ -47,3 +47,8 @@ void Point::setLocation(QGeoCoordinate const &location)
 void Point::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
 {
 }
+
+bool Point::canBeSentToRobot() const
+{
+    return false;
+}

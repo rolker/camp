@@ -11,7 +11,7 @@ class SurveyPattern : public GeoGraphicsMissionItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    SurveyPattern(MissionItem *parent = 0);
+    SurveyPattern(MissionItem *parent = 0, int row = -1);
 
     enum Alignment
     { 
@@ -53,6 +53,8 @@ public:
     void setTotalWidth(double totalWidth);
 
     QList<QList<QGeoCoordinate> > getLines() const override;
+
+    bool canBeSentToRobot() const override;
     
 signals:
     void surveyPatternUpdated();
@@ -62,6 +64,7 @@ public slots:
     void waypointAboutToChange();
     void updateProjectedPoints();
     void reverseDirection();
+    virtual void updateETE();
 
 protected:
     Waypoint * createWaypoint();

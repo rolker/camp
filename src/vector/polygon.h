@@ -26,6 +26,7 @@ public:
     void updateBBox();
     
     int type() const override {return PolygonType;}
+    bool canBeSentToRobot() const override;
     
 public slots:
     void updateProjectedPoints() override;

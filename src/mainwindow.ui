@@ -180,6 +180,7 @@
     <addaction name="actionShowTail"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionSay_something"/>
+    <addaction name="actionFollow"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_Add"/>
@@ -332,6 +333,14 @@
   <action name="actionRadarColor">
    <property name="text">
     <string>Radar Color</string>
+   </property>
+  </action>
+  <action name="actionFollow">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Follow</string>
    </property>
   </action>
  </widget>

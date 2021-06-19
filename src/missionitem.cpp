@@ -8,12 +8,20 @@
 #include "platform.h"
 #include "backgroundraster.h"
 #include "behavior.h"
+#include "surveyarea.h"
+#include "group.h"
+#include <QDebug>
 
-MissionItem::MissionItem(QObject *parent) : QObject(parent)
+MissionItem::MissionItem(QObject *parent, int row) : QObject(parent)
 {
     MissionItem * parentMissionItem = qobject_cast<MissionItem*>(parent);
     if(parentMissionItem)
-        parentMissionItem->m_childrenMissionItems.append(this);
+    {
+        if(row < 0)
+            parentMissionItem->m_childrenMissionItems.append(this);
+        else
+            parentMissionItem->m_childrenMissionItems.insert(row, this);
+    }
 }
 
 AutonomousVehicleProject* MissionItem::autonomousVehicleProject() const
@@ -64,31 +72,52 @@ void MissionItem::write(QJsonObject& json) const
 
 void MissionItem::read(const QJsonObject& json)
 {
-    setObjectName(json["label"].toString());
+    QString label = json["label"].toString();
+    if(label.size() > 0)
+        setObjectName(label);
 }
 
-void MissionItem::readChildren(const QJsonArray& json)
+void MissionItem::readChildren(const QJsonArray& json, int row)
 {
+    qDebug() << objectName() << " readChilden row: " << row;
+    qDebug() << "  before:";
+    for(auto c: m_childrenMissionItems)
+        qDebug() << "      " << c->objectName();
     auto project = autonomousVehicleProject();
     for (int childIndex = 0; childIndex < json.size(); ++childIndex)
     {
         QJsonObject object = json[childIndex].toObject();
         if(object["type"] == "BackgroundRaster")
-            project->openBackground(object["filename"].toString());
+        {
+            BackgroundRaster* bgr = project->openBackground(object["filename"].toString(), object["label"].toString());
+            bgr->read(object);
+        }
         if(object["type"] == "VectorDataset")
             project->openGeometry(object["filename"].toString());
         MissionItem *item = nullptr;
+        int insertRow = row;
         if(object["type"] == "Waypoint")
-            item = createMissionItem<Waypoint>("waypoint");
+            item = createMissionItem<Waypoint>(object["label"].toString(), insertRow);
         if(object["type"] == "TrackLine")
-            item = project->createTrackLine();
+            item = project->createTrackLine(this, insertRow, object["label"].toString());
         if(object["type"] == "SurveyPattern")
-            item = project->createSurveyPattern();
+            item = project->createSurveyPattern(this, insertRow, object["label"].toString());
+        if(object["type"] == "SurveyArea")
+            item = project->createSurveyArea(this, insertRow, object["label"].toString());
         if(object["type"] == "Platform")
-            item = project->createPlatform();
+            item = project->createPlatform(this, insertRow, object["label"].toString());
+        if(object["type"] == "Group")
+            item = project->createGroup(this, insertRow, object["label"].toString());
         if(item)
+        {
             item->read(object);
+            if(insertRow >= 0)
+                insertRow++;
+        }
     }
+    qDebug() << "  after:";
+    for(auto c: m_childrenMissionItems)
+        qDebug() << "      " << c->objectName();
 
 }
 

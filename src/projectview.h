@@ -33,15 +33,14 @@ signals:
     void viewportChanged(QPointF ll, QPointF ur);
 
 public slots:
-#ifdef AMP_ROS
     void sendHover();
     void sendGoto();
     void sendLookAt();
     void sendLookAtASV();
-#endif
     void beforeUpdateBackground();
     void updateBackground(BackgroundRaster * bg);
     void sendViewport(); 
+    void centerMap(QGeoCoordinate location);
 
 protected:
     void wheelEvent(QWheelEvent *event) override;

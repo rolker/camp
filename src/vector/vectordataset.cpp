@@ -167,3 +167,8 @@ void VectorDataset::updateProjectedPoints()
             childItem->updateProjectedPoints();
     }
 }
+
+bool VectorDataset::canBeSentToRobot() const
+{
+    return false;
+}

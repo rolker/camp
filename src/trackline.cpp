@@ -9,7 +9,7 @@
 #include "backgroundraster.h"
 #include "astar.h"
 
-TrackLine::TrackLine(MissionItem *parent) :GeoGraphicsMissionItem(parent)
+TrackLine::TrackLine(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
 {
 
 }
@@ -132,12 +132,12 @@ void TrackLine::write(QJsonObject &json) const
     MissionItem::write(json);
     json["type"] = "TrackLine";
     QJsonArray wpArray;
-    auto children = childItems();
+    auto children = childMissionItems();
     for(auto child: children)
     {
-        if(child->type() == GeoGraphicsItem::WaypointType)
+        Waypoint *wp = qobject_cast<Waypoint*>(child);
+        if(wp)
         {
-            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
             QJsonObject wpObject;
             wp->write(wpObject);
             wpArray.append(wpObject);
@@ -153,14 +153,12 @@ void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
     navItem["type"] = "survey_line";
     writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;
-    auto children = childItems();
+    auto children = childMissionItems();
     for(auto child: children)
     {
-        if(child->type() == GeoGraphicsItem::WaypointType)
-        {
-            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
+        Waypoint *wp = qobject_cast<Waypoint*>(child);
+        if(wp)
             wp->writeNavToMissionPlan(pathNavArray);
-        }
     }
     navItem["nav"] = pathNavArray;
     navArray.append(navItem);
@@ -207,6 +205,11 @@ void TrackLine::reverseDirection()
 bool TrackLine::canAcceptChildType(const std::string& childType) const
 {
     return childType == "Waypoint";
+}
+
+bool TrackLine::canBeSentToRobot() const
+{
+    return true;
 }
 
 void TrackLine::planPath()

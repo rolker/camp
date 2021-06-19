@@ -144,3 +144,7 @@ void Polygon::addInteriorRing()
     m_interiorRings.append(QList<LocationPosition>());
 }
 
+bool Polygon::canBeSentToRobot() const
+{
+    return false;
+}

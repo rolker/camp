@@ -9,9 +9,7 @@
 #include "autonomousvehicleproject.h"
 #include "waypoint.h"
 
-#ifdef AMP_ROS
 #include "roslink.h"
-#endif
 
 #include <modeltest.h>
 #include "backgroundraster.h"
@@ -48,13 +46,15 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
     ui->rosDetails->setEnabled(false);
-#ifdef AMP_ROS
     connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, ui->helmManager, &HelmManager::updateRobotNamespace);
     connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
     ui->rosDetails->setROSLink(project->rosLink());
 
     project->rosLink()->connectROS();
-#endif
+
+    connect(project->rosLink(), &ROSLink::centerMap, ui->projectView, &ProjectView::centerMap);
+
+    connect(ui->detailsView, &DetailsView::clearTasks, project->rosLink(), &ROSLink::clearTasks);
     
     connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
@@ -115,47 +115,65 @@ void MainWindow::on_actionImport_triggered()
     project->import(fname);
 }
 
-
 void MainWindow::on_actionWaypoint_triggered()
 {
+    project->setContextMode(false);
+    ui->projectView->setAddWaypointMode();
+}
+
+void MainWindow::on_actionWaypointFromContext_triggered()
+{
+    project->setContextMode(true);
     ui->projectView->setAddWaypointMode();
 }
 
 void MainWindow::on_actionTrackline_triggered()
 {
+    project->setContextMode(false);
     ui->projectView->setAddTracklineMode();
 }
+
+void MainWindow::on_actionTracklineFromContext_triggered()
+{
+    project->setContextMode(true);
+    ui->projectView->setAddTracklineMode();
+}
+
 
 void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 {
     QModelIndex index = ui->treeView->indexAt(pos);
+    MissionItem  *mi = nullptr;
+    if(index.isValid())
+        mi = project->itemFromIndex(index);
 
     QMenu menu(this);
 
-#ifdef AMP_ROS
-    QAction *sendToROSAction = menu.addAction("Send to ROS");
-    connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
-    
-    QMenu *missionMenu = menu.addMenu("Mission");
-    
-    QAction *appendMissionAction = missionMenu->addAction("append");
-    connect(appendMissionAction, &QAction::triggered, this, &MainWindow::appendMission);
+    if(mi && mi->canBeSentToRobot())
+    {
+        QAction *sendToROSAction = menu.addAction("Send to ROS (Use Execute button)");
+        sendToROSAction->setEnabled(false);
+        //connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
+        
+        QMenu *missionMenu = menu.addMenu("Mission");
+        
+        QAction *appendMissionAction = missionMenu->addAction("append");
+        connect(appendMissionAction, &QAction::triggered, this, &MainWindow::appendMission);
 
-    QAction *prependMissionAction = missionMenu->addAction("prepend");
-    connect(prependMissionAction, &QAction::triggered, this, &MainWindow::prependMission);
+        QAction *prependMissionAction = missionMenu->addAction("prepend");
+        connect(prependMissionAction, &QAction::triggered, this, &MainWindow::prependMission);
 
-    QAction *updateMissionAction = missionMenu->addAction("update");
-    connect(updateMissionAction, &QAction::triggered, this, &MainWindow::updateMission);
-    
-#endif
+        QAction *updateMissionAction = missionMenu->addAction("update");
+        connect(updateMissionAction, &QAction::triggered, this, &MainWindow::updateMission);
+        
+        QMenu *exportMenu = menu.addMenu("Export");
 
-    QMenu *exportMenu = menu.addMenu("Export");
+        QAction *exportHypackAction = exportMenu->addAction("Export Hypack");
+        connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
 
-    QAction *exportHypackAction = exportMenu->addAction("Export Hypack");
-    connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
-
-    QAction *exportMPAction = exportMenu->addAction("Export Mission Plan");
-    connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
+        QAction *exportMPAction = exportMenu->addAction("Export Mission Plan");
+        connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
+    }
 
     
     QAction *openBackgroundAction = menu.addAction("Open Background");
@@ -163,27 +181,64 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
     
     QMenu *addMenu = menu.addMenu("Add");
 
-    QAction *addWaypointAction = addMenu->addAction("Add Waypoint");
-    connect(addWaypointAction, &QAction::triggered, this, &MainWindow::on_actionWaypoint_triggered);
-
-    QAction *addTrackLineAction = addMenu->addAction("Add Track Line");
-    connect(addTrackLineAction, &QAction::triggered, this, &MainWindow::on_actionTrackline_triggered);
-
-    QAction *addSurveyPatternAction = addMenu->addAction("Add Survey Pattern");
-    connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurveyPattern_triggered);
-
-    QAction *addGroupAction = addMenu->addAction("Add Group");
-    connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
-    
-    QAction *addPlatformAction = addMenu->addAction("Add Platform");
-    connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatform_triggered);
-
-    if(index.isValid())
+    if(!index.isValid())
     {
+        QAction *addWaypointAction = addMenu->addAction("Add Waypoint");
+        connect(addWaypointAction, &QAction::triggered, this, &MainWindow::on_actionWaypoint_triggered);
+
+        QAction *addTrackLineAction = addMenu->addAction("Add Track Line");
+        connect(addTrackLineAction, &QAction::triggered, this, &MainWindow::on_actionTrackline_triggered);
+
+        QAction *addSurveyPatternAction = addMenu->addAction("Add Survey Pattern");
+        connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurveyPattern_triggered);
+
+        QAction *addGroupAction = addMenu->addAction("Add Group");
+        connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
+        
+        QAction *addPlatformAction = addMenu->addAction("Add Platform");
+        connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatform_triggered);
+    }
+    else
+    {
+        if(mi && mi->canAcceptChildType("Waypoint"))
+        {
+            QAction *addWaypointAction = addMenu->addAction("Add Waypoint");
+            connect(addWaypointAction, &QAction::triggered, this, &MainWindow::on_actionWaypointFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("TrackLine"))
+        {
+            QAction *addTrackLineAction = addMenu->addAction("Add Track Line");
+            connect(addTrackLineAction, &QAction::triggered, this, &MainWindow::on_actionTracklineFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("SurveyPattern"))
+        {
+            QAction *addSurveyPatternAction = addMenu->addAction("Add Survey Pattern");
+            connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurveyPatternFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("SurveyArea"))
+        {
+            QAction *addSurveyAreaAction = addMenu->addAction("Add Survey Area");
+            connect(addSurveyAreaAction, &QAction::triggered, this, &MainWindow::on_actionSurveyAreaFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("Group"))
+        {
+            QAction *addGroupAction = addMenu->addAction("Add Group");
+            connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroupFromContext_triggered);
+        }
+        
+        if(mi && mi->canAcceptChildType("Platform"))
+        {
+            QAction *addPlatformAction = addMenu->addAction("Add Platform");
+            connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatformFromContext_triggered);
+        }
+
         QAction *deleteItemAction = menu.addAction("Delete");
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(ui->treeView->selectionModel()->selectedRows());});
         
-        MissionItem  *mi = project->itemFromIndex(index);
         
         TrackLine *tl = qobject_cast<TrackLine*>(mi);
         if(tl)
@@ -291,26 +346,49 @@ void MainWindow::on_actionOpenBackground_triggered()
 
 void MainWindow::on_actionSurveyPattern_triggered()
 {
+    project->setContextMode(false);
+    ui->projectView->setAddSurveyPatternMode();
+}
+
+void MainWindow::on_actionSurveyPatternFromContext_triggered()
+{
+    project->setContextMode(true);
     ui->projectView->setAddSurveyPatternMode();
 }
 
 void MainWindow::on_actionSurveyArea_triggered()
 {
+    project->setContextMode(false);
+    ui->projectView->setAddSurveyAreaMode();
+}
+
+void MainWindow::on_actionSurveyAreaFromContext_triggered()
+{
+    project->setContextMode(true);
     ui->projectView->setAddSurveyAreaMode();
 }
 
 void MainWindow::on_actionPlatform_triggered()
 {
+    project->setContextMode(false);
+    project->createPlatform();
+}
+
+void MainWindow::on_actionPlatformFromContext_triggered()
+{
+    project->setContextMode(true);
     project->createPlatform();
 }
 
 void MainWindow::on_actionBehavior_triggered()
 {
+    project->setContextMode(false);
     project->createBehavior();
 }
 
 void MainWindow::on_actionOpenGeometry_triggered()
 {
+    project->setContextMode(false);
     QString fname = QFileDialog::getOpenFileName(this,tr("Open"),m_workspace_path);
 
     if(!fname.isEmpty())
@@ -319,6 +397,13 @@ void MainWindow::on_actionOpenGeometry_triggered()
 
 void MainWindow::on_actionGroup_triggered()
 {
+    project->setContextMode(false);
+    project->addGroup();
+}
+
+void MainWindow::on_actionGroupFromContext_triggered()
+{
+    project->setContextMode(true);
     project->addGroup();
 }
 
@@ -326,6 +411,11 @@ void MainWindow::on_actionRadar_triggered()
 {
     qDebug() << "radar: " << ui->actionRadar->isChecked();
     emit project->showRadar(ui->actionRadar->isChecked());
+}
+
+void MainWindow::on_actionFollow_triggered()
+{
+    emit project->followRobot(ui->actionFollow->isChecked());
 }
 
 void MainWindow::on_actionRadarColor_triggered()

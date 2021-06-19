@@ -113,6 +113,7 @@ signals:
     void rosConnected(bool connected);
     void originUpdated();
     void robotNamespaceUpdated(QString robot_namespace);
+    void centerMap(QGeoCoordinate location);
     
 public slots:
     void updateLocation(QGeoCoordinate const &location);
@@ -134,6 +135,7 @@ public slots:
     void appendMission(QString const &plan);
     void prependMission(QString const &plan);
     void updateMission(QString const &plan);
+    void clearTasks();
     
     void sendHover(QGeoCoordinate const &targetLocation);
     void sendGoto(QGeoCoordinate const &targetLocation);
@@ -150,6 +152,7 @@ public slots:
     void showRadar(bool show);
     void selectRadarColor();
     void showTail(bool show);
+    void followRobot(bool follow);
     
 private:
     void gpsPositionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
@@ -268,6 +271,8 @@ private:
     tf2_ros::Buffer m_tf_buffer;
     tf2_ros::TransformListener m_tf_listener;
     std::string m_mapFrame;
+
+    bool m_follow_robot = false;
 };
 
 #endif // ROSNODE_H

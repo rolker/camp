@@ -185,6 +185,7 @@ QString const &BackgroundRaster::filename() const
 
 void BackgroundRaster::write(QJsonObject &json) const
 {
+    MissionItem::write(json);
     json["type"] = "BackgroundRaster";
     json["filename"] = m_filename;
 }
@@ -196,7 +197,7 @@ void BackgroundRaster::writeToMissionPlan(QJsonArray& navArray) const
 
 void BackgroundRaster::read(const QJsonObject &json)
 {
-
+    MissionItem::read(json);
 }
 
 qreal BackgroundRaster::pixelSize() const
@@ -235,4 +236,9 @@ float BackgroundRaster::getDepth(QGeoCoordinate const &location) const
 {
     auto index = geoToPixel(location);
     return getDepth(index.x(), index.y());
+}
+
+bool BackgroundRaster::canBeSentToRobot() const
+{
+    return false;
 }
