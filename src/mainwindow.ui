@@ -212,7 +212,7 @@
     <string>&amp;Waypoint</string>
    </property>
    <property name="iconText">
-    <string>WP</string>
+    <string>Waypoint</string>
    </property>
   </action>
   <action name="actionTrackline">
@@ -220,7 +220,7 @@
     <string>&amp;Trackline</string>
    </property>
    <property name="iconText">
-    <string>TL</string>
+    <string>Trackline</string>
    </property>
   </action>
   <action name="actionSave">
@@ -238,7 +238,7 @@
     <string>Open &amp;Background</string>
    </property>
    <property name="iconText">
-    <string>BG</string>
+    <string>Background</string>
    </property>
   </action>
   <action name="actionSurveyPattern">
@@ -246,7 +246,7 @@
     <string>&amp;Survey Pattern</string>
    </property>
    <property name="iconText">
-    <string>SP</string>
+    <string>Survey Pattern</string>
    </property>
   </action>
   <action name="actionPlatform">
@@ -254,7 +254,7 @@
     <string>&amp;Platform</string>
    </property>
    <property name="iconText">
-    <string>P</string>
+    <string>Platform</string>
    </property>
    <property name="toolTip">
     <string>Add Platform</string>
@@ -270,7 +270,7 @@
     <string>&amp;Group</string>
    </property>
    <property name="iconText">
-    <string>G</string>
+    <string>Group</string>
    </property>
   </action>
   <action name="actionImport">
@@ -286,7 +286,7 @@
     <string>S&amp;urvey Area</string>
    </property>
    <property name="iconText">
-    <string>SA</string>
+    <string>Survey Area</string>
    </property>
   </action>
   <action name="actionBehavior">
@@ -294,7 +294,7 @@
     <string>&amp;Behavior</string>
    </property>
    <property name="iconText">
-    <string>B</string>
+    <string>Behavior</string>
    </property>
   </action>
   <action name="actionRadar">
