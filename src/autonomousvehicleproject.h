@@ -31,28 +31,28 @@ public:
     ~AutonomousVehicleProject();
 
     QGraphicsScene *scene() const;
-    BackgroundRaster* openBackground(QString const &fname);
+    BackgroundRaster* openBackground(QString const &fname, QString label = "");
     BackgroundRaster * getBackgroundRaster() const;
     BackgroundRaster * getDepthRaster() const;
     MissionItem *potentialParentItemFor(std::string const &childType);
 
     Waypoint *addWaypoint(QGeoCoordinate position);
 
-    SurveyPattern * createSurveyPattern(MissionItem* parent=nullptr, int row=-1);
+    SurveyPattern * createSurveyPattern(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyPattern * addSurveyPattern(QGeoCoordinate position);
     
-    SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1);
+    SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyArea * addSurveyArea(QGeoCoordinate position);
 
-    TrackLine * createTrackLine(MissionItem* parent=nullptr, int row=-1);
+    TrackLine * createTrackLine(MissionItem* parent=nullptr, int row=-1, QString label = "");
     TrackLine * addTrackLine(QGeoCoordinate position);
 
-    Platform * createPlatform(MissionItem* parent=nullptr, int row=-1);
+    Platform * createPlatform(MissionItem* parent=nullptr, int row=-1, QString label = "");
     Platform * currentPlatform() const;
     
     Behavior * createBehavior();
     
-    Group * createGroup(MissionItem* parent=nullptr, int row=-1);
+    Group * createGroup(MissionItem* parent=nullptr, int row=-1, QString label = "");
     Group * addGroup();
     
     MissionItem *itemFromIndex(QModelIndex const &index) const;
@@ -73,13 +73,14 @@ public:
     
     QStringList mimeTypes() const override;
     QMimeData * mimeData(const QModelIndexList & indexes) const override;
+    bool canDropMimeData(const QMimeData * data, Qt::DropAction action, int row, int column, const QModelIndex & parent) const override;
     bool dropMimeData(const QMimeData * data, Qt::DropAction action, int row, int column, const QModelIndex & parent) override;
 
     QString const &filename() const;
     void save(QString const &fname = QString());
     void open(QString const &fname);
     
-    void openGeometry(QString const &fname);
+    void openGeometry(QString const &fname, QString label = "");
     
     void import(QString const &fname);
 

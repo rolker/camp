@@ -79,7 +79,7 @@ void MissionItem::read(const QJsonObject& json)
 
 void MissionItem::readChildren(const QJsonArray& json, int row)
 {
-    qDebug() << "readChilden row: " << row;
+    qDebug() << objectName() << " readChilden row: " << row;
     qDebug() << "  before:";
     for(auto c: m_childrenMissionItems)
         qDebug() << "      " << c->objectName();
@@ -89,7 +89,7 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
         QJsonObject object = json[childIndex].toObject();
         if(object["type"] == "BackgroundRaster")
         {
-            BackgroundRaster* bgr = project->openBackground(object["filename"].toString());
+            BackgroundRaster* bgr = project->openBackground(object["filename"].toString(), object["label"].toString());
             bgr->read(object);
         }
         if(object["type"] == "VectorDataset")
@@ -97,17 +97,17 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
         MissionItem *item = nullptr;
         int insertRow = row;
         if(object["type"] == "Waypoint")
-            item = createMissionItem<Waypoint>("waypoint", insertRow);
+            item = createMissionItem<Waypoint>(object["label"].toString(), insertRow);
         if(object["type"] == "TrackLine")
-            item = project->createTrackLine(this, insertRow);
+            item = project->createTrackLine(this, insertRow, object["label"].toString());
         if(object["type"] == "SurveyPattern")
-            item = project->createSurveyPattern(this, insertRow);
+            item = project->createSurveyPattern(this, insertRow, object["label"].toString());
         if(object["type"] == "SurveyArea")
-            item = project->createSurveyArea(this, insertRow);
+            item = project->createSurveyArea(this, insertRow, object["label"].toString());
         if(object["type"] == "Platform")
-            item = project->createPlatform(this, insertRow);
+            item = project->createPlatform(this, insertRow, object["label"].toString());
         if(object["type"] == "Group")
-            item = project->createGroup(this, insertRow);
+            item = project->createGroup(this, insertRow, object["label"].toString());
         if(item)
         {
             item->read(object);

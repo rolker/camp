@@ -15,6 +15,7 @@ public:
     void read(const QJsonObject &json);
     
     void open(const QString &fname);
+    bool canBeSentToRobot() const override;
     
 public slots:
     void updateProjectedPoints() override;

@@ -21,6 +21,8 @@
 
 DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),currentWidget(nullptr)
 {
+    QHBoxLayout *buttons_layout = new QHBoxLayout;
+
     m_executePushButton = new QPushButton(this);
     m_executePushButton->setText("Execute");
     m_executePushButton->setDisabled(true);
@@ -31,9 +33,14 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     m_renamePushButton->setDisabled(true);
     connect(m_renamePushButton, &QPushButton::clicked, this, &DetailsView::onRenamedPushButton_clicked );
 
-    m_clearTasksButton = new QPushButton(this);
-    m_clearTasksButton->setText("Clear tasks");
-    connect(m_clearTasksButton, &QPushButton::clicked, this, &DetailsView::onClearTasksPushButton_clicked);
+    m_appendPushButton = new QPushButton(this);
+    m_appendPushButton->setText("Append");
+    m_appendPushButton->setDisabled(true);
+    connect(m_appendPushButton, &QPushButton::clicked, this, &DetailsView::onAppendPushButton_clicked);
+
+    buttons_layout->addWidget(m_renamePushButton);
+    buttons_layout->addWidget(m_executePushButton);
+    buttons_layout->addWidget(m_appendPushButton);
 
     backgroundDetails = new BackgroundDetails(this);
     backgroundDetails->hide();
@@ -49,9 +56,7 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     behaviorDetails->hide();
 
     QVBoxLayout *layout = new QVBoxLayout;
-    layout->addWidget(m_executePushButton);
-    layout->addWidget(m_renamePushButton);
-    layout->addWidget(m_clearTasksButton);
+    layout->addLayout(buttons_layout);
     layout->addWidget(backgroundDetails);
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
@@ -86,10 +91,12 @@ void DetailsView::setCurrentWidget(QWidget *widget, bool canExecute)
             currentWidget->show();
             updateGeometry();
             m_executePushButton->setEnabled(canExecute);
+            m_appendPushButton->setEnabled(canExecute);
         }
         else
         {
             m_executePushButton->setEnabled(canExecute);
+            m_appendPushButton->setEnabled(canExecute);
         }
     }
 }
@@ -166,9 +173,13 @@ void DetailsView::onRenamedPushButton_clicked()
     }
 }
 
-void DetailsView::onClearTasksPushButton_clicked()
+void DetailsView::onAppendPushButton_clicked()
 {
-    emit clearTasks();
+    MissionItem* mi = m_project->currentSelected();
+    if(mi)
+    {
+        m_project->appendMission(m_project->indexFromItem(mi));        
+    }
 }
 
 void DetailsView::onExecutePushButton_clicked()

@@ -106,13 +106,16 @@ void AutonomousVehicleProject::open(const QString &fname)
 }
 
 
-BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname)
+BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname, QString label)
 {
     beginInsertRows(indexFromItem(m_currentGroup),m_currentGroup->childMissionItems().size(),m_currentGroup->childMissionItems().size());
     BackgroundRaster *bgr = new BackgroundRaster(fname, m_currentGroup);
     if(bgr->valid())
-    {        
-        bgr->setObjectName(fname);
+    {   
+        if(label.isEmpty())
+            bgr->setObjectName(QFileInfo(fname).fileName());
+        else
+            bgr->setObjectName(label);
         setCurrentBackground(bgr);
         endInsertRows();
         emit layoutChanged();
@@ -127,13 +130,16 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname)
     return nullptr;
 }
 
-void AutonomousVehicleProject::openGeometry(const QString& fname)
+void AutonomousVehicleProject::openGeometry(const QString& fname, QString label)
 {
     VectorDataset * vd;
     {
         RowInserter ri(*this,m_currentGroup);
         vd = new VectorDataset(m_currentGroup);
-        vd->setObjectName(fname);
+        if(label.isEmpty())
+            vd->setObjectName(QFileInfo(fname).fileName());
+        else
+            vd->setObjectName(label);
         vd->open(fname);
     }
     connect(this,&AutonomousVehicleProject::updatingBackground,vd,&VectorDataset::updateProjectedPoints);
@@ -204,13 +210,15 @@ BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
 }
 
 
-Platform * AutonomousVehicleProject::createPlatform(MissionItem* parent, int row)
+Platform * AutonomousVehicleProject::createPlatform(MissionItem* parent, int row, QString label)
 {
     Platform *p;
+    if(label.isEmpty())
+        label = "platform";
     if(!parent)
-        p = potentialParentItemFor("Platform")->createMissionItem<Platform>("platform", row);
+        p = potentialParentItemFor("Platform")->createMissionItem<Platform>(label, row);
     else
-        p = parent->createMissionItem<Platform>("platform", row);
+        p = parent->createMissionItem<Platform>(label, row);
     m_currentPlatform = p;
     emit layoutChanged();
     return p;
@@ -223,13 +231,15 @@ Behavior * AutonomousVehicleProject::createBehavior()
     return b;
 }
 
-Group * AutonomousVehicleProject::createGroup(MissionItem* parent, int row)
+Group * AutonomousVehicleProject::createGroup(MissionItem* parent, int row, QString label)
 {
     Group *g;
+    if(label.isEmpty())
+        label = generateUniqueLabel("group");
     if(!parent)
-        g = potentialParentItemFor("Group")->createMissionItem<Group>(generateUniqueLabel("group"), row);
+        g = potentialParentItemFor("Group")->createMissionItem<Group>(label, row);
     else
-        g = parent->createMissionItem<Group>(generateUniqueLabel("group"), row);
+        g = parent->createMissionItem<Group>(label, row);
     emit layoutChanged();
     return g;
 }
@@ -269,13 +279,15 @@ Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
 }
 
 
-SurveyPattern * AutonomousVehicleProject::createSurveyPattern(MissionItem* parent, int row)
+SurveyPattern * AutonomousVehicleProject::createSurveyPattern(MissionItem* parent, int row, QString label)
 {
     SurveyPattern *sp;
+    if(label.isEmpty())
+        label = generateUniqueLabel("pattern");
     if(!parent) 
-        sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(generateUniqueLabel("pattern"), row);
+        sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(label, row);
     else
-        sp = parent->createMissionItem<SurveyPattern>(generateUniqueLabel("pattern"), row);
+        sp = parent->createMissionItem<SurveyPattern>(label, row);
     connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sp,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     connect(this,&AutonomousVehicleProject::updatingBackground,sp,&SurveyPattern::updateBackground);
     emit layoutChanged();
@@ -291,13 +303,15 @@ SurveyPattern *AutonomousVehicleProject::addSurveyPattern(QGeoCoordinate positio
     return sp;
 }
 
-SurveyArea * AutonomousVehicleProject::createSurveyArea(MissionItem* parent, int row)
+SurveyArea * AutonomousVehicleProject::createSurveyArea(MissionItem* parent, int row, QString label)
 {
     SurveyArea *sa;
+    if(label.isEmpty())
+        label = generateUniqueLabel("area");
     if(!parent)
-        sa = potentialParentItemFor("SurveyArea")->createMissionItem<SurveyArea>(generateUniqueLabel("area"),row);
+        sa = potentialParentItemFor("SurveyArea")->createMissionItem<SurveyArea>(label, row);
     else
-        sa = parent->createMissionItem<SurveyArea>(generateUniqueLabel("area"),row);
+        sa = parent->createMissionItem<SurveyArea>(label, row);
     connect(this,&AutonomousVehicleProject::currentPlaformUpdated,sa,&GeoGraphicsMissionItem::onCurrentPlatformUpdated);
     return sa;
 }
@@ -312,13 +326,15 @@ SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
 }
 
 
-TrackLine * AutonomousVehicleProject::createTrackLine(MissionItem* parent, int row)
+TrackLine * AutonomousVehicleProject::createTrackLine(MissionItem* parent, int row, QString label)
 {
     TrackLine *tl;
+    if(label.isEmpty())
+        label = generateUniqueLabel("trackline");
     if(!parent)
-        tl = potentialParentItemFor("TrackLine")->createMissionItem<TrackLine>(generateUniqueLabel("trackline"),row);
+        tl = potentialParentItemFor("TrackLine")->createMissionItem<TrackLine>(label, row);
     else
-        tl = parent->createMissionItem<TrackLine>(generateUniqueLabel("trackline"),row);
+        tl = parent->createMissionItem<TrackLine>(label, row);
     return tl;
 }
 
@@ -774,9 +790,39 @@ QMimeData * AutonomousVehicleProject::mimeData(const QModelIndexList& indexes) c
     return mimeData;
 }
 
+bool AutonomousVehicleProject::canDropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column, const QModelIndex& parent) const
+{
+    // qDebug() << "can drop?";
+    // qDebug() << "  parent valid:" << parent.isValid();
+    // qDebug() << "  dropMimeData: " << row << ", " << column;
+    // qDebug() << "  mime encoded: " << data->data("application/json");
+    
+    QJsonDocument doc(QJsonDocument::fromJson(data->data("application/json")));
+    
+    MissionItem * parentItem = itemFromIndex(parent);
+    if(!parentItem)
+    {
+        parentItem = m_root;
+        row = -1;
+    }
+    
+    // qDebug() << "  parent: " << parentItem->objectName();
+
+    if(doc.array().empty())
+        return false;
+
+    bool ret = true;
+    for(auto child: doc.array())
+    {
+        QJsonObject object = child.toObject();
+        ret = ret && parentItem->canAcceptChildType(object["type"].toString().toStdString());
+    }
+    return ret;
+}
+
 bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropAction action, int row, int column, const QModelIndex& parent)
 {
-    qDebug() << "parent valid:" << parent.isValid();
+    // qDebug() << "parent valid:" << parent.isValid();
     qDebug() << "dropMimeData: " << row << ", " << column;
     qDebug() << "mime encoded: " << data->data("application/json");
     
@@ -789,6 +835,8 @@ bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropActio
         row = -1;
     }
     
+    // qDebug() << "parent: " << parentItem->objectName();
+
     parentItem->readChildren(doc.array(), row);
 
     return true;
@@ -833,7 +881,7 @@ QString AutonomousVehicleProject::generateUniqueLabel(std::string const &prefix)
 
 AutonomousVehicleProject::RowInserter::RowInserter(AutonomousVehicleProject& project, MissionItem* parent, int row):m_project(project)
 {
-    qDebug() << "RowInserter: row " << row << " parent " << parent->objectName();
+    //qDebug() << "RowInserter: row " << row << " parent " << parent->objectName();
     if(row < 0) // append
         project.beginInsertRows(project.indexFromItem(parent),parent->childMissionItems().size(),parent->childMissionItems().size());
     else

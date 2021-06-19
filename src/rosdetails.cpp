@@ -102,6 +102,9 @@ void ROSDetails::on_missionStatusTextBrowser_customContextMenuRequested(const QP
         QAction *restartMissionAction = menu.addAction("Restart Mission");
         connect(restartMissionAction, &QAction::triggered, this, &ROSDetails::restartMission);
 
+        QAction *clearTasksAction = menu.addAction("Clear Tasks");
+        connect(clearTasksAction, &QAction::triggered, this, &ROSDetails::clearTasks);
+
         menu.exec(ui->missionStatusTextBrowser->mapToGlobal(pos));
 }
 
@@ -115,4 +118,22 @@ void ROSDetails::restartMission()
     m_rosLink->restartMission();
 }
 
+void ROSDetails::clearTasks()
+{
+    m_rosLink->clearTasks();
+}
 
+void ROSDetails::on_nextMissionItemPushButton_clicked(bool checked)
+{
+    m_rosLink->sendNextItem();
+}
+
+void ROSDetails::on_restartMissionPushButton_clicked(bool checked)
+{
+    m_rosLink->restartMission();
+}
+
+void ROSDetails::on_clearTasksPushButton_clicked(bool checked)
+{
+    m_rosLink->clearTasks();
+}

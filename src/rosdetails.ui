@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>362</width>
-    <height>169</height>
+    <height>192</height>
    </rect>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
@@ -66,6 +66,31 @@
       <enum>Qt::CustomContextMenu</enum>
      </property>
     </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_4">
+     <item>
+      <widget class="QPushButton" name="nextMissionItemPushButton">
+       <property name="text">
+        <string>Next Mission Item</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="restartMissionPushButton">
+       <property name="text">
+        <string>Restart Mission</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="clearTasksPushButton">
+       <property name="text">
+        <string>Clear Tasks</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
