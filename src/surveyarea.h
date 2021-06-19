@@ -12,7 +12,7 @@ class SurveyArea : public GeoGraphicsMissionItem
     Q_INTERFACES(QGraphicsItem)
     
 public:
-    explicit SurveyArea(MissionItem *parent = 0);
+    explicit SurveyArea(MissionItem *parent = 0, int row = -1);
     
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
@@ -31,6 +31,7 @@ public:
     int type() const override {return SurveyAreaType;}
     
     bool canAcceptChildType(const std::string & childType) const override;
+    bool canBeSentToRobot() const override;
     
 signals:
     

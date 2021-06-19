@@ -1,7 +1,7 @@
 #include "platform.h"
 #include <QJsonObject>
 
-Platform::Platform(MissionItem *parent) : MissionItem(parent), m_speed(0.0)
+Platform::Platform(MissionItem *parent, int row) : MissionItem(parent, row), m_speed(0.0)
 {
 
 }
@@ -34,3 +34,7 @@ void Platform::setSpeed(double speed)
     emit speedChanged();
 }
 
+bool Platform::canBeSentToRobot() const
+{
+    return false;
+}

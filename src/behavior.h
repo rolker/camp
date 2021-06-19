@@ -7,12 +7,13 @@ class Behavior : public MissionItem
 {
     Q_OBJECT
 public:
-    explicit Behavior(MissionItem *parent= 0);
+    explicit Behavior(MissionItem *parent= 0, int row = -1);
 
     void write(QJsonObject& json) const override;
     void writeToMissionPlan(QJsonArray& navArray) const override;
     void writeToMissionPlanObject(QJsonObject& behaviorsObject) const;
     void read(const QJsonObject& json) override;
+    bool canBeSentToRobot() const override;
     
     QString const &behaviorType() const;
     bool active() const;

@@ -8,7 +8,7 @@
 #include <QDebug>
 
 
-SurveyArea::SurveyArea(MissionItem *parent) :GeoGraphicsMissionItem(parent)
+SurveyArea::SurveyArea(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
 {
     setShowLabelFlag(true);
 }
@@ -117,14 +117,12 @@ void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
     navItem["pathtype"] = "area";
     writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;
-    auto children = childItems();
+    auto children = childMissionItems();
     for(auto child: children)
     {
-        if(child->type() == GeoGraphicsItem::WaypointType)
-        {
-            Waypoint *wp = qgraphicsitem_cast<Waypoint*>(child);
+        Waypoint *wp = qobject_cast<Waypoint*>(child);
+        if(wp)
             wp->writeNavToMissionPlan(pathNavArray);
-        }
     }
     navItem["nav"] = pathNavArray;
     navArray.append(navItem);
@@ -145,6 +143,11 @@ bool SurveyArea::canAcceptChildType(const std::string& childType) const
     if (childType == "Waypoint") return true;
     if (childType == "SurveyPattern") return true;
     return false;
+}
+
+bool SurveyArea::canBeSentToRobot() const
+{
+    return true;
 }
 
 void SurveyArea::generateAdaptiveTrackLines()

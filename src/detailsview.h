@@ -49,7 +49,7 @@ private:
     ROSDetails * rosDetails;
     BehaviorDetails * behaviorDetails;
 
-    void setCurrentWidget(QWidget *widget);
+    void setCurrentWidget(QWidget *widget, bool canExecute);
 };
 
 #endif // DETAILSVIEW_H

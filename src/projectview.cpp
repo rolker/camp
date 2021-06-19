@@ -15,10 +15,7 @@
 #include "measuringtool.h"
 #include <QAbstractSlider>
 #include <QScrollBar>
-
-#ifdef AMP_ROS
 #include "roslink.h"
-#endif
 
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
@@ -273,7 +270,6 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         qDebug() << m_contextMenuLocation;
         QMenu menu(this);
 
-#ifdef AMP_ROS
         menu.addSeparator();
         menu.addAction("(Blank to avoid accidental hover)");
         menu.addSeparator();
@@ -296,7 +292,6 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         
         QAction *lookAtASVAction = menu.addAction("Look at ASV");
         connect(lookAtASVAction, &QAction::triggered, this, &ProjectView::sendLookAtASV);
-#endif
 
         menu.exec(event->globalPos());
     }
@@ -304,7 +299,6 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 
 }
 
-#ifdef AMP_ROS
 void ProjectView::sendHover()
 {
     m_project->rosLink()->sendHover(m_contextMenuLocation);
@@ -326,9 +320,6 @@ void ProjectView::sendLookAtASV()
 {
     m_project->rosLink()->sendLookAtMode("follow_vehicle");
 }
-
-
-#endif
 
 void ProjectView::beforeUpdateBackground()
 {

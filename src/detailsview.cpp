@@ -74,7 +74,7 @@ void DetailsView::setProject(AutonomousVehicleProject *project)
     m_project = project;
 }
 
-void DetailsView::setCurrentWidget(QWidget *widget)
+void DetailsView::setCurrentWidget(QWidget *widget, bool canExecute)
 {
     if(currentWidget != widget)
     {
@@ -85,13 +85,11 @@ void DetailsView::setCurrentWidget(QWidget *widget)
         {
             currentWidget->show();
             updateGeometry();
-            m_renamePushButton->setEnabled(true);
-            m_executePushButton->setEnabled(true);
+            m_executePushButton->setEnabled(canExecute);
         }
         else
         {
-            m_renamePushButton->setEnabled(false);
-            m_executePushButton->setEnabled(false);
+            m_executePushButton->setEnabled(canExecute);
         }
     }
 }
@@ -100,51 +98,57 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
 {
     MissionItem* mi = m_project->itemFromIndex(current);
     if(mi)
-        m_renamePushButton->setEnabled(true);
-    else
+    {
         m_renamePushButton->setEnabled(true);
 
-    qDebug() << "metaobject class name: " << mi->metaObject()->className();
-    QString itemType = mi->metaObject()->className();
+        qDebug() << "metaobject class name: " << mi->metaObject()->className();
+        QString itemType = mi->metaObject()->className();
 
-    if (itemType == "BackgroundRaster")
-    {
-        BackgroundRaster *bg = qobject_cast<BackgroundRaster*>(mi);
-        setCurrentWidget(backgroundDetails);
-        backgroundDetails->setBackgroundRaster(bg);
-    }
-    else if (itemType == "Waypoint")
-    {
-        Waypoint *wp = qobject_cast<Waypoint*>(mi);
-        setCurrentWidget(waypointDetails);
-        waypointDetails->setWaypoint(wp);
-    }
-    else if (itemType == "TrackLine")
-    {
-        TrackLine *tl = qobject_cast<TrackLine*>(mi);
-        setCurrentWidget(trackLineDetails);
-        trackLineDetails->setTrackLine(tl);
-    }
-    else if (itemType == "SurveyPattern")
-    {
-        SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
-        setCurrentWidget(surveyPatternDetails);
-        surveyPatternDetails->setSurveyPattern(sp);
-    }
-    else if (itemType == "Platform")
-    {
-        Platform *p = qobject_cast<Platform*>(mi);
-        setCurrentWidget(platformDetails);
-        platformDetails->setPlatform(p);
-    }
-    else if (itemType == "Behavior")
-    {
-        Behavior *b = qobject_cast<Behavior*>(mi);
-        setCurrentWidget(behaviorDetails);
-        behaviorDetails->setBehavior(b);
+        if (itemType == "BackgroundRaster")
+        {
+            BackgroundRaster *bg = qobject_cast<BackgroundRaster*>(mi);
+            setCurrentWidget(backgroundDetails, bg->canBeSentToRobot());
+            backgroundDetails->setBackgroundRaster(bg);
+        }
+        else if (itemType == "Waypoint")
+        {
+            Waypoint *wp = qobject_cast<Waypoint*>(mi);
+            setCurrentWidget(waypointDetails, wp->canBeSentToRobot());
+            waypointDetails->setWaypoint(wp);
+        }
+        else if (itemType == "TrackLine")
+        {
+            TrackLine *tl = qobject_cast<TrackLine*>(mi);
+            setCurrentWidget(trackLineDetails, tl->canBeSentToRobot());
+            trackLineDetails->setTrackLine(tl);
+        }
+        else if (itemType == "SurveyPattern")
+        {
+            SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
+            setCurrentWidget(surveyPatternDetails, sp->canBeSentToRobot());
+            surveyPatternDetails->setSurveyPattern(sp);
+        }
+        else if (itemType == "Platform")
+        {
+            Platform *p = qobject_cast<Platform*>(mi);
+            setCurrentWidget(platformDetails, p->canBeSentToRobot());
+            platformDetails->setPlatform(p);
+        }
+        else if (itemType == "Behavior")
+        {
+            Behavior *b = qobject_cast<Behavior*>(mi);
+            setCurrentWidget(behaviorDetails, b->canBeSentToRobot());
+            behaviorDetails->setBehavior(b);
+        }
+        else
+            setCurrentWidget(nullptr, mi->canBeSentToRobot());
     }
     else
-        setCurrentWidget(nullptr);
+    {
+        m_renamePushButton->setEnabled(false);
+        setCurrentWidget(nullptr, false);
+    }
+
     m_project->setCurrent(current);
 }
 

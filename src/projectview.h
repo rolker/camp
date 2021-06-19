@@ -33,12 +33,10 @@ signals:
     void viewportChanged(QPointF ll, QPointF ur);
 
 public slots:
-#ifdef AMP_ROS
     void sendHover();
     void sendGoto();
     void sendLookAt();
     void sendLookAtASV();
-#endif
     void beforeUpdateBackground();
     void updateBackground(BackgroundRaster * bg);
     void sendViewport(); 

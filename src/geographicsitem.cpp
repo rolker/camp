@@ -43,6 +43,7 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaste
         }
         return ret;
     }
+    return QPointF();
 }
 
 void GeoGraphicsItem::prepareGeometryChange()

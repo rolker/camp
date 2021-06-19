@@ -237,3 +237,8 @@ float BackgroundRaster::getDepth(QGeoCoordinate const &location) const
     auto index = geoToPixel(location);
     return getDepth(index.x(), index.y());
 }
+
+bool BackgroundRaster::canBeSentToRobot() const
+{
+    return false;
+}

@@ -20,9 +20,7 @@ class SurveyArea;
 class Platform;
 class Group;
 class QSvgRenderer;
-#ifdef AMP_ROS
 class ROSLink;
-#endif
 class Behavior;
 
 class AutonomousVehicleProject : public QAbstractItemModel
@@ -40,20 +38,21 @@ public:
 
     Waypoint *addWaypoint(QGeoCoordinate position);
 
-    SurveyPattern * createSurveyPattern();
+    SurveyPattern * createSurveyPattern(MissionItem* parent=nullptr, int row=-1);
     SurveyPattern * addSurveyPattern(QGeoCoordinate position);
     
-    SurveyArea * createSurveyArea();
+    SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1);
     SurveyArea * addSurveyArea(QGeoCoordinate position);
 
-    TrackLine * createTrackLine();
+    TrackLine * createTrackLine(MissionItem* parent=nullptr, int row=-1);
     TrackLine * addTrackLine(QGeoCoordinate position);
 
-    Platform * createPlatform();
+    Platform * createPlatform(MissionItem* parent=nullptr, int row=-1);
     Platform * currentPlatform() const;
     
     Behavior * createBehavior();
     
+    Group * createGroup(MissionItem* parent=nullptr, int row=-1);
     Group * addGroup();
     
     MissionItem *itemFromIndex(QModelIndex const &index) const;
@@ -91,9 +90,7 @@ public:
     
     qreal mapScale() const;
     
-#ifdef AMP_ROS
     ROSLink * rosLink() const;
-#endif
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
     QJsonDocument generateMissionTask(QModelIndex const &index);
@@ -122,6 +119,7 @@ public slots:
     void deleteItem(QModelIndex const &index);
     void deleteItem(MissionItem *item);
     void updateMapScale(qreal scale);
+    void setContextMode(bool);
 
 
 private:
@@ -133,12 +131,11 @@ private:
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
-#ifdef AMP_ROS
     ROSLink* m_ROSLink;
-#endif
     
     QSvgRenderer* m_symbols;
-    
+
+    bool m_contextMode = false;    
 
     void setCurrentBackground(BackgroundRaster *bgr);
     QString generateUniqueLabel(std::string const &prefix);
@@ -149,7 +146,7 @@ public:
     class RowInserter
     {
     public:
-        RowInserter(AutonomousVehicleProject &project, MissionItem *parent);
+        RowInserter(AutonomousVehicleProject &project, MissionItem *parent, int row=-1);
         
         ~RowInserter();
     private:

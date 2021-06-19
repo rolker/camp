@@ -11,13 +11,14 @@ class MissionItem : public QObject
 {
     Q_OBJECT
 public:
-    explicit MissionItem(QObject *parent = 0);
+    explicit MissionItem(QObject *parent = 0, int row = -1);
 
     virtual void write(QJsonObject &json) const;
     virtual void writeToMissionPlan(QJsonArray &navArray) const = 0;
     virtual void writeBehaviorsToMissionPlanObject(QJsonObject &missionObject) const;
     virtual void read(const QJsonObject &json);
-    virtual void readChildren(const QJsonArray &json);
+    virtual void readChildren(const QJsonArray &json, int row = -1);
+    virtual bool canBeSentToRobot() const = 0;
     
     virtual QGraphicsItem *findParentGraphicsItem();
     
@@ -28,10 +29,10 @@ public:
     
     int row() const;
     
-    template<typename T> T* createMissionItem(QString const &name = "")
+    template<typename T> T* createMissionItem(QString const &name = "", int row = -1)
     {
-        AutonomousVehicleProject::RowInserter ri(*autonomousVehicleProject(),this);
-        T* ret = new T(this);
+        AutonomousVehicleProject::RowInserter ri(*autonomousVehicleProject(),this, row);
+        T* ret = new T(this, row);
         ret->setObjectName(name);
         return ret;
     }

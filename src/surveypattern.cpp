@@ -15,10 +15,15 @@
 
 namespace bg = boost::geometry;
 
-SurveyPattern::SurveyPattern(MissionItem *parent):GeoGraphicsMissionItem(parent),
+SurveyPattern::SurveyPattern(MissionItem *parent, int row):GeoGraphicsMissionItem(parent, row),
     m_startLocation(nullptr),m_endLocation(nullptr),m_spacing(1.0),m_direction(0.0),m_alignment(Alignment::start),m_spacingLocation(nullptr),m_internalUpdateFlag(false)
 {
     setShowLabelFlag(true);
+}
+
+bool SurveyPattern::canBeSentToRobot() const
+{
+    return true;
 }
 
 Waypoint * SurveyPattern::createWaypoint()
@@ -363,16 +368,25 @@ void SurveyPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
                 painter->setPen(p);
                 painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
                 
-//                 if(!turn || m_arcCount < 2)
-//                 {
-//                     QPainterPath ret(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
-//                     drawArrow(ret,m_startLocation->geoToPixel(*second,autonomousVehicleProject()),m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
-//                     painter->drawPath(ret);
-//                 }
-                
                 first++;
                 second++;
             }
+
+            if(!lines.empty() && lines[0].size() >= 2)
+            {
+                QPainterPath ret(m_startLocation->geoToPixel(lines[0][0],autonomousVehicleProject()));
+                drawArrow(ret,m_startLocation->geoToPixel(lines[0][0],autonomousVehicleProject()),m_startLocation->geoToPixel(lines[0][1],autonomousVehicleProject()), true);
+                painter->drawPath(ret);
+            }
+            if(!lines.empty() && lines.rbegin()->size() >= 2)
+            {
+                int start_index = lines.rbegin()->size()-2;
+                int end_index = start_index + 1;
+                QPainterPath ret(m_startLocation->geoToPixel((*lines.rbegin())[start_index],autonomousVehicleProject()));
+                drawArrow(ret,m_startLocation->geoToPixel((*lines.rbegin())[start_index],autonomousVehicleProject()),m_startLocation->geoToPixel((*lines.rbegin())[end_index],autonomousVehicleProject()), false);
+                painter->drawPath(ret);
+            }
+
             p.setWidth(10);
             p.setColor(Qt::blue);
             painter->setPen(p);
@@ -548,16 +562,10 @@ void SurveyPattern::updateETE()
     AutonomousVehicleProject* avp = autonomousVehicleProject();
     if(avp && m_startLocation && m_endLocation)
     {
-        qreal scale = avp->mapScale();
-        qreal distance = m_startLocation->location().distanceTo(m_endLocation->location());
-        qreal bearing = m_startLocation->location().azimuthTo(m_endLocation->location());
-        qreal bearing_rad = qDegreesToRadians(bearing);
-        qreal cos_bearing = cos(bearing_rad);
-        qreal sin_bearing = sin(bearing_rad);
-        qreal dy = -cos_bearing*distance*0.2;
-        qreal dx = sin_bearing*distance*0.2;
-        //qDebug() << "scale: " << scale << " distance: " << distance << " bearing: " << bearing << " dx,dy: " << dx << "," << dy;
-        setLabelPosition(QPointF(dx*scale, dy*scale));
+        double midlat = m_startLocation->location().latitude() + (m_endLocation->location().latitude() - m_startLocation->location().latitude())/2.0;
+        double midlong = m_startLocation->location().longitude() + (m_endLocation->location().longitude() - m_startLocation->location().longitude())/2.0;
+        QGeoCoordinate mid(midlat, midlong);
+        setLabelPosition(m_startLocation->geoToPixel(mid, autonomousVehicleProject()));
     }
 
 }

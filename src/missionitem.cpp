@@ -8,12 +8,20 @@
 #include "platform.h"
 #include "backgroundraster.h"
 #include "behavior.h"
+#include "surveyarea.h"
+#include "group.h"
+#include <QDebug>
 
-MissionItem::MissionItem(QObject *parent) : QObject(parent)
+MissionItem::MissionItem(QObject *parent, int row) : QObject(parent)
 {
     MissionItem * parentMissionItem = qobject_cast<MissionItem*>(parent);
     if(parentMissionItem)
-        parentMissionItem->m_childrenMissionItems.append(this);
+    {
+        if(row < 0)
+            parentMissionItem->m_childrenMissionItems.append(this);
+        else
+            parentMissionItem->m_childrenMissionItems.insert(row, this);
+    }
 }
 
 AutonomousVehicleProject* MissionItem::autonomousVehicleProject() const
@@ -69,8 +77,12 @@ void MissionItem::read(const QJsonObject& json)
         setObjectName(label);
 }
 
-void MissionItem::readChildren(const QJsonArray& json)
+void MissionItem::readChildren(const QJsonArray& json, int row)
 {
+    qDebug() << "readChilden row: " << row;
+    qDebug() << "  before:";
+    for(auto c: m_childrenMissionItems)
+        qDebug() << "      " << c->objectName();
     auto project = autonomousVehicleProject();
     for (int childIndex = 0; childIndex < json.size(); ++childIndex)
     {
@@ -83,17 +95,29 @@ void MissionItem::readChildren(const QJsonArray& json)
         if(object["type"] == "VectorDataset")
             project->openGeometry(object["filename"].toString());
         MissionItem *item = nullptr;
+        int insertRow = row;
         if(object["type"] == "Waypoint")
-            item = createMissionItem<Waypoint>("waypoint");
+            item = createMissionItem<Waypoint>("waypoint", insertRow);
         if(object["type"] == "TrackLine")
-            item = project->createTrackLine();
+            item = project->createTrackLine(this, insertRow);
         if(object["type"] == "SurveyPattern")
-            item = project->createSurveyPattern();
+            item = project->createSurveyPattern(this, insertRow);
+        if(object["type"] == "SurveyArea")
+            item = project->createSurveyArea(this, insertRow);
         if(object["type"] == "Platform")
-            item = project->createPlatform();
+            item = project->createPlatform(this, insertRow);
+        if(object["type"] == "Group")
+            item = project->createGroup(this, insertRow);
         if(item)
+        {
             item->read(object);
+            if(insertRow >= 0)
+                insertRow++;
+        }
     }
+    qDebug() << "  after:";
+    for(auto c: m_childrenMissionItems)
+        qDebug() << "      " << c->objectName();
 
 }
 

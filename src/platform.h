@@ -7,11 +7,12 @@ class Platform : public MissionItem
 {
     Q_OBJECT
 public:
-    explicit Platform(MissionItem *parent = 0);
+    explicit Platform(MissionItem *parent = 0, int row = -1);
 
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json) override;
+    bool canBeSentToRobot() const override;
     
     double speed() const;
     void setSpeed(double speed);

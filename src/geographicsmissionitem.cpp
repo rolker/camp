@@ -6,7 +6,7 @@
 #include <QVector2D>
 #include <QtMath>
 
-GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent):MissionItem(parent),m_lockedColor(50,200,50),m_unlockedColor(Qt::red), m_locked(false)
+GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent, int row):MissionItem(parent, row),m_lockedColor(50,200,50),m_unlockedColor(Qt::red), m_locked(false)
 {
     if(parent)
     {
@@ -80,7 +80,7 @@ bool GeoGraphicsMissionItem::locked() const
     return m_locked;
 }
 
-void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, const QPointF& to) const
+void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, const QPointF& to, bool drawAtBeginning) const
 {
     qreal scale = 1.0;
     auto bgr = autonomousVehicleProject()->getBackgroundRaster();
@@ -89,16 +89,20 @@ void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, 
     //qDebug() << "scale: " << scale;
     scale = std::max(0.05,scale);
     
-    path.moveTo(to);
+    QPointF anchor = to;
+    if(drawAtBeginning)
+        anchor = from;
+
+    path.moveTo(anchor);
     QVector2D v(to-from);
     v.normalize();
     QVector2D left(-v.y(),v.x());
     QVector2D right(v.y(),-v.x());
     QVector2D back = -v;
-    path.lineTo(to+(left+back*2).toPointF()*10*scale);
-    path.moveTo(to);
-    path.lineTo(to+(right+back*2).toPointF()*10*scale);
-    path.moveTo(to);
+    path.lineTo(anchor+(left+back*2).toPointF()*10*scale);
+    path.moveTo(anchor);
+    path.lineTo(anchor+(right+back*2).toPointF()*10*scale);
+    path.moveTo(anchor);
     
 }
 
@@ -189,3 +193,8 @@ void GeoGraphicsMissionItem::onCurrentPlatformUpdated()
     updateETE();
 }
 
+void GeoGraphicsMissionItem::readChildren(const QJsonArray &json, int row)
+{
+    prepareGeometryChange();
+    MissionItem::readChildren(json, row);
+}

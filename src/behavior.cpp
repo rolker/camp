@@ -1,7 +1,7 @@
 #include "behavior.h"
 #include <QJsonObject>
 
-Behavior::Behavior(MissionItem *parent): MissionItem(parent)
+Behavior::Behavior(MissionItem *parent, int row): MissionItem(parent, row)
 {
 }
 
@@ -49,4 +49,9 @@ void Behavior::setBehaviorType(const QString& behaviorType)
 const QString & Behavior::behaviorType() const
 {
     return m_behaviorType;
+}
+
+bool Behavior::canBeSentToRobot() const
+{
+    return false;
 }

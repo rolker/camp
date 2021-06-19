@@ -110,3 +110,7 @@ void LineString::updateBBox()
         m_bbox = QRectF();
 }
 
+bool LineString::canBeSentToRobot() const
+{
+    return false;
+}

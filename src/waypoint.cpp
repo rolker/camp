@@ -6,7 +6,7 @@
 #include <QJsonArray>
 #include <QDebug>
 
-Waypoint::Waypoint(MissionItem *parent) :GeoGraphicsMissionItem(parent), m_internalPositionChangeFlag(false)
+Waypoint::Waypoint(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row), m_internalPositionChangeFlag(false)
 {
     m_unlockedColor = Qt::darkRed;
     m_lockedColor = Qt::darkGreen;
@@ -167,4 +167,9 @@ void Waypoint::hoverLeaveEvent(QGraphicsSceneHoverEvent * event)
 {
     GeoGraphicsMissionItem::hoverLeaveEvent(event);
     setShowLabelFlag(false);
+}
+
+bool Waypoint::canBeSentToRobot() const
+{
+    return false;
 }

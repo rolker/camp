@@ -28,6 +28,7 @@ public:
     qreal mapScale() const;
     
     bool canAcceptChildType(const std::string & childType) const override;
+    bool canBeSentToRobot() const override;
     
     bool valid() const;
     bool depthValid() const;

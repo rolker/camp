@@ -4,7 +4,7 @@
 #include<QJsonArray>
 #include"autonomousvehicleproject.h"
 
-Group::Group(MissionItem* parent):MissionItem(parent)
+Group::Group(MissionItem* parent, int row):MissionItem(parent, row)
 {
 
 }
@@ -44,6 +44,11 @@ void Group::updateProjectedPoints()
 }
 
 bool Group::canAcceptChildType(const std::string& childType) const
+{
+    return true;
+}
+
+bool Group::canBeSentToRobot() const
 {
     return true;
 }

@@ -12,7 +12,7 @@ class TrackLine : public GeoGraphicsMissionItem
     Q_INTERFACES(QGraphicsItem)
 
 public:
-    explicit TrackLine(MissionItem *parent = 0);
+    explicit TrackLine(MissionItem *parent = 0, int row = -1);
 
     QRectF boundingRect() const override;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
@@ -33,6 +33,7 @@ public:
     int type() const override {return TrackLineType;}
     
     bool canAcceptChildType(const std::string & childType) const override;
+    bool canBeSentToRobot() const override;
     
     QList<QList<QGeoCoordinate> > getLines() const override;
     
