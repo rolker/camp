@@ -90,7 +90,8 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
         if(object["type"] == "BackgroundRaster")
         {
             BackgroundRaster* bgr = project->openBackground(object["filename"].toString(), object["label"].toString());
-            bgr->read(object);
+            if(bgr)
+                bgr->read(object);
         }
         if(object["type"] == "VectorDataset")
             project->openGeometry(object["filename"].toString());
