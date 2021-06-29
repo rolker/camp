@@ -32,6 +32,12 @@ set(SOURCES
     astar.cpp
     radardisplay.cpp
     ship_track.cpp
+    ais/ais_contact.cpp
+    ais/ais_manager.cpp
+    helm_manager/helm_manager.cpp
+    sound_play/sound_play_widget.cpp
+    sound_play/speech_alerts.cpp
+    roslink.cpp
 )
 
 set(HEADERS
@@ -66,26 +72,13 @@ set(HEADERS
     astar.h
     radardisplay.h
     ship_track.h
+    ais/ais_contact.h
+    ais/ais_manager.h
+    helm_manager/helm_manager.h
+    sound_play/sound_play_widget.h
+    sound_play/speech_alerts.h
+    roslink.h
 )
-
-if(AMP_USE_ROS)
-    list(APPEND SOURCES
-        ais/ais_contact.cpp
-        ais/ais_manager.cpp
-        helm_manager/helm_manager.cpp
-        sound_play/sound_play_widget.cpp
-        sound_play/speech_alerts.cpp
-        roslink.cpp
-    )
-    list(APPEND HEADERS
-        ais/ais_contact.h
-        ais/ais_manager.h
-        helm_manager/helm_manager.h
-        sound_play/sound_play_widget.h
-        sound_play/speech_alerts.h
-        roslink.h
-    )
-endif()
 
 set ( RESOURCES
  main.qrc
@@ -93,9 +86,7 @@ set ( RESOURCES
 
 add_executable(CCOMAutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
 
-if(AMP_USE_ROS)
-    add_dependencies(CCOMAutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
-endif()
+add_dependencies(CCOMAutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
 
 qt5_use_modules(CCOMAutonomousMissionPlanner Widgets Positioning Svg Test)
 
