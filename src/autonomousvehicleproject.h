@@ -17,11 +17,11 @@ class Waypoint;
 class TrackLine;
 class SurveyPattern;
 class SurveyArea;
-class Platform;
 class Group;
 class QSvgRenderer;
-class ROSLink;
+//class ROSLink;
 class Behavior;
+class Platform;
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -47,9 +47,6 @@ public:
     TrackLine * createTrackLine(MissionItem* parent=nullptr, int row=-1, QString label = "");
     TrackLine * addTrackLine(QGeoCoordinate position);
 
-    Platform * createPlatform(MissionItem* parent=nullptr, int row=-1, QString label = "");
-    Platform * currentPlatform() const;
-    
     Behavior * createBehavior();
     
     Group * createGroup(MissionItem* parent=nullptr, int row=-1, QString label = "");
@@ -91,13 +88,12 @@ public:
     
     qreal mapScale() const;
     
-    ROSLink * rosLink() const;
+    Platform* activePlatform() const;
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
     QJsonDocument generateMissionTask(QModelIndex const &index);
     
 signals:
-    void currentPlaformUpdated();
     void backgroundUpdated(BackgroundRaster *bg);
     void aboutToUpdateBackground();
     void updatingBackground(BackgroundRaster *bg);
@@ -122,17 +118,19 @@ public slots:
     void updateMapScale(qreal scale);
     void setContextMode(bool);
 
+    void updateActivePlatform(Platform *platform);
+
 
 private:
     QGraphicsScene* m_scene;
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     BackgroundRaster* m_currentDepthRaster;
-    Platform* m_currentPlatform;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
-    ROSLink* m_ROSLink;
+
+    Platform* m_activePlatform = nullptr;
     
     QSvgRenderer* m_symbols;
 

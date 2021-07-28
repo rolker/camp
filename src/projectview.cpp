@@ -16,6 +16,9 @@
 #include <QAbstractSlider>
 #include <QScrollBar>
 #include "roslink.h"
+#include "platform_manager/platform.h"
+#include "mission_manager/mission_manager.h"
+#include "helm_manager/helm_manager.h"
 
 
 ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
@@ -301,24 +304,32 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
 
 void ProjectView::sendHover()
 {
-    m_project->rosLink()->sendHover(m_contextMenuLocation);
-    m_project->rosLink()->setHelmMode("autonomous");
+  auto p = m_project->activePlatform();
+  if(p)
+  {
+    p->missionManager()->sendHover(m_contextMenuLocation);
+    p->helmManager()->sendPilotingModeRequest("autonomous");
+  }
 }
 
 void ProjectView::sendGoto()
 {
-    m_project->rosLink()->sendGoto(m_contextMenuLocation);
-    m_project->rosLink()->setHelmMode("autonomous");
+  auto p = m_project->activePlatform();
+  if(p)
+  {
+    p->missionManager()->sendGoto(m_contextMenuLocation);
+    p->helmManager()->sendPilotingModeRequest("autonomous");
+  }
 }
 
 void ProjectView::sendLookAt()
 {
-    m_project->rosLink()->sendLookAt(m_contextMenuLocation);
+    //m_project->rosLink()->sendLookAt(m_contextMenuLocation);
 }
 
 void ProjectView::sendLookAtASV()
 {
-    m_project->rosLink()->sendLookAtMode("follow_vehicle");
+    //m_project->rosLink()->sendLookAtMode("follow_vehicle");
 }
 
 void ProjectView::beforeUpdateBackground()

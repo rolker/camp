@@ -40,10 +40,17 @@ public:
     virtual bool canAcceptChildType(std::string const &childType) const;
     virtual QList<QList<QGeoCoordinate> > getLines() const;
 
+    double speed() const;
+    void setSpeed(double speed);
+
+signals:
+    void speedChanged();
+
 public slots:
     virtual void updateProjectedPoints();
 
 protected:
+    double m_speed = 0.0; //knots
 
     
 private:

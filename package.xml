@@ -20,6 +20,7 @@
   <depend>rqt_gui_cpp</depend>
   <depend>rqt_gui</depend>
   <depend>sound_play</depend>
+  <depend>project11_msgs</depend>
 
   <export>
     <rqt_gui plugin="${prefix}/src/helm_manager/plugin.xml"/>

@@ -1,7 +1,6 @@
 #include "geographicsmissionitem.h"
 
 #include "backgroundraster.h"
-#include "platform.h"
 #include <QDebug>
 #include <QVector2D>
 #include <QtMath>
@@ -161,18 +160,18 @@ void GeoGraphicsMissionItem::updateETE()
     double distanceInNMs = cumulativeDistance*0.000539957; // meters to NMs.
     QString label = "Distance: "+QString::number(int(cumulativeDistance))+" (m), "+QString::number(distanceInNMs,'f',1)+" (nm)";
 
+    if(m_speed > 0.0)
+    {
+        double time = distanceInNMs/m_speed;
+        if(time < 1.0)
+            label += "\nETE: "+QString::number(int(time*60))+" (min)";
+        else
+            label += "\nETE: "+QString::number(time,'f',2)+" (h)";
+    }
+
     AutonomousVehicleProject* avp = autonomousVehicleProject();
     if(avp)
     {
-        Platform *platform = avp->currentPlatform();
-        if(platform)
-        {
-            double time = distanceInNMs/platform->speed();
-            if(time < 1.0)
-                label += "\nETE: "+QString::number(int(time*60))+" (min)";
-            else
-                label += "\nETE: "+QString::number(time,'f',2)+" (h)";
-        }
         qreal scale = avp->mapScale();
         qreal distance = minPosition.distanceTo(maxPosition);
         qreal bearing = minPosition.azimuthTo(maxPosition);
@@ -186,11 +185,6 @@ void GeoGraphicsMissionItem::updateETE()
     }
 
     setLabel(label);
-}
-
-void GeoGraphicsMissionItem::onCurrentPlatformUpdated()
-{
-    updateETE();
 }
 
 void GeoGraphicsMissionItem::readChildren(const QJsonArray &json, int row)

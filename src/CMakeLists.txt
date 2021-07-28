@@ -13,9 +13,9 @@ set(SOURCES
     waypointdetails.cpp
     tracklinedetails.cpp
     surveypatterndetails.cpp
-    platform.cpp
+    platform_manager/platform.cpp
+    platform_manager/platform_manager.cpp
     missionitem.cpp
-    platformdetails.cpp
     backgrounddetails.cpp
     vector/vectordataset.cpp
     group.cpp
@@ -28,7 +28,6 @@ set(SOURCES
     measuringtool.cpp
     behavior.cpp
     behaviordetails.cpp
-    rosdetails.cpp
     astar.cpp
     radardisplay.cpp
     ship_track.cpp
@@ -38,6 +37,9 @@ set(SOURCES
     sound_play/sound_play_widget.cpp
     sound_play/speech_alerts.cpp
     roslink.cpp
+    nav_source.cpp
+    mission_manager/mission_manager.cpp
+    geoviz/geoviz_display.cpp
 )
 
 set(HEADERS
@@ -54,9 +56,9 @@ set(HEADERS
     waypointdetails.h
     tracklinedetails.h
     surveypatterndetails.h
-    platform.h
+    platform_manager/platform.h
+    platform_manager/platform_manager.h
     missionitem.h
-    platformdetails.h
     backgrounddetails.h
     vector/vectordataset.h
     group.h
@@ -68,7 +70,6 @@ set(HEADERS
     measuringtool.h
     behavior.h
     behaviordetails.h
-    rosdetails.h
     astar.h
     radardisplay.h
     ship_track.h
@@ -78,6 +79,9 @@ set(HEADERS
     sound_play/sound_play_widget.h
     sound_play/speech_alerts.h
     roslink.h
+    nav_source.h
+    mission_manager/mission_manager.h
+    geoviz/geoviz_display.h
 )
 
 set ( RESOURCES

@@ -47,8 +47,6 @@ private slots:
     void on_actionSurveyPatternFromContext_triggered();
     void on_actionSurveyArea_triggered();
     void on_actionSurveyAreaFromContext_triggered();
-    void on_actionPlatform_triggered();
-    void on_actionPlatformFromContext_triggered();
     void on_actionGroup_triggered();
     void on_actionGroupFromContext_triggered();
     void on_actionBehavior_triggered();
@@ -63,8 +61,10 @@ private slots:
     void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
 
+    void on_speedLineEdit_editingFinished();
+
 private:
-    Ui::MainWindow *ui;
+    Ui::MainWindow *m_ui;
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager;

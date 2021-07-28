@@ -26,6 +26,7 @@ signals:
 
 public slots:
   void updateRobotNamespace(QString robot_namespace);
+  void sendPilotingModeRequest(QString piloting_mode);
 
 private slots:
   void on_standbyPushButton_clicked(bool checked);
@@ -34,7 +35,6 @@ private slots:
   void updatePilotingMode(QString const &piloting_mode);
   void updateHeartbeatTimes(double last_heartbeat_timestamp, double last_heartbeat_receive_time);
   void watchdogUpdate();
-  void sendPilotingModeRequest(QString piloting_mode);
 
 private:
   void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);

@@ -11,8 +11,6 @@
 #include "tracklinedetails.h"
 #include "surveypattern.h"
 #include "surveypatterndetails.h"
-#include "platform.h"
-#include "platformdetails.h"
 #include "behavior.h"
 #include "behaviordetails.h"
 #include <QInputDialog>
@@ -50,8 +48,6 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     trackLineDetails->hide();
     surveyPatternDetails = new SurveyPatternDetails(this);
     surveyPatternDetails->hide();
-    platformDetails = new PlatformDetails(this);
-    platformDetails->hide();
     behaviorDetails = new BehaviorDetails(this);
     behaviorDetails->hide();
 
@@ -61,7 +57,6 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
     layout->addWidget(surveyPatternDetails);
-    layout->addWidget(platformDetails);
     layout->addWidget(behaviorDetails);
     layout->addStretch();
     setLayout(layout);
@@ -134,12 +129,6 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
             SurveyPattern *sp = qobject_cast<SurveyPattern*>(mi);
             setCurrentWidget(surveyPatternDetails, sp->canBeSentToRobot());
             surveyPatternDetails->setSurveyPattern(sp);
-        }
-        else if (itemType == "Platform")
-        {
-            Platform *p = qobject_cast<Platform*>(mi);
-            setCurrentWidget(platformDetails, p->canBeSentToRobot());
-            platformDetails->setPlatform(p);
         }
         else if (itemType == "Behavior")
         {

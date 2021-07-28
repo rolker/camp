@@ -8,6 +8,7 @@ endif(CMAKE_COMPILER_IS_GNUCXX)
 find_package(catkin REQUIRED COMPONENTS
     roscpp
     marine_msgs
+    project11_msgs
     geographic_visualization_msgs
     rosgraph_msgs
     tf2

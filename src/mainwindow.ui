@@ -6,35 +6,26 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>957</width>
-    <height>583</height>
+    <width>1024</width>
+    <height>768</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>CCOM Autonomous Mission Planner</string>
   </property>
   <widget class="QWidget" name="centralWidget">
-   <layout class="QVBoxLayout" name="verticalLayout_2">
+   <layout class="QVBoxLayout" name="verticalLayout">
     <item>
-     <widget class="QSplitter" name="splitter_2">
+     <widget class="QSplitter" name="mainSplitter">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
-      </property>
-      <property name="handleWidth">
-       <number>8</number>
       </property>
       <widget class="QSplitter" name="splitter">
        <property name="orientation">
         <enum>Qt::Vertical</enum>
        </property>
-       <property name="handleWidth">
-        <number>8</number>
-       </property>
-       <property name="childrenCollapsible">
-        <bool>false</bool>
-       </property>
        <widget class="QWidget" name="layoutWidget">
-        <layout class="QVBoxLayout" name="verticalLayout">
+        <layout class="QVBoxLayout" name="platformManagerLayout">
          <item>
           <widget class="QLabel" name="ccomLogoLabel">
            <property name="maximumSize">
@@ -55,65 +46,76 @@
           </widget>
          </item>
          <item>
-          <widget class="HelmManager" name="helmManager" native="true"/>
+          <widget class="ROSLink" name="rosLink" native="true"/>
+         </item>
+         <item>
+          <widget class="PlatformManager" name="platformManager" native="true"/>
          </item>
         </layout>
        </widget>
-       <widget class="QSplitter" name="splitter_4">
+       <widget class="QSplitter" name="missionElementsSplitter">
         <property name="orientation">
          <enum>Qt::Vertical</enum>
         </property>
-        <property name="handleWidth">
-         <number>8</number>
-        </property>
-        <widget class="ROSDetails" name="rosDetails" native="true"/>
-        <widget class="QSplitter" name="splitter_3">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
+        <widget class="QTreeView" name="treeView">
+         <property name="sizePolicy">
+          <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+           <horstretch>0</horstretch>
+           <verstretch>1</verstretch>
+          </sizepolicy>
          </property>
-         <property name="handleWidth">
-          <number>8</number>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>25</height>
+          </size>
          </property>
-         <widget class="QTreeView" name="treeView">
-          <property name="sizePolicy">
-           <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-            <horstretch>0</horstretch>
-            <verstretch>1</verstretch>
-           </sizepolicy>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>25</height>
-           </size>
-          </property>
-          <property name="contextMenuPolicy">
-           <enum>Qt::CustomContextMenu</enum>
-          </property>
-          <property name="dragEnabled">
-           <bool>true</bool>
-          </property>
-          <property name="dragDropMode">
-           <enum>QAbstractItemView::DragDrop</enum>
-          </property>
-          <property name="defaultDropAction">
-           <enum>Qt::MoveAction</enum>
-          </property>
-          <property name="selectionMode">
-           <enum>QAbstractItemView::ExtendedSelection</enum>
-          </property>
-          <attribute name="headerVisible">
-           <bool>false</bool>
-          </attribute>
-         </widget>
-         <widget class="DetailsView" name="detailsView" native="true">
-          <property name="minimumSize">
-           <size>
-            <width>0</width>
-            <height>25</height>
-           </size>
-          </property>
-         </widget>
+         <property name="contextMenuPolicy">
+          <enum>Qt::CustomContextMenu</enum>
+         </property>
+         <property name="dragEnabled">
+          <bool>true</bool>
+         </property>
+         <property name="dragDropMode">
+          <enum>QAbstractItemView::DragDrop</enum>
+         </property>
+         <property name="defaultDropAction">
+          <enum>Qt::MoveAction</enum>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::ExtendedSelection</enum>
+         </property>
+         <attribute name="headerVisible">
+          <bool>false</bool>
+         </attribute>
+        </widget>
+        <widget class="QWidget" name="layoutWidget">
+         <layout class="QVBoxLayout" name="speedAndDetailsLayout">
+          <item>
+           <layout class="QHBoxLayout" name="speedLayout">
+            <item>
+             <widget class="QLabel" name="speedLabel">
+              <property name="text">
+               <string>Speed (knts)</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="speedLineEdit"/>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="DetailsView" name="detailsView" native="true">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>25</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+         </layout>
         </widget>
        </widget>
       </widget>
@@ -143,8 +145,8 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>957</width>
-     <height>20</height>
+     <width>1024</width>
+     <height>22</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -168,7 +170,6 @@
     <addaction name="actionSurveyPattern"/>
     <addaction name="actionSurveyArea"/>
     <addaction name="actionGroup"/>
-    <addaction name="actionPlatform"/>
     <addaction name="actionBehavior"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
@@ -199,7 +200,6 @@
    <addaction name="actionSurveyPattern"/>
    <addaction name="actionSurveyArea"/>
    <addaction name="actionGroup"/>
-   <addaction name="actionPlatform"/>
    <addaction name="actionBehavior"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
@@ -358,15 +358,15 @@
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>ROSDetails</class>
+   <class>PlatformManager</class>
    <extends>QWidget</extends>
-   <header>rosdetails.h</header>
+   <header>platform_manager/platform_manager.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>HelmManager</class>
+   <class>ROSLink</class>
    <extends>QWidget</extends>
-   <header>helm_manager/helm_manager.h</header>
+   <header>roslink.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

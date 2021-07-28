@@ -3,7 +3,6 @@
 #include <QPainter>
 #include <QDebug>
 #include <math.h>
-#include "platform.h"
 
 MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
 {
@@ -59,19 +58,19 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     
     BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
     AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
-    Platform *platform = avp->currentPlatform();
-    if(platform)
-    {
-        double distanceInNMs = distance*0.000539957;
-        double time = distanceInNMs/platform->speed();
-        if (time < 1.0)
-            if(time*60 < 1.0)
-                labelString += "\nETE: "+QString::number(int(time*60*60))+" (s)";
-            else
-                labelString += "\nETE: "+QString::number(int(time*60))+" (min)";
-        else
-            labelString += "\nETE: "+QString::number(time,'f',2)+" (h)";
-    }
+    // Platform *platform = avp->currentPlatform();
+    // if(platform)
+    // {
+    //     double distanceInNMs = distance*0.000539957;
+    //     double time = distanceInNMs/platform->speed();
+    //     if (time < 1.0)
+    //         if(time*60 < 1.0)
+    //             labelString += "\nETE: "+QString::number(int(time*60*60))+" (s)";
+    //         else
+    //             labelString += "\nETE: "+QString::number(int(time*60))+" (min)";
+    //     else
+    //         labelString += "\nETE: "+QString::number(time,'f',2)+" (h)";
+    // }
     
     setLabel(labelString);
     auto halfDistance = (geoToPixel(m_finish,avp)-geoToPixel(m_start,avp))/2.0;

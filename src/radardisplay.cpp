@@ -11,7 +11,7 @@
 #include <tf2/utils.h>
 
 
-RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent), GeoGraphicsItem(parent)
+RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent)
 {
   m_radarImageThread = QThread::create(std::bind(&RadarDisplay::updateRadarImage, this));
   m_radarImageThread->start();

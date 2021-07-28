@@ -9,7 +9,6 @@ class BackgroundDetails;
 class WaypointDetails;
 class TrackLineDetails;
 class SurveyPatternDetails;
-class PlatformDetails;
 class ROSDetails;
 class BehaviorDetails;
 
@@ -45,7 +44,6 @@ private:
     WaypointDetails * waypointDetails;
     TrackLineDetails * trackLineDetails;
     SurveyPatternDetails * surveyPatternDetails;
-    PlatformDetails * platformDetails;
     ROSDetails * rosDetails;
     BehaviorDetails * behaviorDetails;
 

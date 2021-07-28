@@ -27,7 +27,6 @@ public slots:
     void lock();
     void unlock();
     virtual void updateETE();
-    void onCurrentPlatformUpdated();
     
 protected:
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;

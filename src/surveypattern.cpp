@@ -5,7 +5,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
-#include "platform.h"
 #include "autonomousvehicleproject.h"
 #include "surveyarea.h"
 
@@ -160,17 +159,9 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
         auto l = lines[i];
         QJsonObject navItem;
         navItem["pathtype"] = "trackline";
-        AutonomousVehicleProject* avp = autonomousVehicleProject();
-        if(avp)
-        {
-            Platform *platform = avp->currentPlatform();
-            if(platform)
-            {
-                QJsonObject params;
-                params["speed_ms"] = platform->speed()*0.514444; // knots to m/s
-                navItem["parameters"] = params;
-            }
-        }
+        QJsonObject params;
+        params["speed_ms"] = m_speed*0.514444; // knots to m/s
+        navItem["parameters"] = params;
         writeBehaviorsToMissionPlanObject(navItem);
         QJsonArray pathNavArray;
         for(auto wp: l)

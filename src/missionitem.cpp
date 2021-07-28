@@ -5,7 +5,6 @@
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
-#include "platform.h"
 #include "backgroundraster.h"
 #include "behavior.h"
 #include "surveyarea.h"
@@ -67,6 +66,7 @@ int MissionItem::row() const
 void MissionItem::write(QJsonObject& json) const
 {
     json["label"] = objectName();
+    json["speed"]=m_speed;
 }
 
 
@@ -75,6 +75,7 @@ void MissionItem::read(const QJsonObject& json)
     QString label = json["label"].toString();
     if(label.size() > 0)
         setObjectName(label);
+    m_speed = json["speed"].toDouble();
 }
 
 void MissionItem::readChildren(const QJsonArray& json, int row)
@@ -105,8 +106,6 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
             item = project->createSurveyPattern(this, insertRow, object["label"].toString());
         if(object["type"] == "SurveyArea")
             item = project->createSurveyArea(this, insertRow, object["label"].toString());
-        if(object["type"] == "Platform")
-            item = project->createPlatform(this, insertRow, object["label"].toString());
         if(object["type"] == "Group")
             item = project->createGroup(this, insertRow, object["label"].toString());
         if(item)
@@ -153,4 +152,15 @@ void MissionItem::writeBehaviorsToMissionPlanObject(QJsonObject& missionObject) 
     }
     if(!behaviorsObject.empty())
         missionObject["behaviors"] = behaviorsObject;
+}
+
+double MissionItem::speed() const
+{
+    return m_speed;
+}
+
+void MissionItem::setSpeed(double speed)
+{
+    m_speed = speed;
+    emit speedChanged();
 }

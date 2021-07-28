@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SonarManager</class>
+ <widget class="QWidget" name="SonarManager">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>371</width>
+    <height>43</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Sonar Manager</string>
+  </property>
+  <layout class="QHBoxLayout" name="horizontalLayout">
+   <item>
+    <widget class="QPushButton" name="stopPingingPushButton">
+     <property name="text">
+      <string>Stop Pinging</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="startPingingPushButton">
+     <property name="text">
+      <string>Ping</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="pingAndLogPushButton">
+     <property name="text">
+      <string>Log</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="incrementLinePushButton">
+     <property name="text">
+      <string>Inc Line</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

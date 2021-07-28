@@ -25,7 +25,10 @@ public:
         SurveyAreaType,
         MeasuringToolType,
         RadarDisplayType,
-        AISContactType
+        AISContactType,
+        PlatformType,
+        NavSourceType,
+        GeovizDisplayType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

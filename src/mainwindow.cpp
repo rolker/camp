@@ -20,58 +20,64 @@
 #include "ais/ais_manager.h"
 #include "sound_play/sound_play_widget.h"
 #include "sound_play/speech_alerts.h"
+#include "platform_manager/platform.h"
 
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent),
-    ui(new Ui::MainWindow)
+    m_ui(new Ui::MainWindow)
 {
-    ui->setupUi(this);
+    m_ui->setupUi(this);
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
     
     new ModelTest(project,this);
 
-    ui->treeView->setModel(project);
-    ui->projectView->setStatusBar(statusBar());
-    ui->projectView->setProject(project);
+    m_ui->treeView->setModel(project);
+    m_ui->projectView->setStatusBar(statusBar());
+    m_ui->projectView->setProject(project);
 
-    ui->detailsView->setProject(project);
-    connect(ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,ui->detailsView,&DetailsView::onCurrentItemChanged);
+    m_ui->detailsView->setProject(project);
+    connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,m_ui->detailsView,&DetailsView::onCurrentItemChanged);
 
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, ui->projectView, &ProjectView::updateBackground);
-    connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, ui->projectView, &ProjectView::beforeUpdateBackground);
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->projectView, &ProjectView::updateBackground);
+    connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, m_ui->projectView, &ProjectView::beforeUpdateBackground);
 
-    connect(ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
+    connect(m_ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
-    ui->rosDetails->setEnabled(false);
-    connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, ui->helmManager, &HelmManager::updateRobotNamespace);
-    connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
-    ui->rosDetails->setROSLink(project->rosLink());
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
-    project->rosLink()->connectROS();
+    connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
 
-    connect(project->rosLink(), &ROSLink::centerMap, ui->projectView, &ProjectView::centerMap);
+    //m_ui->rosDetails->setEnabled(false);
+    //connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, m_ui->helmManager, &HelmManager::updateRobotNamespace);
+    //connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
+    //m_ui->rosDetails->setROSLink(project->rosLink());
 
-    connect(ui->detailsView, &DetailsView::clearTasks, project->rosLink(), &ROSLink::clearTasks);
+    //project->rosLink()->connectROS();
+    m_ui->rosLink->connectROS();
+
+    //connect(project->rosLink(), &ROSLink::centerMap, m_ui->projectView, &ProjectView::centerMap);
+
+    //connect(m_ui->detailsView, &DetailsView::clearTasks, project->rosLink(), &ROSLink::clearTasks);
     
-    connect(ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
+    connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
     m_ais_manager = new AISManager();
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
-    connect(ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
+    connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
     m_sound_play = new SoundPlay();
 
     m_speech_alerts = new SpeechAlerts(this);
     connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
-    connect(ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
+    //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
 }
 
 MainWindow::~MainWindow()
 {
-    delete ui;
+    delete m_ui;
     delete m_ais_manager;
 }
 
@@ -94,12 +100,19 @@ void MainWindow::openBackground(const QString& fname)
     unsetCursor();
 }
 
-
-
 void MainWindow::setCurrent(QModelIndex &index)
 {
-    ui->treeView->setCurrentIndex(index);
+    m_ui->treeView->setCurrentIndex(index);
     project->setCurrent(index);
+    MissionItem* i = project->itemFromIndex(index);
+    m_ui->speedLineEdit->setText(QString::number(i->speed()));
+}
+
+void MainWindow::on_speedLineEdit_editingFinished()
+{
+    auto item = project->currentSelected();
+    if(item) 
+        item->setSpeed(m_ui->speedLineEdit->text().toDouble());
 }
 
 void MainWindow::on_actionOpen_triggered()
@@ -118,31 +131,31 @@ void MainWindow::on_actionImport_triggered()
 void MainWindow::on_actionWaypoint_triggered()
 {
     project->setContextMode(false);
-    ui->projectView->setAddWaypointMode();
+    m_ui->projectView->setAddWaypointMode();
 }
 
 void MainWindow::on_actionWaypointFromContext_triggered()
 {
     project->setContextMode(true);
-    ui->projectView->setAddWaypointMode();
+    m_ui->projectView->setAddWaypointMode();
 }
 
 void MainWindow::on_actionTrackline_triggered()
 {
     project->setContextMode(false);
-    ui->projectView->setAddTracklineMode();
+    m_ui->projectView->setAddTracklineMode();
 }
 
 void MainWindow::on_actionTracklineFromContext_triggered()
 {
     project->setContextMode(true);
-    ui->projectView->setAddTracklineMode();
+    m_ui->projectView->setAddTracklineMode();
 }
 
 
 void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 {
-    QModelIndex index = ui->treeView->indexAt(pos);
+    QModelIndex index = m_ui->treeView->indexAt(pos);
     MissionItem  *mi = nullptr;
     if(index.isValid())
         mi = project->itemFromIndex(index);
@@ -194,9 +207,6 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *addGroupAction = addMenu->addAction("Add Group");
         connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
-        
-        QAction *addPlatformAction = addMenu->addAction("Add Platform");
-        connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatform_triggered);
     }
     else
     {
@@ -230,14 +240,8 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
             connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroupFromContext_triggered);
         }
         
-        if(mi && mi->canAcceptChildType("Platform"))
-        {
-            QAction *addPlatformAction = addMenu->addAction("Add Platform");
-            connect(addPlatformAction, &QAction::triggered, this, &MainWindow::on_actionPlatformFromContext_triggered);
-        }
-
         QAction *deleteItemAction = menu.addAction("Delete");
-        connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(ui->treeView->selectionModel()->selectedRows());});
+        connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(m_ui->treeView->selectionModel()->selectedRows());});
         
         
         TrackLine *tl = qobject_cast<TrackLine*>(mi);
@@ -286,37 +290,37 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         }
     }
 
-    menu.exec(ui->treeView->mapToGlobal(pos));
+    menu.exec(m_ui->treeView->mapToGlobal(pos));
 }
 
 void MainWindow::exportHypack() const
 {
-    project->exportHypack(ui->treeView->selectionModel()->currentIndex());
+    project->exportHypack(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::exportMissionPlan() const
 {
-    project->exportMissionPlan(ui->treeView->selectionModel()->currentIndex());
+    project->exportMissionPlan(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::sendToROS() const
 {
-    project->sendToROS(ui->treeView->selectionModel()->currentIndex());
+    project->sendToROS(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::appendMission() const
 {
-    project->appendMission(ui->treeView->selectionModel()->currentIndex());
+    project->appendMission(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::prependMission() const
 {
-    project->prependMission(ui->treeView->selectionModel()->currentIndex());
+    project->prependMission(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 void MainWindow::updateMission() const
 {
-    project->updateMission(ui->treeView->selectionModel()->currentIndex());
+    project->updateMission(m_ui->treeView->selectionModel()->currentIndex());
 }
 
 
@@ -347,37 +351,25 @@ void MainWindow::on_actionOpenBackground_triggered()
 void MainWindow::on_actionSurveyPattern_triggered()
 {
     project->setContextMode(false);
-    ui->projectView->setAddSurveyPatternMode();
+    m_ui->projectView->setAddSurveyPatternMode();
 }
 
 void MainWindow::on_actionSurveyPatternFromContext_triggered()
 {
     project->setContextMode(true);
-    ui->projectView->setAddSurveyPatternMode();
+    m_ui->projectView->setAddSurveyPatternMode();
 }
 
 void MainWindow::on_actionSurveyArea_triggered()
 {
     project->setContextMode(false);
-    ui->projectView->setAddSurveyAreaMode();
+    m_ui->projectView->setAddSurveyAreaMode();
 }
 
 void MainWindow::on_actionSurveyAreaFromContext_triggered()
 {
     project->setContextMode(true);
-    ui->projectView->setAddSurveyAreaMode();
-}
-
-void MainWindow::on_actionPlatform_triggered()
-{
-    project->setContextMode(false);
-    project->createPlatform();
-}
-
-void MainWindow::on_actionPlatformFromContext_triggered()
-{
-    project->setContextMode(true);
-    project->createPlatform();
+    m_ui->projectView->setAddSurveyAreaMode();
 }
 
 void MainWindow::on_actionBehavior_triggered()
@@ -409,13 +401,13 @@ void MainWindow::on_actionGroupFromContext_triggered()
 
 void MainWindow::on_actionRadar_triggered()
 {
-    qDebug() << "radar: " << ui->actionRadar->isChecked();
-    emit project->showRadar(ui->actionRadar->isChecked());
+    qDebug() << "radar: " << m_ui->actionRadar->isChecked();
+    emit project->showRadar(m_ui->actionRadar->isChecked());
 }
 
 void MainWindow::on_actionFollow_triggered()
 {
-    emit project->followRobot(ui->actionFollow->isChecked());
+    emit project->followRobot(m_ui->actionFollow->isChecked());
 }
 
 void MainWindow::on_actionRadarColor_triggered()
@@ -425,12 +417,12 @@ void MainWindow::on_actionRadarColor_triggered()
 
 void MainWindow::on_actionShowTail_triggered()
 {
-    emit project->showTail(ui->actionShowTail->isChecked());
+    emit project->showTail(m_ui->actionShowTail->isChecked());
 }
 
 void MainWindow::onROSConnected(bool connected)
 {
-    ui->rosDetails->setEnabled(connected);
+    //m_ui->rosDetails->setEnabled(connected);
 }
 
 void MainWindow::on_actionAISManager_triggered()

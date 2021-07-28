@@ -1,59 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>ROSDetails</class>
- <widget class="QWidget" name="ROSDetails">
+ <class>MissionManager</class>
+ <widget class="QWidget" name="MissionManager">
   <property name="geometry">
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>362</width>
-    <height>192</height>
+    <width>400</width>
+    <height>176</height>
    </rect>
   </property>
+  <property name="windowTitle">
+   <string>Mission Manager</string>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_2">
-     <item>
-      <widget class="QLineEdit" name="sogLineEdit">
-       <property name="readOnly">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout_3">
-     <item>
-      <widget class="QPushButton" name="stopPingingPushButton">
-       <property name="text">
-        <string>Stop Pinging</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="startPingingPushButton">
-       <property name="text">
-        <string>Ping</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="pingAndLogPushButton">
-       <property name="text">
-        <string>Log</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QPushButton" name="incrementLinePushButton">
-       <property name="text">
-        <string>Inc Line</string>
-       </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
    <item>
     <widget class="QTextBrowser" name="missionStatusTextBrowser">
      <property name="minimumSize">
@@ -123,13 +83,6 @@
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <widget class="QLineEdit" name="rangeBearingLineEdit">
-     <property name="readOnly">
-      <bool>true</bool>
-     </property>
-    </widget>
    </item>
   </layout>
  </widget>
