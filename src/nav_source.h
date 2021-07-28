@@ -31,6 +31,7 @@ public slots:
   void updateLocation(QGeoCoordinate const &location);
   void updateHeading(double heading);
   void updateProjectedPoints();
+  void setMaxHistory(int max_history);
 
 private:
   void positionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
@@ -42,6 +43,7 @@ private:
   LocationPosition m_location;
   double m_heading;
   std::list<LocationPosition> m_location_history;
+  int m_max_history = -1;
 };
 
 #endif

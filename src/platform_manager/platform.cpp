@@ -45,8 +45,19 @@ QPainterPath Platform::shape() const
     BackgroundRaster* bg = findParentBackgroundRaster();
     if(bg)
       {
+        bool forceTriangle = false;
+        if (m_length == 0 || m_width == 0)
+          forceTriangle = true;
+        float max_size = std::max(m_length, m_width);
         qreal pixel_size = bg->scaledPixelSize();
-        drawTriangle(ret, bg, m_nav_sources.begin()->second->location().location,      m_nav_sources.begin()->second->heading(), pixel_size);
+        if(pixel_size > max_size/10.0 || forceTriangle)
+          drawTriangle(ret, bg, m_nav_sources.begin()->second->location().location, m_nav_sources.begin()->second->heading(), pixel_size);
+        else
+        {
+          double half_width = m_width/2.0;
+          double half_length = m_length/2.0;
+          drawShipOutline(ret, bg, m_nav_sources.begin()->second->location().location, m_nav_sources.begin()->second->heading(), half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+        }
       }
   }
   return ret;
@@ -61,10 +72,15 @@ void Platform::update(project11_msgs::Platform& platform)
     m_ui->missionManager->updateRobotNamespace("project11/"+ objectName());
     m_ui->geovizDisplay->updateRobotNamespace("project11/"+ objectName());
   }
+  m_width = platform.width;
+  m_length = platform.length;
+  m_reference_x = platform.reference_x;
+  m_reference_y = platform.reference_y;
   for(auto ns: platform.nav_sources)
     if(m_nav_sources.find(ns.name) == m_nav_sources.end())
     {
       m_nav_sources[ns.name] = new NavSource(ns, this, this);
+      m_nav_sources[ns.name]->setMaxHistory(3000);
       connect(m_nav_sources[ns.name], &NavSource::beforeNavUpdate, this, &Platform::aboutToUpdateNav);
     }
 

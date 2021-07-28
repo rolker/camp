@@ -54,6 +54,11 @@ private:
   qreal m_sog;
   qreal m_sog_avg;
 
+  float m_width = 0.0;
+  float m_length = 0.0;
+  float m_reference_x = 0.0;
+  float m_reference_y = 0.0;
+
 };
 
 #endif // PLATFORM_H

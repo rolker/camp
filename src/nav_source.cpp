@@ -66,6 +66,8 @@ void NavSource::updateLocation(QGeoCoordinate const &location)
     lp.pos = geoToPixel(location, bg);
   m_location_history.push_back(lp);
   m_location = lp;
+  while(m_max_history > 0 && m_location_history.size() > m_max_history)
+    m_location_history.pop_front();
 }
 
 void NavSource::updateHeading(double heading)
@@ -92,4 +94,9 @@ const LocationPosition& NavSource::location() const
 double NavSource::heading() const
 {
   return m_heading;
+}
+
+void NavSource::setMaxHistory(int max_history)
+{
+  m_max_history = max_history;
 }
