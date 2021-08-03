@@ -35,7 +35,7 @@ public:
 public slots:
   void updateProjectedPoints();
   void aboutToUpdateNav();
-  void updateSog(qreal sog);
+  void updateSog(double sog);
 
 protected:
   void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;

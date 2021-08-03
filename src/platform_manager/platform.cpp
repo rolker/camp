@@ -82,6 +82,8 @@ void Platform::update(project11_msgs::Platform& platform)
       m_nav_sources[ns.name] = new NavSource(ns, this, this);
       m_nav_sources[ns.name]->setMaxHistory(3000);
       connect(m_nav_sources[ns.name], &NavSource::beforeNavUpdate, this, &Platform::aboutToUpdateNav);
+      if(m_nav_sources.size() == 1)
+        connect(m_nav_sources[ns.name], &NavSource::sog, this, &Platform::updateSog);
     }
 
 }
@@ -122,7 +124,7 @@ void Platform::aboutToUpdateNav()
   prepareGeometryChange();
 }
 
-void Platform::updateSog(qreal sog)
+void Platform::updateSog(double sog)
 {
     // 1852m per NM
     m_sog = sog*1.9438;

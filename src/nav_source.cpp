@@ -7,6 +7,7 @@ NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, Q
   ros::NodeHandle nh;
   m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::positionCallback, this);
   m_orientation_sub = nh.subscribe(source.orientation_topic, 1, &NavSource::orientationCallback, this);
+  m_velocity_sub = nh.subscribe(source.velocity_topic, 1, &NavSource::velocityCallback, this);
   setObjectName(source.name.c_str());
 }
 
@@ -53,6 +54,17 @@ void NavSource::orientationCallback(const sensor_msgs::Imu::ConstPtr& message)
   double yaw = tf2::getYaw(message->orientation);
   double heading = 90-180*yaw/M_PI;
   QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, heading));
+}
+
+void NavSource::velocityCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message)
+{
+  QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(double, sqrt(pow(message->twist.twist.linear.x,2) + pow(message->twist.twist.linear.y, 2))));
+}
+
+
+void NavSource::updateSog(double sog)
+{
+  emit NavSource::sog(sog);
 }
 
 void NavSource::updateLocation(QGeoCoordinate const &location)
