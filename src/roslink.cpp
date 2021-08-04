@@ -93,14 +93,6 @@ void ROSLink::watchdogUpdate()
     rangeAndBearingUpdate(m_range,m_range_timestamp,m_bearing,m_bearing_timestamp);
 }
 
-void ROSLink::followRobot(bool follow)
-{
-    m_follow_robot = follow;
-}
-
-
-
-
 void ROSLink::sendLookAt(QGeoCoordinate const &targetLocation)
 {
     geographic_msgs::GeoPoint gp;

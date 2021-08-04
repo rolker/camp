@@ -45,7 +45,6 @@ public slots:
     void showRadar(bool show);
     void selectRadarColor();
     void showTail(bool show);
-    void followRobot(bool follow);
 
     void rangeAndBearingUpdate(double range, ros::Time const &range_timestamp, double bearing, ros::Time const &bearing_timestamp);
     
@@ -95,8 +94,6 @@ private:
     tf2_ros::Buffer* m_tf_buffer = nullptr;
     tf2_ros::TransformListener* m_tf_listener = nullptr;
     std::string m_mapFrame;
-
-    bool m_follow_robot = false;
 };
 
 #endif // ROSNODE_H

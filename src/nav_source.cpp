@@ -93,6 +93,7 @@ void NavSource::updateLocation(QGeoCoordinate const &location)
   m_location = lp;
   while(m_max_history > 0 && m_location_history.size() > m_max_history)
     m_location_history.pop_front();
+  emit positionUpdate(location);
 }
 
 void NavSource::updateHeading(double heading)

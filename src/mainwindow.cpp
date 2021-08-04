@@ -49,6 +49,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
     connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
+    connect(m_ui->platformManager, &PlatformManager::currentPlatformPosition, this, &MainWindow::activePlatfromPosition);
 
     //m_ui->rosDetails->setEnabled(false);
     //connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, m_ui->helmManager, &HelmManager::updateRobotNamespace);
@@ -409,7 +410,13 @@ void MainWindow::on_actionRadar_triggered()
 
 void MainWindow::on_actionFollow_triggered()
 {
-    emit project->followRobot(m_ui->actionFollow->isChecked());
+    //emit project->followRobot(m_ui->actionFollow->isChecked());
+}
+
+void MainWindow::activePlatfromPosition(QGeoCoordinate position)
+{
+    if(m_ui->actionFollow->isChecked())
+      m_ui->projectView->centerMap(position);
 }
 
 void MainWindow::on_actionRadarColor_triggered()

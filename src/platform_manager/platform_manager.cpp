@@ -27,6 +27,7 @@ void PlatformManager::loadFromParameters()
         m_platforms[platform.first] = new Platform(this, m_background);
         m_ui->tabWidget->addTab(m_platforms[platform.first], platform.first.c_str());
         m_platforms[platform.first]->update(platform);
+        connect(m_platforms[platform.first], &Platform::platformPosition, this, &PlatformManager::platformPosition);
       }
     }
   }
@@ -75,3 +76,10 @@ void PlatformManager::on_tabWidget_currentChanged(int index)
   else
     emit currentPlatform(qobject_cast<Platform*>(m_ui->tabWidget->currentWidget()));
 }
+
+void PlatformManager::platformPosition(Platform * platform, QGeoCoordinate position)
+{
+  if(m_ui->tabWidget->currentWidget() == platform)
+    emit currentPlatformPosition(position);
+}
+  

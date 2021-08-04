@@ -2,6 +2,7 @@
 #define CAMP_PLATFORM_MANAGER_H
 
 #include <QWidget>
+#include <QGeoCoordinate>
 #include "ros/ros.h"
 #include "project11_msgs/PlatformList.h"
 
@@ -24,10 +25,12 @@ public:
 
 signals:
   void currentPlatform(Platform* platform);
+  void currentPlatformPosition(QGeoCoordinate position);
 
 public slots:
   void updateBackground(BackgroundRaster * bg);
   void loadFromParameters();
+  void platformPosition(Platform * platform, QGeoCoordinate position);
   
 private slots:
   void updatePlatform(project11_msgs::Platform platform);

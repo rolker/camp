@@ -82,6 +82,7 @@ void Platform::update(project11_msgs::Platform& platform)
       m_nav_sources[ns.name] = new NavSource(ns, this, this);
       m_nav_sources[ns.name]->setMaxHistory(3000);
       connect(m_nav_sources[ns.name], &NavSource::beforeNavUpdate, this, &Platform::aboutToUpdateNav);
+      connect(m_nav_sources[ns.name], &NavSource::positionUpdate, this, &Platform::updatePosition);
       if(m_nav_sources.size() == 1)
         connect(m_nav_sources[ns.name], &NavSource::sog, this, &Platform::updateSog);
     }
@@ -109,6 +110,9 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
     for(auto nav: platform.second["nav_sources"])
     {
       m_nav_sources[nav.first] = new NavSource(nav, this, this);
+      connect(m_nav_sources[nav.first], &NavSource::positionUpdate, this, &Platform::updatePosition);
+      if(m_nav_sources.size() == 1)
+        connect(m_nav_sources[nav.first], &NavSource::sog, this, &Platform::updateSog);
     }
 }
 
@@ -173,4 +177,9 @@ MissionManager* Platform::missionManager() const
 HelmManager* Platform::helmManager() const
 {
   return m_ui->helmManager;
+}
+
+void Platform::updatePosition(QGeoCoordinate position)
+{
+  emit platformPosition(this, position);
 }

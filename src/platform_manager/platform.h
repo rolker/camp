@@ -34,10 +34,15 @@ public:
   MissionManager* missionManager() const;
   HelmManager* helmManager() const;
 
+signals:
+  void platformPosition(Platform* platform, QGeoCoordinate position);
+
+
 public slots:
   void updateProjectedPoints();
   void aboutToUpdateNav();
   void updateSog(double sog);
+  void updatePosition(QGeoCoordinate position);
 
 protected:
   void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;

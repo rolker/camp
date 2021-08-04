@@ -29,6 +29,7 @@ public:
 signals:
   void beforeNavUpdate();
   void sog(double sog);
+  void positionUpdate(QGeoCoordinate position);
 
 public slots:
   void updateLocation(QGeoCoordinate const &location);

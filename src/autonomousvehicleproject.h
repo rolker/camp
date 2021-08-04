@@ -100,7 +100,6 @@ signals:
     void showRadar(bool show);
     void selectRadarColor();
     void showTail(bool show);
-    void followRobot(bool follow);
 
 public slots:
 

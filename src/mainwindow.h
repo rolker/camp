@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QModelIndex>
+#include <QGeoCoordinate>
 
 namespace Ui {
 class MainWindow;
@@ -29,7 +30,7 @@ public slots:
 
     void setCurrent(QModelIndex &index);
     void onROSConnected(bool connected);
-    
+    void activePlatfromPosition(QGeoCoordinate position);
 
 private slots:
     void on_actionOpen_triggered();
