@@ -15,6 +15,7 @@ class NavSource: public QObject, public GeoGraphicsItem
   Q_INTERFACES(QGraphicsItem)
 public:
   NavSource(const project11_msgs::NavSource& source, QObject* parent, QGraphicsItem *parentItem = nullptr);
+  NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, QObject* parent, QGraphicsItem *parentItem = nullptr);
 
   int type() const override {return NavSourceType;}
 

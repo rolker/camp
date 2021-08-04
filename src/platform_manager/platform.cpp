@@ -68,9 +68,9 @@ void Platform::update(project11_msgs::Platform& platform)
   if(objectName().toStdString() != platform.name)
   {
     setObjectName(platform.name.c_str());
-    m_ui->helmManager->updateRobotNamespace("project11/"+ objectName());
-    m_ui->missionManager->updateRobotNamespace("project11/"+ objectName());
-    m_ui->geovizDisplay->updateRobotNamespace("project11/"+ objectName());
+    m_ui->helmManager->updateRobotNamespace(objectName());
+    m_ui->missionManager->updateRobotNamespace(objectName());
+    m_ui->geovizDisplay->updateRobotNamespace(objectName());
   }
   m_width = platform.width;
   m_length = platform.length;
@@ -87,6 +87,31 @@ void Platform::update(project11_msgs::Platform& platform)
     }
 
 }
+
+void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platform)
+{
+  if(objectName().toStdString() != platform.first)
+  {
+    setObjectName(platform.first.c_str());
+    m_ui->helmManager->updateRobotNamespace(objectName());
+    m_ui->missionManager->updateRobotNamespace(objectName());
+    m_ui->geovizDisplay->updateRobotNamespace(objectName());
+  }
+  if(platform.second.hasMember("width"))
+    m_width = double(platform.second["width"]);
+  if(platform.second.hasMember("length"))
+    m_length = double(platform.second["length"]);
+  if(platform.second.hasMember("reference_x"))
+    m_reference_x = double(platform.second["reference_x"]);
+  if(platform.second.hasMember("reference_y"))
+    m_reference_y = double(platform.second["reference_y"]);
+  if(platform.second.hasMember("nav_sources"))
+    for(auto nav: platform.second["nav_sources"])
+    {
+      m_nav_sources[nav.first] = new NavSource(nav, this, this);
+    }
+}
+
 
 void Platform::updateProjectedPoints()
 {

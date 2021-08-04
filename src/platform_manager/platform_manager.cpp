@@ -8,12 +8,31 @@ PlatformManager::PlatformManager(QWidget* parent):
   m_ui(new Ui::PlatformManager)
 {
   m_ui->setupUi(this);
-  
-  //m_platforms["ben"] = new Platform;
-  //m_ui->tabWidget->addTab(m_platforms["ben"], "ben");
-
   ros::NodeHandle nh;
   m_platform_list_sub = nh.subscribe("/project11/platforms", 5, &PlatformManager::platformListCallback, this);
+  
+}
+
+void PlatformManager::loadFromParameters()
+{
+  ros::NodeHandle nh;
+  XmlRpc::XmlRpcValue platforms_dict;
+  
+  if(nh.getParam("project11/platforms", platforms_dict))
+  {
+    if(platforms_dict.getType() == XmlRpc::XmlRpcValue::TypeStruct)
+    {
+      for(auto platform:platforms_dict)
+      {
+        m_platforms[platform.first] = new Platform(this, m_background);
+        m_ui->tabWidget->addTab(m_platforms[platform.first], platform.first.c_str());
+        m_platforms[platform.first]->update(platform);
+      }
+    }
+  }
+  if(m_ui->tabWidget->count()>0)
+    on_tabWidget_currentChanged(0);
+
 }
 
 PlatformManager::~PlatformManager()

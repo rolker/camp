@@ -27,7 +27,8 @@ signals:
 
 public slots:
   void updateBackground(BackgroundRaster * bg);
-
+  void loadFromParameters();
+  
 private slots:
   void updatePlatform(project11_msgs::Platform platform);
   void on_tabWidget_currentChanged(int index);

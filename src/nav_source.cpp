@@ -11,6 +11,19 @@ NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, Q
   setObjectName(source.name.c_str());
 }
 
+NavSource::NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
+{
+  ros::NodeHandle nh;
+  if (source.second.hasMember("position_topic"))
+    m_position_sub = nh.subscribe(source.second["position_topic"], 1, &NavSource::positionCallback, this);
+  if (source.second.hasMember("orientation_topic"))
+    m_orientation_sub = nh.subscribe(source.second["orientation_topic"], 1, &NavSource::orientationCallback, this);
+  if (source.second.hasMember("velocity_topic"))
+    m_velocity_sub = nh.subscribe(source.second["velocity_topic"], 1, &NavSource::velocityCallback, this);
+  setObjectName(source.first.c_str());
+}
+
+
 QRectF NavSource::boundingRect() const
 {
   return shape().boundingRect().marginsAdded(QMargins(2,2,2,2));

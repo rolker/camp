@@ -73,6 +73,8 @@ MainWindow::MainWindow(QWidget *parent) :
     m_speech_alerts = new SpeechAlerts(this);
     connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
     //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
+
+    m_ui->platformManager->loadFromParameters();
 }
 
 MainWindow::~MainWindow()

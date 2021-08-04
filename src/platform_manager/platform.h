@@ -29,6 +29,8 @@ public:
   QPainterPath shape() const override;
 
   void update(project11_msgs::Platform &platform);
+  void update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platform);
+
   MissionManager* missionManager() const;
   HelmManager* helmManager() const;
 
