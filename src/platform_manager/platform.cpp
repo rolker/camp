@@ -30,7 +30,7 @@ void Platform::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
   QPen p;
   p.setCosmetic(true);
   p.setColor(Qt::blue);
-  p.setWidth(2);
+  p.setWidth(3);
   painter->setPen(p);
   painter->drawPath(shape());
   painter->restore();
@@ -80,7 +80,7 @@ void Platform::update(project11_msgs::Platform& platform)
     if(m_nav_sources.find(ns.name) == m_nav_sources.end())
     {
       m_nav_sources[ns.name] = new NavSource(ns, this, this);
-      m_nav_sources[ns.name]->setMaxHistory(3000);
+      m_nav_sources[ns.name]->setMaxHistory(1000);
       connect(m_nav_sources[ns.name], &NavSource::beforeNavUpdate, this, &Platform::aboutToUpdateNav);
       connect(m_nav_sources[ns.name], &NavSource::positionUpdate, this, &Platform::updatePosition);
       if(m_nav_sources.size() == 1)
@@ -110,6 +110,7 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
     for(auto nav: platform.second["nav_sources"])
     {
       m_nav_sources[nav.first] = new NavSource(nav, this, this);
+      m_nav_sources[nav.first]->setMaxHistory(1000);
       connect(m_nav_sources[nav.first], &NavSource::positionUpdate, this, &Platform::updatePosition);
       if(m_nav_sources.size() == 1)
         connect(m_nav_sources[nav.first], &NavSource::sog, this, &Platform::updateSog);

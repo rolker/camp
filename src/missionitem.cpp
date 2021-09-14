@@ -84,10 +84,14 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
     qDebug() << "  before:";
     for(auto c: m_childrenMissionItems)
         qDebug() << "      " << c->objectName();
+
+    qDebug() << json;
+
     auto project = autonomousVehicleProject();
     for (int childIndex = 0; childIndex < json.size(); ++childIndex)
     {
         QJsonObject object = json[childIndex].toObject();
+        qDebug() << object;
         if(object["type"] == "BackgroundRaster")
         {
             BackgroundRaster* bgr = project->openBackground(object["filename"].toString(), object["label"].toString());
