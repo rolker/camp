@@ -68,9 +68,9 @@ void Platform::update(project11_msgs::Platform& platform)
   if(objectName().toStdString() != platform.name)
   {
     setObjectName(platform.name.c_str());
-    m_ui->helmManager->updateRobotNamespace(objectName());
-    m_ui->missionManager->updateRobotNamespace(objectName());
-    m_ui->geovizDisplay->updateRobotNamespace(objectName());
+    m_ui->helmManager->updateRobotNamespace("project11/"+objectName());
+    m_ui->missionManager->updateRobotNamespace("project11/"+objectName());
+    m_ui->geovizDisplay->updateRobotNamespace("project11/"+objectName());
   }
   m_width = platform.width;
   m_length = platform.length;

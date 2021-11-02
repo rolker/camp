@@ -21,7 +21,8 @@ int main(int argc, char *argv[])
         else if(QFileInfo(arg).isDir())
             w.setWorkspace(arg);
         else // try background
-            w.openBackground(arg);
+            //w.openBackground(arg);
+            QMetaObject::invokeMethod(&w, "openBackground", Qt::QueuedConnection, Q_ARG(QString, arg));
     }
 
     return a.exec();

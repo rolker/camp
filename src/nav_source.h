@@ -8,6 +8,7 @@
 #include "sensor_msgs/NavSatFix.h"
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/TwistWithCovarianceStamped.h"
+#include "geographic_msgs/GeoPointStamped.h"
 
 class NavSource: public QObject, public GeoGraphicsItem
 {
@@ -42,13 +43,14 @@ private:
   void positionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
   void orientationCallback(const sensor_msgs::Imu::ConstPtr& message);
   void velocityCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message);
+  void geoPointCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
 
   ros::Subscriber m_position_sub;
   ros::Subscriber m_orientation_sub;
   ros::Subscriber m_velocity_sub;
 
   LocationPosition m_location;
-  double m_heading;
+  double m_heading = std::nan("");
   std::list<LocationPosition> m_location_history;
   int m_max_history = -1;
 };

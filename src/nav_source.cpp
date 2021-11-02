@@ -16,6 +16,8 @@ NavSource::NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, 
   ros::NodeHandle nh;
   if (source.second.hasMember("position_topic"))
     m_position_sub = nh.subscribe(source.second["position_topic"], 1, &NavSource::positionCallback, this);
+  if (source.second.hasMember("geopoint_topic"))
+    m_position_sub = nh.subscribe(source.second["geopoint_topic"], 1, &NavSource::geoPointCallback, this);
   if (source.second.hasMember("orientation_topic"))
     m_orientation_sub = nh.subscribe(source.second["orientation_topic"], 1, &NavSource::orientationCallback, this);
   if (source.second.hasMember("velocity_topic"))
@@ -61,6 +63,11 @@ void NavSource::positionCallback(const sensor_msgs::NavSatFix::ConstPtr& message
   QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
 
+void NavSource::geoPointCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
+{
+  QGeoCoordinate position(message->position.latitude, message->position.longitude, message->position.altitude);
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
+}
 
 void NavSource::orientationCallback(const sensor_msgs::Imu::ConstPtr& message)
 {

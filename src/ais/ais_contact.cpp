@@ -28,7 +28,10 @@ AISContactState::AISContactState(const marine_msgs::Contact::ConstPtr& message)
   location.location.setLatitude(message->position.latitude);
   location.location.setLongitude(message->position.longitude);
   if(message->heading < 0)
-    heading = message->cog*180.0/M_PI;
+    if(message->sog > 0.25)
+      heading = message->cog*180.0/M_PI;
+    else
+      heading = std::nan("");
   else
     heading = message->heading*180.0/M_PI;
   cog = message->cog*180.0/M_PI;

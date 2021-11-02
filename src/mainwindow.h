@@ -23,10 +23,10 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
+public slots:
     void open(QString const &fname);
     void openBackground(QString const &fname);
     void setWorkspace(QString const &dir);
-public slots:
 
     void setCurrent(QModelIndex &index);
     void onROSConnected(bool connected);

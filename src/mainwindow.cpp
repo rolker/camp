@@ -91,16 +91,16 @@ void MainWindow::setWorkspace(const QString& path)
 
 void MainWindow::open(const QString& fname)
 {
-    setCursor(Qt::WaitCursor);
+    //setCursor(Qt::WaitCursor);
     project->open(fname);
-    unsetCursor();
+    //unsetCursor();
 }
 
 void MainWindow::openBackground(const QString& fname)
 {
-    setCursor(Qt::WaitCursor);
+    //setCursor(Qt::WaitCursor);
     project->openBackground(fname);
-    unsetCursor();
+    //unsetCursor();
 }
 
 void MainWindow::setCurrent(QModelIndex &index)
