@@ -18,6 +18,8 @@ NavSource::NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, 
     m_position_sub = nh.subscribe(source.second["position_topic"], 1, &NavSource::positionCallback, this);
   if (source.second.hasMember("geopoint_topic"))
     m_position_sub = nh.subscribe(source.second["geopoint_topic"], 1, &NavSource::geoPointCallback, this);
+  if (source.second.hasMember("geopose_topic"))
+    m_position_sub = nh.subscribe(source.second["geopose_topic"], 1, &NavSource::geoPoseCallback, this);
   if (source.second.hasMember("orientation_topic"))
     m_orientation_sub = nh.subscribe(source.second["orientation_topic"], 1, &NavSource::orientationCallback, this);
   if (source.second.hasMember("velocity_topic"))
@@ -68,6 +70,18 @@ void NavSource::geoPointCallback(const geographic_msgs::GeoPointStamped::ConstPt
   QGeoCoordinate position(message->position.latitude, message->position.longitude, message->position.altitude);
   QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
 }
+
+void NavSource::geoPoseCallback(const geographic_msgs::GeoPoseStamped::ConstPtr& message)
+{
+  QGeoCoordinate position(message->pose.position.latitude, message->pose.position.longitude, message->pose.position.altitude);
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position));
+  double yaw = std::nan("");
+  if(message->pose.orientation.w != 0 ||  message->pose.orientation.x != 0 || message->pose.orientation.y != 0 || message->pose.orientation.z != 0)
+    yaw = tf2::getYaw(message->pose.orientation);
+  double heading = 90-180*yaw/M_PI;
+  QMetaObject::invokeMethod(this,"updateHeading", Qt::QueuedConnection, Q_ARG(double, heading));
+}
+
 
 void NavSource::orientationCallback(const sensor_msgs::Imu::ConstPtr& message)
 {

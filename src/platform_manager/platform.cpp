@@ -94,9 +94,9 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
   if(objectName().toStdString() != platform.first)
   {
     setObjectName(platform.first.c_str());
-    m_ui->helmManager->updateRobotNamespace(objectName());
-    m_ui->missionManager->updateRobotNamespace(objectName());
-    m_ui->geovizDisplay->updateRobotNamespace(objectName());
+    m_ui->helmManager->updateRobotNamespace("project11/"+objectName());
+    m_ui->missionManager->updateRobotNamespace("project11/"+objectName());
+    m_ui->geovizDisplay->updateRobotNamespace("project11/"+objectName());
   }
   if(platform.second.hasMember("width"))
     m_width = double(platform.second["width"]);

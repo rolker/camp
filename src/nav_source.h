@@ -9,6 +9,7 @@
 #include "sensor_msgs/Imu.h"
 #include "geometry_msgs/TwistWithCovarianceStamped.h"
 #include "geographic_msgs/GeoPointStamped.h"
+#include "geographic_msgs/GeoPoseStamped.h"
 
 class NavSource: public QObject, public GeoGraphicsItem
 {
@@ -44,6 +45,7 @@ private:
   void orientationCallback(const sensor_msgs::Imu::ConstPtr& message);
   void velocityCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message);
   void geoPointCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message);
+  void geoPoseCallback(const geographic_msgs::GeoPoseStamped::ConstPtr& message);
 
   ros::Subscriber m_position_sub;
   ros::Subscriber m_orientation_sub;
