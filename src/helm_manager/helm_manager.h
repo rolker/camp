@@ -31,6 +31,8 @@ public slots:
 private slots:
   void on_standbyPushButton_clicked(bool checked);
   void on_autonomousPushButton_clicked(bool checked);
+
+  void on_timeLatencyConfigPushButton_clicked(bool checked);
   
   void updatePilotingMode(QString const &piloting_mode);
   void updateHeartbeatTimes(double last_heartbeat_timestamp, double last_heartbeat_receive_time);
@@ -48,6 +50,9 @@ private:
   ros::Time m_last_heartbeat_receive_time;
     
   QTimer * m_watchdog_timer;
+
+  ros::Duration max_green_duration_ = ros::Duration(2.0);
+  ros::Duration max_yellow_duration_ = ros::Duration(5.0);
 
 };
 

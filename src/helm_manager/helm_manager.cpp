@@ -1,5 +1,6 @@
 #include "helm_manager.h"
 #include "ui_helm_manager.h"
+#include "ui_helm_manager_config.h"
 #include <QStyle>
 #include <QPalette>
 #include <QTimer>
@@ -34,6 +35,22 @@ void HelmManager::on_standbyPushButton_clicked(bool checked)
 void HelmManager::on_autonomousPushButton_clicked(bool checked)
 {
   emit requestPilotingMode("autonomous");
+}
+
+void HelmManager::on_timeLatencyConfigPushButton_clicked(bool checked)
+{
+  Ui::HelmManagerConfig configDialogUI;
+  QDialog configDialog;
+  configDialogUI.setupUi(&configDialog);
+  configDialogUI.greenTimeoutSpinBox->setValue(max_green_duration_.toSec());
+  configDialogUI.yellowTimeoutSpinBox->setValue(max_yellow_duration_.toSec());
+  if(configDialog.exec())
+  {
+    max_green_duration_ = ros::Duration(configDialogUI.greenTimeoutSpinBox->value());
+    max_yellow_duration_ = ros::Duration(configDialogUI.yellowTimeoutSpinBox->value());
+  }
+
+
 }
 
 void HelmManager::updateRobotNamespace(QString robot_namespace)
@@ -124,9 +141,9 @@ void HelmManager::watchdogUpdate()
   ros::Duration diff = now-m_last_heartbeat_timestamp;
 
   QPalette pal = palette();
-  if(diff.toSec() < 2.0)
+  if(diff < max_green_duration_)
     pal.setColor(QPalette::Background, Qt::green);
-  else if (diff.toSec() < 5.0)
+  else if (diff < max_yellow_duration_)
     pal.setColor(QPalette::Background, Qt::yellow);
   else
     pal.setColor(QPalette::Background, Qt::red);

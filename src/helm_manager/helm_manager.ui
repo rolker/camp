@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>118</width>
-    <height>128</height>
+    <height>138</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -39,14 +39,37 @@
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="timeLatencyLabel">
-     <property name="toolTip">
-      <string>Last HB shows how many seconds since we last received a heartbeat while latency is the differnece in the heartbeat's timestamp and the received time.</string>
-     </property>
-     <property name="text">
-      <string/>
-     </property>
-    </widget>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QLabel" name="timeLatencyLabel">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+         <horstretch>1</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="toolTip">
+        <string>Last HB shows how many seconds since we last received a heartbeat while latency is the differnece in the heartbeat's timestamp and the received time.</string>
+       </property>
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="timeLatencyConfigPushButton">
+       <property name="maximumSize">
+        <size>
+         <width>20</width>
+         <height>16777215</height>
+        </size>
+       </property>
+       <property name="text">
+        <string>C</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
   </layout>
  </widget>
