@@ -68,10 +68,14 @@ void Platform::update(project11_msgs::Platform& platform)
   if(objectName().toStdString() != platform.name)
   {
     setObjectName(platform.name.c_str());
-    m_ui->helmManager->updateRobotNamespace("project11/"+objectName());
-    m_ui->missionManager->updateRobotNamespace("project11/"+objectName());
-    m_ui->geovizDisplay->updateRobotNamespace("project11/"+objectName());
   }
+  std::string platformNamespace = platform.name;
+  if(!platform.platform_namespace.empty())
+    platformNamespace = platform.platform_namespace;
+  m_ui->helmManager->updateRobotNamespace(platformNamespace.c_str());
+  m_ui->missionManager->updateRobotNamespace(platformNamespace.c_str());
+  m_ui->geovizDisplay->updateRobotNamespace(platformNamespace.c_str());
+
   m_width = platform.width;
   m_length = platform.length;
   m_reference_x = platform.reference_x;
@@ -94,10 +98,14 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
   if(objectName().toStdString() != platform.first)
   {
     setObjectName(platform.first.c_str());
-    m_ui->helmManager->updateRobotNamespace("project11/"+objectName());
-    m_ui->missionManager->updateRobotNamespace("project11/"+objectName());
-    m_ui->geovizDisplay->updateRobotNamespace("project11/"+objectName());
   }
+  std::string platformNamespace = platform.first;
+  if(platform.second.hasMember("namespace"))
+    platformNamespace = std::string(platform.second["namespace"]);
+  m_ui->helmManager->updateRobotNamespace(platformNamespace.c_str());
+  m_ui->missionManager->updateRobotNamespace(platformNamespace.c_str());
+  m_ui->geovizDisplay->updateRobotNamespace(platformNamespace.c_str());
+
   if(platform.second.hasMember("width"))
     m_width = double(platform.second["width"]);
   if(platform.second.hasMember("length"))
