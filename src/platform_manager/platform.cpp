@@ -21,7 +21,7 @@ Platform::~Platform()
 
 QRectF Platform::boundingRect() const
 {
-  return (shape().boundingRect()).marginsAdded(QMargins(2,2,2,2));
+  return (shape().boundingRect()).marginsAdded(QMargins(3,3,3,3));
 }
 
 void Platform::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
