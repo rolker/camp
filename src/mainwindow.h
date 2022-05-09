@@ -48,6 +48,8 @@ private slots:
     void on_actionSurveyPatternFromContext_triggered();
     void on_actionSurveyArea_triggered();
     void on_actionSurveyAreaFromContext_triggered();
+    void on_actionSearchPattern_triggered();
+    void on_actionSearchPatternFromContext_triggered();
     void on_actionGroup_triggered();
     void on_actionGroupFromContext_triggered();
     void on_actionBehavior_triggered();

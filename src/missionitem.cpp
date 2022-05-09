@@ -5,6 +5,7 @@
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
+#include "searchpattern.h"
 #include "backgroundraster.h"
 #include "behavior.h"
 #include "surveyarea.h"
@@ -112,6 +113,8 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
             item = project->createSurveyArea(this, insertRow, object["label"].toString());
         if(object["type"] == "Group")
             item = project->createGroup(this, insertRow, object["label"].toString());
+        if(object["type"] == "SearchPattern")
+            item = project->createSearchPattern(this, insertRow, object["label"].toString());
         if(item)
         {
             item->read(object);

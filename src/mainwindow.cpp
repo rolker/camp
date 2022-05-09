@@ -16,6 +16,7 @@
 #include "trackline.h"
 #include "surveypattern.h"
 #include "surveyarea.h"
+#include "searchpattern.h"
 
 #include "ais/ais_manager.h"
 #include "sound_play/sound_play_widget.h"
@@ -208,6 +209,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         QAction *addSurveyPatternAction = addMenu->addAction("Add Survey Pattern");
         connect(addSurveyPatternAction, &QAction::triggered, this, &MainWindow::on_actionSurveyPattern_triggered);
 
+        QAction *addSearchPatternAction = addMenu->addAction("Add Search Pattern");
+        connect(addSearchPatternAction, &QAction::triggered, this, &MainWindow::on_actionSearchPattern_triggered);
+
         QAction *addGroupAction = addMenu->addAction("Add Group");
         connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
     }
@@ -235,6 +239,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *addSurveyAreaAction = addMenu->addAction("Add Survey Area");
             connect(addSurveyAreaAction, &QAction::triggered, this, &MainWindow::on_actionSurveyAreaFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("SearchPattern"))
+        {
+            QAction *addSearchPatternAction = addMenu->addAction("Add Search Pattern");
+            connect(addSearchPatternAction, &QAction::triggered, this, &MainWindow::on_actionSearchPatternFromContext_triggered);
         }
 
         if(mi && mi->canAcceptChildType("Group"))
@@ -266,7 +276,14 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, sp, &SurveyPattern::reverseDirection);
         }
-        
+
+        SearchPattern *spat = qobject_cast<SearchPattern*>(mi);
+        if(spat)
+        {
+            QAction *switchDirectionAction = menu.addAction("Switch Direction");
+            connect(switchDirectionAction, &QAction::triggered, spat, &SearchPattern::switchDirection);
+        }
+
         GeoGraphicsMissionItem *gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);
         if(gmi)
         {
@@ -374,6 +391,19 @@ void MainWindow::on_actionSurveyAreaFromContext_triggered()
     project->setContextMode(true);
     m_ui->projectView->setAddSurveyAreaMode();
 }
+
+void MainWindow::on_actionSearchPattern_triggered()
+{
+    project->setContextMode(false);
+    m_ui->projectView->setAddSearchPatternMode();
+}
+
+void MainWindow::on_actionSearchPatternFromContext_triggered()
+{
+    project->setContextMode(true);
+    m_ui->projectView->setAddSearchPatternMode();
+}
+
 
 void MainWindow::on_actionBehavior_triggered()
 {

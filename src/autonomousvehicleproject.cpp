@@ -18,6 +18,7 @@
 #include "surveypattern.h"
 #include "surveyarea.h"
 #include "group.h"
+#include "searchpattern.h"
 #include <gdal_priv.h>
 #include "vector/vectordataset.h"
 #include "vector/point.h"
@@ -305,6 +306,27 @@ SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
     sa->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,sa,&SurveyArea::updateBackground);
     return sa;
+}
+
+SearchPattern * AutonomousVehicleProject::createSearchPattern(MissionItem* parent, int row, QString label)
+{
+  SearchPattern *sp;
+  if(label.isEmpty())
+    label = generateUniqueLabel("pattern");
+  if(!parent) 
+    sp = potentialParentItemFor("SearchPattern")->createMissionItem<SearchPattern>(label, row);
+  else
+    sp = parent->createMissionItem<SearchPattern>(label, row);
+  connect(this,&AutonomousVehicleProject::updatingBackground,sp,&SearchPattern::updateBackground);
+  emit layoutChanged();
+  return sp;
+}
+
+SearchPattern *AutonomousVehicleProject::addSearchPattern(QGeoCoordinate position)
+{
+  SearchPattern *sp = createSearchPattern();
+  sp->setStartLocation(position);
+  return sp;
 }
 
 
@@ -652,9 +674,15 @@ Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
             if(qobject_cast<SurveyPattern*>(item->parent()))
                 return QAbstractItemModel::flags(index);
             else
+              if(qobject_cast<SearchPattern*>(item->parent()))
+                return QAbstractItemModel::flags(index);
+              else
                 return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled;
 
         if(qobject_cast<SurveyPattern*>(item))
+            return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled;
+
+        if(qobject_cast<SearchPattern*>(item))
             return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled;
 
         if(qobject_cast<VectorDataset*>(item))
@@ -697,6 +725,8 @@ bool AutonomousVehicleProject::removeRows(int row, int count, const QModelIndex&
     if(parentItem)
     {
         if(qobject_cast<SurveyPattern*>(parentItem))
+            return false;
+        if(qobject_cast<SearchPattern*>(parentItem))
             return false;
         for (int i = 0; i < count; i++)
             if(parentItem->childMissionItems().size() > row)

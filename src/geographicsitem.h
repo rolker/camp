@@ -28,7 +28,8 @@ public:
         AISContactType,
         PlatformType,
         NavSourceType,
-        GeovizDisplayType
+        GeovizDisplayType,
+        SearchPatternType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

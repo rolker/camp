@@ -10,6 +10,7 @@ class AutonomousVehicleProject;
 class TrackLine;
 class SurveyPattern;
 class SurveyArea;
+class SearchPattern;
 class Waypoint;
 class BackgroundRaster;
 class MeasuringTool;
@@ -24,6 +25,7 @@ public:
     void setAddTracklineMode();
     void setAddSurveyPatternMode();
     void setAddSurveyAreaMode();
+    void setAddSearchPatternMode();
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 
@@ -50,7 +52,7 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
-    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern, addSurveyArea};
+    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern, addSurveyArea, addSearchPattern};
     QStatusBar * statusBar;
     QLabel * positionLabel;
     QLabel * modeLabel;
@@ -60,6 +62,7 @@ private:
     Waypoint * pendingTrackLineWaypoint;
     SurveyPattern * pendingSurveyPattern;
     SurveyArea * pendingSurveyArea;
+    SearchPattern * pendingSearchPattern = nullptr;
     Waypoint * pendingSurveyAreaWaypoint;
     MeasuringTool * measuringTool;
 

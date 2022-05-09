@@ -144,6 +144,7 @@ bool SurveyArea::canAcceptChildType(const std::string& childType) const
 {
     if (childType == "Waypoint") return true;
     if (childType == "SurveyPattern") return true;
+    if (childType == "SearchPattern") return true;
     return false;
 }
 

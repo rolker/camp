@@ -10,6 +10,7 @@
 #include "trackline.h"
 #include "surveypattern.h"
 #include "surveyarea.h"
+#include "searchpattern.h"
 #include <QDebug>
 #include <QMenu>
 #include "measuringtool.h"
@@ -110,10 +111,34 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
             }
+            break;
+        case MouseMode::addSearchPattern:
+            if(!pendingSearchPattern)
+            {
+                if(bg)
+                {
+                    pendingSearchPattern = m_project->addSearchPattern(bg->pixelToGeo(mapToScene(event->pos())));
+                    //QModelIndex i = m_project-> indexFromItem(pendingSurveyPattern);
+                    //emit  currentChanged(i);
+                }
+            }
+            else
+            {
+                if(pendingSearchPattern->hasSpacingLocation())
+                {
+                    setPanMode();
+                }
+                else
+                {
+                    pendingSearchPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                }
+            }
+            break;
         }
         break;
+
     case Qt::RightButton:
-        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern || mouseMode == MouseMode::addSurveyArea)
+        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern || mouseMode == MouseMode::addSurveyArea || mouseMode == MouseMode::addSearchPattern)
         {
             if(mouseMode == MouseMode::addTrackline && currentTrackLine)
             {
@@ -190,6 +215,13 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         {
             pendingSurveyAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
         }
+        if(pendingSearchPattern)
+        {
+            if(pendingSearchPattern->hasSpacingLocation())
+                pendingSearchPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+            else
+                pendingSearchPattern->setEndLocation(bg->pixelToGeo(mapToScene(event->pos())));
+        }
         if(measuringTool)
             measuringTool->setFinish(llMouse);
     }
@@ -241,6 +273,14 @@ void ProjectView::setAddSurveyAreaMode()
     setCursor(Qt::CrossCursor);
 }
 
+void ProjectView::setAddSearchPatternMode()
+{
+    setDragMode(NoDrag);
+    mouseMode = MouseMode::addSearchPattern;
+    modeLabel->setText("Mode: add search pattern");
+    setCursor(Qt::CrossCursor);
+}
+
 void ProjectView::setStatusBar(QStatusBar *bar)
 {
     statusBar = bar;
@@ -262,6 +302,7 @@ void ProjectView::setPanMode()
     unsetCursor();
     pendingSurveyPattern = nullptr;
     currentTrackLine = nullptr;
+    pendingSearchPattern = nullptr;
 }
 
 void ProjectView::contextMenuEvent(QContextMenuEvent* event)

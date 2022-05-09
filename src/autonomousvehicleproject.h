@@ -17,6 +17,7 @@ class Waypoint;
 class TrackLine;
 class SurveyPattern;
 class SurveyArea;
+class SearchPattern;
 class Group;
 class QSvgRenderer;
 //class ROSLink;
@@ -43,6 +44,9 @@ public:
     
     SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyArea * addSurveyArea(QGeoCoordinate position);
+
+    SearchPattern * createSearchPattern(MissionItem* parent=nullptr, int row=-1, QString label = "");
+    SearchPattern * addSearchPattern(QGeoCoordinate position);
 
     TrackLine * createTrackLine(MissionItem* parent=nullptr, int row=-1, QString label = "");
     TrackLine * addTrackLine(QGeoCoordinate position);

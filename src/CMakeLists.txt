@@ -40,6 +40,7 @@ set(SOURCES
     nav_source.cpp
     mission_manager/mission_manager.cpp
     geoviz/geoviz_display.cpp
+    searchpattern.cpp
 )
 
 set(HEADERS
@@ -82,6 +83,7 @@ set(HEADERS
     nav_source.h
     mission_manager/mission_manager.h
     geoviz/geoviz_display.h
+    searchpattern.h
 )
 
 set ( RESOURCES

@@ -171,6 +171,7 @@
     <addaction name="actionSurveyArea"/>
     <addaction name="actionGroup"/>
     <addaction name="actionBehavior"/>
+    <addaction name="actionSearchPattern"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
     <property name="title">
@@ -201,6 +202,7 @@
    <addaction name="actionSurveyArea"/>
    <addaction name="actionGroup"/>
    <addaction name="actionBehavior"/>
+   <addaction name="actionSearchPattern"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -341,6 +343,16 @@
    </property>
    <property name="text">
     <string>Follow</string>
+   </property>
+  </action>
+  <action name="actionSearchPattern">
+   <property name="text">
+    <string>Search Pattern</string>
+   </property>
+  </action>
+  <action name="actionSearchPattern_2">
+   <property name="text">
+    <string>Search Pattern</string>
    </property>
   </action>
  </widget>
