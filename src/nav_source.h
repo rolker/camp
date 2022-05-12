@@ -28,6 +28,8 @@ public:
   const LocationPosition& location() const;
   double heading() const;
 
+  void setColor(QColor color);
+
 signals:
   void beforeNavUpdate();
   void sog(double sog);
@@ -55,6 +57,7 @@ private:
   double m_heading = std::nan("");
   std::list<LocationPosition> m_location_history;
   int m_max_history = -1;
+  QColor m_color = Qt::red;
 };
 
 #endif

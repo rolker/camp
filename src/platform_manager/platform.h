@@ -50,6 +50,7 @@ protected:
 
 private:
   void updateLabel();
+  void setColor(QColor color);
 
   Ui::Platform* m_ui;
 

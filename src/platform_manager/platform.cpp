@@ -83,10 +83,12 @@ void Platform::update(project11_msgs::Platform& platform)
 
   if (platform.color.a > 0.0)
   {
-    m_color.setRedF(platform.color.r);
-    m_color.setGreenF(platform.color.g);
-    m_color.setBlueF(platform.color.b);
-    m_color.setAlphaF(platform.color.a);
+    QColor color;
+    color.setRedF(platform.color.r);
+    color.setGreenF(platform.color.g);
+    color.setBlueF(platform.color.b);
+    color.setAlphaF(platform.color.a);
+    setColor(color);
   }
 
   for(auto ns: platform.nav_sources)
@@ -98,6 +100,7 @@ void Platform::update(project11_msgs::Platform& platform)
       connect(m_nav_sources[ns.name], &NavSource::positionUpdate, this, &Platform::updatePosition);
       if(m_nav_sources.size() == 1)
         connect(m_nav_sources[ns.name], &NavSource::sog, this, &Platform::updateSog);
+      m_nav_sources[ns.name]->setColor(m_color);
     }
 
 }
@@ -145,7 +148,7 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
       c.setBlueF(color["blue"]);
     if(color.hasMember("alpha"))
       c.setAlphaF(color["alpha"]);
-    m_color = c;    
+    setColor(c);
   }
 }
 
@@ -215,4 +218,16 @@ HelmManager* Platform::helmManager() const
 void Platform::updatePosition(QGeoCoordinate position)
 {
   emit platformPosition(this, position);
+}
+
+void Platform::setColor(QColor color)
+{
+  m_color = color;
+  QColor dim;
+  dim.setRedF(color.redF()*.8);
+  dim.setGreenF(color.greenF()*.8);
+  dim.setBlueF(color.blueF()*.8);
+  dim.setAlphaF(color.alphaF()*.8);
+  for(auto nav: m_nav_sources)
+    nav.second->setColor(dim);
 }

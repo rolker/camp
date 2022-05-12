@@ -39,7 +39,7 @@ void NavSource::paint(QPainter* painter, const QStyleOptionGraphicsItem* option,
 
   QPen p;
   p.setCosmetic(true);
-  p.setColor(Qt::red);
+  p.setColor(m_color);
   p.setWidth(2);
   painter->setPen(p);
   painter->drawPath(shape());
@@ -146,4 +146,9 @@ double NavSource::heading() const
 void NavSource::setMaxHistory(int max_history)
 {
   m_max_history = max_history;
+}
+
+void NavSource::setColor(QColor color)
+{
+  m_color = color;
 }
