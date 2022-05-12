@@ -132,6 +132,21 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
       if(m_nav_sources.size() == 1)
         connect(m_nav_sources[nav.first], &NavSource::sog, this, &Platform::updateSog);
     }
+  if(platform.second.hasMember("color"))
+  {
+    auto color = platform.second["color"];
+
+    QColor c(255,255,255);
+    if(color.hasMember("red"))
+      c.setRedF(color["red"]);
+    if(color.hasMember("green"))
+      c.setGreenF(color["green"]);
+    if(color.hasMember("blue"))
+      c.setBlueF(color["blue"]);
+    if(color.hasMember("alpha"))
+      c.setAlphaF(color["alpha"]);
+    m_color = c;    
+  }
 }
 
 
