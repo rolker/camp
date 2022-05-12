@@ -66,6 +66,8 @@ private:
   float m_reference_x = 0.0;
   float m_reference_y = 0.0;
 
+  QColor m_color = QColor(0,0,255,255);
+
 };
 
 #endif // PLATFORM_H

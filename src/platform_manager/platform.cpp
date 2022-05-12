@@ -29,7 +29,7 @@ void Platform::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
   painter->save();
   QPen p;
   p.setCosmetic(true);
-  p.setColor(Qt::blue);
+  p.setColor(m_color);
   p.setWidth(3);
   painter->setPen(p);
   painter->drawPath(shape());
@@ -80,6 +80,15 @@ void Platform::update(project11_msgs::Platform& platform)
   m_length = platform.length;
   m_reference_x = platform.reference_x;
   m_reference_y = platform.reference_y;
+
+  if (platform.color.a > 0.0)
+  {
+    m_color.setRedF(platform.color.r);
+    m_color.setGreenF(platform.color.g);
+    m_color.setBlueF(platform.color.b);
+    m_color.setAlphaF(platform.color.a);
+  }
+
   for(auto ns: platform.nav_sources)
     if(m_nav_sources.find(ns.name) == m_nav_sources.end())
     {

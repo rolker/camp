@@ -133,7 +133,8 @@ void AISContact::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 
   QPen p;
   p.setCosmetic(true);
-  p.setColor(Qt::blue);
+  //p.setColor(Qt::blue);
+  p.setColor(QColor(.2*255,.2*255,255,.7*255));
   p.setWidth(2);
   painter->setPen(p);
   painter->drawPath(shape());
