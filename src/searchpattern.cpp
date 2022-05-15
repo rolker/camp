@@ -371,7 +371,7 @@ QList<QList<QGeoCoordinate> > SearchPattern::getLines() const
         current_heading += 90.0;
       distances.push_back(current_distance);
       if(distances.size() >= 2)
-        current_distance = distances[distances.size()-2]+2*distances.front();
+        current_distance = distances[distances.size()-2]+distances.front();
       current_location = next_location;
     }
 
