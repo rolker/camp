@@ -123,6 +123,7 @@ BackgroundRaster::BackgroundRaster(const QString &fname, QObject *parent, QGraph
         }
         m_valid = true;
     }
+    setZValue(-1.0);
 }
 
 bool BackgroundRaster::valid() const

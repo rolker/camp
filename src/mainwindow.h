@@ -10,6 +10,7 @@ class MainWindow;
 }
 
 class AISManager;
+class RadarManager;
 class SoundPlay;
 class SpeechAlerts;
 
@@ -54,6 +55,8 @@ private slots:
     void on_actionGroupFromContext_triggered();
     void on_actionBehavior_triggered();
     void on_actionOpenGeometry_triggered();
+    void on_actionOrbit_triggered();
+    void on_actionOrbitFromContext_triggered();
 
     void on_treeView_customContextMenuRequested(const QPoint &pos);
 
@@ -61,6 +64,7 @@ private slots:
     void on_actionRadarColor_triggered();
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
+    void on_actionRadarManager_triggered();
     void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
 
@@ -71,6 +75,7 @@ private:
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager;
+    RadarManager* m_radar_manager;
     SoundPlay* m_sound_play;
     SpeechAlerts* m_speech_alerts;
 

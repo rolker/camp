@@ -19,6 +19,7 @@ class SurveyPattern;
 class SurveyArea;
 class SearchPattern;
 class Group;
+class Orbit;
 class QSvgRenderer;
 //class ROSLink;
 class Behavior;
@@ -55,6 +56,9 @@ public:
     
     Group * createGroup(MissionItem* parent=nullptr, int row=-1, QString label = "");
     Group * addGroup();
+
+    Orbit * createOrbit(MissionItem* parent=nullptr, int row=-1, QString label = "");
+    Orbit * addOrbit();
     
     MissionItem *itemFromIndex(QModelIndex const &index) const;
 

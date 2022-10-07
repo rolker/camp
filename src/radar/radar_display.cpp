@@ -1,17 +1,19 @@
-#include "radardisplay.h"
+#include "radar_display.h"
 
 #include <cmath>
 #include "autonomousvehicleproject.h"
-#include "roslink.h"
 #include <QOffscreenSurface>
 #include <QOpenGLShader>
 #include <QPainter>
 #include <QOpenGLFramebufferObject>
 #include <QThread>
 #include <tf2/utils.h>
+#include "gz4d_geo.h"
+#include <tf2_ros/transform_listener.h>
+#include <yaml-cpp/yaml.h>
 
 
-RadarDisplay::RadarDisplay(ROSLink* parent): QObject(parent)
+RadarDisplay::RadarDisplay(QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
 {
   m_radarImageThread = QThread::create(std::bind(&RadarDisplay::updateRadarImage, this));
   m_radarImageThread->start();
@@ -39,7 +41,7 @@ void RadarDisplay::subscribe(QString topic)
         m_spinner = std::shared_ptr<ros::AsyncSpinner>(new ros::AsyncSpinner(1, &m_ros_queue));
         m_spinner->start();
     }
-    ros::SubscribeOptions ops = ros::SubscribeOptions::create<marine_msgs::RadarSectorStamped>(topic.toStdString(), 300, boost::bind(&RadarDisplay::radarCallback, this, _1), ros::VoidPtr(), &m_ros_queue);
+    ros::SubscribeOptions ops = ros::SubscribeOptions::create<marine_sensor_msgs::RadarSector>(topic.toStdString(), 300, boost::bind(&RadarDisplay::radarCallback, this, _1), ros::VoidPtr(), &m_ros_queue);
     m_subscriber = ros::NodeHandle().subscribe(ops);
 }
 
@@ -108,7 +110,7 @@ void RadarDisplay::initializeGL()
         "    if(texc.x == 0.0) discard;\n"
         "    float r = length(texc.xy);\n"
         "    if(r>1.0) discard;\n"
-        "    float theta = atan(texc.x, texc.y);\n"
+        "    float theta = atan(texc.y, texc.x);\n"
         "    if(minAngle > 0.0 && theta < 0.0) theta += 2.0*M_PI;\n"
         "    if(theta < minAngle) discard;\n"
         "    if(theta > maxAngle) discard;\n"
@@ -147,8 +149,8 @@ void RadarDisplay::paint(QPainter* painter, const QStyleOptionGraphicsItem* opti
     {
         double r;
         {
-            QMutexLocker lock(&m_range_mutex);
-            r = m_range;
+          QMutexLocker lock(&m_range_mutex);
+          r = m_range;
         }
         r /= m_pixel_size;
         QPen p;
@@ -173,34 +175,37 @@ void RadarDisplay::sectorAdded()
     update();
 }
 
-void RadarDisplay::radarCallback(const marine_msgs::RadarSectorStamped::ConstPtr &message)
+void RadarDisplay::radarCallback(const marine_sensor_msgs::RadarSector::ConstPtr &message)
 {
-  if (m_show_radar && !message->sector.scanlines.empty())
+  ROS_DEBUG_STREAM("now: " << ros::Time::now() << " Radar timestamp: " << message->header.stamp);
+  if (m_show_radar && !message->scanlines.empty())
   {
-    double angle1 = message->sector.scanlines[0].angle;
-    double angle2 = message->sector.scanlines.back().angle;
-    double range = message->sector.scanlines[0].range;
-    int w = message->sector.scanlines[0].intensities.size();
-    int h = message->sector.scanlines.size();
+    double angle1 = message->scanlines.front().angle;
+    double angle2 = message->scanlines.back().angle;
+    double range = message->scanlines[0].range;
+    int w = message->scanlines[0].intensities.size();
+    int h = message->scanlines.size();
     QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
     sector->fill(Qt::darkGray);
     for(int i = 0; i < h; i++)
       for(int j = 0; j < w; j++)
-        sector->bits()[i*w+j] = message->sector.scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
+        sector->bits()[(h-1-i)*w+j] = message->scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
 
     Sector s;
-    if(angle1 > angle2)
-        s.angle1 = (angle1-360.0)*M_PI/180.0;
+    if(angle1 < angle2)
+        s.angle1 = angle1 + (2*M_PI);
     else
-        s.angle1 = angle1*M_PI/180.0;
-    s.angle2 = angle2*M_PI/180.0;
-    s.half_scanline_angle = (s.angle2 - s.angle1)/(2.0*sector->height());
+        s.angle1 = angle1;
+    s.angle2 = angle2;
+    s.half_scanline_angle = (s.angle1 - s.angle2)/(2.0*sector->height());
     s.range = range;
     s.sectorImage = sector;
     s.timestamp = message->header.stamp;
     s.frame_id = message->header.frame_id.c_str();
+    //ROS_INFO_STREAM("angles: " << s.angle1 << " - " << s.angle2 << " range: " << range << " half angle: " << s.half_scanline_angle);
     QMutexLocker lock(&m_new_sectors_mutex);
     m_new_sectors.push_back(s);
+    m_radar_frame = s.frame_id.toStdString();
   }
 }
 
@@ -230,7 +235,7 @@ void RadarDisplay::updateRadarImage()
     m_program->setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 3 * sizeof(GLfloat));
 
     ros::Time now = ros::Time::now();
-    float persistance = 2.0;
+    float persistance = 3.0;
     {
       QMutexLocker lock(&m_new_sectors_mutex);
       while(!m_new_sectors.empty())
@@ -263,35 +268,65 @@ void RadarDisplay::updateRadarImage()
         {
           s.sectorTexture = new QOpenGLTexture(*s.sectorImage);
         }
-        if(!s.have_heading)
+        if(!s.have_yaw)
         {
-          //std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
-          //std::cerr << "map frame: " << m_mapFrame << " timestamp: " << s.timestamp << " frame_id: " << s.frame_id.toStdString();
-          //if(m_tf_buffer && !m_mapFrame.empty())
-          //    std::cerr << "can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp) << std::endl;
-          //std::cerr << std::endl;
-          if(m_tf_buffer && !m_mapFrame.empty() && m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp))
+          // std::cerr << "tf buffer? " << m_tf_buffer << std::endl;
+          // std::cerr << "map frame: " << m_mapFrame << " timestamp: " << s.timestamp << " frame_id: " << s.frame_id.toStdString();
+          // if(m_tf_buffer && !m_mapFrame.empty())
+          //    std::cerr << " can transform? " << m_tf_buffer->canTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp, ros::Duration(1.0)) << std::endl;
+          // std::cerr << std::endl;
+          if(m_mapFrame.empty())
           {
-              geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp);
-              double heading =  (M_PI/2.0)-tf2::getYaw(t.transform.rotation);
-              while (heading < 0.0)
-                  heading += (2.0*M_PI);
-              s.heading = heading;
-              s.angle1 = std::fmod(s.angle1+heading,M_PI*2);
-              if(s.angle1 < 0)
-                s.angle1 += M_PI*2;
-              s.angle2 = std::fmod(s.angle2+heading,M_PI*2);
-              if(s.angle2 < 0)
-                s.angle2 += M_PI*2;
-
-              s.have_heading = true;
-              //std::cerr << "radar sector heading: " << s.heading << std::endl;
+            if(m_tf_buffer)
+            {
+              std::map<std::string, std::string> parents;
+              auto frames = YAML::Load(m_tf_buffer->allFramesAsYAML());
+              for(auto f: frames)
+                parents[f.first.as<std::string>()] = f.second["parent"].as<std::string>();
+              for(auto p:parents)
+                ROS_INFO_STREAM(p.first << " child of " << p.second);
+              auto cursor = parents.find(s.frame_id.toStdString());
+              while(cursor != parents.end())
+              {
+                QString parent = cursor->second.c_str();
+                if(parent.endsWith("/map"))
+                {
+                  m_mapFrame = cursor->second;
+                  break;
+                }
+                cursor = parents.find(cursor->second);
+              }
+            }
           }
+          ros::Time now = ros::Time::now();
+          if(m_tf_buffer && !m_mapFrame.empty())
+              try
+              {
+                  geometry_msgs::TransformStamped t = m_tf_buffer->lookupTransform(m_mapFrame, s.frame_id.toStdString(), s.timestamp, ros::Duration(1.0));
+                  double yaw = tf2::getYaw(t.transform.rotation);
+                  while (yaw < 0.0)
+                      yaw += (2.0*M_PI);
+                  s.yaw = yaw;
+                  s.angle1 = std::fmod(s.angle1+yaw,M_PI*2);
+                  if(s.angle1 < 0)
+                    s.angle1 += M_PI*2;
+                  s.angle2 = std::fmod(s.angle2+yaw,M_PI*2);
+                  if(s.angle2 < 0)
+                    s.angle2 += M_PI*2;
+
+                  s.have_yaw = true;
+                  //std::cerr << "radar sector yaw: " << s.yaw << " map frame: " << m_mapFrame << std::endl;
+
+              }
+              catch (tf2::TransformException &ex)
+              {
+                ROS_WARN_STREAM_THROTTLE(2.0,"Unable to find transform to generate display: " << ex.what() << " lookup call time: " << now << " now: " << ros::Time::now());
+              }
         }
-        if(s.have_heading)
+        if(s.have_yaw)
         {
-          m_program->setUniformValue("minAngle", GLfloat(s.angle1-s.half_scanline_angle*1.1));
-          m_program->setUniformValue("maxAngle", GLfloat(s.angle2+s.half_scanline_angle*1.1));
+          m_program->setUniformValue("minAngle", GLfloat(s.angle2-s.half_scanline_angle*1.1));
+          m_program->setUniformValue("maxAngle", GLfloat(s.angle1+s.half_scanline_angle*1.1));
           m_program->setUniformValue("fade", GLfloat(fade));
           m_program->setUniformValue("color", m_color);
           
@@ -307,7 +342,8 @@ void RadarDisplay::updateRadarImage()
       QMutexLocker lock(&m_radar_image_mutex);
       m_radar_image = m_fbo->toImage();
     }
-    QThread::currentThread()->msleep(250);
+    update();
+    QThread::currentThread()->msleep(100);
   }
 
 } 
@@ -327,4 +363,37 @@ void RadarDisplay::setColor(QColor color)
 {
     QMutexLocker lock(&m_color_mutex);
     m_color = color;
+}
+
+void RadarDisplay::updatePosition()
+{
+  if(!m_tf_buffer)
+    return;
+
+  std::string radar_frame;
+  {
+    QMutexLocker lock(&m_new_sectors_mutex);
+    radar_frame = m_radar_frame;
+  }
+
+  try
+  {
+    geometry_msgs::TransformStamped radar_to_earth = m_tf_buffer->lookupTransform("earth", radar_frame, ros::Time());
+    gz4d::GeoPointECEF ecef_point;
+    ecef_point[0] = radar_to_earth.transform.translation.x;
+    ecef_point[1] = radar_to_earth.transform.translation.y;
+    ecef_point[2] = radar_to_earth.transform.translation.z;
+    gz4d::GeoPointLatLongDegrees ll = ecef_point;
+    QGeoCoordinate location(ll.latitude(), ll.longitude(), ll.altitude());
+    auto bg = findParentBackgroundRaster();
+    if(bg)
+    {
+      setPos(geoToPixel(location, bg));
+    }
+  }
+  catch (tf2::TransformException &ex)
+  {
+    ROS_WARN_STREAM_THROTTLE(2.0,"Unable to find transform to position display: " << ex.what());
+  }
+
 }

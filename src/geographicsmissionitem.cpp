@@ -17,6 +17,7 @@ GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent, int row):Mis
         setFlag(QGraphicsItem::ItemIsSelectable);
         setFlag(QGraphicsItem::ItemSendsGeometryChanges);
     }
+    setZValue(3.0);
 }
 
 void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)

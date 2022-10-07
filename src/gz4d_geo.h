@@ -14,7 +14,6 @@
 #include <string>
 #include <limits>
 #include <boost/math/quaternion.hpp>
-#include <memory>
 
 namespace gz4d
 {
@@ -59,7 +58,7 @@ namespace gz4d
 //     }
     
     template<typename T> inline T Nan(){return std::numeric_limits<T>::quiet_NaN();}
-    template<typename T> inline bool IsNan(T value){return (std::isnan)(value);}
+    template<typename T> inline bool IsNan(T value){return (boost::math::isnan)(value);}
 
     /// Used by std::shared_ptr's to hold pointers it shouldn't auto-delete.
     struct NullDeleter
@@ -851,134 +850,182 @@ namespace gz4d
         return ret;
     }
     
+    // period units: ranges for periodic types, such as angles
+    namespace pu
+    {
+      struct Degree
+      {
+          template <typename T> static T period(){return 360.0;}
+          template <typename T> static T half_period(){return 180.0;}
+      };
+
+      struct Radian
+      {
+          template<typename T> static T half_period(){return 3.14159265358979323846;}
+          template<typename T> static T period(){return half_period<T>()*2.0;}
+      };
+    }
+
+    // range types, where does a periodic value roll over
+    namespace rt
+    {
+      // zero to period length
+      struct PositivePeriod
+      {
+          template<typename T, typename PU> static T fix(T v)
+          {
+              if(v >= 0.0 && v < PU::template period<T>())
+                  return v;
+              T ret = fmod(v,PU::template period<T>());
+              if(ret < 0)
+                  ret += PU::template period<T>();
+              return ret;
+          }
+      };
+
+      // minus half period to plus half period
+      struct ZeroCenteredPeriod
+      {
+          template<typename T, typename PU> static T fix(T v)
+          {
+              T half_period = PU::template half_period<T>();
+              if(v <= half_period && v > -half_period)
+                  return v;
+              T period = PU::template period<T>();
+              T ret = fmod(v,period);
+              if(ret > half_period)
+                  return ret-period;
+              if(ret < -half_period)
+                  return ret+period;
+              return ret;
+          }
+      };
+      
+      // unclamped, so doesn't roll over
+      struct Unclamped
+      {
+          template<typename T, typename PU> static T fix(T v)
+          {
+            return v;
+          }
+      };
+    }
     
-    struct Degree
-    {
-        template <typename T> static T period(){return 360.0;}
-        template <typename T> static T half_period(){return 180.0;}
-    };
-
-    struct Radian
-    {
-        template<typename T> static T half_period(){return 3.14159265358979323846;}
-        template<typename T> static T period(){return half_period<T>()*2.0;}
-    };
-
-    struct PositivePeriod
-    {
-        template<typename T, typename PT> static T fix(T v)
-        {
-            if(v >= 0.0 && v < PT::template period<T>())
-                return v;
-            T ret = fmod(v,PT::template period<T>());
-            if(ret < 0)
-                ret += PT::template period<T>();
-            return ret;
-        }
-    };
-
-    struct ZeroCenteredPeriod
-    {
-        template<typename T, typename PT> static T fix(T v)
-        {
-            T half_period = PT::template half_period<T>();
-            if(v <= half_period && v > -half_period)
-                return v;
-            T period = PT::template period<T>();
-            T ret = fmod(v,period);
-            if(ret > half_period)
-                return ret-period;
-            if(ret < -half_period)
-                return ret+period;
-            return ret;
-        }
-        //void fmod(T v, T period);
-    };
-    
-    template<typename T, typename PT, typename RT = PositivePeriod> class Angle
+    // Angle class aware of its units and range so it automatically rolls over
+    // T is type of value
+    // PU is period units, degrees, radians or other
+    // RT is range type, such as zero centered, positive, or other
+    template<typename T, typename PU, typename RT = rt::PositivePeriod> class Angle
     {
         T _value;
 
     public:
         typedef T value_type;
-        typedef PT period_type;
+        typedef PU period_units;
         typedef RT range_type;
 
-        Angle():_value(RT::template fix<T, PT>(0.0)){}
-        Angle(T v):_value(RT::template fix<T, PT>(v)){}
-        Angle(Angle<T,PT,RT> const &a):_value(a._value){}
-        template <typename OPT, typename ORT> Angle(Angle<T,OPT,ORT> const &a):_value(RT::template fix<T, PT>(a.normalized()*PT::template period<T>())){}
+        Angle():_value(RT::template fix<T, PU>(0.0)){}
+        Angle(T v):_value(RT::template fix<T, PU>(v)){}
+        Angle(Angle<T,PU,RT> const &a):_value(a._value){}
+        template <typename ORT> Angle(Angle<T,PU,ORT> const &a):_value(RT::template fix<T, PU>(a.value())){}
+        template <typename OPU, typename ORT> Angle(Angle<T,OPU,ORT> const &a):_value(RT::template fix<T, PU>(a.normalized()*PU::template period<T>())){}
 
-        T normalized() const{return _value/PT::template period<T>();}
+        T normalized() const{return _value/PU::template period<T>();}
         
-        //explicit operator const T () const {return value;}
+        explicit operator T() const {return _value;}
         T value() const {return _value;}
 
-        bool operator<(Angle<T,PT,RT> o) const {return (o._value-_value > 0.0 && o._value-_value < PT::template half_period<T>()) || o._value-_value < -PT::template half_period<T>();}
-        bool operator==(Angle<T,PT,RT> o) const {return _value==o._value;}
-        bool operator!=(Angle<T,PT,RT> o) const {return _value!=o._value;}
-        bool operator>(Angle<T,PT,RT> o) const {return o<*this;}
-        bool operator<=(Angle<T,PT,RT> o) const {return operator<(o)||operator==(o);}
-        bool operator>=(Angle<T,PT,RT> o) const {return operator>(o)||operator==(o);}
+        // period aware operators, if the other value is more than half a period away, consider wrapping
+        //bool operator<(Angle<T,PU,RT> o) const {return (o._value-_value > 0.0 && o._value-_value < PU::template half_period<T>()) || o._value-_value < -PU::template half_period<T>();}
+        //bool operator==(Angle<T,PU,RT> o) const {return _value==o._value;}
+        template<typename OPU, typename ORT> bool operator!=(Angle<T,OPU,ORT> o) const {return ! *this==o;}
+        template<typename OPU, typename ORT> bool operator>(Angle<T,OPU,ORT> o) const {return o<*this;}
+        template<typename OPU, typename ORT> bool operator<=(Angle<T,OPU,ORT> o) const {return !*this>o;}
+        template<typename OPU, typename ORT> bool operator>=(Angle<T,OPU,ORT> o) const {return !*this<o;}
 
-        Angle<T,PT,RT> const &operator-=(Angle<T,PT,RT> o) {_value = RT::template fix<T, PT>(_value-o._value); return *this;}
-        Angle<T,PT,RT> const &operator+=(Angle<T,PT,RT> o) {_value = RT::template fix<T, PT>(_value+o._value); return *this;}
-        Angle<T,PT,RT> const &operator*=(T o) {_value = RT::template fix<T, PT>(_value*o); return *this;}
-        Angle<T,PT,RT> const &operator/=(T o) {_value = RT::template fix<T, PT>(_value/o); return *this;}
+        Angle<T,PU,RT> const &operator-=(Angle<T,PU,RT> o) {_value = RT::template fix<T, PU>(_value-o._value); return *this;}
+        Angle<T,PU,RT> const &operator+=(Angle<T,PU,RT> o) {_value = RT::template fix<T, PU>(_value+o._value); return *this;}
+        Angle<T,PU,RT> const &operator*=(T o) {_value = RT::template fix<T, PU>(_value*o); return *this;}
+        Angle<T,PU,RT> const &operator/=(T o) {_value = RT::template fix<T, PU>(_value/o); return *this;}
 
-        Angle<T,PT,RT> operator+(Angle<T,PT,RT> o) const {return Angle<T,PT,RT>(*this)+= o;}
-        Angle<T,PT,RT> operator-(Angle<T,PT,RT> o) const {return Angle<T,PT,RT>(*this)-= o;}
-        Angle<T,PT,RT> operator*(T o) const {return Angle<T,PT,RT>(*this)*= o;}
-        Angle<T,PT,RT> operator/(T o) const {return Angle<T,PT,RT>(*this)/= o;}
+        Angle<T,PU,RT> operator+(Angle<T,PU,RT> o) const {return Angle<T,PU,RT>(*this)+= o;}
+        Angle<T,PU,RT> operator-(Angle<T,PU,RT> o) const {return Angle<T,PU,RT>(*this)-= o;}
+        Angle<T,PU,RT> operator*(T o) const {return Angle<T,PU,RT>(*this)*= o;}
+        Angle<T,PU,RT> operator/(T o) const {return Angle<T,PU,RT>(*this)/= o;}
         
-        Angle<T,PT,RT> operator-() const {return Angle<T,PT,RT>(-_value);}
+        Angle<T,PU,RT> operator-() const {return Angle<T,PU,RT>(-_value);}
 
     };
 
-    //namespace angle
-    //{
-        template <typename T, typename PT, typename RT> Angle<T,PT,RT> interpolate(Angle<T,PT,RT> const &a, Angle<T,PT,RT> const &b, double p=0.5)
-        {
-            //std::cerr << "interpolate a: " << a << " b: " << b << " p: " << p << std::endl;
-            Angle<T,PT,RT> ret;
-            if(a<b)
-            {
-                //std::cerr << "a<b, b-a: " << (b-a) << " (b-a)*p: " << (b-a)*p << std::endl;
-                ret =  a+(b-a)*p;
-            }
-            else
-            {
-                //std::cerr << "!a<b, a-b: " << (a-b) << " (a-b)*p: " << (a-b)*p << std::endl;
-                ret = b+(a-b)*p;
-            }
-            //std::cerr << ret << std::endl;
-            return ret;
-        }
-    //}
-    template <typename T, typename PT, typename RT> inline bool IsNan(Angle<T,PT,RT> const &a)
+    // period aware < operator, if the other value is more than half a period away, consider wrapping
+    template<typename T, typename PU, typename RT> bool operator<(Angle<T,PU,RT> l, Angle<T,PU,RT> r)
+    {
+      return (r._value-l._value > 0.0 && r._value-l._value < PU::template half_period<T>()) || r._value-l._value < -PU::template half_period<T>();
+    }
+
+    template<typename T, typename LPU, typename LRT, typename RPU, typename RRT> bool operator<(Angle<T,LPU,LRT> l, Angle<T,RPU,RRT> r)
+    {
+      return l < Angle<T,LPU,LRT>(r);
+    }
+    
+    template<typename T, typename PU, typename RT> bool operator<(Angle<T,PU,rt::Unclamped> l, Angle<T,PU,RT> r)
+    {
+      return Angle<T,PU,rt::PositivePeriod>(l) < r;
+    }
+
+    template<typename T, typename PU, typename RT> bool operator==(Angle<T,PU,RT> l, Angle<T,PU,RT> r)
+    {
+      return l._value==r._value;
+    }
+
+    template<typename T, typename LPU, typename LRT, typename RPU, typename RRT> bool operator==(Angle<T,LPU,LRT> l, Angle<T,RPU,RRT> r)
+    {
+      return l == Angle<T,LPU,LRT>(r);
+    }
+
+    template<typename T, typename PU, typename RT> bool operator==(Angle<T,PU,rt::Unclamped> l, Angle<T,PU,RT> r)
+    {
+      return Angle<T,PU,rt::PositivePeriod>(l) == r;
+    }
+
+    
+    // interpolates period aware angles
+    // a and b are the input angles, p is proportion of a vs b to weight.
+    // 
+    template <typename T, typename PU, typename RT> Angle<T,PU,RT> interpolate(Angle<T,PU,RT> const &a, Angle<T,PU,RT> const &b, double p=0.5)
+    {
+        Angle<T,PU,RT> ret;
+        if(a<b)
+            ret =  a+(b-a)*(1.0-p);
+        else
+            ret = b+(a-b)*p;
+        return ret;
+    }
+
+    template <typename T, typename PU, typename RT> inline bool IsNan(Angle<T,PU,RT> const &a)
     {
         return IsNan(a.value());
     }
     
     
-    template <typename T, typename RT> inline T sin(Angle<T,Radian,RT> const &a)
+    template <typename T, typename RT> inline T sin(Angle<T,pu::Radian,RT> const &a)
     {
         return ::sin(a.value());
     }
     
-    template <typename T, typename PT, typename RT> inline T sin(Angle<T,PT,RT> const &a)
+    template <typename T, typename PU, typename RT> inline T sin(Angle<T,PU,RT> const &a)
     {
-        return sin(Angle<T,Radian,RT>(a));
+        return sin(Angle<T,pu::Radian,RT>(a));
     }
 
-    template <typename T, typename RT> inline T cos(Angle<T,Radian,RT> const &a)
+    template <typename T, typename RT> inline T cos(Angle<T,pu::Radian,RT> const &a)
     {
         return ::cos(a.value());
     }
 
-    template <typename T, typename PT, typename RT> inline T cos(Angle<T,PT,RT> const &a)
+    template <typename T, typename PU, typename RT> inline T cos(Angle<T,PU,RT> const &a)
     {
-        return cos(Angle<T,Radian,RT>(a));
+        return cos(Angle<T,pu::Radian,RT>(a));
     }
     
     template <typename T> inline T cos(T val)
@@ -993,7 +1040,9 @@ namespace gz4d
     
     namespace geo
     {
-        
+      // coordinate formats, defines order of components
+      namespace cf 
+      {
         struct LatLon
         {
             enum Coordinates
@@ -1017,279 +1066,342 @@ namespace gz4d
                 X = 0, Y = 1, Z = 2
             };
         };
-        
-        template<typename T, typename RF> class Point: public gz4d::Point<T>
-        {
-            public:
+      }
 
-                Point(){}
-                Point(T x, T y, T z):gz4d::Point<T>(x,y,z){}
-                explicit Point(gz4d::Point<T> const &op):gz4d::Point<T>(op){}
-                using gz4d::Point<T>::operator=;
+      // geographic point
+      // T is numeric type of components
+      // RF is the reference frame
+      template<typename T, typename RF> class Point: public gz4d::Point<T>
+      {
+          public:
 
-                template<typename OT, typename ORF> explicit Point(Point<OT,ORF> const&op)
-                {
-                    *this = typename RF::coordinate_type()(op);
-                }
-        };
-        
-        template <typename CT, typename ET> struct ReferenceFrame
-        {
-            typedef CT coordinate_type;
-            typedef ET ellipsoid_type;
-        };
+              Point(){}
+              Point(T x, T y, T z=0):gz4d::Point<T>(x,y,z){}
+              explicit Point(gz4d::Point<T> const &op):gz4d::Point<T>(op){}
+              //using gz4d::Point<T>::operator=;
+
+              //template<typename OT, typename ORF> explicit Point(Point<OT,ORF> const&op)
+              template<typename OT, typename ORF> Point(Point<OT,ORF> const&op)
+              {
+                  *this = typename RF::coordinate_type()(op);
+              }
+              
+              T latitude() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Latitude);}
+              T longitude() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Longitude);};
+              T altitude() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Height);};
+              
+              T x() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::X);}
+              T y() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Y);}
+              T z() const {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Z);}
+              
+              T &latitude() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Latitude);}
+              T &longitude() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Longitude);};
+              T &altitude() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Height);};
+              
+              T &x() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::X);}
+              T &y() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Y);}
+              T &z() {return gz4d::Point<T>::operator[](RF::coordinate_type::coordinate_format::Z);}
+
+      };
+      
+
+      
 
 
+      // define a reference frame
+      // CT is coordinate type
+      // ET is ellipsoid type
+      template <typename CT, typename ET> struct ReferenceFrame
+      {
+          typedef CT coordinate_type;
+          typedef ET ellipsoid_type;
+      };
+
+      // coordinate types, such as cartesian, geodetic (lat/long), etc.
+      namespace ct
+      {
         template <typename CF> struct ECEF;
 
-        template <typename CF=LatLon> struct Geodetic
+        // Geodetic coordinate type
+        // CF determines order of lat and long
+        // PU is period units for angles
+        template <typename CF=cf::LatLon, typename PU=pu::Degree> struct Geodetic
         {
             typedef CF coordinate_format;
+            typedef PU period_units;
 
-            template <typename T, typename OCF, typename ET> Point<T, ReferenceFrame<Geodetic<CF>,ET> > operator()(Point<T, ReferenceFrame<Geodetic<OCF>,ET> > const &p)
+            // convert from a different coordinate format
+            template <typename T, typename OCF, typename ET> Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > operator()(Point<T, ReferenceFrame<Geodetic<OCF,PU>,ET> > const &p)
             {
-                Point<T, ReferenceFrame<Geodetic<CF>,ET> > ret;
+                Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > ret;
                 ret[CF::Latitude] = p[OCF::Latitude];
                 ret[CF::Longitude] = p[OCF::Longitude];
                 ret[CF::Height] = p[OCF::Height];
+                return ret;
+            }
+            
+            // convert from a different coordinate format and angular unit
+            template <typename T, typename OCF, typename OPU, typename ET> Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > operator()(Point<T, ReferenceFrame<Geodetic<OCF,OPU>,ET> > const &p)
+            {
+                Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > ret;
+                ret[CF::Latitude] = p[OCF::Latitude]*PU::template period<T>()/OPU::template period<T>();
+                ret[CF::Longitude] = p[OCF::Longitude]*PU::template period<T>()/OPU::template period<T>();
+                ret[CF::Height] = p[OCF::Height];
+                return ret;
             }
 
-            template <typename T, typename OCF, typename ET> Point<T, ReferenceFrame<Geodetic<CF>,ET> > operator()(Point<T, ReferenceFrame<ECEF<OCF>,ET> > const &p) const
+            
+            // convert from ECEF
+            template <typename T, typename OCF, typename ET> Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > operator()(Point<T, ReferenceFrame<ECEF<OCF>,ET> > const &p) const
             {
-                return ET::ToGeodetic(p);
+              Point<T, ReferenceFrame<Geodetic<CF,PU>,ET> > ret;
+              ET::ToGeodetic(p, ret);
+              return ret;
             }
 
         };
 
-        template <typename CF=XYZ> struct ECEF
+        // Earth center earth fixed coordinate type
+        // CF determines order of cartesian coordinates
+        template <typename CF=cf::XYZ> struct ECEF
         {
             typedef CF coordinate_format;
 
-            template <typename T, typename OCF, typename ET> Point<T, ReferenceFrame<ECEF<CF>,ET> > operator()(Point<T, ReferenceFrame<Geodetic<OCF>,ET> > const &p)
+            template <typename T, typename OCF, typename PU, typename ET> Point<T, ReferenceFrame<ECEF<CF>,ET> > operator()(Point<T, ReferenceFrame<Geodetic<OCF,PU>,ET> > const &p)
             {
                 return ET::ToEarthCenteredEarthFixed(p);
             }
         };
-        
-        template<typename S> class Ellipsoid
-        {
-/*            double a; ///< Semi-major axis (meters).
-            double b; ///< Semi-minor axis (meters).
-            double w; ///< anglular velocity (rad/s).
+      }
 
-            double e2; ///< Squared eccentricity.*/
-            public:
-                /// Constructs a reference ellipsoid to represent earth.
-                /// Defaults to WGS84.
-//                 Ellipsoid(double a = 6378137.0, double b = 6356752.3142 , double w = 7292115e-11):a(a),b(b),w(w)
-//                 {
-//                     e2 = 1.0-(b*b)/(a*a);
-//                 }
+      // Static ellipsoid class, does not need to be instanciated to be used.
+      // S determines the specs
+      template<typename S> class Ellipsoid
+      {
+        public:
 
-                /// Meridional radius of curvature.
-                /// Radius of curvature in north-south direction.
-                /// @param latitude Latitude in radians.
-                static double M(double latitude)
-                {
-                    return S::a()*(1.0-S::e2())/pow((1.0-S::e2())*pow(sin(latitude),2.0),3.0/2.0);
-                }
-                
-                template<typename RT> static double M(Angle<double,Radian,RT> latitude){return M(latitude.value());}
-                template<typename RT> static double M(Angle<double,Degree,RT> latitude){return M(Radians(latitude.value()));}
+          /// Meridional radius of curvature.
+          /// Radius of curvature in north-south direction.
+          /// @param latitude Latitude in radians.
+          static double M(double latitude)
+          {
+              return S::a()*(1.0-S::e2())/pow((1.0-S::e2())*pow(sin(latitude),2.0),3.0/2.0);
+          }
+          
+          template<typename RT> static double M(Angle<double,pu::Radian,RT> latitude){return M(latitude.value());}
+          template<typename RT> static double M(Angle<double,pu::Degree,RT> latitude){return M(Radians(latitude.value()));}
 
-                /// Transverse radius of curvature.
-                /// Radius of curvature in east-west direction.
-                /// @param latitude Latitude in radians.
-                static double N(double latitude)
-                {
-                    if(S::e2() == 0.0)
-                        return S::a();
-                    return S::a()/sqrt(1-S::e2()*pow(sin(latitude),2.0));
-                }
-                
-                template<typename RT> static double N(Angle<double,Radian,RT> latitude){return N(latitude.value());}
-                template<typename RT> static double N(Angle<double,Degree,RT> latitude){return N(Radians(latitude.value()));}
-                
+          /// Transverse radius of curvature.
+          /// Radius of curvature in east-west direction.
+          /// @param latitude Latitude in radians.
+          static double N(double latitude)
+          {
+              if(S::e2() == 0.0)
+                  return S::a();
+              return S::a()/sqrt(1-S::e2()*pow(sin(latitude),2.0));
+          }
+          
+          template<typename RT> static double N(Angle<double,pu::Radian,RT> latitude){return N(latitude.value());}
+          template<typename RT> static double N(Angle<double,pu::Degree,RT> latitude){return N(Radians(latitude.value()));}
+          
 
-                template<typename T, typename CF, typename ET> static Point<double,ReferenceFrame<ECEF<>,ET> > ToEarthCenteredEarthFixed( Point<T,ReferenceFrame<Geodetic<CF>,ET> > const &p)
-                {
-                    double latr = Radians(p[CF::Latitude]);
-                    double lonr = Radians(p[CF::Longitude]);
-                    double height = p[CF::Height];
-                    double n = N(latr);
-                    return Point<double,ReferenceFrame<ECEF<>,ET> >((n+height)*cos(latr)*cos(lonr),(n+height)*cos(latr)*sin(lonr),(n*(1.0-S::e2())+height)*sin(latr));
-                }
+          template<typename T, typename CF> static Point<double,ReferenceFrame<ct::ECEF<>, Ellipsoid<S> > > ToEarthCenteredEarthFixed( Point<T,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > const &p)
+          {
+              double latr = p[CF::Latitude];
+              double lonr = p[CF::Longitude];
+              double height = p[CF::Height];
+              double n = N(latr);
+              return Point<double,ReferenceFrame<ct::ECEF<>, Ellipsoid<S> > >((n+height)*cos(latr)*cos(lonr),(n+height)*cos(latr)*sin(lonr),(n*(1.0-S::e2())+height)*sin(latr));
+          }
 
-//                 template<typename T> Point<double> ToEarthCenteredEarthFixed(GeodeticPoint<T> const &gp) const
-//                 {
-//                     return ToEarthCenteredEarthFixed(gp.latitude, gp.longitude, gp.altitude);
-//                 }
+          template<typename T, typename CF, typename PU> static Point<double,ReferenceFrame<ct::ECEF<>, Ellipsoid<S> > > ToEarthCenteredEarthFixed( Point<T,ReferenceFrame<ct::Geodetic<CF, PU>, Ellipsoid<S> > > const &p)
+          {
+              return ToEarthCenteredEarthFixed(Point<T,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > >(p));
+          }
 
-                template <typename ET> static Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > ToGeodetic(Point<double,ReferenceFrame<ECEF<>,ET> > const &p)
-                {
-                    Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > ret;
+          template <typename CF> static void ToGeodetic(Point<double,ReferenceFrame<ct::ECEF<>, Ellipsoid<S> > > const &p, Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Degree>, Ellipsoid<S> > > &ret)
+          {
+            Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > ret_rad;
+            ToGeodetic(p, ret_rad);
+            ret = ret_rad;
+          }
 
-                    double ep2 = (S::a()*S::a())/(S::b()*S::b())-1.0;
-                    double r = sqrt(p[0]*p[0]+p[1]*p[1]);
-                    double E2 = S::a()*S::a()-S::b()*S::b();
-                    double F = 54*S::b()*S::b()*p[2]*p[2];
-                    double G = r*r +(1.0-S::e2())*p[2]*p[2]-S::e2()*E2;
-                    double C = (S::e2()*S::e2()*F*r*r)/(G*G*G);
-                    double s = pow(1.0+C+sqrt(C*C+2*C),1/3.0);
-                    double P = F/(3.0*pow((s+(1.0/s)+1.0),2.0)*G*G);
-                    double Q = sqrt(1.0+2.0*S::e2()*S::e2()*P);
-                    double r0 = (-(P*S::e2()*r)/(1.0+Q))+sqrt((1.0/2.0)*S::a()*S::a()*(1.0+1.0/Q)-((P*(1-S::e2())*p[2]*p[2])/(Q*(1.0+Q)))-(1.0/2.0)*P*r*r);
-                    double U = sqrt(pow(r-S::e2()*r0,2.0)+p[2]*p[2]);
-                    double V = sqrt(pow(r-S::e2()*r0,2.0)+(1.0-S::e2())*p[2]*p[2]);
-                    double Z0 = S::b()*S::b()*p[2]/(S::a()*V);
+          template <typename CF> static void ToGeodetic(Point<double,ReferenceFrame<ct::ECEF<>, Ellipsoid<S> > > const &p, Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > &ret)
+          {
+              double ep2 = (S::a()*S::a())/(S::b()*S::b())-1.0;
+              double r = sqrt(p[0]*p[0]+p[1]*p[1]);
+              double E2 = S::a()*S::a()-S::b()*S::b();
+              double F = 54*S::b()*S::b()*p[2]*p[2];
+              double G = r*r +(1.0-S::e2())*p[2]*p[2]-S::e2()*E2;
+              double C = (S::e2()*S::e2()*F*r*r)/(G*G*G);
+              double s = pow(1.0+C+sqrt(C*C+2*C),1/3.0);
+              double P = F/(3.0*pow((s+(1.0/s)+1.0),2.0)*G*G);
+              double Q = sqrt(1.0+2.0*S::e2()*S::e2()*P);
+              double r0 = (-(P*S::e2()*r)/(1.0+Q))+sqrt((1.0/2.0)*S::a()*S::a()*(1.0+1.0/Q)-((P*(1-S::e2())*p[2]*p[2])/(Q*(1.0+Q)))-(1.0/2.0)*P*r*r);
+              double U = sqrt(pow(r-S::e2()*r0,2.0)+p[2]*p[2]);
+              double V = sqrt(pow(r-S::e2()*r0,2.0)+(1.0-S::e2())*p[2]*p[2]);
+              double Z0 = S::b()*S::b()*p[2]/(S::a()*V);
 
-                    ret[LatLon::Height] = U*(1.0-(S::b()*S::b())/(S::a()*V));
-                    ret[LatLon::Latitude] = Degrees(atan((p[2]+ep2*Z0)/r));
-                    ret[LatLon::Longitude] = Degrees(atan2(p[1],p[0]));
-                    return ret;
-                }
-                
-                /// Calculates the postion P2 from azimuth and distance from P1 on the specified ellipsoid.
-                /// @param p1 starting point
-                /// @param azimuth clockwise angle in degrees relative to north.
-                /// @param distance distance in meters.
-                template <typename ET> static Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > direct(Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p1, double azimuth, double distance)
-                {
-                    double phi1 = Radians(p1[0]);
-                    double alpha1 = Radians(azimuth);
-                    
-                    double epsilon = 1e-12;
-                    
-                    //U is 'reduced latitude'
-                    double tanU1 = (1.0-S::f())*tan(phi1);
-                    double cosU1 = 1/sqrt(1+tanU1*tanU1);
-                    double sinU1 = tanU1*cosU1;
+              ret[CF::Height] = U*(1.0-(S::b()*S::b())/(S::a()*V));
+              ret[CF::Latitude] = atan((p[2]+ep2*Z0)/r);
+              ret[CF::Longitude] =atan2(p[1],p[0]);
+          }
 
-                    double cosAlpha1 = cos(alpha1);
-                    double sinAlpha1 = sin(alpha1);
+          /// Calculates the postion P2 from azimuth and distance from P1 on the specified ellipsoid.
+          /// @param p1 starting point
+          /// @param azimuth clockwise angle in radians relative to north.
+          /// @param distance distance in meters.
+          template <typename CF> static Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > direct(Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > const &p1, Angle<double,pu::Radian,rt::Unclamped> azimuth, double distance)
+          {
+              double phi1 = p1[CF::Latitude];
+              double alpha1 = static_cast<double>(azimuth);
+              
+              double epsilon = 1e-12;
+              
+              //U is 'reduced latitude'
+              double tanU1 = (1.0-S::f())*tan(phi1);
+              double cosU1 = 1/sqrt(1+tanU1*tanU1);
+              double sinU1 = tanU1*cosU1;
 
-                    double sigma1 = atan2(tanU1, cosAlpha1); // angular distance on sphere from equator to P1 along geodesic
-                    double sinAlpha = cosU1*sinAlpha1;
-                    double cos2Alpha = 1.0-sinAlpha*sinAlpha;
-                    
-                    double a = S::a();
-                    double b = S::b();
-                    double f = S::f();
+              double cosAlpha1 = cos(alpha1);
+              double sinAlpha1 = sin(alpha1);
 
-                    double u2 = cos2Alpha*(a*a-b*b)/(b*b);
+              double sigma1 = atan2(tanU1, cosAlpha1); // angular distance on sphere from equator to P1 along geodesic
+              double sinAlpha = cosU1*sinAlpha1;
+              double cos2Alpha = 1.0-sinAlpha*sinAlpha;
+              
+              double a = S::a();
+              double b = S::b();
+              double f = S::f();
 
-                    double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
-                    double A = (1.0+k1*k1/4.0)/(1.0-k1);
-                    double B = k1*(1.0-3.0*k1*k1/8.0);
+              double u2 = cos2Alpha*(a*a-b*b)/(b*b);
 
-                    double sigma = distance/(b*A);
-                    double last_sigma;
-                    double cos2Sigmam;
-                    while (true)
-                    {
-                        cos2Sigmam = cos(2.0*sigma1+sigma);
-                        double sinSigma = sin(sigma);
-                        double cosSigma = cos(sigma);
-        
-                        double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
-                        last_sigma = sigma;
-                        sigma = (distance/(b*A))+deltaSigma;
-                        if (fabs(last_sigma-sigma) <= epsilon)
-                            break;
-                    }
+              double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
+              double A = (1.0+k1*k1/4.0)/(1.0-k1);
+              double B = k1*(1.0-3.0*k1*k1/8.0);
 
-                    cos2Sigmam = cos(2.0*sigma1+sigma);
-            
-                    double phi2 = atan2(sinU1*cos(sigma)+cosU1*sin(sigma)*cosAlpha1,(1-f)*sqrt(sinAlpha*sinAlpha+pow(sinU1*sin(sigma)-cosU1*cos(sigma)*cosAlpha1,2)));
-                    double l = atan2(sin(sigma)*sinAlpha1,cosU1*cos(sigma)-sinU1*sin(sigma)*cosAlpha1);
-                    double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
-                    double L = l-(1.0-C)*f*sinAlpha*(sigma+C*sin(sigma)*(cos2Sigmam+C*cos(sigma)*(-1+2.0*cos2Sigmam*cos2Sigmam)));
+              double sigma = distance/(b*A);
+              double last_sigma;
+              double cos2Sigmam;
+              while (true)
+              {
+                  cos2Sigmam = cos(2.0*sigma1+sigma);
+                  double sinSigma = sin(sigma);
+                  double cosSigma = cos(sigma);
+  
+                  double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
+                  last_sigma = sigma;
+                  sigma = (distance/(b*A))+deltaSigma;
+                  if (fabs(last_sigma-sigma) <= epsilon)
+                      break;
+              }
 
-                    double lat2 = Degrees(phi2);
-                    double lon2 = Degrees(Radians(p1[1]) + L);
-                    
-                    Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > ret;
-                    ret[0] = lat2;
-                    ret[1] = lon2;
-                    ret[2] = p1[2];
-                    return ret;
-                }
-                
-                /// Calculates the azimuth and distance from P1 to P2 on the WGS84 ellipsoid.
-                /// @param p1: Position P1 in degrees
-                /// @param p2: Position P2 in degrees
-                /// @return: azimuth in degrees, distance in meters
-                template <typename ET> static std::pair<double,double> inverse(Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p1,Point<double,ReferenceFrame<Geodetic<LatLon>,ET> > const &p2)
-                {
-                    if(p1 == p2)
-                        return std::pair<double,double>(0.0,0.0);
-                    
-                    double a = S::a();
-                    double b = S::b();
-                    double f = S::f();
-                    
-                    double epsilon = 1e-12;   
-                    
-                    double phi1 = Radians(p1[0]);
-                    double phi2 = Radians(p2[0]);
-                    
-                    double L = Radians(p2[1]-p1[1]);
+              cos2Sigmam = cos(2.0*sigma1+sigma);
+      
+              double phi2 = atan2(sinU1*cos(sigma)+cosU1*sin(sigma)*cosAlpha1,(1-f)*sqrt(sinAlpha*sinAlpha+pow(sinU1*sin(sigma)-cosU1*cos(sigma)*cosAlpha1,2)));
+              double l = atan2(sin(sigma)*sinAlpha1,cosU1*cos(sigma)-sinU1*sin(sigma)*cosAlpha1);
+              double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
+              double L = l-(1.0-C)*f*sinAlpha*(sigma+C*sin(sigma)*(cos2Sigmam+C*cos(sigma)*(-1+2.0*cos2Sigmam*cos2Sigmam)));
 
-                    double U1 = atan((1.0-f)*tan(phi1));
-                    double U2 = atan((1.0-f)*tan(phi2));
-                    double cosU1 = cos(U1);
-                    double cosU2 = cos(U2);
-                    double sinU1 = sin(U1);
-                    double sinU2 = sin(U2);
-    
-                    double l = L;
-                    double last_l = Nan<double>();
-                    double cosl;
-                    double sinl;
-                    double sinSigma;
-                    double cosSigma;
-                    double sigma;
-                    double cos2Alpha;
-                    double cos2Sigmam;
+              double lat2 = phi2;
+              double lon2 = p1[CF::Longitude] + L;
+              
+              Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > ret;
+              ret[CF::Latitude] = lat2;
+              ret[CF::Longitude] = lon2;
+              ret[CF::Height] = p1[CF::Height];
+              return ret;
+          }
 
-                    while (true)
-                    {
-                        cosl = cos(l);
-                        sinl = sin(l);
-    
-                        sinSigma = sqrt((pow((cosU2*sinl),2))+pow((cosU1*sinU2-sinU1*cosU2*cosl),2));
-                        cosSigma = sinU1*sinU2+cosU1*cosU2*cosl;
-                        sigma = atan2(sinSigma,cosSigma);
-                        double sinAlpha = (cosU1*cosU2*sinl)/sinSigma;
+          template <typename CF, typename PU> static Point<double,ReferenceFrame<ct::Geodetic<CF, PU>, Ellipsoid<S> > > direct(Point<double,ReferenceFrame<ct::Geodetic<CF, PU>, Ellipsoid<S> > > const &p1, Angle<double,pu::Radian,rt::Unclamped> azimuth, double distance)
+          {
+            return direct(Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > >(p1), azimuth, distance);
+          }
 
-                        cos2Alpha = 1-sinAlpha*sinAlpha;
-                        if (cos2Alpha == 0)
-                            cos2Sigmam = 0;
-                        else
-                            cos2Sigmam = cosSigma-((2.0*sinU1*sinU2)/cos2Alpha);
+          
+          /// Calculates the azimuth and distance from P1 to P2 on the WGS84 ellipsoid.
+          /// @param p1: Position P1 in radians
+          /// @param p2: Position P2 in radians
+          /// @return: azimuth in radians, distance in meters
+          template <typename CF> static std::pair<Angle<double,pu::Radian,rt::PositivePeriod>,double> inverse(Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > const &p1,Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > > const &p2)
+          {
+              if(p1 == p2)
+                  return std::pair<double,double>(0.0,0.0);
+              
+              double a = S::a();
+              double b = S::b();
+              double f = S::f();
+              
+              double epsilon = 1e-12;   
+              
+              double phi1 = p1[CF::Latitude];
+              double phi2 = p2[CF::Latitude];
+              
+              double L = p2[CF::Longitude]-p1[CF::Longitude];
 
-                        if (!IsNan(last_l) && fabs(last_l - l) <= epsilon)
-                            break;
-                        last_l = l;
-            
-                        double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
-                        l = L+(1.0-C)*f*sinAlpha*(sigma+C*sinSigma*(cos2Sigmam+C*cosSigma*(-1.0+2.0*pow(cos2Sigmam,2))));
-                    }
+              double U1 = atan((1.0-f)*tan(phi1));
+              double U2 = atan((1.0-f)*tan(phi2));
+              double cosU1 = cos(U1);
+              double cosU2 = cos(U2);
+              double sinU1 = sin(U1);
+              double sinU2 = sin(U2);
 
-                    double u2 = cos2Alpha*(a*a-b*b)/(b*b);
-                    double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
-                    double A = (1.0+k1*k1/4.0)/(1.0-k1);
-                    double B = k1*(1.0-3.0*k1*k1/8.0);
-                    double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
-                    double s = b*A*(sigma-deltaSigma);
-                    double alpha1 = atan2(cosU2*sinl,cosU1*sinU2-sinU1*cosU2*cosl);
+              double l = L;
+              double last_l = Nan<double>();
+              double cosl;
+              double sinl;
+              double sinSigma;
+              double cosSigma;
+              double sigma;
+              double cos2Alpha;
+              double cos2Sigmam;
 
-                    double azimuth = Degrees(alpha1);
-                    if (azimuth < 0.0)
-                        azimuth += 360.0;
+              while (true)
+              {
+                  cosl = cos(l);
+                  sinl = sin(l);
 
-                    return std::pair<double,double>(azimuth,s);
-                }
+                  sinSigma = sqrt((pow((cosU2*sinl),2))+pow((cosU1*sinU2-sinU1*cosU2*cosl),2));
+                  cosSigma = sinU1*sinU2+cosU1*cosU2*cosl;
+                  sigma = atan2(sinSigma,cosSigma);
+                  double sinAlpha = (cosU1*cosU2*sinl)/sinSigma;
+
+                  cos2Alpha = 1-sinAlpha*sinAlpha;
+                  if (cos2Alpha == 0)
+                      cos2Sigmam = 0;
+                  else
+                      cos2Sigmam = cosSigma-((2.0*sinU1*sinU2)/cos2Alpha);
+
+                  if (!IsNan(last_l) && fabs(last_l - l) <= epsilon)
+                      break;
+                  last_l = l;
+      
+                  double C = (f/16.0)*cos2Alpha*(4.0+f*(4.0-3.0*cos2Alpha));
+                  l = L+(1.0-C)*f*sinAlpha*(sigma+C*sinSigma*(cos2Sigmam+C*cosSigma*(-1.0+2.0*pow(cos2Sigmam,2))));
+              }
+
+              double u2 = cos2Alpha*(a*a-b*b)/(b*b);
+              double k1 = (sqrt(1.0+u2)-1.0)/(sqrt(1.0+u2)+1.0);
+              double A = (1.0+k1*k1/4.0)/(1.0-k1);
+              double B = k1*(1.0-3.0*k1*k1/8.0);
+              double deltaSigma = B*sinSigma*(cos2Sigmam+.25*B*(cosSigma*(-1.0+2.0*cos2Sigmam*cos2Sigmam)-(B/6.0)*cos2Sigmam*(-3.0+4.0*sinSigma*sinSigma)*(-3.0+4.0*cos2Sigmam*cos2Sigmam)));
+              double s = b*A*(sigma-deltaSigma);
+              double alpha1 = atan2(cosU2*sinl,cosU1*sinU2-sinU1*cosU2*cosl);
+
+              Angle<double,pu::Radian,rt::PositivePeriod> azimuth(alpha1);
+
+              return std::pair<Angle<double,pu::Radian,rt::PositivePeriod>,double>(azimuth,s);
+          }
+          
+          /// Calculates the azimuth and distance from P1 to P2 on the WGS84 ellipsoid.
+          /// @param p1: Position P1
+          /// @param p2: Position P2
+          /// @return: azimuth in radians, distance in meters
+          template <typename CF, typename PU> static std::pair<Angle<double,pu::Radian,rt::PositivePeriod>,double> inverse(Point<double,ReferenceFrame<ct::Geodetic<CF, PU>, Ellipsoid<S> > > const &p1,Point<double,ReferenceFrame<ct::Geodetic<CF, PU>, Ellipsoid<S> > > const &p2)
+          {
+            return inverse(Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > >(p1), Point<double,ReferenceFrame<ct::Geodetic<CF, pu::Radian>, Ellipsoid<S> > >(p2));
+          }
+
         };
 
         namespace WGS84
@@ -1305,9 +1417,11 @@ namespace gz4d
 
             typedef geo::Ellipsoid<EllipsoidSpecs> Ellipsoid;
 
-            typedef ReferenceFrame<Geodetic<LatLon>, Ellipsoid> LatLon;
-            typedef ReferenceFrame<Geodetic<LonLat>, Ellipsoid> LonLat;
-            typedef ReferenceFrame<ECEF<>, Ellipsoid> ECEF;
+            typedef ReferenceFrame<ct::Geodetic<cf::LatLon, pu::Radian>, Ellipsoid> LatLonRadians;
+            typedef ReferenceFrame<ct::Geodetic<cf::LonLat, pu::Radian>, Ellipsoid> LonLatRadians;
+            typedef ReferenceFrame<ct::Geodetic<cf::LatLon, pu::Degree>, Ellipsoid> LatLonDegrees;
+            typedef ReferenceFrame<ct::Geodetic<cf::LonLat, pu::Degree>, Ellipsoid> LonLatDegrees;
+            typedef ReferenceFrame<ct::ECEF<>, Ellipsoid> ECEF;
         }
 
         
@@ -1315,6 +1429,30 @@ namespace gz4d
         {
             Matrix<double, 4,4> transform;
             Matrix<double, 4,4> inverse;
+            template <typename CF> void initialize(Point<double, ReferenceFrame<ct::Geodetic<CF, pu::Radian>, ET> > const &ref, Point<double, ReferenceFrame<ct::ECEF<>, ET> > const &refECEF)
+            {
+              double lat = ref[CF::Latitude];
+              double lon = ref[CF::Longitude];
+
+              transform(0,0) = -sin(lon);
+              transform(0,1) = cos(lon);
+              transform(0,2) = 0.0;
+              transform(0,3) = 0.0;
+              transform(1,0) = -sin(lat)*cos(lon);
+              transform(1,1) = -sin(lat)*sin(lon);
+              transform(1,2) = cos(lat);
+              transform(1,3) = 0.0;
+              transform(2,0) = cos(lat)*cos(lon);
+              transform(2,1) = cos(lat)*sin(lon);
+              transform(2,2) = sin(lat);
+              transform(2,3) = 0.0;
+              transform(3,0) = 0.0;
+              transform(3,1) = 0.0;
+              transform(3,2) = 0.0;
+              transform(3,3) = 1.0;
+              inverse = Translation<double>(refECEF).GetMatrix()*transpose(transform);
+              transform = transform*Translation<double>(-refECEF).GetMatrix();
+            }
             public:
                 typedef std::shared_ptr<LocalENU<ET> > Ptr;
 
@@ -1322,47 +1460,10 @@ namespace gz4d
                 {
                 }
 
-                LocalENU(Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > const &ref)
+                template <typename CF, typename PU> LocalENU(Point<double, ReferenceFrame<ct::Geodetic<CF, PU>, ET> > const &ref)
                 {
-                    Point<double, ReferenceFrame<ECEF<>, ET> > refECEF(ref);
-                    double lat = Radians(ref[0]);
-                    double lon = Radians(ref[1]);
-
-                    transform(0,0) = -sin(lon);
-                    transform(0,1) = cos(lon);
-                    transform(0,2) = 0.0;
-                    transform(0,3) = 0.0;
-                    transform(1,0) = -sin(lat)*cos(lon);
-                    transform(1,1) = -sin(lat)*sin(lon);
-                    transform(1,2) = cos(lat);
-                    transform(1,3) = 0.0;
-                    transform(2,0) = cos(lat)*cos(lon);
-                    transform(2,1) = cos(lat)*sin(lon);
-                    transform(2,2) = sin(lat);
-                    transform(2,3) = 0.0;
-                    transform(3,0) = 0.0;
-                    transform(3,1) = 0.0;
-                    transform(3,2) = 0.0;
-                    transform(3,3) = 1.0;
-                    inverse = Translation<double>(refECEF).GetMatrix()*transpose(transform);
-                    transform = transform*Translation<double>(-refECEF).GetMatrix();
-
+                  initialize(Point<double, ReferenceFrame<ct::Geodetic<CF, pu::Radian>, ET> >(ref), ET::ToEarthCenteredEarthFixed(ref));
                 }
-
-//                 Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > const &getReference() const
-//                 {
-//                     return reference;
-//                 }
-
-//                 Matrix<double,4,4> GetMatrix(Point<double, ReferenceFrame<ECEF<>, ET> > const &p) const
-//                 {
-//                     Matrix<double,4,4> ret;
-//                     for(int i = 0; i < 3; ++i)
-//                         for(int j = 0; j < 3; ++j)
-//                             ret(i,j) = transform(i,j);
-//                     ret(3,3) = 1.0;
-//                     return ret*Translation<double>(p-refECEF).GetMatrix();
-//                 }
 
                 Matrix<double,4,4> GetMatrix() const
                 {
@@ -1374,22 +1475,22 @@ namespace gz4d
                     return inverse;
                 }
 
-                Point<double, ReferenceFrame<ECEF<>, ET> > toECEF(gz4d::Point<double> const &p) const
+                Point<double, ReferenceFrame<ct::ECEF<>, ET> > toECEF(gz4d::Point<double> const &p) const
                 {
                     Vector<double,4> t(p,0);
                     t[3] = 1.0;
                     t = inverse*t;
-                    return Point<double, ReferenceFrame<ECEF<>, ET> >(Vector<double,3>(t,0));
+                    return Point<double, ReferenceFrame<ct::ECEF<>, ET> >(Vector<double,3>(t,0));
                 }
 
-                Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > toLatLong(gz4d::Point<double> const &p) const
+                Point<double, ReferenceFrame<ct::Geodetic<cf::LatLon, pu::Radian>, ET> > toLatLong(gz4d::Point<double> const &p) const
                 {
                     auto ecef = toECEF(p);
-                    Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > ret(ecef);
+                    Point<double, ReferenceFrame<ct::Geodetic<cf::LatLon, pu::Radian>, ET> > ret(ecef);
                     return ret;
                 }
 
-                gz4d::Point<double> toLocal(Point<double, ReferenceFrame<ECEF<>, ET> > const &p) const
+                gz4d::Point<double> toLocal(Point<double, ReferenceFrame<ct::ECEF<>, ET> > const &p) const
                 {
                     Vector<double,4> t(p,0);
                     t[3] = 1.0;
@@ -1397,30 +1498,34 @@ namespace gz4d
                     return Vector<double,3>(t,0);
                 }
                 
-                gz4d::Point<double> toLocal(Point<double, ReferenceFrame<Geodetic<LatLon>, ET> > const &p) const
+                template<typename CT> gz4d::Point<double> toLocal(Point<double, ReferenceFrame<CT, ET> > const &p) const
                 {
-                    Point<double,ReferenceFrame<ECEF<>, ET> > p_ecef(p);
+                    Point<double,ReferenceFrame<ct::ECEF<>, ET> > p_ecef(p);
                     return toLocal(p_ecef);
                 }
 
-                std::vector<gz4d::Point<double> > toLocal(std::vector<Point<double, ReferenceFrame<ECEF<>, ET> > > const &pv) const
+                std::vector<gz4d::Point<double> > toLocal(std::vector<Point<double, ReferenceFrame<ct::ECEF<>, ET> > > const &pv) const
                 {
                     std::vector<gz4d::Point<double> > ret;
-                    for(typename std::vector<Point<double, ReferenceFrame<ECEF<>, ET> > >::const_iterator p = pv.begin(); p != pv.end(); ++p)
-                        ret.push_back(toLocal(*p));
+                    for(const auto &p: pv)
+                      ret.push_back(toLocal(p));
                     return ret;
                 }
                 
                 Box2d toLonLatBox(const Box2d &local_box) const
                 {
-                    Point<double, ReferenceFrame<Geodetic<>, ET> > min(toECEF(Vector<double,3>(local_box.getMin(),0)));
-                    Point<double, ReferenceFrame<Geodetic<>, ET> > max(toECEF(Vector<double,3>(local_box.getMax(),0)));
+                    Point<double, ReferenceFrame<ct::Geodetic<>, ET> > min(toECEF(Vector<double,3>(local_box.getMin(),0)));
+                    Point<double, ReferenceFrame<ct::Geodetic<>, ET> > max(toECEF(Vector<double,3>(local_box.getMax(),0)));
                     return Box2d(Vector<double,2>(min[1],min[0]),Vector<double,2>(max[1],max[0]));
                 }
         };
+        
+        
+
     }
     
-    typedef geo::Point<double,gz4d::geo::WGS84::LatLon> GeoPointLatLong;
+    typedef geo::Point<double,gz4d::geo::WGS84::LatLonDegrees> GeoPointLatLongDegrees;
+    typedef geo::Point<double,gz4d::geo::WGS84::LatLonRadians> GeoPointLatLongRadians;
     typedef geo::Point<double, gz4d::geo::WGS84::ECEF> GeoPointECEF;
     typedef geo::LocalENU<> LocalENU;
     
@@ -1468,12 +1573,12 @@ namespace gz4d
             :boost::math::quaternion<T>(q)
             {}
 
-            template<typename AT, typename RT> Rotation(Angle<AT,Degree,RT> angle, Point<T> const &axis)
+            template<typename AT, typename RT> Rotation(Angle<AT,pu::Degree,RT> angle, Point<T> const &axis)
             {
-                Rotation<T>::Set(Angle<AT,Radian,RT>(angle),axis);
+                Rotation<T>::Set(Angle<AT,pu::Radian,RT>(angle),axis);
             }
 
-            template<typename AT, typename RT> Rotation(Angle<AT,Radian,RT> angle, Point<T> const &axis)
+            template<typename AT, typename RT> Rotation(Angle<AT,pu::Radian,RT> angle, Point<T> const &axis)
             {
                 Rotation<T>::Set(angle ,axis);
             }
@@ -1485,21 +1590,20 @@ namespace gz4d
                 T2 n = norm(v1)*norm(v2);
                 if(n > 0.0)
                 {
-                    Angle<T2,Radian> angle  = acos(v1.dot(v2)/n);
+                    Angle<T2,pu::Radian,rt::Unclamped> angle  = acos(v1.dot(v2)/n);
                     Point<T2> axis = cross(v1,v2);
                     Rotation<T>::Set(angle,axis);
                 }
             }
 
 
-            Angle<T,Radian,ZeroCenteredPeriod> angle() const
+            Angle<T, pu::Radian, rt::Unclamped> angle() const
             {
                 return acos(boost::math::quaternion<T>::real())*2.0;
             }
 
             /// Sets rotation using angle around axis
-            /// angle is in radians
-            template<typename T2, typename RT> void Set(Angle<T2,Radian,RT> angle, Point<T2> const &axis)
+            template<typename T2, typename PU, typename RT> void Set(Angle<T2,PU,RT> angle, Point<T2> const &axis)
             {
                 if(norm2(axis) > 0.0)
                 {

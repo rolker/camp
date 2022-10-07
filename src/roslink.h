@@ -16,18 +16,12 @@ namespace Ui
 class ROSLink;
 }
 
-
-class RadarDisplay;
-
-
-
-
 class ROSLink : public QWidget
 {
     Q_OBJECT
 public:
     ROSLink(QWidget* parent);
-    
+    tf2_ros::Buffer* tfBuffer();
 
 signals:
 
@@ -42,8 +36,6 @@ public slots:
     void connectROS();
 
     void watchdogUpdate();
-    void showRadar(bool show);
-    void selectRadarColor();
     void showTail(bool show);
 
     void rangeAndBearingUpdate(double range, ros::Time const &range_timestamp, double bearing, ros::Time const &bearing_timestamp);
@@ -59,7 +51,6 @@ private:
     ros::Subscriber m_origin_subscriber;
     ros::Subscriber m_range_subscriber;
     ros::Subscriber m_bearing_subscriber;
-    std::map<std::string, ros::Subscriber> m_radar_subscribers;
     ros::Subscriber m_clock_subscriber;
     
     ros::Publisher m_look_at_publisher;
@@ -71,16 +62,10 @@ private:
     float m_base_dimension_to_port;
     float m_base_dimension_to_bow;
     float m_base_dimension_to_stern; 
-    
-
 
     QList<QGeoCoordinate> m_current_path;
     QList<QPointF> m_local_current_path;
     
-
-    std::map<std::string,RadarDisplay*> m_radar_displays;
-    
-    bool m_show_radar;
     bool m_show_tail;
 
     QTimer * m_watchdog_timer;

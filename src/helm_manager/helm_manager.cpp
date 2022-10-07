@@ -49,13 +49,11 @@ void HelmManager::on_timeLatencyConfigPushButton_clicked(bool checked)
     max_green_duration_ = ros::Duration(configDialogUI.greenTimeoutSpinBox->value());
     max_yellow_duration_ = ros::Duration(configDialogUI.yellowTimeoutSpinBox->value());
   }
-
-
 }
 
 void HelmManager::updateRobotNamespace(QString robot_namespace)
 {
-  ROS_INFO_STREAM("updateRobotNamespace: " << robot_namespace.toStdString());
+  ROS_DEBUG_STREAM("updateRobotNamespace: " << robot_namespace.toStdString());
   ros::NodeHandle nh;
   m_heartbeat_subscriber = nh.subscribe("/"+robot_namespace.toStdString()+"/project11/heartbeat" , 1, &HelmManager::heartbeatCallback, this);
   m_send_command_publisher = nh.advertise<std_msgs::String>("/"+robot_namespace.toStdString()+"/project11/send_command",1);

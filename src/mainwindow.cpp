@@ -19,6 +19,7 @@
 #include "searchpattern.h"
 
 #include "ais/ais_manager.h"
+#include "radar/radar_manager.h"
 #include "sound_play/sound_play_widget.h"
 #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
@@ -70,6 +71,10 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
+    m_radar_manager = new RadarManager();
+    m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
+
     m_sound_play = new SoundPlay();
 
     m_speech_alerts = new SpeechAlerts(this);
@@ -83,6 +88,7 @@ MainWindow::~MainWindow()
 {
     delete m_ui;
     delete m_ais_manager;
+    delete m_radar_manager;
 }
 
 void MainWindow::setWorkspace(const QString& path)
@@ -213,7 +219,10 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         connect(addSearchPatternAction, &QAction::triggered, this, &MainWindow::on_actionSearchPattern_triggered);
 
         QAction *addGroupAction = addMenu->addAction("Add Group");
-        connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroup_triggered);
+        connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionOrbit_triggered);
+
+        QAction *addOrbitAction = addMenu->addAction("Add Orbit");
+        connect(addOrbitAction, &QAction::triggered, this, &MainWindow::on_actionOrbit_triggered);
     }
     else
     {
@@ -251,6 +260,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *addGroupAction = addMenu->addAction("Add Group");
             connect(addGroupAction, &QAction::triggered, this, &MainWindow::on_actionGroupFromContext_triggered);
+        }
+
+        if(mi && mi->canAcceptChildType("Orbit"))
+        {
+            QAction *addOrbitAction = addMenu->addAction("Add Orbit");
+            connect(addOrbitAction, &QAction::triggered, this, &MainWindow::on_actionOrbitFromContext_triggered);
         }
         
         QAction *deleteItemAction = menu.addAction("Delete");
@@ -432,6 +447,18 @@ void MainWindow::on_actionGroupFromContext_triggered()
     project->addGroup();
 }
 
+void MainWindow::on_actionOrbit_triggered()
+{
+    project->setContextMode(false);
+    project->addOrbit();
+}
+
+void MainWindow::on_actionOrbitFromContext_triggered()
+{
+    project->setContextMode(true);
+    project->addOrbit();
+}
+
 void MainWindow::on_actionRadar_triggered()
 {
     qDebug() << "radar: " << m_ui->actionRadar->isChecked();
@@ -467,6 +494,11 @@ void MainWindow::onROSConnected(bool connected)
 void MainWindow::on_actionAISManager_triggered()
 {
     m_ais_manager->show();
+}
+
+void MainWindow::on_actionRadarManager_triggered()
+{
+    m_radar_manager->show();
 }
 
 void MainWindow::on_actionSay_something_triggered()

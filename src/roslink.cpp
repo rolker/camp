@@ -9,8 +9,6 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include <QTimer>
-#include "gz4d_geo.h"
-#include "radardisplay.h"
 #include <tf2/utils.h>
 #include "geographic_msgs/GeoPoint.h"
 
@@ -40,25 +38,13 @@ void ROSLink::connectROS()
     m_tf_buffer = new tf2_ros::Buffer;
     m_tf_listener = new tf2_ros::TransformListener(*m_tf_buffer);
 
-    std::string robotNamespace = ros::param::param<std::string>("robotNamespace","ben");
+    std::string robotNamespace = ros::param::param<std::string>("~robotNamespace","ben");
     m_mapFrame = robotNamespace+"/map";
     emit robotNamespaceUpdated(robotNamespace.c_str());
 
 
     m_range_subscriber = nh.subscribe("range", 10, &ROSLink::rangeCallback, this);
     m_bearing_subscriber = nh.subscribe("bearing",10, &ROSLink::bearingCallback, this);
-
-    std::string haloA_topic = "/"+robotNamespace+"/sensors/radar/HaloA/data";
-    m_radar_displays[haloA_topic] = new RadarDisplay(this);
-    m_radar_displays[haloA_topic]->setTF2Buffer(m_tf_buffer);
-    m_radar_displays[haloA_topic]->setMapFrame(m_mapFrame);
-    m_radar_displays[haloA_topic]->subscribe(haloA_topic.c_str());
-
-    std::string haloB_topic = "/"+robotNamespace+"/sensors/radar/HaloB/data";
-    m_radar_displays[haloB_topic] = new RadarDisplay(this);
-    m_radar_displays[haloB_topic]->setTF2Buffer(m_tf_buffer);
-    m_radar_displays[haloB_topic]->setMapFrame(m_mapFrame);
-    m_radar_displays[haloB_topic]->subscribe(haloB_topic.c_str());
 
     m_look_at_publisher = nh.advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
     m_look_at_mode_publisher = nh.advertise<std_msgs::String>("base/camera/look_at_mode",1);
@@ -108,27 +94,6 @@ void ROSLink::sendLookAtMode(std::string const &mode)
     m_look_at_mode_publisher.publish(mode_string);
 }
 
-
-
-void ROSLink::showRadar(bool show)
-{
-    m_show_radar = show;
-    for(auto rd:m_radar_displays)
-    {
-        rd.second->showRadar(show);
-    }
-    update();
-}
-
-void ROSLink::selectRadarColor()
-{
-    for(auto rd:m_radar_displays)
-    {
-        rd.second->setColor(QColorDialog::getColor(rd.second->getColor() , nullptr, "Select Color", QColorDialog::DontUseNativeDialog));
-    }
-    update();   
-}
-
 void ROSLink::showTail(bool show)
 {
     m_show_tail = show;
@@ -154,4 +119,9 @@ void ROSLink::rangeAndBearingUpdate(double range, ros::Time const & range_timest
     }
     m_ui->rangeBearingLineEdit->setPalette(pal);
     
+}
+
+tf2_ros::Buffer* ROSLink::tfBuffer()
+{
+    return m_tf_buffer;
 }

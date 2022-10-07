@@ -7,6 +7,7 @@
 MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
 {
     setShowLabelFlag(true);
+    setZValue(10.0);
 }
 
 

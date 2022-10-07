@@ -25,6 +25,7 @@
 #include "vector/polygon.h"
 #include "vector/linestring.h"
 #include "behavior.h"
+#include "orbit.h"
 
 #include "platform_manager/platform.h"
 #include "mission_manager/mission_manager.h"
@@ -234,6 +235,26 @@ Group * AutonomousVehicleProject::addGroup()
     Group *g = potentialParentItemFor("Group")->createMissionItem<Group>(generateUniqueLabel("group"));
     emit layoutChanged();
     return g;
+}
+
+Orbit * AutonomousVehicleProject::createOrbit(MissionItem* parent, int row, QString label)
+{
+    Orbit *o;
+    if(label.isEmpty())
+        label = generateUniqueLabel("orbit");
+    if(!parent)
+        o = potentialParentItemFor("Orbit")->createMissionItem<Orbit>(label, row);
+    else
+        o = parent->createMissionItem<Orbit>(label, row);
+    emit layoutChanged();
+    return o;
+}
+
+Orbit * AutonomousVehicleProject::addOrbit()
+{
+    Orbit *o = potentialParentItemFor("Orbit")->createMissionItem<Orbit>(generateUniqueLabel("orbit"));
+    emit layoutChanged();
+    return o;
 }
 
 void AutonomousVehicleProject::setContextMode(bool mode)

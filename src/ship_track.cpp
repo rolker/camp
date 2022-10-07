@@ -4,6 +4,7 @@
 
 ShipTrack::ShipTrack(QGraphicsItem *parentItem):GeoGraphicsItem(parentItem)
 {
+  setZValue(5.0);
 
 }
 

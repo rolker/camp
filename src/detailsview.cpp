@@ -5,6 +5,8 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "backgrounddetails.h"
+#include "orbit.h"
+#include "orbitdetails.h"
 #include "waypoint.h"
 #include "waypointdetails.h"
 #include "trackline.h"
@@ -50,6 +52,9 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     surveyPatternDetails->hide();
     behaviorDetails = new BehaviorDetails(this);
     behaviorDetails->hide();
+    orbitDetails = new OrbitDetails(this);
+    orbitDetails->hide();
+
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addLayout(buttons_layout);
@@ -58,6 +63,7 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     layout->addWidget(trackLineDetails);
     layout->addWidget(surveyPatternDetails);
     layout->addWidget(behaviorDetails);
+    layout->addWidget(orbitDetails);
     layout->addStretch();
     setLayout(layout);
 }
@@ -135,6 +141,12 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
             Behavior *b = qobject_cast<Behavior*>(mi);
             setCurrentWidget(behaviorDetails, b->canBeSentToRobot());
             behaviorDetails->setBehavior(b);
+        }
+        else if (itemType == "Orbit")
+        {
+            Orbit* o = qobject_cast<Orbit*>(mi);
+            setCurrentWidget(orbitDetails, o->canBeSentToRobot());
+            orbitDetails->setOrbit(o);
         }
         else
             setCurrentWidget(nullptr, mi->canBeSentToRobot());

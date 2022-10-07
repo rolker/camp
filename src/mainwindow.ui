@@ -20,9 +20,18 @@
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <widget class="QSplitter" name="splitter">
+      <property name="handleWidth">
+       <number>6</number>
+      </property>
+      <property name="childrenCollapsible">
+       <bool>true</bool>
+      </property>
+      <widget class="QSplitter" name="sidePaneSplitter">
        <property name="orientation">
-        <enum>Qt::Vertical</enum>
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="handleWidth">
+        <number>6</number>
        </property>
        <widget class="QWidget" name="layoutWidget">
         <layout class="QVBoxLayout" name="platformManagerLayout">
@@ -172,6 +181,7 @@
     <addaction name="actionGroup"/>
     <addaction name="actionBehavior"/>
     <addaction name="actionSearchPattern"/>
+    <addaction name="actionOrbit"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
     <property name="title">
@@ -180,6 +190,7 @@
     <addaction name="actionRadar"/>
     <addaction name="actionRadarColor"/>
     <addaction name="actionShowTail"/>
+    <addaction name="actionRadarManager"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionSay_something"/>
     <addaction name="actionFollow"/>
@@ -203,6 +214,7 @@
    <addaction name="actionGroup"/>
    <addaction name="actionBehavior"/>
    <addaction name="actionSearchPattern"/>
+   <addaction name="actionOrbit"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -350,9 +362,14 @@
     <string>Search Pattern</string>
    </property>
   </action>
-  <action name="actionSearchPattern_2">
+  <action name="actionOrbit">
    <property name="text">
-    <string>Search Pattern</string>
+    <string>Orbit</string>
+   </property>
+  </action>
+  <action name="actionRadarManager">
+   <property name="text">
+    <string>Radar Manager</string>
    </property>
   </action>
  </widget>

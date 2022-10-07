@@ -1,15 +1,23 @@
 set(SOURCES
-    main.cpp
-    mainwindow.cpp
     autonomousvehicleproject.cpp
     backgroundraster.cpp
-    georeferenced.cpp
-    waypoint.cpp
-    projectview.cpp
-    trackline.cpp
-    geographicsitem.cpp
-    surveypattern.cpp
     detailsview.cpp
+    geographicsitem.cpp
+    georeferenced.cpp
+    geoviz/geoviz_display.cpp
+    main.cpp
+    mainwindow.cpp
+    mission_manager/mission_manager.cpp
+    orbit.cpp
+    orbitdetails.cpp
+    projectview.cpp
+    radar/radar_display.cpp
+    radar/radar_manager.cpp
+    searchpattern.cpp
+    surveypattern.cpp
+    trackline.cpp
+    waypoint.cpp
+
     waypointdetails.cpp
     tracklinedetails.cpp
     surveypatterndetails.cpp
@@ -29,7 +37,6 @@ set(SOURCES
     behavior.cpp
     behaviordetails.cpp
     astar.cpp
-    radardisplay.cpp
     ship_track.cpp
     ais/ais_contact.cpp
     ais/ais_manager.cpp
@@ -38,16 +45,17 @@ set(SOURCES
     sound_play/speech_alerts.cpp
     roslink.cpp
     nav_source.cpp
-    mission_manager/mission_manager.cpp
-    geoviz/geoviz_display.cpp
-    searchpattern.cpp
 )
 
 set(HEADERS
-    mainwindow.h
     autonomousvehicleproject.h
     backgroundraster.h
     georeferenced.h
+    mainwindow.h
+    orbit.h
+    orbitdetails.h
+    radar/radar_display.h
+    radar/radar_manager.h
     waypoint.h
     projectview.h
     trackline.h
@@ -72,7 +80,6 @@ set(HEADERS
     behavior.h
     behaviordetails.h
     astar.h
-    radardisplay.h
     ship_track.h
     ais/ais_contact.h
     ais/ais_manager.h
@@ -87,7 +94,7 @@ set(HEADERS
 )
 
 set ( RESOURCES
- main.qrc
+    main.qrc
 )
 
 add_executable(CCOMAutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
@@ -96,7 +103,7 @@ add_dependencies(CCOMAutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
 
 qt5_use_modules(CCOMAutonomousMissionPlanner Widgets Positioning Svg Test)
 
-target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})
+target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES} yaml-cpp)
 
 INSTALL(TARGETS CCOMAutonomousMissionPlanner RUNTIME DESTINATION bin)
 

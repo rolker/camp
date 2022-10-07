@@ -12,6 +12,7 @@ Platform::Platform(QWidget* parent, QGraphicsItem *parentItem):
   m_ui->setupUi(this);
   setAcceptHoverEvents(true);
   m_ui->geovizDisplay->setParentItem(this);
+  setZValue(6.0);
 }
 
 Platform::~Platform()
