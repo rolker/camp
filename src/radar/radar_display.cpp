@@ -178,18 +178,18 @@ void RadarDisplay::sectorAdded()
 void RadarDisplay::radarCallback(const marine_sensor_msgs::RadarSector::ConstPtr &message)
 {
   ROS_DEBUG_STREAM("now: " << ros::Time::now() << " Radar timestamp: " << message->header.stamp);
-  if (m_show_radar && !message->scanlines.empty())
+  if (m_show_radar && !message->intensities.empty())
   {
-    double angle1 = message->scanlines.front().angle;
-    double angle2 = message->scanlines.back().angle;
-    double range = message->scanlines[0].range;
-    int w = message->scanlines[0].intensities.size();
-    int h = message->scanlines.size();
+    double angle1 = message->angle_min;
+    double angle2 = message->angle_max;
+    double range = message->range_max;
+    int w = message->intensities.front().echoes.size();
+    int h = message->intensities.size();
     QImage * sector = new QImage(w,h,QImage::Format_Grayscale8);
     sector->fill(Qt::darkGray);
     for(int i = 0; i < h; i++)
       for(int j = 0; j < w; j++)
-        sector->bits()[(h-1-i)*w+j] = message->scanlines[i].intensities[j]*16; // *16 to convert from 4 to 8 bits
+        sector->bits()[(h-1-i)*w+j] = message->intensities[i].echoes[j]*255; // convert from float to 8 bits
 
     Sector s;
     if(angle1 < angle2)
