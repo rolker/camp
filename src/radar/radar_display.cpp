@@ -32,6 +32,7 @@ void RadarDisplay::setMapFrame(std::string mapFrame)
 void RadarDisplay::setPixelSize(double s)
 {
     m_pixel_size = s;
+    ROS_INFO_STREAM("Pixel size: " << s);
 }
 
 void RadarDisplay::subscribe(QString topic)
@@ -58,16 +59,31 @@ void RadarDisplay::initializeGL()
     m_context = new QOpenGLContext();
     m_context->setFormat(surfaceFormat);
     m_context->create();
-    if(!m_context->isValid()) return;
+    if(!m_context->isValid())
+    {
+      ROS_ERROR_STREAM("OpenGL context not valid");
+      return;
+    }
 
     m_surface = new QOffscreenSurface();
     m_surface->setFormat(surfaceFormat);
     m_surface->create();
-    if(!m_surface->isValid()) return;
+    if(!m_surface->isValid())
+    {
+      ROS_ERROR_STREAM("OpenGL surface not valid");
+      return;
+    } 
 
     m_context->makeCurrent(m_surface);
+
     QOpenGLFramebufferObjectFormat fboFormat;
     m_fbo = new QOpenGLFramebufferObject(2048,2048,fboFormat);
+    if (!m_fbo->isValid())
+    {
+      ROS_ERROR_STREAM("OpenGL fbo not valid");
+      return;
+    } 
+    
 
     initializeOpenGLFunctions();
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -388,7 +404,9 @@ void RadarDisplay::updatePosition()
     auto bg = findParentBackgroundRaster();
     if(bg)
     {
+      //prepareGeometryChange();
       setPos(geoToPixel(location, bg));
+      update();
     }
   }
   catch (tf2::TransformException &ex)

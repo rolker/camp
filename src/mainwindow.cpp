@@ -71,9 +71,9 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
 
-    m_radar_manager = new RadarManager();
-    m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
+    //m_radar_manager = new RadarManager();
+    //m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    //connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
 
     m_sound_play = new SoundPlay();
 
@@ -498,7 +498,7 @@ void MainWindow::on_actionAISManager_triggered()
 
 void MainWindow::on_actionRadarManager_triggered()
 {
-    m_radar_manager->show();
+    //m_radar_manager->show();
 }
 
 void MainWindow::on_actionSay_something_triggered()

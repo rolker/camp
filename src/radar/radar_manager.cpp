@@ -35,6 +35,9 @@ void RadarManager::scanForSources()
         radar_displays_[t.name]->setTF2Buffer(tf_buffer_);
         radar_displays_[t.name]->subscribe(t.name.c_str());
         radar_displays_[t.name]->showRadar(show_radar_);
+        if(background_)
+          radar_displays_[t.name]->setPixelSize(background_->pixelSize());
+
         ui_.sourcesListWidget->addItem(t.name.c_str());
       }
 
@@ -70,5 +73,9 @@ void RadarManager::updateBackground(BackgroundRaster * bg)
 {
   background_ = bg;
   for(auto rd: radar_displays_)
+  {
     rd.second->setParentItem(bg);
+    if(bg)
+      rd.second->setPixelSize(bg->pixelSize());
+  }
 }

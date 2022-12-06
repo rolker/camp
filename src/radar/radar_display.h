@@ -6,6 +6,7 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLTexture>
 #include <QOpenGLBuffer>
+#include <QOpenGLDebugLogger>
 #include <QMutex>
 #include <deque>
 #include <ros/ros.h>
@@ -35,10 +36,10 @@ public:
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
     int type() const override {return RadarDisplayType;}
-    void setPixelSize(double s);
     void setTF2Buffer(tf2_ros::Buffer *buffer);
     void setMapFrame(std::string mapFrame);
     const QColor& getColor() const;
+    void setPixelSize(double s);
     
 public slots:
     void showRadar(bool show);
