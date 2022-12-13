@@ -13,6 +13,7 @@ class AISManager;
 class RadarManager;
 class SoundPlay;
 class SpeechAlerts;
+class OccupancyGridManager;
 
 class AutonomousVehicleProject;
 
@@ -64,6 +65,7 @@ private slots:
     void on_actionRadarColor_triggered();
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
+    void on_actionOccupancyGridManager_triggered();
     void on_actionRadarManager_triggered();
     void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
@@ -75,7 +77,8 @@ private:
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager;
-    RadarManager* m_radar_manager;
+    RadarManager* m_radar_manager = nullptr;
+    OccupancyGridManager* m_occupancy_grid_manager = nullptr;
     SoundPlay* m_sound_play;
     SpeechAlerts* m_speech_alerts;
 

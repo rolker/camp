@@ -8,6 +8,8 @@ set(SOURCES
     main.cpp
     mainwindow.cpp
     mission_manager/mission_manager.cpp
+    occupancy_grids/occupancy_grid.cpp
+    occupancy_grids/occupancy_grid_manager.cpp
     orbit.cpp
     orbitdetails.cpp
     projectview.cpp
@@ -52,6 +54,8 @@ set(HEADERS
     backgroundraster.h
     georeferenced.h
     mainwindow.h
+    occupancy_grids/occupancy_grid.h
+    occupancy_grids/occupancy_grid_manager.h
     orbit.h
     orbitdetails.h
     radar/radar_display.h

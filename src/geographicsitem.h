@@ -29,7 +29,8 @@ public:
         PlatformType,
         NavSourceType,
         GeovizDisplayType,
-        SearchPatternType
+        SearchPatternType,
+        OccupancyGridType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

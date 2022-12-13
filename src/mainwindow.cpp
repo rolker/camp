@@ -23,6 +23,7 @@
 #include "sound_play/sound_play_widget.h"
 #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
+#include "occupancy_grids/occupancy_grid_manager.h"
 
 #include <QDebug>
 
@@ -75,6 +76,10 @@ MainWindow::MainWindow(QWidget *parent) :
     //m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
     //connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
 
+    m_occupancy_grid_manager = new OccupancyGridManager();
+    m_occupancy_grid_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_occupancy_grid_manager, &OccupancyGridManager::updateBackground);
+
     m_sound_play = new SoundPlay();
 
     m_speech_alerts = new SpeechAlerts(this);
@@ -89,6 +94,7 @@ MainWindow::~MainWindow()
     delete m_ui;
     delete m_ais_manager;
     delete m_radar_manager;
+    delete m_occupancy_grid_manager;
 }
 
 void MainWindow::setWorkspace(const QString& path)
@@ -500,6 +506,12 @@ void MainWindow::on_actionRadarManager_triggered()
 {
     //m_radar_manager->show();
 }
+
+void MainWindow::on_actionOccupancyGridManager_triggered()
+{
+    m_occupancy_grid_manager->show();
+}
+
 
 void MainWindow::on_actionSay_something_triggered()
 {

@@ -155,7 +155,7 @@
      <x>0</x>
      <y>0</y>
      <width>1024</width>
-     <height>22</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -191,6 +191,7 @@
     <addaction name="actionRadarColor"/>
     <addaction name="actionShowTail"/>
     <addaction name="actionRadarManager"/>
+    <addaction name="actionOccupancyGridManager"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionSay_something"/>
     <addaction name="actionFollow"/>
@@ -370,6 +371,11 @@
   <action name="actionRadarManager">
    <property name="text">
     <string>Radar Manager</string>
+   </property>
+  </action>
+  <action name="actionOccupancyGridManager">
+   <property name="text">
+    <string>Occupancy Grid Manager</string>
    </property>
   </action>
  </widget>
