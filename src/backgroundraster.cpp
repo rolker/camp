@@ -139,8 +139,8 @@ bool BackgroundRaster::depthValid() const
 
 QRectF BackgroundRaster::boundingRect() const
 {
-    auto ret = backgroundImages.cbegin();
-    return QRectF(QPointF(0.0,0.0), ret->second.size());
+    auto ret = QRectF(QPointF(0.0,0.0), backgroundImages.begin()->second.size());
+    return  ret|childrenBoundingRect();
 }
 
 

@@ -6,6 +6,7 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 find_package(catkin REQUIRED COMPONENTS
+    grid_map_ros
     roscpp
     marine_msgs
     marine_sensor_msgs

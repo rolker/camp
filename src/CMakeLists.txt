@@ -1,32 +1,34 @@
 set(SOURCES
     autonomousvehicleproject.cpp
+    backgrounddetails.cpp
     backgroundraster.cpp
     detailsview.cpp
     geographicsitem.cpp
     georeferenced.cpp
     geoviz/geoviz_display.cpp
+    grids/grid.cpp
+    grids/grid_manager.cpp
     main.cpp
     mainwindow.cpp
+    markers/markers.cpp
+    markers/markers_manager.cpp
+    missionitem.cpp
     mission_manager/mission_manager.cpp
-    occupancy_grids/occupancy_grid.cpp
-    occupancy_grids/occupancy_grid_manager.cpp
     orbit.cpp
     orbitdetails.cpp
+    platform_manager/platform.cpp
+    platform_manager/platform_manager.cpp
     projectview.cpp
     radar/radar_display.cpp
     radar/radar_manager.cpp
     searchpattern.cpp
     surveypattern.cpp
-    trackline.cpp
-    waypoint.cpp
-
-    waypointdetails.cpp
-    tracklinedetails.cpp
     surveypatterndetails.cpp
-    platform_manager/platform.cpp
-    platform_manager/platform_manager.cpp
-    missionitem.cpp
-    backgrounddetails.cpp
+    trackline.cpp
+    tracklinedetails.cpp
+    waypoint.cpp
+    waypointdetails.cpp
+
     vector/vectordataset.cpp
     group.cpp
     vector/point.cpp
@@ -54,8 +56,10 @@ set(HEADERS
     backgroundraster.h
     georeferenced.h
     mainwindow.h
-    occupancy_grids/occupancy_grid.h
-    occupancy_grids/occupancy_grid_manager.h
+    grids/grid.h
+    grids/grid_manager.h
+    markers/markers.h
+    markers/markers_manager.h
     orbit.h
     orbitdetails.h
     radar/radar_display.h

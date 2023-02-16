@@ -23,7 +23,8 @@
 #include "sound_play/sound_play_widget.h"
 #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
-#include "occupancy_grids/occupancy_grid_manager.h"
+#include "grids/grid_manager.h"
+#include "markers/markers_manager.h"
 
 #include <QDebug>
 
@@ -76,9 +77,15 @@ MainWindow::MainWindow(QWidget *parent) :
     //m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
     //connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
 
-    m_occupancy_grid_manager = new OccupancyGridManager();
-    m_occupancy_grid_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_occupancy_grid_manager, &OccupancyGridManager::updateBackground);
+    m_grid_manager = new GridManager();
+    m_grid_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_grid_manager, &GridManager::updateBackground);
+    connect(this, &MainWindow::closing, m_grid_manager, &QWidget::close);
+
+    m_markers_manager = new MarkersManager();
+    m_markers_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
+    connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
 
     m_sound_play = new SoundPlay();
 
@@ -94,7 +101,13 @@ MainWindow::~MainWindow()
     delete m_ui;
     delete m_ais_manager;
     delete m_radar_manager;
-    delete m_occupancy_grid_manager;
+    delete m_grid_manager;
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    emit closing();
+    QMainWindow::closeEvent(event);
 }
 
 void MainWindow::setWorkspace(const QString& path)
@@ -507,11 +520,15 @@ void MainWindow::on_actionRadarManager_triggered()
     //m_radar_manager->show();
 }
 
-void MainWindow::on_actionOccupancyGridManager_triggered()
+void MainWindow::on_actionGridManager_triggered()
 {
-    m_occupancy_grid_manager->show();
+    m_grid_manager->show();
 }
 
+void MainWindow::on_actionMarkersManager_triggered()
+{
+    m_markers_manager->show();
+}
 
 void MainWindow::on_actionSay_something_triggered()
 {

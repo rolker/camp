@@ -32,7 +32,7 @@ void RadarDisplay::setMapFrame(std::string mapFrame)
 void RadarDisplay::setPixelSize(double s)
 {
     m_pixel_size = s;
-    ROS_INFO_STREAM("Pixel size: " << s);
+    //ROS_INFO_STREAM("Pixel size: " << s);
 }
 
 void RadarDisplay::subscribe(QString topic)
@@ -196,8 +196,8 @@ void RadarDisplay::radarCallback(const marine_sensor_msgs::RadarSector::ConstPtr
   ROS_DEBUG_STREAM("now: " << ros::Time::now() << " Radar timestamp: " << message->header.stamp);
   if (m_show_radar && !message->intensities.empty())
   {
-    double angle1 = message->angle_min;
-    double angle2 = message->angle_max;
+    double angle1 = message->angle_start;
+    double angle2 = angle1 + message->angle_increment*(message->intensities.size()-1);
     double range = message->range_max;
     int w = message->intensities.front().echoes.size();
     int h = message->intensities.size();
