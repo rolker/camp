@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include "ros/ros.h"
-#include "marine_msgs/Heartbeat.h"
+#include "project11_msgs/Heartbeat.h"
 
 namespace Ui
 {
@@ -52,7 +52,7 @@ private slots:
   void on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos);
 
 private:
-  void missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message);
+  void missionStatusCallback(const project11_msgs::Heartbeat::ConstPtr& message);
 
   Ui::MissionManager* m_ui;
   ros::Subscriber m_mission_status_subscriber;

@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include "ros/ros.h"
-#include "marine_msgs/Contact.h"
+#include "project11_msgs/Contact.h"
 #include "ais_contact.h"
 
 namespace Ui
@@ -33,7 +33,7 @@ private slots:
   void addAisReport(AISReport *report);
 
 private:
-  void contactCallback(const marine_msgs::Contact::ConstPtr& message);
+  void contactCallback(const project11_msgs::Contact::ConstPtr& message);
 
   Ui::AISManager* m_ui;
   std::map<std::string, ros::Subscriber> m_sources;

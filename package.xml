@@ -13,16 +13,15 @@
   <build_depend>libqt5-svg-dev</build_depend>
   <build_depend>libgdal-dev</build_depend>
   <depend>grid_map_ros</depend>
-  <depend>marine_msgs</depend>
   <depend>marine_sensor_msgs</depend>
   <depend>geographic_visualization_msgs</depend>
+  <depend>project11_msgs</depend>
   <depend>roscpp</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>rqt_gui_cpp</depend>
   <depend>rqt_gui</depend>
   <depend>sound_play</depend>
-  <depend>project11_msgs</depend>
   <depend>yaml-cpp</depend>
   
   <export>

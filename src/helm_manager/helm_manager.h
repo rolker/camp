@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include "ros/ros.h"
-#include "marine_msgs/Heartbeat.h"
+#include "project11_msgs/Heartbeat.h"
 
 namespace Ui
 {
@@ -39,7 +39,7 @@ private slots:
   void watchdogUpdate();
 
 private:
-  void heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message);
+  void heartbeatCallback(const project11_msgs::Heartbeat::ConstPtr& message);
 
   Ui::HelmManager* ui;
 

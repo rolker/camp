@@ -66,7 +66,7 @@ void HelmManager::sendPilotingModeRequest(QString piloting_mode)
   m_send_command_publisher.publish(cmd); 
 }
 
-void HelmManager::heartbeatCallback(const marine_msgs::Heartbeat::ConstPtr& message)
+void HelmManager::heartbeatCallback(const project11_msgs::Heartbeat::ConstPtr& message)
 {
   ros::Time last_heartbeat_receive_time = ros::Time::now();
   ros::Time last_heartbeat_timestamp = message->header.stamp;

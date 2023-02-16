@@ -67,7 +67,7 @@ void MissionManager::on_clearTasksPushButton_clicked(bool checked)
   clearTasks();
 }
 
-void MissionManager::missionStatusCallback(const marine_msgs::Heartbeat::ConstPtr& message)
+void MissionManager::missionStatusCallback(const project11_msgs::Heartbeat::ConstPtr& message)
 {
     QString status_string;
     for(auto kv: message->values)

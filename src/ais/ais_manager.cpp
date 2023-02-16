@@ -32,7 +32,7 @@ void AISManager::scanForSources()
   ros::master::getTopics(topic_info);
 
   for(const auto t: topic_info)
-    if (t.datatype == "marine_msgs/Contact")
+    if (t.datatype == "project11_msgs/Contact")
       if (m_sources.find(t.name) == m_sources.end())
       {
         m_sources[t.name] = nh.subscribe(t.name, 10, &AISManager::contactCallback, this);
@@ -42,7 +42,7 @@ void AISManager::scanForSources()
   
 }
 
-void AISManager::contactCallback(const marine_msgs::Contact::ConstPtr& message)
+void AISManager::contactCallback(const project11_msgs::Contact::ConstPtr& message)
 {
     if(message->position.latitude > 90 || message->position.longitude > 180)
         return;

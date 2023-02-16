@@ -7,7 +7,7 @@ AISContactDetails::AISContactDetails()
 
 }
 
-AISContactDetails::AISContactDetails(const marine_msgs::Contact::ConstPtr& message)
+AISContactDetails::AISContactDetails(const project11_msgs::Contact::ConstPtr& message)
 {
   mmsi = message->mmsi;
   name = message->name;
@@ -22,7 +22,7 @@ AISContactState::AISContactState()
 
 }
 
-AISContactState::AISContactState(const marine_msgs::Contact::ConstPtr& message)
+AISContactState::AISContactState(const project11_msgs::Contact::ConstPtr& message)
 {
   timestamp = message->header.stamp;
   location.location.setLatitude(message->position.latitude);
@@ -43,7 +43,7 @@ AISReport::AISReport(QObject *parent):QObject(parent)
 
 }
 
-AISReport::AISReport(const marine_msgs::Contact::ConstPtr& message, QObject *parent):
+AISReport::AISReport(const project11_msgs::Contact::ConstPtr& message, QObject *parent):
   QObject(parent),
   AISContactDetails(message),
   AISContactState(message)
