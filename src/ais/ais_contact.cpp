@@ -1,6 +1,10 @@
 #include "ais_contact.h"
 #include "backgroundraster.h"
 #include <QPainter>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2/LinearMath/Vector3.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2/utils.h>
 
 AISContactDetails::AISContactDetails()
 {
@@ -16,6 +20,17 @@ AISContactDetails::AISContactDetails(const project11_msgs::Contact::ConstPtr& me
   dimension_to_stbd = message->dimension_to_stbd;
   dimension_to_stern = message->dimension_to_stern;
 }
+
+AISContactDetails::AISContactDetails(const marine_ais_msgs::AISContact::ConstPtr& message)
+{
+  mmsi = message->id;
+  name = message->static_info.name;
+  dimension_to_bow = message->static_info.reference_to_bow_distance;
+  dimension_to_port = message->static_info.reference_to_port_distance;
+  dimension_to_stbd = message->static_info.reference_to_starboard_distance;
+  dimension_to_stern = message->static_info.reference_to_stern_distance;
+}
+
 
 AISContactState::AISContactState()
 {
@@ -38,6 +53,34 @@ AISContactState::AISContactState(const project11_msgs::Contact::ConstPtr& messag
   sog = message->sog;
 }
 
+AISContactState::AISContactState(const marine_ais_msgs::AISContact::ConstPtr& message)
+{
+  timestamp = message->header.stamp;
+  location.location.setLatitude(message->pose.position.latitude);
+  location.location.setLongitude(message->pose.position.longitude);
+
+  tf2::Vector3 motion;
+  tf2::fromMsg(message->twist.twist.linear, motion);
+  sog = motion.length();
+  cog = 90-(motion.angle(tf2::Vector3(1.0, 0.0, 0.0))*180/M_PI);
+
+  tf2::Quaternion orientation_quat;
+  tf2::fromMsg(message->pose.orientation, orientation_quat);
+  if (orientation_quat.length2() > 0.1) // make sure it's not a null orientation
+  {
+    double roll,pitch,yaw;
+    tf2::getEulerYPR(orientation_quat, yaw, pitch, roll);
+    heading = (M_PI/2.0)-yaw;
+  }
+  else
+  {
+    if(sog > 0.25)
+      heading = cog;
+    else
+      heading = std::nan("");
+  }
+}
+
 AISReport::AISReport(QObject *parent):QObject(parent)
 {
 
@@ -50,6 +93,15 @@ AISReport::AISReport(const project11_msgs::Contact::ConstPtr& message, QObject *
 {
 
 }
+
+AISReport::AISReport(const marine_ais_msgs::AISContact::ConstPtr& message, QObject *parent):
+  QObject(parent),
+  AISContactDetails(message),
+  AISContactState(message)
+{
+
+}
+
 
 AISContact::AISContact(QObject *parent, QGraphicsItem *parentItem):QObject(parent), ShipTrack(parentItem)
 {

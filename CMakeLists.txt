@@ -6,17 +6,18 @@ if(CMAKE_COMPILER_IS_GNUCXX)
 endif(CMAKE_COMPILER_IS_GNUCXX)
 
 find_package(catkin REQUIRED COMPONENTS
+    geographic_visualization_msgs
     grid_map_ros
-    roscpp
+    marine_ais_msgs
     marine_sensor_msgs
     project11_msgs
-    geographic_visualization_msgs
+    roscpp
     rosgraph_msgs
-    tf2
-    tf2_geometry_msgs
     rqt_gui
     rqt_gui_cpp
     sound_play
+    tf2
+    tf2_geometry_msgs
 )
 include_directories(${catkin_INCLUDE_DIRS})
 

@@ -4,12 +4,14 @@
 #include <QObject>
 #include "ship_track.h"
 #include "project11_msgs/Contact.h"
+#include "marine_ais_msgs/AISContact.h"
 #include "locationposition.h"
 
 struct AISContactDetails
 {
   AISContactDetails();
   AISContactDetails(const project11_msgs::Contact::ConstPtr& message);
+  AISContactDetails(const marine_ais_msgs::AISContact::ConstPtr& message);
   uint32_t mmsi;
   std::string name;
   float dimension_to_stbd; 
@@ -22,6 +24,7 @@ struct AISContactState
 {
   AISContactState();
   AISContactState(const project11_msgs::Contact::ConstPtr& message);
+  AISContactState(const marine_ais_msgs::AISContact::ConstPtr& message);
   ros::Time timestamp;
   LocationPosition location;
   double heading;
@@ -35,6 +38,7 @@ struct AISReport: public QObject, AISContactDetails, AISContactState
 public:
   AISReport(QObject *parent = nullptr);
   AISReport(const project11_msgs::Contact::ConstPtr& message, QObject *parent = nullptr);
+  AISReport(const marine_ais_msgs::AISContact::ConstPtr& message, QObject *parent = nullptr);
 };
 
 
