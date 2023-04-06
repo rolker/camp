@@ -1,0 +1,10 @@
+<launch>
+  <arg name="namespace" default="operator"/>
+  <arg name="backgroundChart" default="$(find camp)/workspace/13283/13283_2.KAP"/>
+
+  <node pkg="camp" type="CCOMAutonomousMissionPlanner" name="camp"  args="$(find camp)/workspace/ $(arg backgroundChart)" ns="$(arg namespace)">
+  </node>
+
+</launch>
+
+

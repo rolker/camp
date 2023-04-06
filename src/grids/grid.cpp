@@ -49,13 +49,9 @@ void Grid::setTopic(std::string topic, std::string type)
     spinner_ = std::make_shared<ros::AsyncSpinner>(1, &ros_queue_);
     spinner_->start();
   }
-  ros::SubscribeOptions ops;
-  
-  if(type == "nav_msgs/OccupancyGrid")
-    ops = ros::SubscribeOptions::create<nav_msgs::OccupancyGrid>(topic, 1, boost::bind(&Grid::occupancyGridCallback, this, _1), ros::VoidPtr(), &ros_queue_);
-  if(type == "grid_map_msgs/GridMap")
-    ops = ros::SubscribeOptions::create<grid_map_msgs::GridMap>(topic, 1, boost::bind(&Grid::gridMapCallback, this, _1), ros::VoidPtr(), &ros_queue_);
-  subscriber_ = ros::NodeHandle().subscribe(ops);
+
+  topic_ = topic;
+  type_ = type;
 
   ui_.topicLabel->setText(topic.c_str());
 }
@@ -115,18 +111,39 @@ void Grid::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
     ROS_WARN_STREAM_THROTTLE(2.0, "Got GridMap message with no layers");
     return;
   }
-  std::string layer = grid_map.getLayers().front(); 
+  std::string layer;
+  for(auto l: grid_map.getLayers())
+    if(l == "speed")
+    {
+      layer = l;
+      break;
+    }
+  if(layer.empty())
+   layer = grid_map.getLayers().front(); 
   auto grid_data = std::make_shared<GridData>();
   auto size = grid_map.getSize();
   grid_data->grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
   grid_data->meters_per_pixel = data->info.resolution;
 
-  for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
-  {
-    double value = grid_map.at(layer, *iterator);
-    uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
-    grid_data->grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(0, ival, 0, ival));
-  }
+  if(layer == "speed")
+    for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
+    {
+      double value = grid_map.at(layer, *iterator);
+      if(value < 0.0)
+        grid_data->grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(255, 0, 0, 128));
+      else
+      {
+        uint8_t ival = std::min(1.0,std::max(0.0, value/3.0))*255;
+        grid_data->grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(255-ival, 255, 0, 128));
+      }
+    }
+  else
+    for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
+    {
+      double value = grid_map.at(layer, *iterator);
+      uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
+      grid_data->grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(0, ival, 0, ival));
+    }
 
   grid_data->center = getGeoCoordinate(data->info.pose, data->info.header);
   {
@@ -185,6 +202,18 @@ void Grid::visibilityChanged()
 {
   prepareGeometryChange();
   is_visible_ = ui_.displayCheckBox->isChecked();
+  if(is_visible_)
+  {
+    ros::SubscribeOptions ops;
+    if(type_ == "nav_msgs/OccupancyGrid")
+      ops = ros::SubscribeOptions::create<nav_msgs::OccupancyGrid>(topic_, 1, boost::bind(&Grid::occupancyGridCallback, this, _1), ros::VoidPtr(), &ros_queue_);
+    if(type_ == "grid_map_msgs/GridMap")
+      ops = ros::SubscribeOptions::create<grid_map_msgs::GridMap>(topic_, 1, boost::bind(&Grid::gridMapCallback, this, _1), ros::VoidPtr(), &ros_queue_);
+    subscriber_ = ros::NodeHandle().subscribe(ops);
+  }
+  else
+    subscriber_.shutdown();
+
   GeoGraphicsItem::update();
 }
 

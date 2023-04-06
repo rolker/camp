@@ -62,6 +62,9 @@ private:
   bool is_visible_ = false;
 
   tf2_ros::Buffer* tf_buffer_ = nullptr;
+
+  std::string topic_;
+  std::string type_;
 };
 
 #endif

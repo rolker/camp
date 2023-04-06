@@ -166,7 +166,6 @@ void Platform::updateProjectedPoints()
 
 void Platform::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
 {
-  std::cerr << "hover enter" << std::endl;
   updateLabel();
   setShowLabelFlag(true);
 }
