@@ -25,8 +25,22 @@ QRectF Markers::boundingRect() const
     for(auto ns: current_markers_)
       for(auto m: ns.second)
       {
-        QRectF bbox(m.second->local_position, m.second->local_position);
-        ret = ret|bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y));
+        switch(m.second->marker.type)
+        {
+          case visualization_msgs::Marker::SPHERE:
+          {
+            QRectF bbox(m.second->local_position, m.second->local_position);
+            ret = ret|bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y));
+            break;
+          }
+          case visualization_msgs::Marker::LINE_STRIP:
+          {
+            QRectF bbox(m.second->local_position, m.second->local_position);
+            for(auto p: m.second->marker.points)
+              bbox |= QRectF(QPointF(p.x, p.y),QPointF(p.x, p.y));
+            ret = ret|bbox;
+          }
+        }
       }
 
   }
@@ -48,8 +62,31 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         b.setStyle(Qt::BrushStyle::SolidPattern);
         
         painter->setBrush(b);
-        QRectF bbox(m.second->local_position, m.second->local_position);
-        painter->drawEllipse(bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y)));
+        switch(m.second->marker.type)
+        {
+          case visualization_msgs::Marker::SPHERE:
+          {
+            QRectF bbox(m.second->local_position, m.second->local_position);
+            painter->drawEllipse(bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y)));
+            break;
+          }
+          case visualization_msgs::Marker::LINE_STRIP:
+          {
+            for(auto p1 = m.second->marker.points.begin(); p1 != m.second->marker.points.end(); ++p1)
+            {
+              auto p2 = p1;
+              p2++;
+              if(p2 != m.second->marker.points.end())
+              {
+                QLineF line(m.second->local_position+QPointF(p1->x, p1->y), m.second->local_position+QPointF(p2->x, p2->y));
+                painter->drawLine(line);
+              }
+            }
+            break;
+          }
+          default:
+            ROS_WARN_STREAM("marker type not handles: " << m.second->marker.type);
+        }
         painter->restore();
       }
 }
