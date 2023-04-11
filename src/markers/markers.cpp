@@ -15,6 +15,7 @@ Markers::Markers(QWidget* parent, QGraphicsItem *parentItem):
   ui_.setupUi(this);
   connect(this, &Markers::newMarkersMadeAvailable, this, &Markers::newMarkersAvailable, Qt::QueuedConnection);
   connect(ui_.displayCheckBox, &QCheckBox::stateChanged, this, &Markers::visibilityChanged);
+  ui_.displayCheckBox->setChecked(true);
 }
 
 QRectF Markers::boundingRect() const
@@ -25,24 +26,9 @@ QRectF Markers::boundingRect() const
     for(auto ns: current_markers_)
       for(auto m: ns.second)
       {
-        switch(m.second->marker.type)
-        {
-          case visualization_msgs::Marker::SPHERE:
-          {
-            QRectF bbox(m.second->local_position, m.second->local_position);
-            ret = ret|bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y));
-            break;
-          }
-          case visualization_msgs::Marker::LINE_STRIP:
-          {
-            QRectF bbox(m.second->local_position, m.second->local_position);
-            for(auto p: m.second->marker.points)
-              bbox |= QRectF(QPointF(p.x, p.y),QPointF(p.x, p.y));
-            ret = ret|bbox;
-          }
-        }
+        auto p = markerPath(*(m.second));
+        ret |= p.boundingRect();
       }
-
   }
   return ret;
 }
@@ -56,39 +42,52 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         painter->save();
         QPen p;
         p.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*255));
+        if(m.second->marker.type == visualization_msgs::Marker::LINE_STRIP)
+          p.setWidthF(m.second->marker.scale.x);
         painter->setPen(p);
         QBrush b = painter->brush();
         b.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*128));
-        b.setStyle(Qt::BrushStyle::SolidPattern);
-        
+        if(m.second->marker.type == visualization_msgs::Marker::SPHERE)
+          b.setStyle(Qt::BrushStyle::SolidPattern);
         painter->setBrush(b);
-        switch(m.second->marker.type)
-        {
-          case visualization_msgs::Marker::SPHERE:
-          {
-            QRectF bbox(m.second->local_position, m.second->local_position);
-            painter->drawEllipse(bbox.marginsAdded(QMarginsF(m.second->marker.scale.x, m.second->marker.scale.y, m.second->marker.scale.x, m.second->marker.scale.y)));
-            break;
-          }
-          case visualization_msgs::Marker::LINE_STRIP:
-          {
-            for(auto p1 = m.second->marker.points.begin(); p1 != m.second->marker.points.end(); ++p1)
-            {
-              auto p2 = p1;
-              p2++;
-              if(p2 != m.second->marker.points.end())
-              {
-                QLineF line(m.second->local_position+QPointF(p1->x, p1->y), m.second->local_position+QPointF(p2->x, p2->y));
-                painter->drawLine(line);
-              }
-            }
-            break;
-          }
-          default:
-            ROS_WARN_STREAM("marker type not handles: " << m.second->marker.type);
-        }
+        painter->drawPath(markerPath(*m.second));
         painter->restore();
       }
+}
+
+QPainterPath Markers::markerPath(const MarkerData& marker) const
+{
+  QPainterPath path;
+
+  switch(marker.marker.type)
+  {
+    case visualization_msgs::Marker::SPHERE:
+    {
+      QRectF bbox(marker.local_position, marker.local_position);
+      path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x /pixel_size_, marker.marker.scale.y/pixel_size_, marker.marker.scale.x/pixel_size_, marker.marker.scale.y/pixel_size_)));
+      break;
+    }
+    case visualization_msgs::Marker::LINE_STRIP:
+    {
+      auto cosr = cos(-marker.rotation);
+      auto sinr = sin(-marker.rotation);
+      for(auto p1 = marker.marker.points.begin(); p1 != marker.marker.points.end(); ++p1)
+      {
+        auto x = p1->x*cosr + p1->y*sinr;
+        auto y = p1->x*sinr - p1->y*cosr;
+        x /= pixel_size_;
+        y /= pixel_size_;
+        if(p1 == marker.marker.points.begin())
+          path.moveTo(marker.local_position.x()+x,marker.local_position.y()+y);
+        else
+          path.lineTo(marker.local_position.x()+x, marker.local_position.y()+y);
+      }
+      break;
+    }
+    default:
+      ROS_WARN_STREAM("marker type not handles: " << marker.marker.type);
+  }
+  return path;
 }
 
 void Markers::setTopic(std::string topic, std::string type)
@@ -138,6 +137,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
     auto marker_data = std::make_shared<MarkerData>();
     marker_data->marker = m;
     marker_data->position = getGeoCoordinate(m.pose, m.header);
+    marker_data->rotation = tf2::getYaw(m.pose.orientation);
     std::lock_guard<std::mutex> lock(new_markers_mutex_);
     new_markers_.push_back(marker_data);
   }
@@ -152,7 +152,7 @@ QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const 
     geometry_msgs::PoseStamped grid_corner;
     grid_corner.header = header;
     grid_corner.pose = pose;
-    auto ecef = tf_buffer_->transform(grid_corner, "earth", ros::Duration(0.5));
+    auto ecef = tf_buffer_->transform(grid_corner, "earth");//, ros::Duration(1.5));
 
     gz4d::GeoPointECEF ecef_point;
     ecef_point[0] = ecef.pose.position.x;
@@ -163,7 +163,7 @@ QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const 
   }
   catch (tf2::TransformException &ex)
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for grid: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
+    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for marker: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
   }
   return ret;
 }
@@ -219,8 +219,6 @@ void Markers::updateBackground(BackgroundRaster * bg)
   if(bg)
   {
     setPixelSize(bg->pixelSize());
-  //   if(current_grid_)
-  //     setPos(geoToPixel(current_grid_->center, bg));
   }
   GeoGraphicsItem::update();
 }

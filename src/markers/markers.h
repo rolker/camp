@@ -46,7 +46,10 @@ private:
     visualization_msgs::Marker marker;
     QGeoCoordinate position;
     QPointF local_position;
+    double rotation;
   };
+
+  QPainterPath markerPath(const MarkerData& marker) const;
 
   Ui::Markers ui_;
 

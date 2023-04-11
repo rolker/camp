@@ -50,7 +50,7 @@ QPainterPath SurveyArea::shape() const
         }
         ret.lineTo(children.front()->pos());
         QPainterPathStroker pps;
-        pps.setWidth(5);
+        pps.setWidth(2);
         return pps.createStroke(ret);
 
     }
