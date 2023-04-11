@@ -149,10 +149,10 @@ QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const 
   QGeoCoordinate ret;
   try
   {
-    geometry_msgs::PoseStamped grid_corner;
-    grid_corner.header = header;
-    grid_corner.pose = pose;
-    auto ecef = tf_buffer_->transform(grid_corner, "earth");//, ros::Duration(1.5));
+    geometry_msgs::PoseStamped ps;
+    ps.header = header;
+    ps.pose = pose;
+    auto ecef = tf_buffer_->transform(ps, "earth", ros::Duration(1.5));
 
     gz4d::GeoPointECEF ecef_point;
     ecef_point[0] = ecef.pose.position.x;
@@ -188,6 +188,7 @@ void Markers::newMarkersAvailable()
       case visualization_msgs::Marker::ADD:
         if(bg)
           marker->local_position = geoToPixel(marker->position, bg);
+        ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
         current_markers_[marker->marker.ns][marker->marker.id] = marker;
         break;
       case visualization_msgs::Marker::DELETE:
