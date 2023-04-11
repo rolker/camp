@@ -188,7 +188,7 @@ void Markers::newMarkersAvailable()
       case visualization_msgs::Marker::ADD:
         if(bg)
           marker->local_position = geoToPixel(marker->position, bg);
-        ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
+        //ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
         current_markers_[marker->marker.ns][marker->marker.id] = marker;
         break;
       case visualization_msgs::Marker::DELETE:
