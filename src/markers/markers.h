@@ -49,7 +49,7 @@ private:
     double rotation;
   };
 
-  QPainterPath markerPath(const MarkerData& marker) const;
+  QPainterPath markerPath(const MarkerData& marker, BackgroundRaster* bg) const;
 
   Ui::Markers ui_;
 

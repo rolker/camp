@@ -7,6 +7,7 @@
 #include <geometry_msgs/PoseStamped.h>
 #include "backgroundraster.h"
 #include <grid_map_ros/grid_map_ros.hpp>
+#include <QTimer>
 
 Markers::Markers(QWidget* parent, QGraphicsItem *parentItem):
   QWidget(parent),
@@ -21,12 +22,13 @@ Markers::Markers(QWidget* parent, QGraphicsItem *parentItem):
 QRectF Markers::boundingRect() const
 {
   QRectF ret;
+  BackgroundRaster* bg = findParentBackgroundRaster();
   if(!current_markers_.empty() && is_visible_)
   {
     for(auto ns: current_markers_)
       for(auto m: ns.second)
       {
-        auto p = markerPath(*(m.second));
+        auto p = markerPath(*(m.second), bg);
         ret |= p.boundingRect();
       }
   }
@@ -35,6 +37,7 @@ QRectF Markers::boundingRect() const
 
 void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+  BackgroundRaster* bg = findParentBackgroundRaster();
   if(!current_markers_.empty() && is_visible_)
     for(auto ns: current_markers_)
       for(auto m: ns.second)
@@ -44,48 +47,66 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         p.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*255));
         if(m.second->marker.type == visualization_msgs::Marker::LINE_STRIP)
           p.setWidthF(m.second->marker.scale.x);
+        if(m.second->marker.type == visualization_msgs::Marker::TEXT_VIEW_FACING)
+          p.setCosmetic(true);
         painter->setPen(p);
         QBrush b = painter->brush();
         b.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*128));
-        if(m.second->marker.type == visualization_msgs::Marker::SPHERE)
+        if(m.second->marker.type == visualization_msgs::Marker::SPHERE || m.second->marker.type == visualization_msgs::Marker::TEXT_VIEW_FACING)
           b.setStyle(Qt::BrushStyle::SolidPattern);
         painter->setBrush(b);
-        painter->drawPath(markerPath(*m.second));
+        painter->drawPath(markerPath(*m.second, bg));
         painter->restore();
       }
 }
 
-QPainterPath Markers::markerPath(const MarkerData& marker) const
+QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg) const
 {
   QPainterPath path;
 
-  switch(marker.marker.type)
+  if(bg)
   {
-    case visualization_msgs::Marker::SPHERE:
+    switch(marker.marker.type)
     {
-      QRectF bbox(marker.local_position, marker.local_position);
-      path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x /pixel_size_, marker.marker.scale.y/pixel_size_, marker.marker.scale.x/pixel_size_, marker.marker.scale.y/pixel_size_)));
-      break;
-    }
-    case visualization_msgs::Marker::LINE_STRIP:
-    {
-      auto cosr = cos(-marker.rotation);
-      auto sinr = sin(-marker.rotation);
-      for(auto p1 = marker.marker.points.begin(); p1 != marker.marker.points.end(); ++p1)
+      case visualization_msgs::Marker::SPHERE:
       {
-        auto x = p1->x*cosr + p1->y*sinr;
-        auto y = p1->x*sinr - p1->y*cosr;
-        x /= pixel_size_;
-        y /= pixel_size_;
-        if(p1 == marker.marker.points.begin())
-          path.moveTo(marker.local_position.x()+x,marker.local_position.y()+y);
-        else
-          path.lineTo(marker.local_position.x()+x, marker.local_position.y()+y);
+        QRectF bbox(marker.local_position, marker.local_position);
+        path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x /pixel_size_, marker.marker.scale.y/pixel_size_, marker.marker.scale.x/pixel_size_, marker.marker.scale.y/pixel_size_)));
+        break;
       }
-      break;
+      case visualization_msgs::Marker::LINE_STRIP:
+      {
+        auto cosr = cos(-marker.rotation);
+        auto sinr = sin(-marker.rotation);
+        for(auto p1 = marker.marker.points.begin(); p1 != marker.marker.points.end(); ++p1)
+        {
+          auto x = p1->x*cosr + p1->y*sinr;
+          auto y = p1->x*sinr - p1->y*cosr;
+          x /= pixel_size_;
+          y /= pixel_size_;
+          if(p1 == marker.marker.points.begin())
+            path.moveTo(marker.local_position.x()+x,marker.local_position.y()+y);
+          else
+            path.lineTo(marker.local_position.x()+x, marker.local_position.y()+y);
+        }
+        break;
+      }
+      case visualization_msgs::Marker::TEXT_VIEW_FACING:
+      {
+        {
+          QFont font;
+          int font_size = std::max(5, int(marker.marker.scale.z*bg->scaledPixelSize()*10));
+          font.setPixelSize(font_size);
+          QFontMetrics metrics(font);
+          auto bounds = metrics.boundingRect(marker.marker.text.c_str());
+          path.addText(QPointF(marker.local_position.x()-bounds.width()*pixel_size_/2.0, marker.local_position.y()+bounds.height()*pixel_size_/2.0), font, marker.marker.text.c_str());
+
+        }
+        break;
+      }
+      default:
+        ROS_WARN_STREAM("marker type not handles: " << marker.marker.type);
     }
-    default:
-      ROS_WARN_STREAM("marker type not handles: " << marker.marker.type);
   }
   return path;
 }
@@ -190,6 +211,8 @@ void Markers::newMarkersAvailable()
           marker->local_position = geoToPixel(marker->position, bg);
         //ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
         current_markers_[marker->marker.ns][marker->marker.id] = marker;
+        if(!marker->marker.lifetime.isZero())
+          QTimer::singleShot((marker->marker.lifetime.toSec()+1.0)*1000, this, &Markers::newMarkersAvailable);
         break;
       case visualization_msgs::Marker::DELETE:
         current_markers_[marker->marker.ns][marker->marker.id].reset();
@@ -199,6 +222,22 @@ void Markers::newMarkersAvailable()
         break;
       default:
         ROS_WARN_STREAM("Unknown marker action: " << marker->marker.action);
+    }
+  }
+
+  auto now = ros::Time::now();
+
+  for(auto& ns: current_markers_)
+  {
+    std::vector<int32_t> expired;
+    for(auto m: ns.second)
+      if(!m.second->marker.header.stamp.isZero() && !m.second->marker.lifetime.isZero()&& m.second->marker.header.stamp + m.second->marker.lifetime < now)
+        expired.push_back(m.first);
+    for(auto e: expired)
+    {
+      ROS_INFO_STREAM("Purging " << ns.first << ": " << e);
+      ns.second.erase(e);
+
     }
   }
 
