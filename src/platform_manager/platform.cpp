@@ -31,7 +31,7 @@ void Platform::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, 
   QPen p;
   p.setCosmetic(true);
   p.setColor(m_color);
-  p.setWidth(3);
+  p.setWidth(4);
   painter->setPen(p);
   painter->drawPath(shape());
   painter->restore();
@@ -51,13 +51,30 @@ QPainterPath Platform::shape() const
           forceTriangle = true;
         float max_size = std::max(m_length, m_width);
         qreal pixel_size = bg->scaledPixelSize();
+
+        LocationPosition location;
+        for(const auto& ns: m_nav_sources)
+        {
+          location = ns.second->location();
+          if(location.location.isValid())
+            break;
+        }
+
+        double heading;
+        for(const auto& ns: m_nav_sources)
+        {
+          heading = ns.second->heading();
+          if(!isnan(heading))
+            break;
+        }
+
         if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, m_nav_sources.begin()->second->location().location, m_nav_sources.begin()->second->heading(), pixel_size);
+          drawTriangle(ret, bg, location.location, heading, pixel_size);
         else
         {
           double half_width = m_width/2.0;
           double half_length = m_length/2.0;
-          drawShipOutline(ret, bg, m_nav_sources.begin()->second->location().location, m_nav_sources.begin()->second->heading(), half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+          drawShipOutline(ret, bg, location.location, heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
         }
       }
   }
