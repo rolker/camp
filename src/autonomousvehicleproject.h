@@ -5,7 +5,6 @@
 #include <QGeoCoordinate>
 #include <QModelIndex>
 
-
 class QGraphicsScene;
 class QGraphicsItem;
 class QStandardItem;
@@ -167,7 +166,5 @@ private:
     // Counter to generate unique labels. Should probably be static, but if only once instance of AutonomousVehicleProject, then doesn't matter.
     int unique_label_counter; 
 };
-
-
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

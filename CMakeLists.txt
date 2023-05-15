@@ -1,9 +1,7 @@
 cmake_minimum_required(VERSION 3.5.1)
 project(camp)
 
-if(CMAKE_COMPILER_IS_GNUCXX)
-    add_definitions(-std=gnu++11)
-endif(CMAKE_COMPILER_IS_GNUCXX)
+add_compile_options(-std=c++14)
 
 find_package(catkin REQUIRED COMPONENTS
     geographic_visualization_msgs
@@ -28,7 +26,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt5 COMPONENTS Core Widgets Test)
+find_package(Qt5 COMPONENTS Core Widgets Test Concurrent Network)
 
 if (Qt5Widgets_FOUND)
     if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)

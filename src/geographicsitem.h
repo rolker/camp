@@ -30,7 +30,9 @@ public:
         NavSourceType,
         GeovizDisplayType,
         SearchPatternType,
-        GridType
+        GridType,
+        MapTilesType,
+        TileType
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

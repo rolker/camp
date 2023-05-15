@@ -1,7 +1,7 @@
 #ifndef PROJECTVIEW_H
 #define PROJECTVIEW_H
 
-#include<QGraphicsView>
+#include <QGraphicsView>
 #include <QGeoCoordinate>
 
 class QStatusBar;

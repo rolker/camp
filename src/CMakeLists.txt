@@ -109,7 +109,7 @@ add_executable(CCOMAutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
 
 add_dependencies(CCOMAutonomousMissionPlanner ${catkin_EXPORTED_TARGETS})
 
-qt5_use_modules(CCOMAutonomousMissionPlanner Widgets Positioning Svg Test)
+qt5_use_modules(CCOMAutonomousMissionPlanner Widgets Positioning Svg Test Concurrent Network)
 
 target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES} yaml-cpp)
 
@@ -121,3 +121,21 @@ INSTALL(TARGETS CCOMAutonomousMissionPlanner RUNTIME DESTINATION bin)
 find_package(class_loader)
 
 add_subdirectory(helm_manager)
+
+
+# test map view
+
+set( TEST_MAP_VIEW_SOURCES
+    map_tiles/cached_tile_loader.cpp
+    map_tiles/map_tiles.cpp
+    map_tiles/tile.cpp
+    map_tiles/tile_address.cpp
+    map_view/map_view.cpp
+    map_view/web_mercator.cpp
+    test/test_map_view.cpp
+)
+
+
+add_executable(test_map_view ${TEST_MAP_VIEW_SOURCES})
+qt5_use_modules(test_map_view Widgets Positioning Concurrent Network)
+target_link_libraries(test_map_view ${QT_LIBRARIES})
