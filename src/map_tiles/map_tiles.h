@@ -1,10 +1,7 @@
 #ifndef MAP_TILES_MAP_TILES_H
 #define MAP_TILES_MAP_TILES_H
 
-#include <QWidget>
-#include <QGraphicsObject>
-#include "../map_view/map_view.h"
-#include "../geographicsitem.h"
+#include "../map/layer.h"
 #include "tile_address.h"
 
 namespace map_tiles
@@ -13,28 +10,19 @@ namespace map_tiles
 class Tile;
 class CachedTileLoader;
 
-// Contains the info needed for a tile to determine
-// if it should display itself.
-struct ViewContext
-{
-  MapView::Viewport viewport;
-  uint8_t current_zoom_level = 0;
-  bool flip_y = false;
-};
-
-// Displays a hiearchy of map tiles from local disk or network sources.
+// Displays a hierarchy of map tiles from local disk or network sources.
 // The tiles are layed out in the OpenStreetMap Slippy map scheme.
-class MapTiles: public QGraphicsObject
+class MapTiles: public map::Layer
 {
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  MapTiles(QGraphicsItem *parentItem =0);
+  MapTiles(map::MapItem* parentItem);
 
-  enum { Type = GeoGraphicsItem::MapTilesType};
+  enum { Type = map::MapTilesType};
   int type() const override
   {
-    return GeoGraphicsItem::MapTilesType;
+    return Type;
   }
 
 
@@ -46,10 +34,17 @@ public:
   void setLabel(QString label);
   void setBaseUrl(QString base_url);
 
+  // Returns true if tiles are addressed from south to north.
+  bool flipY() const;
+
+  uint8_t minimumZoomLevel() const;
+  uint8_t maximumZoomLevel() const;
+
 public slots:
-  void updateViewport(MapView::Viewport viewport);
-  void updateMinimumZoomLevel(int level);
-  void setYDirection(bool flipped);
+  void setMinimumZoomLevel(uint8_t level);
+  void setMaximumZoomLevel(uint8_t level);
+  void setFlipY(bool flipped);
+
   void labelEditingFinished();
   void baseUrlEditingFinished();
   void updateViewScale(double view_scale);
@@ -57,7 +52,16 @@ public slots:
 private:
   Tile* top_tile_ = nullptr;
 
-  ViewContext view_context_;
+  // Flag to indicate if tiles are ordered from south to north.
+  // By default, tiles are ordered from north to south.
+  bool flip_y_ = false;
+
+  // Zoom level of the top level tile(s).
+  uint8_t minimum_zoom_level_ = 0;
+
+  // Zoom level of the highest detailed tiles.
+  // Defaults to 19, which is Open Street Map's max zoom level.
+  uint8_t maximum_zoom_level_ = 19;
 
   CachedTileLoader* tile_loader_;
 

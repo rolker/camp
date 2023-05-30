@@ -7,12 +7,12 @@
 #include "../map_view/web_mercator.h"
 #include <QNetworkReply>
 #include "tile_address.h"
+#include "../map/item_types.h"
 
 namespace map_tiles
 {
 
 class MapTiles;
-class ViewContext;
 
 // Graphics item that draws a map tile at a given
 // TileAddress.
@@ -21,12 +21,14 @@ class Tile: public QGraphicsObject
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  Tile(const ViewContext& view_context, QGraphicsItem *parentItem = nullptr, TileAddress address = TileAddress());
+  Tile(QGraphicsItem *parentItem = nullptr, TileAddress address = TileAddress());
 
-  enum { Type = GeoGraphicsItem::TileType};
+  enum { Type =  map::TileType };
+
   int type() const override
   {
-    return GeoGraphicsItem::TileType;
+    // Enable the use of qgraphicsitem_cast with this item.
+    return Type;
   }
 
   QRectF boundingRect() const override;
@@ -35,15 +37,14 @@ public:
   const TileAddress& address() const;
 
   // Find a tile by its address.
-  // Returns a pointer to the found tile if its this tile
+  // Returns a pointer to the found tile if it's this tile
   // or an existing descendant of this tile.
   // Returns nullptr if a tile with that address is not found.
   Tile* find(const TileAddress& address);
 
 public slots:
-  void updateView();
   // Called when Y direction changes
-  void updateLayout();
+  void updateLayout(bool flip_y);
   void updatePixmap(QPixmap pixmap);
 
 private:
@@ -52,8 +53,6 @@ private:
   TileAddress address_;
 
   bool pixmap_load_request_sent_ = false;
-
-  const ViewContext& view_context_;
 
   MapTiles* parentMapTiles() const;
   QList<Tile*> childTiles() const;

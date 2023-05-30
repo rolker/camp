@@ -1,17 +1,17 @@
 #include "tile.h"
 #include <cmath>
 #include "map_tiles.h"
-#include <QtConcurrent>
+#include <QStyleOptionGraphicsItem>
 
 namespace map_tiles
 {
 
 const QRectF Tile::bounding_rect_;
 
-Tile::Tile(const ViewContext& view_context, QGraphicsItem *parentItem, TileAddress address):
-  QGraphicsObject(parentItem), address_(address), view_context_(view_context)
+Tile::Tile(QGraphicsItem *parentItem, TileAddress address):
+  QGraphicsObject(parentItem), address_(address)
 {
-  setZValue(address.zoomLevel());
+  new QGraphicsPixmapItem(this);
 }
 
 QRectF Tile::boundingRect() const
@@ -21,78 +21,64 @@ QRectF Tile::boundingRect() const
 
 void Tile::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidget *widget)
 {
-}
+  auto lod = QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform());
 
-void Tile::updateView()
-{
-  if(mapToScene(bounding_rect_).boundingRect().intersects(view_context_.viewport.map_extents))
+  auto map_tiles = parentMapTiles();
+  if(!map_tiles)
+    return;
+
+  if(!pixmap_load_request_sent_ && address_.zoomLevel() >= map_tiles->minimumZoomLevel())
   {
-    if(address_.zoomLevel() <= view_context_.current_zoom_level)
-    {
-      setVisible(true);
-      if(!pixmap_load_request_sent_)
-      {
-        auto map_tiles = parentMapTiles();
-        if(map_tiles)
-        {
-          map_tiles->loadTile(address_);
-          pixmap_load_request_sent_ = true;
-        }
-      }
+    map_tiles->loadTile(address_);
+    pixmap_load_request_sent_ = true;
+  }
 
-      if(childTiles().empty())
-      {
-        for(int x = 0; x < 2; x++)
-          for(int y = 0; y < 2; y++ )
-          {
-            auto child_tile = new Tile(view_context_, this, address_.child(x,y));
-            child_tile->setScale(0.5);
-          }
-        updateLayout();
-      }
-      for(auto tile: childTiles())
-        tile->updateView();
-
-      // if we are not the bottom level tile, hide our pixmap unless
-      // one of child tiles is not ready to render.
-      auto pixmap_item = pixmapItem();
-      if(pixmap_item)
-        if(address_.zoomLevel() < view_context_.current_zoom_level)
-        {
-          bool all_child_tiles_ready = true;
-          for(auto child_tile: childTiles())
-            if(child_tile->isVisible())
-            {
-              auto child_pixmap_item = child_tile->pixmapItem();
-              if(!child_pixmap_item)
-                all_child_tiles_ready = false;
-            }
-            pixmap_item->setVisible(!all_child_tiles_ready);
-        }
-        else
-          pixmap_item->setVisible(true);
-    }
-    else
+  if(lod > 2.0 || address_.zoomLevel() < map_tiles->minimumZoomLevel())
+  {
+    if(address_.zoomLevel() < std::min(TileAddress::max_zoom_level, map_tiles->maximumZoomLevel()) && childTiles().empty())
     {
-      // hide ourselves if we are at too high a zoom level
-      setVisible(false);
+      for(int x = 0; x < 2; x++)
+        for(int y = 0; y < 2; y++ )
+        {
+          auto child_tile = new Tile(this, address_.child(x,y));
+          child_tile->setScale(0.5);
+        }
+      updateLayout(map_tiles->flipY());
     }
+
+    // Show our pixmap if we don't have child tiles, or they don't all have a pixmap ready.
+    auto child_tiles = childTiles();
+    bool show_pixmap = child_tiles.empty();
+    for(auto child_tile: child_tiles)
+    {
+      if(child_tile->pixmapItem()->pixmap().isNull())
+      {
+        show_pixmap = true;
+        break;
+      }
+    }
+    pixmapItem()->setVisible(show_pixmap);
   }
   else
-    // hide ourselves since we are outside of the viewport
-    setVisible(false);
+  {
+    // hide pixmap if we are zoomed out too much
+    if(lod < 1.0 && address_.zoomLevel() > map_tiles->minimumZoomLevel())
+      pixmapItem()->setVisible(false);
+    else
+      pixmapItem()->setVisible(true);
+  }
 }
 
-void Tile::updateLayout()
+void Tile::updateLayout(bool flip_y)
 {
   for(auto tile: childTiles())
   {
     int x = tile->address_.index().x()%2;
     int y = tile->address_.index().y()%2;
-    if(view_context_.flip_y)
+    if(flip_y)
       y = 1-y;
     tile->setPos(x*web_mercator::tile_size/2.0, y*web_mercator::tile_size/2.0);
-    tile->updateLayout();
+    tile->updateLayout(flip_y);
   }
 }
 
@@ -138,13 +124,15 @@ void Tile::updatePixmap(QPixmap pixmap)
 {
   auto pixmap_item = pixmapItem();
   if(pixmap_item)
-    pixmap_item->setPixmap(pixmap);
-  else
   {
-    pixmap_item = new QGraphicsPixmapItem(pixmap, this);
-    pixmap_item->setZValue(address_.zoomLevel());
+    pixmap_item->setPixmap(pixmap);
+    // Scale if our pixmap is not standard tile size.
+    if(pixmap.width() != web_mercator::tile_size || pixmap.height() != web_mercator::tile_size)
+    {
+      if(pixmap.width() > 0 && pixmap.height() > 0)
+        pixmap_item->setTransform(QTransform::fromScale(web_mercator::tile_size/double(pixmap.width()),web_mercator::tile_size/double(pixmap.height())));
+    }
   }
-  // do we need to scale if not default tile size?
 }
 
 const TileAddress& Tile::address() const

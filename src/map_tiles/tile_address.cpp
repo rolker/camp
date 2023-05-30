@@ -6,6 +6,8 @@
 namespace map_tiles
 {
 
+const uint8_t TileAddress::max_zoom_level;
+
 TileAddress::TileAddress(uint8_t zoom_level, QPoint index):
   zoom_level_(zoom_level), index_(index)
 {

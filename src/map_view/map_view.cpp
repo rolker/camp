@@ -5,10 +5,14 @@
 #include <QScrollBar>
 #include <QGuiApplication>
 
+const double MapView::min_zoom_scale_;
+const double MapView::max_zoom_scale_;
+
 MapView::MapView(QWidget *parent) : QGraphicsView(parent)
 {
   connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &MapView::sendViewport);
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, this , &MapView::sendViewport);
+  scale(min_zoom_scale_, -min_zoom_scale_);
 }
 
 void MapView::wheelEvent(QWheelEvent *event)
@@ -24,17 +28,14 @@ void MapView::wheelEvent(QWheelEvent *event)
 
   double scale_change = pow(2,zoom_level_per_degree*angle_delta_degrees);
 
+  auto start_scale = transform().m11();
+
+  auto new_scale = std::max(min_zoom_scale_, std::min(max_zoom_scale_, start_scale*scale_change));
+
+  scale_change = new_scale/start_scale;
+
   scale(scale_change, scale_change);
-
-  auto new_scale = transform().m11();
-
-  if(new_scale < 1.0)
-    scale(1/new_scale, 1/new_scale);
-  else if (new_scale > 33554432) // zoom level 25, 2^25
-    scale(33554432/new_scale, 33554432/new_scale);
     
-  new_scale = transform().m11();
-
   event->accept();
   sendViewport();
 }
@@ -58,7 +59,7 @@ void MapView::sendViewport()
   QPointF top_left = mapToScene(frameRect().topLeft());
   QPointF bottom_right = mapToScene(frameRect().bottomRight());
   viewport.map_extents = QRectF(top_left, bottom_right);
-  viewport.meters_per_map_unit = web_mercator::metersPerPixel(viewport.map_extents.center());
+  viewport.meters_per_map_unit = web_mercator::metersPerUnit(viewport.map_extents.center());
   if (viewport.map_extents.width() > 0.0)
     viewport.pixels_per_map_unit = frameRect().width()/viewport.map_extents.width();
   else

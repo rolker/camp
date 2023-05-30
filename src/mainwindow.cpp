@@ -11,7 +11,6 @@
 
 #include "roslink.h"
 
-#include <modeltest.h>
 #include "backgroundraster.h"
 #include "trackline.h"
 #include "surveypattern.h"
@@ -35,8 +34,6 @@ MainWindow::MainWindow(QWidget *parent) :
     m_ui->setupUi(this);
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
-    
-    new ModelTest(project,this);
 
     m_ui->treeView->setModel(project);
     m_ui->projectView->setStatusBar(statusBar());

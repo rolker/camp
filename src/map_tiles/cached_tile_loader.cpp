@@ -47,6 +47,8 @@ void CachedTileLoader::load(TileAddress address)
   QFileInfo file_path(cache_path_, address);
   if(file_path.exists())
     url_str = "file://"+file_path.filePath();
+  else
+    qDebug() << "fetching " << url_str;
 
   QNetworkRequest request(url_str);
   request.setRawHeader("User-Agent", "CCOMAutonomousMissionPlanner/1.0");

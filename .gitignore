@@ -32,7 +32,9 @@ build
 local
 workspace/*
 *.kdev4
+doc/html
 
 # VSCode
 c_cpp_properties.json
 settings.json
+doc/manifest.yaml

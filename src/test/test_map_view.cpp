@@ -1,7 +1,11 @@
 #include <QApplication>
 #include "test_map_view.h"
 #include <QLabel>
+#include "../map/map.h"
+#include "../map/map_item_delegate.h"
 #include "../map_tiles/map_tiles.h"
+#include <QAbstractItemModelTester>
+
 
 TestMapView::TestMapView(QWidget *parent)
 {
@@ -10,36 +14,32 @@ TestMapView::TestMapView(QWidget *parent)
   ui_.statusBar->addWidget(position_label_);
   connect(ui_.mapView, &MapView::mouseMoved, this, &TestMapView::mousePositionUpdate);
 
-  map_tiles::MapTiles* openstreetmap = new map_tiles::MapTiles();
-  connect(ui_.mapView, &MapView::viewportChanged, openstreetmap, &map_tiles::MapTiles::updateViewport);
+  map_ = new map::Map(this);
 
-  openstreetmap->setLabel("openstreetmap");
-  openstreetmap->setBaseUrl("https://tile.openstreetmap.org/");
+  new QAbstractItemModelTester(map_,QAbstractItemModelTester::FailureReportingMode::Fatal, this);
+  
+  ui_.mapView->setScene(map_->scene());
+  connect(ui_.mapView, &MapView::viewportChanged, map_, &map::Map::viewportChanged);
 
-  scene_.addItem(openstreetmap);
-
-  map_tiles::MapTiles* openseamap = new map_tiles::MapTiles();
-  openseamap->setLabel("openseamap");
-  openseamap->setBaseUrl("https://tiles.openseamap.org/seamark/");
-  connect(ui_.mapView, &MapView::viewportChanged, openseamap, &map_tiles::MapTiles::updateViewport);
-
-  scene_.addItem(openseamap);
-
-  ui_.mapView->setScene(&scene_);
+  ui_.mapTreeView->setDragEnabled(true);
+  ui_.mapTreeView->viewport()->setAcceptDrops(true);
+  ui_.mapTreeView->setDropIndicatorShown(true);
+  ui_.mapTreeView->setItemDelegate( new map::MapItemDelegate(this));
+  ui_.mapTreeView->setModel(map_);
 }
 
 void TestMapView::mousePositionUpdate(QGeoCoordinate position)
 {
-   QString posText = position.toString(QGeoCoordinate::Degrees) + " (" + position.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
-   position_label_->setText(posText);
+  QString posText = position.toString(QGeoCoordinate::Degrees) + " (" + position.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
+  position_label_->setText(posText);
 }
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
+  QApplication a(argc, argv);
 
-    TestMapView tmv;
-    tmv.show();
-    
-    return a.exec();
+  TestMapView tmv;
+  tmv.show();
+  
+  return a.exec();
 }

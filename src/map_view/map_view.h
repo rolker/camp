@@ -39,6 +39,15 @@ protected:
   void wheelEvent(QWheelEvent *event) override;
   void mouseMoveEvent(QMouseEvent *event) override;
   void resizeEvent(QResizeEvent* event) override;
+
+private:
+  static constexpr double min_zoom_scale_ = 1/50000.0; // 50000 m/pixel
+
+  // Zooming in more than about 50 causes some overview tiles not in the view to suddenly
+  // get paint calls, probably due to overflow in QTransform calculations. These paint
+  // calls tigger tiles to load and potentially download their image, which could easily
+  // go beyond a tile server's usage limits.
+  static constexpr double max_zoom_scale_ = 50; // 2 cm/pixel
 };
 
 #endif

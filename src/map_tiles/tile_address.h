@@ -42,6 +42,11 @@ public:
 
   bool descendentOf(const TileAddress &potential_ancestor) const;
 
+  // At zoom level 25, a pixel represents about 5 millimeters. 
+  // This can be used to set a limit when zooming. It may be adjusted if we find a reason to do
+  // so, so don't count on it staying at this level.
+  static constexpr uint8_t max_zoom_level = 25;
+
 private:
   uint8_t zoom_level_ = 0;
   QPoint index_;

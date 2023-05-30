@@ -3,7 +3,13 @@
 
 #include <QMainWindow>
 #include "ui_test_map_view.h"
+
 class QLabel;
+
+namespace map
+{
+  class Map;
+}
 
 class TestMapView: public QMainWindow
 {
@@ -19,7 +25,7 @@ private:
 
   QLabel * position_label_;
 
-  QGraphicsScene scene_;
+  map::Map* map_;
 };
 
 #endif

@@ -7,17 +7,28 @@
 #include "cached_tile_loader.h"
 #include <QDir>
 
+#include <QDebug>
+
 namespace map_tiles
 {
 
-MapTiles::MapTiles(QGraphicsItem *parentItem):
-  QGraphicsObject(parentItem)
+MapTiles::MapTiles(map::MapItem* parentItem):
+  map::Layer(parentItem, "Map Tiles")
 {
   tile_loader_ = new CachedTileLoader(this);
 
   connect(tile_loader_, &CachedTileLoader::pixmapLoaded, this, &MapTiles::tileLoaded);
 
-  top_tile_ = new Tile(view_context_, this);
+  top_tile_ = new Tile(this);
+
+  // size of a pixel relative to a meter
+  double scale = web_mercator::earth_radius_at_equator*2.0*M_PI/double(web_mercator::tile_size);
+
+  // tile raster origin is upper left corner, so flip y to make increasing raster y go down in latitude
+  top_tile_->setTransform(QTransform::fromScale(scale, -scale), true);
+
+  double half_earth_circumference = web_mercator::earth_radius_at_equator*M_PI;
+  top_tile_->setPos(-half_earth_circumference, half_earth_circumference);
 }
 
 QRectF MapTiles::boundingRect() const
@@ -25,49 +36,52 @@ QRectF MapTiles::boundingRect() const
   return  childrenBoundingRect();
 }
 
-void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidget *widget)
+void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-  painter->save();
-  painter->setRenderHint(QPainter::SmoothPixmapTransform);
-  double scale = painter->transform().m11();
-  painter->restore();
 }
 
-void MapTiles::updateViewport(MapView::Viewport viewport)
+bool MapTiles::flipY() const
 {
-  view_context_.viewport = viewport;
-  if(viewport.pixels_per_map_unit > 0.0)
-  // todo, change max zoom of 18 to a parameter
-  //   view_context_.current_zoom_level = std::min(std::max(ui_.minimumLevelSpinBox->value(), int(floor(log2(viewport.pixels_per_map_unit/ui_.viewScaleDoubleSpinBox->value())))), 18);
-  // else
-  //   view_context_.current_zoom_level = ui_.minimumLevelSpinBox->value();
-
-    view_context_.current_zoom_level = std::min(std::max(0, int(floor(log2(viewport.pixels_per_map_unit/1.5)))), 18);
-  else
-    view_context_.current_zoom_level = 0;
-
-
-  top_tile_->updateView();
+  return flip_y_;
 }
 
-void MapTiles::updateMinimumZoomLevel(int level)
+void MapTiles::setFlipY(bool flipped)
 {
-  updateViewport(view_context_.viewport);
+  flip_y_ = flipped;
+  top_tile_->updateLayout(flipped);
+}
+
+uint8_t MapTiles::minimumZoomLevel() const
+{
+  return minimum_zoom_level_;
+}
+
+void MapTiles::setMinimumZoomLevel(uint8_t level)
+{
+  minimum_zoom_level_ = level;
+  update();
+}
+
+uint8_t MapTiles::maximumZoomLevel() const
+{
+  return maximum_zoom_level_;
+}
+
+void MapTiles::setMaximumZoomLevel(uint8_t level)
+{
+  maximum_zoom_level_ = level;
+  update();
 }
 
 void MapTiles::updateViewScale(double view_scale)
 {
-  updateViewport(view_context_.viewport);
+  //updateViewport(view_context_.viewport);
 }
 
-void MapTiles::setYDirection(bool flipped)
-{
-  view_context_.flip_y = flipped;
-  top_tile_->updateLayout();
-}
 
 void MapTiles::setLabel(QString label)
 {
+  setObjectName(label);
   auto dir = QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles/"+label);
   //ui_.localPathLineEdit->setText(dir);
   tile_loader_->setCachePath(dir);
