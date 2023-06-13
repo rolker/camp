@@ -6,12 +6,10 @@
 namespace tools
 {
 
-class ToolsManager;
-
 class MapTool: public map::MapItem
 {
 public:
-  MapTool(ToolsManager* tools_manager, const QString& object_name);
+  MapTool(MapItem* parent, const QString& object_name);
 
 };
 

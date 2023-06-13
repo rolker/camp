@@ -46,18 +46,7 @@ void Tile::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidg
       updateLayout(map_tiles->flipY());
     }
 
-    // Show our pixmap if we don't have child tiles, or they don't all have a pixmap ready.
-    auto child_tiles = childTiles();
-    bool show_pixmap = child_tiles.empty();
-    for(auto child_tile: child_tiles)
-    {
-      if(child_tile->pixmapItem()->pixmap().isNull())
-      {
-        show_pixmap = true;
-        break;
-      }
-    }
-    pixmapItem()->setVisible(show_pixmap);
+    pixmapItem()->setVisible(lod < 4.0);
   }
   else
   {

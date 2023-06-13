@@ -1,9 +1,9 @@
-#ifndef MAP_MAP_ITEM_DELEGATE_H
-#define MAP_MAP_ITEM_DELEGATE_H
+#ifndef MAP_TREE_VIEW_MAP_ITEM_DELEGATE_H
+#define MAP_TREE_VIEW_MAP_ITEM_DELEGATE_H
 
 #include <QStyledItemDelegate>
 
-namespace map
+namespace map_tree_view
 {
 
 class MapItemDelegate: public QStyledItemDelegate
@@ -17,6 +17,6 @@ public:
   void updateEditorGeometry(QWidget *editor, const QStyleOptionViewItem &option, const QModelIndex &index) const override;
 };
 
-} // namespace map
+} // namespace map_tree_view
 
 #endif

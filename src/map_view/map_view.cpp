@@ -4,6 +4,10 @@
 #include <QAbstractSlider>
 #include <QScrollBar>
 #include <QGuiApplication>
+#include "../map/map.h"
+#include <QSettings>
+
+#include <QDebug>
 
 const double MapView::min_zoom_scale_;
 const double MapView::max_zoom_scale_;
@@ -13,6 +17,12 @@ MapView::MapView(QWidget *parent) : QGraphicsView(parent)
   connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &MapView::sendViewport);
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, this , &MapView::sendViewport);
   scale(min_zoom_scale_, -min_zoom_scale_);
+}
+
+void MapView::setMap(map::Map* map)
+{
+  setScene(map->scene());
+  connect(this, &MapView::viewportChanged, map, &map::Map::viewportChanged);
 }
 
 void MapView::wheelEvent(QWheelEvent *event)
@@ -37,7 +47,8 @@ void MapView::wheelEvent(QWheelEvent *event)
   scale(scale_change, scale_change);
     
   event->accept();
-  sendViewport();
+  update();
+  //sendViewport();
 }
 
 void MapView::mouseMoveEvent(QMouseEvent *event)
@@ -67,3 +78,25 @@ void MapView::sendViewport()
   emit viewportChanged(viewport);
 }
 
+void MapView::readSettings()
+{
+  QSettings settings;
+
+  settings.beginGroup("MapView");
+  qreal new_scale = settings.value("scale", min_zoom_scale_).toReal();
+  auto scale_change = new_scale/transform().m11();
+  scale(scale_change, scale_change);
+  centerOn(settings.value("center").toPointF());
+  settings.endGroup();
+}
+
+void MapView::writeSettings()
+{
+  QSettings settings;
+
+  settings.beginGroup("MapView");
+  settings.setValue("scale", transform().m11());
+  settings.setValue("center", mapToScene(frameRect().center()));
+  settings.endGroup();
+
+}

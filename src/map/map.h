@@ -6,11 +6,13 @@
 #include "../map_view/map_view.h"
 
 class QGraphicsScene;
+class QMenu;
 
 namespace map
 {
   class MapItem;
   class TopLevelItem;
+  class LayerList;
 
 // Implements a model to use with Model/View widgets
 // and provides a QGraphicsScene for viewing
@@ -45,6 +47,16 @@ public:
   // or nullptr if it can't be found.
   QGraphicsScene* scene() const;
 
+  // Called by map items to indicate that data relevant to the tree view has changed.
+  void updateDisplay(const MapItem* map_item, const QVector<int> &roles = QVector<int>());
+
+  // Notifies the view of the change then sets the child's parent.
+  void setMapItemParent(MapItem* child_item, MapItem* parent_item);
+
+  // Sets context menu items for given index
+  void contextMenuFor(QMenu* menu, const QModelIndex& index);
+
+  LayerList* topLevelLayers() const;
 signals:
   void viewportChanged(MapView::Viewport viewport);
 
@@ -52,8 +64,6 @@ private:
   QModelIndex index(const MapItem* map_item) const;
 
   MapItem* top_level_items_;
-
-
 };
 
 } // namespace map

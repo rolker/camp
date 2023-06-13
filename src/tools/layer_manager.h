@@ -3,6 +3,11 @@
 
 #include "map_tool.h"
 
+namespace map
+{
+  class LayerList;
+}
+
 namespace tools
 {
 
@@ -10,7 +15,7 @@ namespace tools
 class LayerManager: public MapTool
 {
 public:
-  LayerManager(ToolsManager* tools_manager, const QString& object_name);
+  LayerManager(MapItem* parent, const QString& object_name);
 
   enum { Type = map::LayerManagerType };
 
@@ -19,6 +24,9 @@ public:
     // Enable the use of qgraphicsitem_cast with this item.
     return Type;
   }
+
+protected:
+  map::LayerList* topLevelLayers();
 
 };
 

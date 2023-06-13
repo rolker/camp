@@ -30,6 +30,10 @@ enum ItemType
   BackgroundManagerType,
   MapTilesType,
   RasterLayerType,
+  NodeManagerType,
+  RosLayerType,
+  MarkerNamespaceType,
+  MarkerType,
 
   // other QGraphicsItem descendants
   TileType,

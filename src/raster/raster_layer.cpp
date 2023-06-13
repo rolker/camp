@@ -11,14 +11,22 @@
 namespace raster
 {
 
-RasterLayer::RasterLayer(map::MapItem* parentItem):
-  map::Layer(parentItem, "raster")
+RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
+  map::Layer(parentItem, QFileInfo(filename).fileName())
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
+  loadFile(filename);
 }
 
+RasterLayer::~RasterLayer()
+{
+  abort_flag_mutex_.lock();
+  abort_flag_ = true;
+  abort_flag_mutex_.unlock();
+  future_watcher_.waitForFinished();
+}
 
 QRectF RasterLayer::boundingRect() const
 {
@@ -48,12 +56,11 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 
 void RasterLayer::loadFile(const QString& filename)
 {
-  setObjectName(QFileInfo(filename).fileName());
+  setStatus("(loading...)");
   future_watcher_.setFuture(QtConcurrent::run(this, &RasterLayer::loadAndReprojectFile, filename));
-  //imageReady(loadAndReprojectFile(filename));
 }
 
-RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filename) const
+RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filename)
 {
   LoadResult result;
 
@@ -126,6 +133,9 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
           }
         }
       }
+      QMutexLocker lock(&abort_flag_mutex_);
+      if(abort_flag_)
+        return {};
     }
   }
 
@@ -148,6 +158,7 @@ void RasterLayer::imageReady()
   setPos(result.world_x, result.world_y);
  
   update(boundingRect());
+  setStatus("");
 }
 
 } // namespace raster

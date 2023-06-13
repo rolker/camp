@@ -17,7 +17,7 @@ class MapTiles: public map::Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  MapTiles(map::MapItem* parentItem);
+  MapTiles(map::MapItem* parentItem, const QString& label);
 
   enum { Type = map::MapTilesType};
   int type() const override
@@ -25,13 +25,11 @@ public:
     return Type;
   }
 
-
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
   void loadTile(TileAddress tile_address);
 
-  void setLabel(QString label);
   void setBaseUrl(QString base_url);
 
   // Returns true if tiles are addressed from south to north.
@@ -45,8 +43,6 @@ public slots:
   void setMaximumZoomLevel(uint8_t level);
   void setFlipY(bool flipped);
 
-  void labelEditingFinished();
-  void baseUrlEditingFinished();
   void updateViewScale(double view_scale);
 
 private:

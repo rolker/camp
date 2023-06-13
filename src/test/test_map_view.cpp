@@ -2,9 +2,10 @@
 #include "test_map_view.h"
 #include <QLabel>
 #include "../map/map.h"
-#include "../map/map_item_delegate.h"
+#include "../map_tree_view/map_item_delegate.h"
 #include "../map_tiles/map_tiles.h"
 #include <QAbstractItemModelTester>
+#include "../ros/node_manager.h"
 
 
 TestMapView::TestMapView(QWidget *parent)
@@ -18,14 +19,8 @@ TestMapView::TestMapView(QWidget *parent)
 
   new QAbstractItemModelTester(map_,QAbstractItemModelTester::FailureReportingMode::Fatal, this);
   
-  ui_.mapView->setScene(map_->scene());
-  connect(ui_.mapView, &MapView::viewportChanged, map_, &map::Map::viewportChanged);
-
-  ui_.mapTreeView->setDragEnabled(true);
-  ui_.mapTreeView->viewport()->setAcceptDrops(true);
-  ui_.mapTreeView->setDropIndicatorShown(true);
-  ui_.mapTreeView->setItemDelegate( new map::MapItemDelegate(this));
-  ui_.mapTreeView->setModel(map_);
+  ui_.mapView->setMap(map_);
+  ui_.mapTreeView->setMap(map_);
 }
 
 void TestMapView::mousePositionUpdate(QGeoCoordinate position)
@@ -36,6 +31,8 @@ void TestMapView::mousePositionUpdate(QGeoCoordinate position)
 
 int main(int argc, char *argv[])
 {
+  camp_ros::NodeManager::init(argc, argv);
+
   QApplication a(argc, argv);
 
   TestMapView tmv;

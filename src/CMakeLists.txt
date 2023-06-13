@@ -124,31 +124,39 @@ add_subdirectory(helm_manager)
 
 # test map view
 
-set( TEST_MAP_VIEW_SOURCES
+set( CAMP_SOURCES
     background/background_manager.cpp
+    main/camp_main_window.cpp
+    main/main.cpp
     map/map.cpp
     map/map_item.cpp
-    map/map_item_delegate.cpp
     map/map_item_mime_data.cpp
     map/layer_list.cpp
     map/layer.cpp
-    map/utilities.cpp
     map_tiles/cached_tile_loader.cpp
     map_tiles/map_tiles.cpp
     map_tiles/tile.cpp
     map_tiles/tile_address.cpp
+    map_tree_view/map_item_delegate.cpp
+    map_tree_view/map_tree_view.cpp
     map_view/map_view.cpp
     map_view/web_mercator.cpp
     raster/raster_layer.cpp
-    test/modeltest.cpp
-    test/test_map_view.cpp
+    ros/layer.cpp
+    ros/node.cpp
+    ros/node_manager.cpp
+    ros/grids/grid_manager.cpp
+    ros/grids/grid_map.cpp
+    ros/markers/marker.cpp
+    ros/markers/marker_namespace.cpp
+    ros/markers/markers.cpp
+    ros/markers/markers_manager.cpp
     tools/layer_manager.cpp
     tools/map_tool.cpp
     tools/tools_manager.cpp
-    
 )
 
 
-add_executable(test_map_view ${TEST_MAP_VIEW_SOURCES})
-qt5_use_modules(test_map_view Widgets Positioning Concurrent Network Test)
-target_link_libraries(test_map_view ${QT_LIBRARIES} ${GDAL_LIBRARY})
+add_executable(camp2 ${CAMP_SOURCES})
+qt5_use_modules(camp2 Widgets Positioning Concurrent Network Test)
+target_link_libraries(camp2 ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})

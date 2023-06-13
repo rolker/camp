@@ -22,6 +22,8 @@ public:
 
 protected:
   void updateFlags(Qt::ItemFlags& flags) const override;
+  void readSettings() override;
+  void writeSettings() override;
 
 };
 

@@ -67,7 +67,8 @@ int MissionItem::row() const
 void MissionItem::write(QJsonObject& json) const
 {
     json["label"] = objectName();
-    json["speed"]=m_speed;
+    if (m_speed > 0.0)
+        json["speed"]=m_speed;
 }
 
 

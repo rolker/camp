@@ -43,18 +43,44 @@ public:
 
   virtual bool canDropMimeData(const QMimeData* data, Qt::DropAction action, int row, int col) const;
 
+  // Sets the object name and notifies the model of the change.
+  void setObjectName(const QString& name);
+
+  // Returns the status text to be displayed in the tree view.
+  const QString& status() const;
+
 public slots:
   void setOpacity(qreal opacity);
 
 protected:
   // Allows item to modify Model/View flags.
   virtual void updateFlags(Qt::ItemFlags& flags) const;
+  
+  // Sets the status text to be displayed in tree view.
+  void setStatus(const QString& status);
+
+  // Returns the Map object this belongs to, or nullptr if not found.
+  Map * parentMap() const;
+
+  // called when a context menu is requested.
+  virtual void contextMenu(QMenu* menu);
+
+  virtual void readSettings();
+  virtual void writeSettings();
 
 private:
   // Make sure Map can create a top level item without a parent.
   friend class Map;
   MapItem(const QString& object_name);
 
+private slots:
+  // called once the MapItem and derived contructors are completed.
+  void itemConstructed();
+  void applicationQuitting();
+
+private:
+  // Status to be displayed along object name in tree view.
+  QString status_;
 };
 
 } // namespace map

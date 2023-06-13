@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>TestMapView</class>
- <widget class="QMainWindow" name="TestMapView">
+ <class>camp::MainWindow</class>
+ <widget class="QMainWindow" name="camp::MainWindow">
   <property name="geometry">
    <rect>
     <x>0</x>

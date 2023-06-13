@@ -3,7 +3,10 @@
 #include "../tools/tools_manager.h"
 #include "layer_list.h"
 #include "../background/background_manager.h"
+#include "../ros/node_manager.h"
 #include "map_item_mime_data.h"
+#include <QMenu>
+#include "layer.h"
 
 #include <QDebug>
 
@@ -22,6 +25,8 @@ Map::Map(QObject *parent):
   auto tools_manager = new tools::ToolsManager(top_level_items_);
   auto background_manager = new background::BackgroundManager(tools_manager);
   background_manager->createDefaultLayers();
+
+  auto ros_manager = new camp_ros::NodeManager(tools_manager);
 }
 
 
@@ -55,6 +60,14 @@ QVariant Map::data(const QModelIndex & index, int role) const
     switch(role)
     {
       case Qt::DisplayRole:
+      {
+        QString display = map_item->objectName();
+        auto status = map_item->status();
+        if(!status.isEmpty())
+          display += " "+status;
+        data.setValue(display);
+        break;
+      }
       case Qt::EditRole:
         data.setValue(map_item->objectName());
         break;
@@ -80,9 +93,11 @@ bool Map::setData(const QModelIndex &index, const QVariant &value, int role)
     {
       case Qt::EditRole:
         map_item->setObjectName(value.value<QString>());
+        emit dataChanged(index, index, QVector<int>(1,role));
         return true;
       case Qt::CheckStateRole:
         map_item->setVisible(value.value<Qt::CheckState>());
+        emit dataChanged(index, index, QVector<int>(1,role));
         return true;
     }
   return false;
@@ -248,7 +263,7 @@ bool Map::dropMimeData(const QMimeData * data, Qt::DropAction action, int row, i
         {
           auto oldIndex = index(layer);
 
-          // if are moving down in the same list, account for our old spot.
+          // if we are moving down in the same list, account for our old spot.
           if(layer->parentMapItem() == parent_item && oldIndex.row() < row)
             row -= 1;
 
@@ -271,6 +286,41 @@ bool Map::dropMimeData(const QMimeData * data, Qt::DropAction action, int row, i
       }
     }
   return false;
+}
+
+void Map::updateDisplay(const MapItem* map_item, const QVector<int> &roles)
+{
+  auto item_index = index(map_item);
+  emit dataChanged(item_index, item_index, roles);
+}
+
+
+void Map::setMapItemParent(MapItem* child_item, MapItem* parent_item)
+{
+  // \todo, check for existing parent and properly remove
+
+  auto parent_index = index(parent_item);
+  beginInsertRows(parent_index, 0, 0);
+  child_item->setParentItem(parent_item);
+  endInsertRows()  ;
+}
+
+void Map::contextMenuFor(QMenu* menu, const QModelIndex& index)
+{
+  auto map_item = reinterpret_cast<MapItem*>(index.internalPointer());
+  if(map_item)
+    map_item->contextMenu(menu);
+}
+
+LayerList* Map::topLevelLayers() const
+{
+  for(auto item: top_level_items_->childMapItems())
+  {
+    auto layers = qgraphicsitem_cast<LayerList*>(item);
+    if(layers)
+      return layers;
+  }
+  return nullptr;
 }
 
 } // namespace map

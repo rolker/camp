@@ -12,7 +12,8 @@ class RasterLayer: public map::Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  RasterLayer(map::MapItem* parentItem);
+  RasterLayer(map::MapItem* parentItem, const QString& filename);
+  ~RasterLayer();
 
   enum { Type = map::RasterLayerType};
   int type() const override
@@ -24,8 +25,6 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
-public slots:
-  void loadFile(const QString& filename);
 
 private:
   // Store lower resolutions in an image pyramid
@@ -43,9 +42,14 @@ private:
 
   QFutureWatcher<LoadResult> future_watcher_;
 
-  LoadResult loadAndReprojectFile(const QString& filename) const;
+  // Used to indicate the load thread should abort
+  bool abort_flag_ = false;
+  QMutex abort_flag_mutex_;
+
+  LoadResult loadAndReprojectFile(const QString& filename);
 
 private slots:
+  void loadFile(const QString& filename);
   void imageReady();
 
 };

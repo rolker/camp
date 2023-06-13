@@ -36,7 +36,7 @@ public slots:
     void openBackground(QString const &fname);
     void setWorkspace(QString const &dir);
 
-    void setCurrent(QModelIndex &index);
+    void setCurrent(const QModelIndex &index, const QModelIndex &previous);
     void onROSConnected(bool connected);
     void activePlatfromPosition(QGeoCoordinate position);
 

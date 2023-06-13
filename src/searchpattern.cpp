@@ -145,7 +145,8 @@ void SearchPattern::writeToMissionPlan(QJsonArray& navArray) const
     QJsonObject navItem;
     navItem["pathtype"] = "trackline";
     QJsonObject params;
-    params["speed_ms"] = m_speed*0.514444; // knots to m/s
+    if (m_speed>0.0)
+      params["speed_ms"] = m_speed*0.514444; // knots to m/s
     navItem["parameters"] = params;
     writeBehaviorsToMissionPlanObject(navItem);
     QJsonArray pathNavArray;

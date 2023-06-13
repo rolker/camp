@@ -1,8 +1,8 @@
 #include "map_item_delegate.h"
 #include <QDoubleSpinBox>
-#include "map_item.h"
+#include "../map/map_item.h"
 
-namespace map
+namespace map_tree_view
 {
 
 MapItemDelegate::MapItemDelegate(QObject *parent):
@@ -25,17 +25,17 @@ QWidget *MapItemDelegate::createEditor(QWidget *parent, const QStyleOptionViewIt
 
 void MapItemDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const
 {
-  auto map_item = reinterpret_cast<MapItem*>(index.internalPointer());
+  auto map_item = reinterpret_cast<map::MapItem*>(index.internalPointer());
   auto spin_box = qobject_cast<QDoubleSpinBox*>(editor);
   spin_box->setPrefix(map_item->objectName()+" opacity: ");
   spin_box->setValue(map_item->opacity());
-  connect(spin_box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), map_item, &MapItem::setOpacity);
+  connect(spin_box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), map_item, &map::MapItem::setOpacity);
   //QStyledItemDelegate::setEditorData(editor, index);
 }
 
 void MapItemDelegate::setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const
 {
-  auto map_item = reinterpret_cast<MapItem*>(index.internalPointer());
+  auto map_item = reinterpret_cast<map::MapItem*>(index.internalPointer());
   auto spin_box = qobject_cast<QDoubleSpinBox*>(editor);
   map_item->setOpacity(spin_box->value());
   //QStyledItemDelegate::setModelData(editor, model, index);
@@ -46,4 +46,4 @@ void MapItemDelegate::updateEditorGeometry(QWidget *editor, const QStyleOptionVi
   QStyledItemDelegate::updateEditorGeometry(editor, option, index);
 }
 
-} // namespace map
+} // namespace map_tree_view

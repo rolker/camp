@@ -4,6 +4,11 @@
 #include <QGraphicsView>
 #include <QGeoCoordinate>
 
+namespace map
+{
+  class Map;
+}
+
 // Widget for displaying a QGraphicsScene in a web mercator view.
 // Signals are sent to report the mouse positions in WGS84 coordinates
 // and to notify when the viewport changes.
@@ -14,6 +19,8 @@ class MapView: public QGraphicsView
   Q_OBJECT
 public:
   explicit MapView(QWidget *parent = 0);
+
+  void setMap(map::Map * map);
 
   // Information about the viewable portion of the scene.
   struct Viewport
@@ -27,6 +34,9 @@ public:
     // Approximate size in meters of a map unit
     double meters_per_map_unit;
   };
+
+  void readSettings();
+  void writeSettings();
 
 signals:
   void mouseMoved(QGeoCoordinate position);

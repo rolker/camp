@@ -3,6 +3,11 @@
 
 #include "../tools/layer_manager.h"
 
+namespace tools
+{
+  class ToolsManager;
+}
+
 namespace background
 {
 
@@ -25,6 +30,10 @@ public:
   // Create default base maps, such as Open Street Map layers.
   void createDefaultLayers();
 
+  void contextMenu(QMenu* menu) override;
+
+private slots:
+  void openRaster();
 };
 
 } // namespace base_layers

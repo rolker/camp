@@ -42,10 +42,12 @@ MainWindow::MainWindow(QWidget *parent) :
     m_ui->detailsView->setProject(project);
     connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,m_ui->detailsView,&DetailsView::onCurrentItemChanged);
 
+    connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,this,&MainWindow::setCurrent);
+
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->projectView, &ProjectView::updateBackground);
     connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, m_ui->projectView, &ProjectView::beforeUpdateBackground);
 
-    connect(m_ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
+    //connect(m_ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
@@ -126,10 +128,10 @@ void MainWindow::openBackground(const QString& fname)
     //unsetCursor();
 }
 
-void MainWindow::setCurrent(QModelIndex &index)
+void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previous)
 {
-    m_ui->treeView->setCurrentIndex(index);
-    project->setCurrent(index);
+    //m_ui->treeView->setCurrentIndex(index);
+    //project->setCurrent(index);
     MissionItem* i = project->itemFromIndex(index);
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
 }

@@ -4,8 +4,8 @@
 namespace tools
 {
 
-MapTool::MapTool(ToolsManager* tools_manager, const QString& object_name):
-  MapItem(tools_manager, object_name)
+MapTool::MapTool(MapItem* parent, const QString& object_name):
+  MapItem(parent, object_name)
 {
 
 }

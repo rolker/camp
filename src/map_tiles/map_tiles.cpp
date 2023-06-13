@@ -12,12 +12,15 @@
 namespace map_tiles
 {
 
-MapTiles::MapTiles(map::MapItem* parentItem):
-  map::Layer(parentItem, "Map Tiles")
+MapTiles::MapTiles(map::MapItem* parentItem, const QString& label):
+  map::Layer(parentItem, label)
 {
   tile_loader_ = new CachedTileLoader(this);
 
   connect(tile_loader_, &CachedTileLoader::pixmapLoaded, this, &MapTiles::tileLoaded);
+
+  auto dir = QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles/"+label);
+  tile_loader_->setCachePath(dir);
 
   top_tile_ = new Tile(this);
 
@@ -78,32 +81,9 @@ void MapTiles::updateViewScale(double view_scale)
   //updateViewport(view_context_.viewport);
 }
 
-
-void MapTiles::setLabel(QString label)
-{
-  setObjectName(label);
-  auto dir = QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles/"+label);
-  //ui_.localPathLineEdit->setText(dir);
-  tile_loader_->setCachePath(dir);
-  //if(ui_.labelLineEdit->text() != label)
-    //ui_.labelLineEdit->setText(label);
-}
-
-void MapTiles::labelEditingFinished()
-{
-  //setLabel(ui_.labelLineEdit->text());
-}
-
 void MapTiles::setBaseUrl(QString base_url)
 {
   tile_loader_->setBaseUrl(base_url);
-  //if(ui_.baseURLLineEdit->text() != base_url)
-  //  ui_.baseURLLineEdit->setText(base_url);
-}
-
-void MapTiles::baseUrlEditingFinished()
-{
-  //setBaseUrl(ui_.baseURLLineEdit->text());
 }
 
 void MapTiles::loadTile(TileAddress tile_address)
