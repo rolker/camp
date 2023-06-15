@@ -99,7 +99,9 @@ public:
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
     QJsonDocument generateMissionTask(QModelIndex const &index);
-    
+
+    double speed() const;
+
 signals:
     void backgroundUpdated(BackgroundRaster *bg);
     void aboutToUpdateBackground();
@@ -126,6 +128,8 @@ public slots:
 
     void updateActivePlatform(Platform *platform);
 
+    void setSpeed(double speed);
+
 
 private:
     QGraphicsScene* m_scene;
@@ -140,7 +144,9 @@ private:
     
     QSvgRenderer* m_symbols;
 
-    bool m_contextMode = false;    
+    bool m_contextMode = false;
+
+    double m_speed = 0.0;
 
     void setCurrentBackground(BackgroundRaster *bgr);
     QString generateUniqueLabel(std::string const &prefix);

@@ -34,6 +34,9 @@ public:
         AutonomousVehicleProject::RowInserter ri(*autonomousVehicleProject(),this, row);
         T* ret = new T(this, row);
         ret->setObjectName(name);
+        auto project = autonomousVehicleProject();
+        if(project)
+            ret->setSpeed(project->speed());
         return ret;
     }
     

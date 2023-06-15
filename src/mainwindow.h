@@ -30,6 +30,7 @@ public:
 
 signals:
     void closing();
+    void speedUpdated(double speed);
 
 public slots:
     void open(QString const &fname);

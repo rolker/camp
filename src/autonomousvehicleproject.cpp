@@ -891,6 +891,16 @@ Platform* AutonomousVehicleProject::activePlatform() const
     return m_activePlatform;
 }
 
+void AutonomousVehicleProject::setSpeed(double speed)
+{
+    m_speed = speed;
+}
+
+double AutonomousVehicleProject::speed() const
+{
+    return m_speed;
+}
+
 AutonomousVehicleProject::RowInserter::RowInserter(AutonomousVehicleProject& project, MissionItem* parent, int row):m_project(project)
 {
     //qDebug() << "RowInserter: row " << row << " parent " << parent->objectName();

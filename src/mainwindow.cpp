@@ -134,6 +134,7 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
     //project->setCurrent(index);
     MissionItem* i = project->itemFromIndex(index);
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
+    emit speedUpdated(i->speed());
 }
 
 void MainWindow::on_speedLineEdit_editingFinished()
@@ -141,6 +142,10 @@ void MainWindow::on_speedLineEdit_editingFinished()
     auto item = project->currentSelected();
     if(item) 
         item->setSpeed(m_ui->speedLineEdit->text().toDouble());
+    bool ok;
+    auto speed = m_ui->speedLineEdit->text().toDouble(&ok);
+    if(ok)
+        emit speedUpdated(speed);
 }
 
 void MainWindow::on_actionOpen_triggered()
