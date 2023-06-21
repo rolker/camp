@@ -155,7 +155,11 @@ void Grid::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
 
 QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::Pose &pose, const std_msgs::Header &header)
 {
-  QGeoCoordinate ret;
+  if(header.frame_id.empty())
+  {
+    ROS_WARN_STREAM_THROTTLE(1.0, "Grid: Missing frame_id: " << header);
+    return {};
+  }
   try
   {
     geometry_msgs::PoseStamped grid_corner;
@@ -168,13 +172,13 @@ QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::Pose &pose, const std
     ecef_point[1] = ecef.pose.position.y;
     ecef_point[2] = ecef.pose.position.z;
     gz4d::GeoPointLatLongDegrees ll = ecef_point;
-    ret = QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
+    return QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
   }
   catch (tf2::TransformException &ex)
   {
     ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for grid: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
   }
-  return ret;
+  return {};
 }
 
 

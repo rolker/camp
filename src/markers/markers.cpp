@@ -157,19 +157,38 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
   {
     auto marker_data = std::make_shared<MarkerData>();
     marker_data->marker = m;
-    marker_data->position = getGeoCoordinate(m.pose, m.header);
-    marker_data->rotation = tf2::getYaw(m.pose.orientation);
-    std::lock_guard<std::mutex> lock(new_markers_mutex_);
-    new_markers_.push_back(marker_data);
+    try
+    {
+      if(m.action == visualization_msgs::Marker::ADD)
+      {
+        if(m.header.frame_id.empty())
+        {
+          ROS_WARN_STREAM_THROTTLE(1.0, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
+          continue;;
+        }
+        marker_data->position = getGeoCoordinate(m.pose, m.header);
+        marker_data->rotation = tf2::getYaw(m.pose.orientation);
+      }
+      std::lock_guard<std::mutex> lock(new_markers_mutex_);
+      new_markers_.push_back(marker_data);
+    }
+    catch (tf2::TransformException &ex)
+    {
+      ROS_WARN_STREAM_THROTTLE(1.0, "Unable to find transform to earth for marker: " << m.ns << " id: " << m.id << " what: " << ex.what());
+    }
   }
   emit newMarkersMadeAvailable();
 }
 
 QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const std_msgs::Header &header)
 {
-  QGeoCoordinate ret;
-  try
-  {
+  // if(header.frame_id.empty())
+  // {
+  //   ROS_WARN_STREAM_THROTTLE(1.0, "Markers: Missing frame_id: " << header);
+  //   return {};
+  // }
+  // try
+  // {
     geometry_msgs::PoseStamped ps;
     ps.header = header;
     ps.pose = pose;
@@ -180,13 +199,13 @@ QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const 
     ecef_point[1] = ecef.pose.position.y;
     ecef_point[2] = ecef.pose.position.z;
     gz4d::GeoPointLatLongDegrees ll = ecef_point;
-    ret = QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
-  }
-  catch (tf2::TransformException &ex)
-  {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for marker: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
-  }
-  return ret;
+    return QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
+  // }
+  // catch (tf2::TransformException &ex)
+  // {
+  //   ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for marker: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
+  // }
+  // return {};
 }
 
 
@@ -235,7 +254,7 @@ void Markers::newMarkersAvailable()
         expired.push_back(m.first);
     for(auto e: expired)
     {
-      ROS_INFO_STREAM("Purging " << ns.first << ": " << e);
+      ROS_DEBUG_STREAM("Purging " << ns.first << ": " << e);
       ns.second.erase(e);
 
     }
