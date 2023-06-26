@@ -46,7 +46,7 @@ void Tile::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidg
       updateLayout(map_tiles->flipY());
     }
 
-    pixmapItem()->setVisible(lod < 4.0);
+    pixmapItem()->setVisible(lod <= 2.0);
   }
   else
   {
