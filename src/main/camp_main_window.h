@@ -14,6 +14,8 @@ namespace map
 namespace camp
 {
 
+class CachedFileLoader;
+
 class MainWindow: public QMainWindow
 {
   Q_OBJECT
@@ -21,7 +23,7 @@ public:
   explicit MainWindow(QWidget *parent = 0);
 
   void closeEvent(QCloseEvent* event) override;
-  
+
 public slots:
   void mousePositionUpdate(QGeoCoordinate position);
 
@@ -34,8 +36,6 @@ private:
   QLabel * position_label_;
 
   map::Map* map_;
-
-
 };
 
 } // namespace camp

@@ -45,7 +45,7 @@ signals:
   void startNode(NodeManager* node_manager);
 
   // Signal emitted with the current list of avaiable topics.
-  // Topics are listed in a map of topics name keys and type as values.
+  // Topics are listed in a map of topic name as keys and type as values.
   void topicsAvailable(QMap<QString, QString> topics);
 
   void shuttingDownRos();

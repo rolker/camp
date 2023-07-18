@@ -27,6 +27,9 @@ public:
     return Type;
   }
 
+  // Set a bounding rectangle to cover the world
+  QRectF boundingRect() const override;
+
   // Create default base maps, such as Open Street Map layers.
   void createDefaultLayers();
 

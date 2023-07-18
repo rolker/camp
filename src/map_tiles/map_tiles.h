@@ -4,6 +4,14 @@
 #include "../map/layer.h"
 #include "tile_address.h"
 
+namespace camp
+{
+
+namespace wmts
+{
+  class Capabilities;
+}
+
 namespace map_tiles
 {
 
@@ -17,7 +25,7 @@ class MapTiles: public map::Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  MapTiles(map::MapItem* parentItem, const QString& label);
+  MapTiles(map::MapItem* parentItem, const QString& label, const TileLayout& tile_layout = {});
 
   enum { Type = map::MapTilesType};
   int type() const override
@@ -28,43 +36,32 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
+  void setLayout(const TileLayout& tile_layout);
+  void setLayoutFromWMTS(const wmts::Capabilities &capabilities, QString layer_id = {}, QString tile_matrix_set = {});
+
   void loadTile(TileAddress tile_address);
 
-  void setBaseUrl(QString base_url);
-
-  // Returns true if tiles are addressed from south to north.
-  bool flipY() const;
-
-  uint8_t minimumZoomLevel() const;
-  uint8_t maximumZoomLevel() const;
+  //void setBaseUrl(QString base_url);
 
 public slots:
-  void setMinimumZoomLevel(uint8_t level);
-  void setMaximumZoomLevel(uint8_t level);
-  void setFlipY(bool flipped);
-
   void updateViewScale(double view_scale);
+  void wmtsCapabilitiesReady();
 
 private:
-  Tile* top_tile_ = nullptr;
-
-  // Flag to indicate if tiles are ordered from south to north.
-  // By default, tiles are ordered from north to south.
-  bool flip_y_ = false;
-
-  // Zoom level of the top level tile(s).
-  uint8_t minimum_zoom_level_ = 0;
-
-  // Zoom level of the highest detailed tiles.
-  // Defaults to 19, which is Open Street Map's max zoom level.
-  uint8_t maximum_zoom_level_ = 19;
+  TileLayout tile_layout_;
+  std::map<TileAddress, Tile*> tiles_;
 
   CachedTileLoader* tile_loader_;
 
+  const wmts::Capabilities* wmts_capabilites_ = nullptr;
+  QString wmts_layer_id_;
+  QString wmts_tile_matrix_set_;
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
 };
 
 } // namespace map_tiles
+
+} // namespace camp
 
 #endif

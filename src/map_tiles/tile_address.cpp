@@ -2,30 +2,19 @@
 
 #include <stdexcept>
 #include <QString>
+#include <tuple>
+
+namespace camp
+{
 
 namespace map_tiles
 {
 
-const uint8_t TileAddress::max_zoom_level;
-
-TileAddress::TileAddress(uint8_t zoom_level, QPoint index):
-  zoom_level_(zoom_level), index_(index)
+TileAddress::TileAddress(const TileLayout* layout, uint8_t zoom_level, QPoint index):
+  layout_(layout), zoom_level_(zoom_level), index_(index)
 {
 }
 
-TileAddress TileAddress::parent() const
-{
-  if(zoom_level_ == 0)
-    throw std::out_of_range("No parent. TileAddress zoom level is 0");
-  return TileAddress(zoom_level_-1, QPoint(index_.x()/2, index_.y()/2));
-}
-
-TileAddress TileAddress::child(uint8_t x, uint8_t y) const
-{
-  if(x > 1 || y > 1)
-    throw std::out_of_range("x="+std::to_string(x)+" and y="+std::to_string(y)+" are invalid TileAddress child coordinates. Each must be 0 or 1");
-  return TileAddress(zoom_level_+1, QPoint(index_.x()*2+x, index_.y()*2+y));
-}
 
 TileAddress::operator std::string() const
 {
@@ -35,6 +24,11 @@ TileAddress::operator std::string() const
 TileAddress::operator QString() const
 {
   return std::string(*this).c_str();
+}
+
+std::string TileAddress::url() const
+{
+  return layout_->getUrl(*this);
 }
 
 uint8_t TileAddress::zoomLevel() const
@@ -49,19 +43,32 @@ const QPoint& TileAddress::index() const
 
 bool TileAddress::operator==(const TileAddress& other) const
 {
-  return zoom_level_ == other.zoom_level_ && index_ == other.index_;
+  return zoom_level_ == other.zoom_level_ && index_ == other.index_ && layout_ == other.layout_;
 }
 
-bool TileAddress::descendentOf(const TileAddress& potential_ancestor) const
+bool TileAddress::operator<(const TileAddress& other) const
 {
-  auto i = *this;
-  while(i.zoom_level_ > 0)
-  {
-    i = i.parent();
-    if(i == potential_ancestor)
-      return true;
-  }
-  return false;
+  auto i = index_;
+  auto oi = other.index_;
+  return std::tie(zoom_level_, i.ry(), i.rx()) < std::tie(other.zoom_level_, oi.ry(), oi.rx());
+}
+
+const TileLayout& TileAddress::tileLayout() const
+{
+  return *layout_;
+}
+
+double TileAddress::scale() const
+{
+  return layout_->zoom_levels[zoom_level_].scale;
+}
+
+QPointF TileAddress::topLeftCorner() const
+{
+  auto level = layout_->zoom_levels[zoom_level_];
+  return QPointF(level.top_left_corner.x()+index_.x()*level.scale*level.tile_width, level.top_left_corner.y()-index_.y()*level.scale*level.tile_height);
 }
 
 } // namepsace map_tiles
+
+} // camp

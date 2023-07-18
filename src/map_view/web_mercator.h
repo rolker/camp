@@ -22,11 +22,6 @@ namespace web_mercator
 // Maximum latitude in radians.
 constexpr double maximum_latitude = 1.484422229745332367; //atan(sinh(M_PI))
 
-// Size in pixels of tiles used with web mercator projections.
-// At zoom level 0, one square tile covers the earth from 0 latitude
-// to 0 latitude and maximum_latitude to -maximum_latitude.
-constexpr int tile_size = 256;
-
 constexpr double earth_radius_at_equator = 6378137;
 
 // Convert a point in map coordinates to a WGS84 position.

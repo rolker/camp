@@ -3,14 +3,23 @@
 #include "map_tiles.h"
 #include <QStyleOptionGraphicsItem>
 
+namespace camp
+{
+
 namespace map_tiles
 {
 
-const QRectF Tile::bounding_rect_;
+//const QRectF Tile::bounding_rect_;
 
-Tile::Tile(QGraphicsItem *parentItem, TileAddress address):
+Tile::Tile(TileAddress address, QGraphicsItem *parentItem):
   QGraphicsObject(parentItem), address_(address)
 {
+  bounding_rect_ = QRectF(0, 0, address.tileLayout().zoom_levels[address.zoomLevel()].tile_width, address.tileLayout().zoom_levels[address.zoomLevel()].tile_height);
+
+  setTransform(QTransform::fromScale(address.scale(), -address.scale()));
+  
+  setPos(address.topLeftCorner());
+
   new QGraphicsPixmapItem(this);
 }
 
@@ -21,54 +30,8 @@ QRectF Tile::boundingRect() const
 
 void Tile::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,QWidget *widget)
 {
-  auto lod = QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform());
-
-  auto map_tiles = parentMapTiles();
-  if(!map_tiles)
-    return;
-
-  if(!pixmap_load_request_sent_ && address_.zoomLevel() >= map_tiles->minimumZoomLevel())
-  {
-    map_tiles->loadTile(address_);
-    pixmap_load_request_sent_ = true;
-  }
-
-  if(lod > 2.0 || address_.zoomLevel() < map_tiles->minimumZoomLevel())
-  {
-    if(address_.zoomLevel() < std::min(TileAddress::max_zoom_level, map_tiles->maximumZoomLevel()) && childTiles().empty())
-    {
-      for(int x = 0; x < 2; x++)
-        for(int y = 0; y < 2; y++ )
-        {
-          auto child_tile = new Tile(this, address_.child(x,y));
-          child_tile->setScale(0.5);
-        }
-      updateLayout(map_tiles->flipY());
-    }
-
-    pixmapItem()->setVisible(lod <= 2.0);
-  }
-  else
-  {
-    // hide pixmap if we are zoomed out too much
-    if(lod < 1.0 && address_.zoomLevel() > map_tiles->minimumZoomLevel())
-      pixmapItem()->setVisible(false);
-    else
-      pixmapItem()->setVisible(true);
-  }
-}
-
-void Tile::updateLayout(bool flip_y)
-{
-  for(auto tile: childTiles())
-  {
-    int x = tile->address_.index().x()%2;
-    int y = tile->address_.index().y()%2;
-    if(flip_y)
-      y = 1-y;
-    tile->setPos(x*web_mercator::tile_size/2.0, y*web_mercator::tile_size/2.0);
-    tile->updateLayout(flip_y);
-  }
+  pixmapItem()->setVisible(true);
+  return;
 }
 
 MapTiles * Tile::parentMapTiles() const
@@ -84,18 +47,6 @@ MapTiles * Tile::parentMapTiles() const
       return parent_tile->parentMapTiles();
   }
   return nullptr;
-}
-
-QList<Tile*> Tile::childTiles() const
-{
-  QList<Tile*> ret;
-  for(auto child: childItems())
-  {
-    auto tile = qgraphicsitem_cast<Tile*>(child);
-    if(tile)
-      ret.append(tile);
-  }
-  return ret;
 }
 
 QGraphicsPixmapItem* Tile::pixmapItem() const
@@ -116,10 +67,11 @@ void Tile::updatePixmap(QPixmap pixmap)
   {
     pixmap_item->setPixmap(pixmap);
     // Scale if our pixmap is not standard tile size.
-    if(pixmap.width() != web_mercator::tile_size || pixmap.height() != web_mercator::tile_size)
+    const auto& layout = address_.tileLayout().zoom_levels[address_.zoomLevel()];
+    if(pixmap.width() != layout.tile_width || pixmap.height() != layout.tile_height)
     {
       if(pixmap.width() > 0 && pixmap.height() > 0)
-        pixmap_item->setTransform(QTransform::fromScale(web_mercator::tile_size/double(pixmap.width()),web_mercator::tile_size/double(pixmap.height())));
+        pixmap_item->setTransform(QTransform::fromScale(layout.tile_width/double(pixmap.width()), layout.tile_height/double(pixmap.height())));
     }
   }
 }
@@ -129,18 +81,6 @@ const TileAddress& Tile::address() const
   return address_;
 }
 
-Tile* Tile::find(const TileAddress& address)
-{
-  if(address == address_)
-    return this;
-  if(address.descendentOf(address_))
-    for(auto child: childTiles())
-    {
-      auto found = child->find(address);
-      if(found)
-        return found;
-    }
-  return nullptr;
-}
-
 } // namepsace map_tiles
+
+} // namespace camp

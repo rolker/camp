@@ -5,6 +5,7 @@
 #include "../map_tiles/map_tiles.h"
 #include <QAbstractItemModelTester>
 #include <QSettings>
+#include "cached_file_loader.h"
 
 namespace camp
 {
@@ -14,6 +15,8 @@ MainWindow::MainWindow(QWidget *parent)
   QCoreApplication::setOrganizationName("UNH-CCOMJHC");
   QCoreApplication::setOrganizationDomain("ccom.unh.edu");
   QCoreApplication::setApplicationName("CCOMAutonomousMissionPlanner");
+
+  CachedFileLoader::construct();
 
   ui_.setupUi(this);
   position_label_ = new QLabel(ui_.statusBar);
@@ -39,6 +42,7 @@ void MainWindow::mousePositionUpdate(QGeoCoordinate position)
 void MainWindow::closeEvent(QCloseEvent *event)
 {
   writeSettings();
+  CachedFileLoader::destruct();
   QMainWindow::closeEvent(event);
 }
 

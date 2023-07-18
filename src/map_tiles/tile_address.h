@@ -4,7 +4,11 @@
 #include <QPoint>
 #include <string>
 #include <QMetaType>
+#include "tile_layout.h"
 
+namespace camp
+{
+  
 namespace map_tiles
 {
 
@@ -14,18 +18,9 @@ namespace map_tiles
 class TileAddress
 {
 public:
-  TileAddress(uint8_t zoom_level = 0, QPoint index = QPoint());
+  TileAddress(const TileLayout* layout = nullptr, uint8_t zoom_level = 0, QPoint index = QPoint());
   ~TileAddress() = default;
   TileAddress(const TileAddress& other) = default;
-
-  // Returns the parent address or throws std::out_of_range
-  // if already at zoom level 0.
-  TileAddress parent() const;
-
-  // Returns one of the 4 child tile addresses.
-  // Each of the x and y must be in range from 0 to 1, otherwise
-  // a std::out_of_range exception will be thrown.
-  TileAddress child(uint8_t x, uint8_t y) const;
 
   // Returns the address as a path compenent suitable as part
   // of a file path or url.
@@ -35,25 +30,31 @@ public:
   // QString version of std::string operator.
   operator QString() const;
 
+  std::string url() const;
+
   uint8_t zoomLevel() const;
   const QPoint &index() const;
 
   bool operator==(const TileAddress &other) const;
 
-  bool descendentOf(const TileAddress &potential_ancestor) const;
+  bool operator<(const TileAddress &other) const;
 
-  // At zoom level 25, a pixel represents about 5 millimeters. 
-  // This can be used to set a limit when zooming. It may be adjusted if we find a reason to do
-  // so, so don't count on it staying at this level.
-  static constexpr uint8_t max_zoom_level = 25;
+  const TileLayout& tileLayout() const;
+
+  double scale() const;
+  QPointF topLeftCorner() const;
 
 private:
+  const TileLayout* layout_;
   uint8_t zoom_level_ = 0;
   QPoint index_;
+
 };
 
 } // namespace map_tiles
 
-Q_DECLARE_METATYPE(map_tiles::TileAddress);
+} // namespace camp
+
+Q_DECLARE_METATYPE(camp::map_tiles::TileAddress);
 
 #endif

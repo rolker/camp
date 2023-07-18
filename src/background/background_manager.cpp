@@ -2,12 +2,14 @@
 
 #include "../map/layer_list.h"
 #include "../map_tiles/map_tiles.h"
+#include "../map_tiles/osm.h"
 #include "../raster/raster_layer.h"
 #include "../tools/tools_manager.h"
 #include <QGraphicsScene>
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
+#include "../wmts/capabilities.h"
 
 namespace background
 {
@@ -22,23 +24,25 @@ void BackgroundManager::createDefaultLayers()
   map::LayerList* layers = topLevelLayers();
   if(layers)
   {
-    // map_tiles::MapTiles* eo_tiles = new map_tiles::MapTiles(layers);
-    // eo_tiles->setLabel("eo_tiles");
-    // eo_tiles->setBaseUrl("http://localhost/eo_tiles/");
-    // eo_tiles->setMinimumZoomLevel(2);
-    // eo_tiles->setMaximumZoomLevel(6);
-    // eo_tiles->setFlipY(true);
+    new camp::map_tiles::MapTiles(layers, "openstreetmap", camp::osm::generateTileLayout("https://tile.openstreetmap.org/"));
 
-    map_tiles::MapTiles* openstreetmap = new map_tiles::MapTiles(layers, "openstreetmap");
-    openstreetmap->setBaseUrl("https://tile.openstreetmap.org/");
+    new camp::map_tiles::MapTiles(layers, "openseamap", camp::osm::generateTileLayout("https://tiles.openseamap.org/seamark/"));
 
-    map_tiles::MapTiles* openseamap = new map_tiles::MapTiles(layers, "openseamap");
-    openseamap->setBaseUrl("https://tiles.openseamap.org/seamark/");
+    auto caps = new camp::wmts::Capabilities("NOAA_Charts", this);
+    camp::map_tiles::MapTiles* noaa_charts = new camp::map_tiles::MapTiles(layers, "NOAA_charts");
+    noaa_charts->setLayoutFromWMTS(*caps);
+    caps->setUrl("https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS");
 
     new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
 
     new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
   }
+}
+
+QRectF BackgroundManager::boundingRect() const
+{
+  return QRectF(QPointF(-20037508.3427892, 20037508.3427892), QPointF(20037508.3427892, -20037508.3427892));
+
 }
 
 void BackgroundManager::contextMenu(QMenu* menu)

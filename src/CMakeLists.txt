@@ -126,6 +126,7 @@ add_subdirectory(helm_manager)
 
 set( CAMP_SOURCES
     background/background_manager.cpp
+    main/cached_file_loader.cpp
     main/camp_main_window.cpp
     main/main.cpp
     map/map.cpp
@@ -137,6 +138,8 @@ set( CAMP_SOURCES
     map_tiles/map_tiles.cpp
     map_tiles/tile.cpp
     map_tiles/tile_address.cpp
+    map_tiles/tile_layout.cpp
+    map_tiles/osm.cpp
     map_tree_view/map_item_delegate.cpp
     map_tree_view/map_tree_view.cpp
     map_view/map_view.cpp
@@ -154,9 +157,12 @@ set( CAMP_SOURCES
     tools/layer_manager.cpp
     tools/map_tool.cpp
     tools/tools_manager.cpp
+    wmts/capabilities.cpp
+    wmts/layer.cpp
+    wmts/tile_matrix_set.cpp
 )
 
 
 add_executable(camp2 ${CAMP_SOURCES})
-qt5_use_modules(camp2 Widgets Positioning Concurrent Network Test)
+qt5_use_modules(camp2 Widgets Positioning Concurrent Network Test Xml)
 target_link_libraries(camp2 ${QT_LIBRARIES} ${GDAL_LIBRARY} ${catkin_LIBRARIES})

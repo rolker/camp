@@ -6,8 +6,10 @@
 #include <QPixmap>
 #include <QDir>
 
-class QNetworkAccessManager;
-class QNetworkReply;
+namespace camp
+{
+
+class CachedFileClient;
 
 namespace map_tiles
 {
@@ -28,28 +30,24 @@ public:
   void load(TileAddress tile);
 
   QDir cachePath() const;
-  std::string baseUrl() const;
 
 signals:
   void pixmapLoaded(QPixmap pixmap, TileAddress tile_address);
 
 public slots:
   void setCachePath(QString cache_path);
-  void setBaseUrl(QString base_url);
 
 private:
-  QNetworkAccessManager* network_access_manager_;
-
-  // Base file location where map tiles are stored locally
-  QString cache_path_;
-  // Base URL from where map tiles can be downloaded
-  QString base_url_;
+  // Base relative file location where map tiles are stored locally
+  QString local_cache_path_;
 
 private slots:
-  void downloadFinished(QNetworkReply* reply);
+  void dataLoaded(QByteArray &data, CachedFileClient* client);
 
 };
-
+ 
 } // namespace map_tiles
+
+} // namespace camp
 
 #endif
