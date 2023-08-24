@@ -57,24 +57,24 @@ QPainterPath Platform::shape() const
         {
           location = ns.second->location();
           if(location.location.isValid())
-            break;
-        }
+          {
+            double heading;
+            for(const auto& ns: m_nav_sources)
+            {
+              heading = ns.second->heading();
+              if(!isnan(heading))
+                break;
+            }
 
-        double heading;
-        for(const auto& ns: m_nav_sources)
-        {
-          heading = ns.second->heading();
-          if(!isnan(heading))
-            break;
-        }
-
-        if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, location.location, heading, pixel_size);
-        else
-        {
-          double half_width = m_width/2.0;
-          double half_length = m_length/2.0;
-          drawShipOutline(ret, bg, location.location, heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+            if(pixel_size > max_size/10.0 || forceTriangle)
+              drawTriangle(ret, bg, location.location, heading, pixel_size);
+            else
+            {
+              double half_width = m_width/2.0;
+              double half_length = m_length/2.0;
+              drawShipOutline(ret, bg, location.location, heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+            }
+          }
         }
       }
   }
