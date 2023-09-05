@@ -16,6 +16,8 @@ void Orbit::write(QJsonObject& json) const
   json["radius"] = radius_;
   json["safetyDistance"] = safety_distance_;
   json["targetFrame"] = target_frame_.c_str();
+
+  /// \todo why does an orbit have children?
   QJsonArray childrenArray;
   for(MissionItem *item: childMissionItems())
   {
