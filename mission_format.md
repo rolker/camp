@@ -1,7 +1,6 @@
 # JSON base format for sending missions to a robot and saving a project to file
 
-This is the format used in September 2023 before the planned switch to a format based on project11_nav_msgs/TaskInformation messages.
-
+This is the format used in September 2023 to send and save missions before the planned switch to a format based on project11_nav_msgs/TaskInformation messages for sending missions to a robot.
 To send a mission to a robot, a JSON array containing an object for each CAMP MissionItem is constructed.
 To save a project to a file, a top level Group item as described below is constructed containing all the mission items.
 
