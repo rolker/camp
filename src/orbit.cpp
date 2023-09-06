@@ -16,17 +16,6 @@ void Orbit::write(QJsonObject& json) const
   json["radius"] = radius_;
   json["safetyDistance"] = safety_distance_;
   json["targetFrame"] = target_frame_.c_str();
-
-  /// \todo why does an orbit have children?
-  QJsonArray childrenArray;
-  for(MissionItem *item: childMissionItems())
-  {
-    QJsonObject miObject;
-    item->write(miObject);
-    childrenArray.append(miObject);
-  }
-  
-  json["children"] = childrenArray;
 }
 
 void Orbit::writeToMissionPlan(QJsonArray& navArray) const
@@ -39,7 +28,9 @@ void Orbit::writeToMissionPlan(QJsonArray& navArray) const
 void Orbit::read(const QJsonObject& json)
 {
   MissionItem::read(json);
-  readChildren(json["children"].toArray());
+  radius_ = json["radius"].toDouble();
+  safety_distance_ = json["safetyDistance"].toDouble();
+  target_frame_ = json["targetFrame"].toString().toStdString();
 }
 
 void Orbit::updateProjectedPoints()
@@ -52,7 +43,7 @@ bool Orbit::canAcceptChildType(const std::string& childType) const
 {
   if(childType == "Waypoint")
     return true;
-  return false;
+  return MissionItem::canAcceptChildType(childType);
 }
 
 bool Orbit::canBeSentToRobot() const

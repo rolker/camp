@@ -39,7 +39,7 @@ public slots:
 
     void setCurrent(const QModelIndex &index, const QModelIndex &previous);
     void onROSConnected(bool connected);
-    void activePlatfromPosition(QGeoCoordinate position);
+    void activePlatformPosition(QGeoCoordinate position);
 
 private slots:
     void on_actionOpen_triggered();
@@ -62,6 +62,7 @@ private slots:
     void on_actionGroup_triggered();
     void on_actionGroupFromContext_triggered();
     void on_actionBehavior_triggered();
+    void on_actionBehaviorFromContext_triggered();
     void on_actionOpenGeometry_triggered();
     void on_actionOrbit_triggered();
     void on_actionOrbitFromContext_triggered();

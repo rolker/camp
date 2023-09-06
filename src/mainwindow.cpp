@@ -52,7 +52,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
     connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
-    connect(m_ui->platformManager, &PlatformManager::currentPlatformPosition, this, &MainWindow::activePlatfromPosition);
+    connect(m_ui->platformManager, &PlatformManager::currentPlatformPosition, this, &MainWindow::activePlatformPosition);
 
     //m_ui->rosDetails->setEnabled(false);
     //connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, m_ui->helmManager, &HelmManager::updateRobotNamespace);
@@ -246,6 +246,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *addOrbitAction = addMenu->addAction("Add Orbit");
         connect(addOrbitAction, &QAction::triggered, this, &MainWindow::on_actionOrbit_triggered);
+
+        QAction *addBehaviorAction = addMenu->addAction("Add Behavior");
+        connect(addBehaviorAction, &QAction::triggered, this, &MainWindow::on_actionBehavior_triggered);
     }
     else
     {
@@ -290,7 +293,13 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
             QAction *addOrbitAction = addMenu->addAction("Add Orbit");
             connect(addOrbitAction, &QAction::triggered, this, &MainWindow::on_actionOrbitFromContext_triggered);
         }
-        
+
+        if(mi && mi->canAcceptChildType("Behavior"))
+        {
+            QAction *addBehaviorAction = addMenu->addAction("Add Behavior");
+            connect(addBehaviorAction, &QAction::triggered, this, &MainWindow::on_actionBehaviorFromContext_triggered);
+        }
+
         QAction *deleteItemAction = menu.addAction("Delete");
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(m_ui->treeView->selectionModel()->selectedRows());});
         
@@ -449,6 +458,13 @@ void MainWindow::on_actionBehavior_triggered()
     project->createBehavior();
 }
 
+void MainWindow::on_actionBehaviorFromContext_triggered()
+{
+    project->setContextMode(true);
+    project->createBehavior();
+}
+
+
 void MainWindow::on_actionOpenGeometry_triggered()
 {
     project->setContextMode(false);
@@ -493,7 +509,7 @@ void MainWindow::on_actionFollow_triggered()
     //emit project->followRobot(m_ui->actionFollow->isChecked());
 }
 
-void MainWindow::activePlatfromPosition(QGeoCoordinate position)
+void MainWindow::activePlatformPosition(QGeoCoordinate position)
 {
     if(m_ui->actionFollow->isChecked())
       m_ui->projectView->centerMap(position);

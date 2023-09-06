@@ -66,18 +66,30 @@ int MissionItem::row() const
 
 void MissionItem::write(QJsonObject& json) const
 {
-    json["label"] = objectName();
-    if (m_speed > 0.0)
-        json["speed"]=m_speed;
+  json["label"] = objectName();
+  if (m_speed > 0.0)
+    json["speed"]=m_speed;
+
+  QJsonArray childrenArray;
+  for(MissionItem *item: childMissionItems())
+  {
+    QJsonObject miObject;
+    item->write(miObject);
+    if(this->canAcceptChildType(miObject["type"].toString().toStdString()))
+      childrenArray.append(miObject);
+  }
+  if(!childrenArray.empty())
+    json["children"] = childrenArray;
 }
 
 
 void MissionItem::read(const QJsonObject& json)
 {
-    QString label = json["label"].toString();
-    if(label.size() > 0)
-        setObjectName(label);
-    m_speed = json["speed"].toDouble();
+  QString label = json["label"].toString();
+  if(label.size() > 0)
+    setObjectName(label);
+  m_speed = json["speed"].toDouble();
+  readChildren(json["children"].toArray());
 }
 
 void MissionItem::readChildren(const QJsonArray& json, int row)
@@ -116,6 +128,8 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
             item = project->createGroup(this, insertRow, object["label"].toString());
         if(object["type"] == "SearchPattern")
             item = project->createSearchPattern(this, insertRow, object["label"].toString());
+        if(object["type"] == "Behavior")
+            item = createMissionItem<Behavior>(object["label"].toString(), insertRow);
         if(item)
         {
             item->read(object);

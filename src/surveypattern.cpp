@@ -131,7 +131,7 @@ void SurveyPattern::write(QJsonObject &json) const
             json["alignment"] = "finish";
             break;
     }
-    QJsonArray tracklineArray;
+    QJsonArray tracklineArray = json["children"].toArray();
     auto lines = getLines();
     for (auto line: lines){
         QJsonObject tracklineObject;
@@ -145,7 +145,7 @@ void SurveyPattern::write(QJsonObject &json) const
             wpObject["longitude"] = wp.longitude();
             wpArray.append(wpObject);
         }
-        tracklineObject["waypoints"] = wpArray;
+        tracklineObject["children"] = wpArray;
         tracklineArray.append(tracklineObject);
     }
     json["children"] = tracklineArray;
@@ -180,6 +180,7 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
 
 void SurveyPattern::read(const QJsonObject &json)
 {
+    MissionItem::read(json);
     m_startLocation = createWaypoint();
     m_startLocation->read(json["startLocation"].toObject());
     m_endLocation = createWaypoint();

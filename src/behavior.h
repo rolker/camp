@@ -16,14 +16,17 @@ public:
     bool canBeSentToRobot() const override;
     
     QString const &behaviorType() const;
+    QString const &behaviorData() const;
     bool active() const;
     
     void setBehaviorType(QString const & behaviorType);
     void setActive(bool active);
+    void setBehaviorData(QString const & behaviorData);
 
 private:
     QString m_behaviorType;
     bool m_active;
+    QString data_;
 };
 
 #endif // BEHAVIOR_H

@@ -131,19 +131,6 @@ void TrackLine::write(QJsonObject &json) const
 {
     MissionItem::write(json);
     json["type"] = "TrackLine";
-    QJsonArray wpArray;
-    auto children = childMissionItems();
-    for(auto child: children)
-    {
-        Waypoint *wp = qobject_cast<Waypoint*>(child);
-        if(wp)
-        {
-            QJsonObject wpObject;
-            wp->write(wpObject);
-            wpArray.append(wpObject);
-        }
-    }
-    json["waypoints"] = wpArray;
 }
 
 void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
@@ -166,19 +153,7 @@ void TrackLine::writeToMissionPlan(QJsonArray& navArray) const
 
 void TrackLine::read(const QJsonObject &json)
 {
-    QJsonArray waypointsArray = json["waypoints"].toArray();
-    for(int wpIndex = 0; wpIndex < waypointsArray.size(); wpIndex++)
-    {
-        QJsonObject wpObject = waypointsArray[wpIndex].toObject();
-        if(wpIndex == 0)
-        {
-            QGeoCoordinate position(wpObject["latitude"].toDouble(),wpObject["longitude"].toDouble());
-            setPos(geoToPixel(position,autonomousVehicleProject()));
-        }
-        Waypoint *wp = createWaypoint();
-        wp->read(wpObject);
-    }
-
+    MissionItem::read(json);
 }
 
 void TrackLine::updateProjectedPoints()
@@ -204,7 +179,9 @@ void TrackLine::reverseDirection()
 
 bool TrackLine::canAcceptChildType(const std::string& childType) const
 {
-    return childType == "Waypoint";
+    if(childType == "Waypoint")
+        return true;
+    return MissionItem::canAcceptChildType(childType);
 }
 
 bool TrackLine::canBeSentToRobot() const

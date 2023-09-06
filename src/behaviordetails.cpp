@@ -17,6 +17,7 @@ void BehaviorDetails::setBehavior(Behavior* behavior)
     m_behavior = behavior;
     ui->activeCheckBox->setChecked(m_behavior->active());
     ui->behaviorTypeComboBox->setEditText(m_behavior->behaviorType());
+    ui->behaviorDataPlainTextEdit->setPlainText(m_behavior->behaviorData());
 }
 
 void BehaviorDetails::on_activeCheckBox_stateChanged(int state)
@@ -30,3 +31,10 @@ void BehaviorDetails::on_behaviorTypeComboBox_editTextChanged(const QString& beh
     if(m_behavior)
         m_behavior->setBehaviorType(behaviorType);
 }
+
+void BehaviorDetails::on_behaviorDataPlainTextEdit_textChanged()
+{
+    if(m_behavior)
+        m_behavior->setBehaviorData(ui->behaviorDataPlainTextEdit->toPlainText());
+}
+

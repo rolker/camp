@@ -21,13 +21,16 @@ void Behavior::write(QJsonObject& json) const
 {
     json["type"] = "Behavior";
     json["behaviorType"] = m_behaviorType;
+    json["data"] = data_;
     json["active"] = m_active;
 }
 
 void Behavior::read(const QJsonObject& json)
 {
-    m_behaviorType = json["behaviorType"].toString();
+    MissionItem::read(json);
+    setBehaviorType(json["behaviorType"].toString());
     m_active = json["active"].toBool();
+    data_ = json["data"].toString();
 }
 
 bool Behavior::active() const
@@ -46,12 +49,22 @@ void Behavior::setBehaviorType(const QString& behaviorType)
     setObjectName("behavior - "+m_behaviorType);
 }
 
+void Behavior::setBehaviorData(const QString& behaviorData)
+{
+    data_ = behaviorData;
+}
+
 const QString & Behavior::behaviorType() const
 {
     return m_behaviorType;
 }
 
+const QString & Behavior::behaviorData() const
+{
+    return data_;
+}
+
 bool Behavior::canBeSentToRobot() const
 {
-    return false;
+    return true;
 }

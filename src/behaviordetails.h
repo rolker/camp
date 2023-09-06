@@ -23,6 +23,7 @@ public:
 private slots:
     void on_activeCheckBox_stateChanged(int state);
     void on_behaviorTypeComboBox_editTextChanged(QString const &behaviorType);
+    void on_behaviorDataPlainTextEdit_textChanged();
 
 private:
     Ui::BehaviorDetails* ui;

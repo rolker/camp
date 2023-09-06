@@ -99,16 +99,6 @@ void SurveyArea::write(QJsonObject& json) const
 {
     MissionItem::write(json);
     json["type"] = "SurveyArea";
-
-    QJsonArray childrenArray;
-    for(MissionItem *item: childMissionItems())
-    {
-        QJsonObject miObject;
-        item->write(miObject);
-        childrenArray.append(miObject);
-    }
-    
-    json["children"] = childrenArray;
 }
 
 void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
@@ -145,7 +135,7 @@ bool SurveyArea::canAcceptChildType(const std::string& childType) const
     if (childType == "Waypoint") return true;
     if (childType == "SurveyPattern") return true;
     if (childType == "SearchPattern") return true;
-    return false;
+    return MissionItem::canAcceptChildType(childType);
 }
 
 bool SurveyArea::canBeSentToRobot() const
