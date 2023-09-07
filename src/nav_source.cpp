@@ -5,9 +5,24 @@
 NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
 {
   ros::NodeHandle nh;
-  m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::positionCallback, this);
-  m_orientation_sub = nh.subscribe(source.orientation_topic, 1, &NavSource::orientationCallback, this);
-  m_velocity_sub = nh.subscribe(source.velocity_topic, 1, &NavSource::velocityCallback, this);
+  if(!source.position_topic.empty())
+  {
+    ros::master::V_TopicInfo topic_info;
+    ros::master::getTopics(topic_info);
+
+    for(const auto t: topic_info)
+      if(t.name == source.position_topic)
+      {
+        if(t.datatype == "sensor_msgs/NavSatFix")
+          m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::positionCallback, this);
+        if(t.datatype == "geographic_msgs/GeoPoseStamped")
+          m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::geoPoseCallback, this);
+      }
+  }
+  if(!source.orientation_topic.empty())
+    m_orientation_sub = nh.subscribe(source.orientation_topic, 1, &NavSource::orientationCallback, this);
+  if(!source.velocity_topic.empty())
+    m_velocity_sub = nh.subscribe(source.velocity_topic, 1, &NavSource::velocityCallback, this);
   setObjectName(source.name.c_str());
 }
 
