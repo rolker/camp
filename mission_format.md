@@ -9,12 +9,13 @@ Members for all items include:
 - label
 - speed (if not 0)
 - type
+- children: Array of behaviors (optional, only for items that can be sent to the robot)
 
 ## Current object types
 
 Current types defined in the CAMP source code:
 
-- BackgroundRaster
+- BackgroundRaster (can't be sent to the robot)
 - Behavior
 - Group
 - Orbit
@@ -23,7 +24,7 @@ Current types defined in the CAMP source code:
 - SurveyPattern
 - TrackLine
 - Waypoint
-- VectorDataset
+- VectorDataset (can't be sent to the robot)
 
 Following are the object specific members of the above object types.
 
@@ -45,7 +46,6 @@ Following are the object specific members of the above object types.
 - radius
 - safetyDistance
 - targetFrame
-- children: Array of mission item objects
 
 ### SearchPattern
 
