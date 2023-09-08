@@ -1,45 +1,85 @@
 #include "nav_source.h"
 #include <tf2/utils.h>
 #include <QPainter>
+#include <QTimer>
+#include <QDebug>
 
 NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
 {
-  ros::NodeHandle nh;
-  if(!source.position_topic.empty())
-  {
-    ros::master::V_TopicInfo topic_info;
-    ros::master::getTopics(topic_info);
-
-    for(const auto t: topic_info)
-      if(t.name == source.position_topic)
-      {
-        if(t.datatype == "sensor_msgs/NavSatFix")
-          m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::positionCallback, this);
-        if(t.datatype == "geographic_msgs/GeoPoseStamped")
-          m_position_sub = nh.subscribe(source.position_topic, 1, &NavSource::geoPoseCallback, this);
-      }
-  }
-  if(!source.orientation_topic.empty())
-    m_orientation_sub = nh.subscribe(source.orientation_topic, 1, &NavSource::orientationCallback, this);
-  if(!source.velocity_topic.empty())
-    m_velocity_sub = nh.subscribe(source.velocity_topic, 1, &NavSource::velocityCallback, this);
+  pending_position_topic_ = source.position_topic;
+  pending_orientation_topic_ = source.orientation_topic;
+  pending_velocity_topic_ = source.velocity_topic;
   setObjectName(source.name.c_str());
+  trySubscribe();
 }
 
 NavSource::NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
 {
-  ros::NodeHandle nh;
   if (source.second.hasMember("position_topic"))
-    m_position_sub = nh.subscribe(source.second["position_topic"], 1, &NavSource::positionCallback, this);
-  if (source.second.hasMember("geopoint_topic"))
-    m_position_sub = nh.subscribe(source.second["geopoint_topic"], 1, &NavSource::geoPointCallback, this);
-  if (source.second.hasMember("geopose_topic"))
-    m_position_sub = nh.subscribe(source.second["geopose_topic"], 1, &NavSource::geoPoseCallback, this);
+    pending_position_topic_ = std::string(source.second["position_topic"]);
   if (source.second.hasMember("orientation_topic"))
-    m_orientation_sub = nh.subscribe(source.second["orientation_topic"], 1, &NavSource::orientationCallback, this);
+    pending_orientation_topic_ = std::string(source.second["orientation_topic"]);
   if (source.second.hasMember("velocity_topic"))
-    m_velocity_sub = nh.subscribe(source.second["velocity_topic"], 1, &NavSource::velocityCallback, this);
+    pending_velocity_topic_ = std::string(source.second["velocity_topic"]);
   setObjectName(source.first.c_str());
+  trySubscribe();
+}
+
+void NavSource::trySubscribe()
+{
+  ros::master::V_TopicInfo topic_info;
+  ros::master::getTopics(topic_info);
+  ros::NodeHandle nh;
+
+  if(!pending_position_topic_.empty())
+  {
+    for(const auto t: topic_info)
+      if(t.name == pending_position_topic_)
+      {
+        if(t.datatype == "sensor_msgs/NavSatFix")
+        {
+          m_position_sub = nh.subscribe(pending_position_topic_, 1, &NavSource::positionCallback, this);
+          pending_position_topic_.clear();
+        }
+        else if(t.datatype == "geographic_msgs/GeoPoseStamped")
+        {
+          m_position_sub = nh.subscribe(pending_position_topic_, 1, &NavSource::geoPoseCallback, this);
+          pending_position_topic_.clear();
+        }
+        break;
+      }
+  }
+  if(!pending_orientation_topic_.empty())
+  {
+    for(const auto t: topic_info)
+      if(t.name == pending_orientation_topic_)
+      {
+        if(t.datatype == "sensor_msgs/Imu")
+        {
+          m_orientation_sub = nh.subscribe(pending_orientation_topic_, 1, &NavSource::orientationCallback, this);
+          pending_orientation_topic_.clear();
+        }
+        break;
+      }
+
+  }
+  if(!pending_velocity_topic_.empty())
+  {
+    for(const auto t: topic_info)
+      if(t.name == pending_velocity_topic_)
+      {
+        if(t.datatype == "geometry_msgs/TwistWithCovarianceStamped")
+        {
+          m_velocity_sub = nh.subscribe(pending_velocity_topic_, 1, &NavSource::velocityCallback, this);
+          pending_velocity_topic_.clear();
+        }
+        break;
+      }
+  }
+
+  if(!pending_position_topic_.empty() || !pending_orientation_topic_.empty() || !pending_velocity_topic_.empty())
+    QTimer::singleShot(1000, this, &NavSource::trySubscribe);
+
 }
 
 

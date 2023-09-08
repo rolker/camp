@@ -41,6 +41,7 @@ public slots:
   void updateProjectedPoints();
   void setMaxHistory(int max_history);
   void updateSog(double sog);
+  void trySubscribe();
 
 private:
   void positionCallback(const sensor_msgs::NavSatFix::ConstPtr& message);
@@ -52,6 +53,10 @@ private:
   ros::Subscriber m_position_sub;
   ros::Subscriber m_orientation_sub;
   ros::Subscriber m_velocity_sub;
+
+  std::string pending_position_topic_;
+  std::string pending_orientation_topic_;
+  std::string pending_velocity_topic_;
 
   LocationPosition m_location;
   double m_heading = std::nan("");
