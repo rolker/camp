@@ -67,6 +67,11 @@ void MissionManager::on_clearTasksPushButton_clicked(bool checked)
   clearTasks();
 }
 
+void MissionManager::on_cancelOverridePushButton_clicked(bool checked)
+{
+  sendCancelOverride();
+}
+
 void MissionManager::missionStatusCallback(const project11_msgs::Heartbeat::ConstPtr& message)
 {
     QString status_string;
@@ -101,6 +106,11 @@ void MissionManager::clearTasks()
     sendCommand("mission_manager clear_tasks");
 }
 
+void MissionManager::sendCancelOverride()
+{
+    sendCommand("mission_manager cancel_override");
+}
+
 void MissionManager::prependMission(const QString& plan)
 {
     sendCommand("mission_manager prepend_task mission_plan "+plan);
@@ -126,6 +136,12 @@ void MissionManager::sendGoto(const QGeoCoordinate& gotoLocation)
         
     sendCommand(updates.str().c_str());
 }
+
+void MissionManager::sendIdle()
+{
+    sendCommand("mission_manager override idle");
+}
+
 
 void MissionManager::sendNextItem()
 {

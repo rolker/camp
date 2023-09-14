@@ -37,6 +37,7 @@ signals:
 public slots:
     void sendHover();
     void sendGoto();
+    void sendIdle();
     void sendLookAt();
     void sendLookAtASV();
     void beforeUpdateBackground();

@@ -324,8 +324,11 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         QAction *gotoAction = menu.addAction("Goto Here");
         connect(gotoAction, &QAction::triggered, this, &ProjectView::sendGoto);
 
+        QAction *idleAction = menu.addAction("Idle in place");
+        connect(idleAction, &QAction::triggered, this, &ProjectView::sendIdle);
+
         menu.addSeparator();
-        menu.addAction("(Above moves boat)");
+        menu.addAction("(Above moves or idles boat)");
         menu.addSeparator();
         menu.addAction("(Below moves camera)");
         menu.addSeparator();
@@ -362,6 +365,16 @@ void ProjectView::sendGoto()
     p->helmManager()->sendPilotingModeRequest("autonomous");
   }
 }
+
+void ProjectView::sendIdle()
+{
+  auto p = m_project->activePlatform();
+  if(p)
+  {
+    p->missionManager()->sendIdle();
+  }
+}
+
 
 void ProjectView::sendLookAt()
 {

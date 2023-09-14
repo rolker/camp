@@ -28,6 +28,7 @@ public slots:
   void sendNextItem();
   void restartMission();
   void clearTasks();
+  void sendCancelOverride();
 
   void sendMissionPlan(QString const &plan);
   void appendMission(QString const &plan);
@@ -36,14 +37,17 @@ public slots:
   
   void sendHover(QGeoCoordinate const &targetLocation);
   void sendGoto(QGeoCoordinate const &targetLocation);
+  void sendIdle();
 
   void sendGotoLine(int waypoint_index);
   void sendStartLine(int waypoint_index);
+
 
 private slots:
   void updateMissionStatus(QString const &status);
   void on_gotoLinePushButton_clicked(bool checked);
   void on_startLinePushButton_clicked(bool checked);
+  void on_cancelOverridePushButton_clicked(bool checked);
 
   void on_nextMissionItemPushButton_clicked(bool checked);
   void on_restartMissionPushButton_clicked(bool checked);
