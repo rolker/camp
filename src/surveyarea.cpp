@@ -121,7 +121,6 @@ void SurveyArea::writeToMissionPlan(QJsonArray& navArray) const
 void SurveyArea::read(const QJsonObject& json)
 {
     GeoGraphicsMissionItem::read(json);
-    readChildren(json["children"].toArray());
 }
 
 void SurveyArea::updateProjectedPoints()
