@@ -28,9 +28,9 @@
       </widget>
      </item>
      <item row="2" column="0">
-      <widget class="QCheckBox" name="activeCheckBox">
+      <widget class="QCheckBox" name="enabledCheckBox">
        <property name="text">
-        <string>Active</string>
+        <string>Enabled</string>
        </property>
       </widget>
      </item>

@@ -13,7 +13,7 @@ void Behavior::writeToMissionPlan(QJsonArray& navArray) const
 void Behavior::writeToMissionPlanObject(QJsonObject& behaviorsObject) const
 {
     QJsonObject bo;
-    bo["active"]=m_active;
+    bo["enabled"]=enabled_;
     behaviorsObject[m_behaviorType] = bo;
 }
 
@@ -22,31 +22,32 @@ void Behavior::write(QJsonObject& json) const
     json["type"] = "Behavior";
     json["behaviorType"] = m_behaviorType;
     json["data"] = data_;
-    json["active"] = m_active;
+    json["enabled"] = enabled_;
+    MissionItem::write(json);
 }
 
 void Behavior::read(const QJsonObject& json)
 {
     MissionItem::read(json);
     setBehaviorType(json["behaviorType"].toString());
-    m_active = json["active"].toBool();
+    enabled_ = json["enabled"].toBool();
     data_ = json["data"].toString();
 }
 
-bool Behavior::active() const
+bool Behavior::enabled() const
 {
-    return m_active;
+    return enabled_;
 }
 
-void Behavior::setActive(bool active)
+void Behavior::setEnabled(bool enabled)
 {
-    m_active = active;
+    enabled_ = enabled;
 }
 
 void Behavior::setBehaviorType(const QString& behaviorType)
 {
     m_behaviorType = behaviorType;
-    setObjectName("behavior - "+m_behaviorType);
+    //setObjectName("behavior - "+m_behaviorType);
 }
 
 void Behavior::setBehaviorData(const QString& behaviorData)

@@ -15,15 +15,15 @@ BehaviorDetails::~BehaviorDetails()
 void BehaviorDetails::setBehavior(Behavior* behavior)
 {
     m_behavior = behavior;
-    ui->activeCheckBox->setChecked(m_behavior->active());
+    ui->enabledCheckBox->setChecked(m_behavior->enabled());
     ui->behaviorTypeComboBox->setEditText(m_behavior->behaviorType());
     ui->behaviorDataPlainTextEdit->setPlainText(m_behavior->behaviorData());
 }
 
-void BehaviorDetails::on_activeCheckBox_stateChanged(int state)
+void BehaviorDetails::on_enabledCheckBox_stateChanged(int state)
 {
     if(m_behavior)
-        m_behavior->setActive(state);
+        m_behavior->setEnabled(state);
 }
 
 void BehaviorDetails::on_behaviorTypeComboBox_editTextChanged(const QString& behaviorType)

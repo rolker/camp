@@ -21,7 +21,7 @@ public:
     void setBehavior(Behavior *behavior);
     
 private slots:
-    void on_activeCheckBox_stateChanged(int state);
+    void on_enabledCheckBox_stateChanged(int state);
     void on_behaviorTypeComboBox_editTextChanged(QString const &behaviorType);
     void on_behaviorDataPlainTextEdit_textChanged();
 

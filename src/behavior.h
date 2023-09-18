@@ -17,15 +17,15 @@ public:
     
     QString const &behaviorType() const;
     QString const &behaviorData() const;
-    bool active() const;
+    bool enabled() const;
     
     void setBehaviorType(QString const & behaviorType);
-    void setActive(bool active);
+    void setEnabled(bool enabled);
     void setBehaviorData(QString const & behaviorData);
 
 private:
     QString m_behaviorType;
-    bool m_active;
+    bool enabled_;
     QString data_;
 };
 
