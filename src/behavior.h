@@ -13,6 +13,7 @@ public:
     void writeToMissionPlan(QJsonArray& navArray) const override;
     void writeToMissionPlanObject(QJsonObject& behaviorsObject) const;
     void read(const QJsonObject& json) override;
+    bool canAcceptChildType(const std::string & childType) const override;
     bool canBeSentToRobot() const override;
     
     QString const &behaviorType() const;

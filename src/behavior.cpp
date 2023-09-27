@@ -65,6 +65,12 @@ const QString & Behavior::behaviorData() const
     return data_;
 }
 
+bool Behavior::canAcceptChildType(const std::string& childType) const
+{
+    return true;
+}
+
+
 bool Behavior::canBeSentToRobot() const
 {
     return true;
