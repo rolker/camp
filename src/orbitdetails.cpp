@@ -20,6 +20,10 @@ void OrbitDetails::setOrbit(Orbit* orbit)
     ui_.radiusLineEdit->setText(QString::number(orbit_->radius()));
     ui_.safetyDistanceLineEdit->setText(QString::number(orbit_->safetyDistance()));
     ui_.targetFrameLineEdit->setText(orbit_->targetFrame().c_str());
+    auto position = orbit_->position();
+    ui_.targetPositionXLineEdit->setText(QString::number(position.x()));
+    ui_.targetPositionYLineEdit->setText(QString::number(position.y()));
+    ui_.targetPositionZLineEdit->setText(QString::number(position.z()));
   }
 }
 
@@ -51,4 +55,39 @@ void OrbitDetails::on_targetFrameLineEdit_editingFinished()
   {
     orbit_->setTargetFrame(ui_.targetFrameLineEdit->text().toStdString());
   }
+}
+
+void OrbitDetails::on_targetPositionXLineEdit_editingFinished()
+{
+  positionUpdated();
+}
+
+void OrbitDetails::on_targetPositionYLineEdit_editingFinished()
+{
+  positionUpdated();
+}
+
+void OrbitDetails::on_targetPositionZLineEdit_editingFinished()
+{
+  positionUpdated();
+}
+
+void OrbitDetails::positionUpdated()
+{
+  if(orbit_)
+  {
+    auto position = orbit_->position();
+    float value;
+    bool ok;
+    value = ui_.targetPositionXLineEdit->text().toFloat(&ok);
+    if(ok)
+      position.setX(value);
+    value = ui_.targetPositionYLineEdit->text().toFloat(&ok);
+    if(ok)
+      position.setY(value);
+    value = ui_.targetPositionZLineEdit->text().toFloat(&ok);
+    if(ok)
+      position.setZ(value);
+    orbit_->setPosition(position);
+  }  
 }

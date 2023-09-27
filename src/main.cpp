@@ -17,7 +17,8 @@ int main(int argc, char *argv[])
     {
         QString arg(argv[i]);
         if(arg.endsWith(".json", Qt::CaseInsensitive))
-            w.open(arg);
+            //w.open(arg);
+            QMetaObject::invokeMethod(&w, "open", Qt::QueuedConnection, Q_ARG(QString, arg));
         else if(QFileInfo(arg).isDir())
             w.setWorkspace(arg);
         else // try background

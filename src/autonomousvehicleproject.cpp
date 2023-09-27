@@ -97,12 +97,14 @@ void AutonomousVehicleProject::save(const QString &fname)
 
 void AutonomousVehicleProject::open(const QString &fname)
 {
+    qDebug() << "open:" << fname;
     QFile loadFile(fname);
     if(loadFile.open(QFile::ReadOnly))
     {
         QByteArray loadData = loadFile.readAll();
         QJsonDocument loadDoc(QJsonDocument::fromJson(loadData));
         m_root->read(loadDoc.object());
+        emit layoutChanged();
     }
 }
 

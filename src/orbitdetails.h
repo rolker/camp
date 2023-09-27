@@ -21,6 +21,10 @@ private slots:
     void on_radiusLineEdit_editingFinished();
     void on_safetyDistanceLineEdit_editingFinished();
     void on_targetFrameLineEdit_editingFinished();
+    void on_targetPositionXLineEdit_editingFinished();
+    void on_targetPositionYLineEdit_editingFinished();
+    void on_targetPositionZLineEdit_editingFinished();
+    void positionUpdated();
 
 private:
     Ui::OrbitDetails ui_;

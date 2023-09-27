@@ -145,7 +145,10 @@ void MainWindow::on_speedLineEdit_editingFinished()
     bool ok;
     auto speed = m_ui->speedLineEdit->text().toDouble(&ok);
     if(ok)
+    {
         emit speedUpdated(speed);
+        project->setSpeed(speed);
+    }
 }
 
 void MainWindow::on_actionOpen_triggered()

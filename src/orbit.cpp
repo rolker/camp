@@ -16,6 +16,9 @@ void Orbit::write(QJsonObject& json) const
   json["radius"] = radius_;
   json["safetyDistance"] = safety_distance_;
   json["targetFrame"] = target_frame_.c_str();
+  json["targetPositionX"] = position_.x();
+  json["targetPositionY"] = position_.y();
+  json["targetPositionZ"] = position_.z();
 }
 
 void Orbit::writeToMissionPlan(QJsonArray& navArray) const
@@ -31,6 +34,9 @@ void Orbit::read(const QJsonObject& json)
   radius_ = json["radius"].toDouble();
   safety_distance_ = json["safetyDistance"].toDouble();
   target_frame_ = json["targetFrame"].toString().toStdString();
+  position_.setX(json["targetPositionX"].toDouble());
+  position_.setY(json["targetPositionY"].toDouble());
+  position_.setZ(json["targetPositionZ"].toDouble());
 }
 
 void Orbit::updateProjectedPoints()
@@ -66,6 +72,11 @@ const std::string& Orbit::targetFrame() const
   return target_frame_;
 }
 
+const QVector3D& Orbit::position() const
+{
+  return position_;
+}
+
 void Orbit::setRadius(double radius)
 {
   radius_ = radius;
@@ -79,4 +90,9 @@ void Orbit::setSafetyDistance(double distance)
 void Orbit::setTargetFrame(std::string target_frame)
 {
   target_frame_ = target_frame;
+}
+
+void Orbit::setPosition(const QVector3D& position)
+{
+  position_ = position;  
 }
