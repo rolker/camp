@@ -69,6 +69,7 @@ void MissionItem::write(QJsonObject& json) const
   json["label"] = objectName();
   if (m_speed > 0.0)
     json["speed"]=m_speed;
+  json["priority"] = m_priority;
 
   QJsonArray childrenArray;
   for(MissionItem *item: childMissionItems())
@@ -89,6 +90,7 @@ void MissionItem::read(const QJsonObject& json)
   if(label.size() > 0)
     setObjectName(label);
   m_speed = json["speed"].toDouble();
+  m_priority = json["priority"].toInt();
   readChildren(json["children"].toArray());
 }
 
@@ -186,3 +188,14 @@ void MissionItem::setSpeed(double speed)
     m_speed = speed;
     emit speedChanged();
 }
+
+int MissionItem::priority() const
+{
+    return m_priority;
+}
+
+void MissionItem::setPriority(int priority)
+{
+    m_priority = priority;
+}
+

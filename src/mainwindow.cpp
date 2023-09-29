@@ -135,7 +135,8 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
     MissionItem* i = project->itemFromIndex(index);
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
     emit speedUpdated(i->speed());
-}
+    m_ui->priorityLineEdit->setText(QString::number(i->priority()));
+ }
 
 void MainWindow::on_speedLineEdit_editingFinished()
 {
@@ -148,6 +149,18 @@ void MainWindow::on_speedLineEdit_editingFinished()
     {
         emit speedUpdated(speed);
         project->setSpeed(speed);
+    }
+}
+
+void MainWindow::on_priorityLineEdit_editingFinished()
+{
+    bool ok;
+    auto priority = m_ui->priorityLineEdit->text().toInt(&ok);
+    if(ok)
+    {
+        auto item = project->currentSelected();
+        if(item) 
+            item->setPriority(priority);
     }
 }
 

@@ -157,7 +157,7 @@ QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::Pose &pose, const std
 {
   if(header.frame_id.empty())
   {
-    ROS_WARN_STREAM_THROTTLE(1.0, "Grid: Missing frame_id: " << header);
+    ROS_DEBUG_STREAM_THROTTLE(1.0, "Grid: Missing frame_id: " << header);
     return {};
   }
   try

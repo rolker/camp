@@ -80,6 +80,7 @@ private slots:
     void on_actionFollow_triggered();
 
     void on_speedLineEdit_editingFinished();
+    void on_priorityLineEdit_editingFinished();
 
 private:
     Ui::MainWindow *m_ui;

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>383</height>
+    <width>557</width>
+    <height>480</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -24,18 +24,11 @@
     </widget>
    </item>
    <item>
-    <widget class="QLineEdit" name="sogLineEdit">
-     <property name="readOnly">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QLabel" name="displayLabel">
-       <property name="text">
-        <string>Display:</string>
+      <widget class="QLineEdit" name="sogLineEdit">
+       <property name="readOnly">
+        <bool>true</bool>
        </property>
       </widget>
      </item>

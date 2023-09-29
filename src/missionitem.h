@@ -46,6 +46,8 @@ public:
     double speed() const;
     void setSpeed(double speed);
 
+    int priority() const;
+    void setPriority(int priority);
 signals:
     void speedChanged();
 
@@ -54,6 +56,10 @@ public slots:
 
 protected:
     double m_speed = 0.0; //knots
+
+    /// Task priority, higher number is lower
+    /// priority
+    int m_priority = 0;
 
     
 private:

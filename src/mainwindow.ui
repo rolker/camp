@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1024</width>
-    <height>768</height>
+    <width>1033</width>
+    <height>739</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,18 +20,9 @@
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
       </property>
-      <property name="handleWidth">
-       <number>6</number>
-      </property>
-      <property name="childrenCollapsible">
-       <bool>true</bool>
-      </property>
-      <widget class="QSplitter" name="sidePaneSplitter">
+      <widget class="QSplitter" name="leftSplitter">
        <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="handleWidth">
-        <number>6</number>
+        <enum>Qt::Vertical</enum>
        </property>
        <widget class="QWidget" name="layoutWidget">
         <layout class="QVBoxLayout" name="platformManagerLayout">
@@ -104,25 +95,39 @@
            <layout class="QHBoxLayout" name="speedLayout">
             <item>
              <widget class="QLabel" name="speedLabel">
+              <property name="toolTip">
+               <string>Knots</string>
+              </property>
               <property name="text">
-               <string>Speed (knts)</string>
+               <string>Speed</string>
               </property>
              </widget>
             </item>
             <item>
-             <widget class="QLineEdit" name="speedLineEdit"/>
+             <widget class="QLineEdit" name="speedLineEdit">
+              <property name="toolTip">
+               <string>Speed in knots</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="priorityLabel">
+              <property name="text">
+               <string>Priority</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="priorityLineEdit">
+              <property name="toolTip">
+               <string>Higher number is lower priority</string>
+              </property>
+             </widget>
             </item>
            </layout>
           </item>
           <item>
-           <widget class="DetailsView" name="detailsView" native="true">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>25</height>
-             </size>
-            </property>
-           </widget>
+           <widget class="DetailsView" name="detailsView" native="true"/>
           </item>
          </layout>
         </widget>
@@ -154,7 +159,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1024</width>
+     <width>1033</width>
      <height>22</height>
     </rect>
    </property>

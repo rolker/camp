@@ -10,6 +10,7 @@ int main(int argc, char *argv[])
     ros::init(argc,argv, "CCOMAutonomousMissionPlanner", ros::init_options::AnonymousName);
     QApplication a(argc, argv);
     MainWindow w;
+    w.setStyleSheet("QSplitter::handle{background: #8080A0;}");
     w.show();
     
     

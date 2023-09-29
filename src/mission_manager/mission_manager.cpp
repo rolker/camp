@@ -28,12 +28,12 @@ void MissionManager::updateMissionStatus(const QString& status)
 
 void MissionManager::on_gotoLinePushButton_clicked(bool checked)
 {
-    sendGotoLine(m_ui->lineNumberSpinBox->value());
+    //sendGotoLine(m_ui->lineNumberSpinBox->value());
 }
 
 void MissionManager::on_startLinePushButton_clicked(bool checked)
 {
-    sendStartLine(m_ui->lineNumberSpinBox->value());
+    //sendStartLine(m_ui->lineNumberSpinBox->value());
 }
 
 void MissionManager::on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos)

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>295</width>
-    <height>327</height>
+    <width>309</width>
+    <height>249</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -28,67 +28,29 @@
     </widget>
    </item>
    <item>
-    <layout class="QFormLayout" name="formLayout">
-     <item row="0" column="0">
-      <widget class="QPushButton" name="nextMissionItemPushButton">
-       <property name="text">
-        <string>Next Mission Item</string>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="1">
-      <widget class="QPushButton" name="restartMissionPushButton">
-       <property name="text">
-        <string>Restart Mission</string>
-       </property>
-      </widget>
-     </item>
-     <item row="2" column="0">
-      <widget class="QLabel" name="lineNumberLabel">
-       <property name="text">
-        <string>Line Number</string>
-       </property>
-      </widget>
-     </item>
-     <item row="1" column="0">
+    <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <item>
       <widget class="QPushButton" name="cancelOverridePushButton">
        <property name="text">
         <string>Cancel Override</string>
        </property>
       </widget>
      </item>
-     <item row="1" column="1">
+     <item>
       <widget class="QPushButton" name="clearTasksPushButton">
        <property name="text">
-        <string>Clear Tasks</string>
+        <string>Clear</string>
        </property>
       </widget>
      </item>
-     <item row="2" column="1">
-      <widget class="QSpinBox" name="lineNumberSpinBox">
-       <property name="maximum">
-        <number>999999</number>
-       </property>
-      </widget>
-     </item>
-     <item row="3" column="0">
-      <widget class="QPushButton" name="gotoLinePushButton">
+     <item>
+      <widget class="QPushButton" name="restartMissionPushButton">
        <property name="text">
-        <string>Goto Line</string>
-       </property>
-      </widget>
-     </item>
-     <item row="3" column="1">
-      <widget class="QPushButton" name="startLinePushButton">
-       <property name="text">
-        <string>Start Line</string>
+        <string>Restart</string>
        </property>
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <layout class="QHBoxLayout" name="horizontalLayout"/>
    </item>
   </layout>
  </widget>

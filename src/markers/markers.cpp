@@ -163,12 +163,12 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
       {
         if(!m.lifetime.isZero() && m.header.stamp+m.lifetime < ros::Time::now())
         {
-          ROS_WARN_STREAM_THROTTLE(5.0, "Expired marker: "<< m.ns << " id: " << m.id);
+          ROS_DEBUG_STREAM_THROTTLE(5.0, "Expired marker: "<< m.ns << " id: " << m.id);
           continue;
         }
         if(m.header.frame_id.empty())
         {
-          ROS_WARN_STREAM_THROTTLE(1.0, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
+          ROS_DEBUG_STREAM_THROTTLE(1.0, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
           continue;;
         }
         marker_data->position = getGeoCoordinate(m.pose, m.header);

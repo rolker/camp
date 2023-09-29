@@ -15,18 +15,28 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QPushButton" name="standbyPushButton">
-     <property name="text">
-      <string>Standby</string>
+    <layout class="QHBoxLayout" name="pilotingModeHorizontalLayout">
+     <property name="topMargin">
+      <number>5</number>
      </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QPushButton" name="autonomousPushButton">
-     <property name="text">
-      <string>Autonomous</string>
+     <property name="rightMargin">
+      <number>5</number>
      </property>
-    </widget>
+     <item>
+      <widget class="QPushButton" name="standbyPushButton">
+       <property name="text">
+        <string>Standby</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="autonomousPushButton">
+       <property name="text">
+        <string>Autonomous</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
    <item>
     <widget class="QTextBrowser" name="robotStatusTextBrowser">
@@ -39,7 +49,7 @@
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
+    <layout class="QHBoxLayout" name="latencyHorizontalLayout">
      <item>
       <widget class="QLabel" name="timeLatencyLabel">
        <property name="sizePolicy">
