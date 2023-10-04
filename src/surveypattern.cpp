@@ -93,6 +93,8 @@ void SurveyPattern::calculateFromWaypoints()
             ac_angle = m_startLocation->location().azimuthTo(m_spacingLocation->location());
             m_spacing = ac_distance;
             m_direction = ac_angle-90;
+            if (m_direction < 0.0)    
+                m_direction += 360.0;      
         }
         qreal leg_heading = ac_angle-90.0;
         m_lineLength = ab_distance*qCos(qDegreesToRadians(ab_angle-leg_heading));

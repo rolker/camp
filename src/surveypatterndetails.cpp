@@ -21,7 +21,7 @@ SurveyPatternDetails::~SurveyPatternDetails()
 void SurveyPatternDetails::setSurveyPattern(SurveyPattern *surveyPattern)
 {
     m_surveyPattern = surveyPattern;
-    connect(surveyPattern,&SurveyPattern::surveyPatternUpdated,this,&SurveyPatternDetails::onSurveyPatternUpdated);
+    m_connection = connect(surveyPattern,&SurveyPattern::surveyPatternUpdated,this,&SurveyPatternDetails::onSurveyPatternUpdated);
     ui->startPoint->setWaypoint(surveyPattern->startLocationWaypoint());
     if(surveyPattern->endLocationWaypoint())
         ui->oppositePoint->setWaypoint(surveyPattern->endLocationWaypoint());
@@ -33,17 +33,19 @@ void SurveyPatternDetails::onSurveyPatternUpdated()
 {
     if(!updating)
     {
+        m_updating_ui = true;
         ui->lineSpacingEdit->setText(QString::number(m_surveyPattern->spacing()));
-        ui->headingEdit->setText(QString::number(m_surveyPattern->direction()));
+        ui->headingDoubleSpinBox->setValue(m_surveyPattern->direction());
         ui->lineLengthLineEdit->setText(QString::number(m_surveyPattern->lineLength()));
         ui->totalWidthLineEdit->setText(QString::number(m_surveyPattern->totalWidth()));
+        m_updating_ui = false;
     }
 }
 
 void SurveyPatternDetails::updateSurveyPattern()
 {
     updating = true;
-    m_surveyPattern->setDirectionAndSpacing(ui->headingEdit->text().toDouble(),ui->lineSpacingEdit->text().toDouble());
+    m_surveyPattern->setDirectionAndSpacing(ui->headingDoubleSpinBox->value(),ui->lineSpacingEdit->text().toDouble());
     m_surveyPattern->setLineLength(ui->lineLengthLineEdit->text().toDouble());
     m_surveyPattern->setTotalWidth(ui->totalWidthLineEdit->text().toDouble());
     switch(ui->alignmentComboBox->currentIndex())
@@ -61,9 +63,10 @@ void SurveyPatternDetails::updateSurveyPattern()
     updating = false;
 }
 
-void SurveyPatternDetails::on_headingEdit_editingFinished()
+void SurveyPatternDetails::on_headingDoubleSpinBox_valueChanged()
 {
-    updateSurveyPattern();
+    if(!m_updating_ui)
+        updateSurveyPattern();
 }
 
 void SurveyPatternDetails::on_lineSpacingEdit_editingFinished()

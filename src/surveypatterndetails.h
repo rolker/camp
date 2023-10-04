@@ -24,7 +24,7 @@ public slots:
 
 
 private slots:
-    void on_headingEdit_editingFinished();
+    void on_headingDoubleSpinBox_valueChanged();
 
     void on_lineSpacingEdit_editingFinished();
 
@@ -40,7 +40,9 @@ private:
     Ui::SurveyPatternDetails *ui;
 
     SurveyPattern * m_surveyPattern;
+    QMetaObject::Connection m_connection;
     bool updating;
+    bool m_updating_ui = false;
 
     void updateSurveyPattern();
 };
