@@ -13,7 +13,12 @@ void ShipTrack::drawTriangle(QPainterPath& path, BackgroundRaster* bg, const QGe
   if(std::isnan(heading_degrees))
   {
     QPointF center = geoToPixel(location, bg);
-    path.addEllipse(center, 15*scale, 15*scale);
+    QGeoCoordinate radius_away = location.atDistanceAndAzimuth(15, 0);
+    QPointF radius_away_local = geoToPixel(radius_away, bg);
+    QPointF radius_local = center-radius_away_local;
+    float radius_pixel = sqrt(radius_local.rx()*radius_local.rx()+radius_local.ry()*radius_local.ry());
+    path.addEllipse(center, radius_pixel, radius_pixel);
+    //path.addEllipse(center, 15*scale, 15*scale);
     return;
   }
   QGeoCoordinate tip = location.atDistanceAndAzimuth(15*scale,heading_degrees);
