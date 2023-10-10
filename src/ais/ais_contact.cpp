@@ -62,7 +62,12 @@ AISContactState::AISContactState(const marine_ais_msgs::AISContact::ConstPtr& me
   tf2::Vector3 motion;
   tf2::fromMsg(message->twist.twist.linear, motion);
   sog = motion.length();
-  cog = 90-(motion.angle(tf2::Vector3(1.0, 0.0, 0.0))*180/M_PI);
+  if (motion.length() > 0.0)
+  {
+    cog = -motion.angle(tf2::Vector3(0.0, 1.0, 0.0))*180/M_PI;
+    if (cog < 0.0)
+     cog += 360.0;
+  }
 
   tf2::Quaternion orientation_quat;
   tf2::fromMsg(message->pose.orientation, orientation_quat);
@@ -70,7 +75,7 @@ AISContactState::AISContactState(const marine_ais_msgs::AISContact::ConstPtr& me
   {
     double roll,pitch,yaw;
     tf2::getEulerYPR(orientation_quat, yaw, pitch, roll);
-    heading = (M_PI/2.0)-yaw;
+    heading = ((M_PI/2.0)-yaw)*180.0/M_PI;
   }
   else
   {

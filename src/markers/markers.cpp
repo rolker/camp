@@ -46,7 +46,11 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         QPen p;
         p.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*255));
         if(m.second->marker.type == visualization_msgs::Marker::LINE_STRIP)
-          p.setWidthF(m.second->marker.scale.x);
+        {
+          p.setWidthF(m.second->marker.scale.x/pixel_size_);
+          // p.setWidth(0);
+          // p.setCosmetic(true);
+        }
         if(m.second->marker.type == visualization_msgs::Marker::TEXT_VIEW_FACING)
           p.setCosmetic(true);
         painter->setPen(p);

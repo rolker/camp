@@ -25,8 +25,10 @@ public:
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
   QPainterPath shape() const override;
 
-  const LocationPosition& location() const;
-  double heading() const;
+  std::pair<QPainterPath, QPainterPath> shapes() const;
+
+  LocationPositionHeadingTime location() const;
+  LocationPositionHeadingTime heading() const;
 
   void setColor(QColor color);
 
@@ -36,10 +38,11 @@ signals:
   void positionUpdate(QGeoCoordinate position);
 
 public slots:
-  void updateLocation(QGeoCoordinate const &location);
-  void updateHeading(double heading);
+  void updateLocation(QGeoCoordinate const &location, float heading, double time);
   void updateProjectedPoints();
-  void setMaxHistory(int max_history);
+
+  /// Set buffer duration in seconds 
+  void setHistoryDuration(double duration);
   void updateSog(double sog);
   void trySubscribe();
 
@@ -58,11 +61,15 @@ private:
   std::string pending_orientation_topic_;
   std::string pending_velocity_topic_;
 
-  LocationPosition m_location;
-  double m_heading = std::nan("");
-  std::list<LocationPosition> m_location_history;
-  int m_max_history = -1;
-  QColor m_color = Qt::red;
+  std::map<double, LocationPositionHeadingTime> location_history_;
+
+  /// How long data should be kept. Forever if 0.
+  double buffer_duration_ = 0.0;
+  
+  QColor color_ = Qt::red;
+  QColor dim_color_;
+
+
 };
 
 #endif
