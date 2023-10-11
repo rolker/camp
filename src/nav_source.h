@@ -63,8 +63,14 @@ private:
 
   std::map<double, LocationPositionHeadingTime> location_history_;
 
-  /// How long data should be kept. Forever if 0.
+  /// How long data should be kept in seconds. Forever if 0.
   double buffer_duration_ = 0.0;
+
+  /// How long to keep full rate data in seconds.
+  double high_resolution_duration_ = 60.0;
+
+  /// Low resolution period in seconds between samples
+  double low_resolution_period_ = 1.0;
   
   QColor color_ = Qt::red;
   QColor dim_color_;

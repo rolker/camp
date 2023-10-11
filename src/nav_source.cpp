@@ -241,8 +241,36 @@ void NavSource::updateLocation(QGeoCoordinate const &location, float heading, do
   if(!isnan(heading))
     location_history_[time].heading = heading;
 
+  // trim samples that are older than buffer durration, if applicable.
   while(buffer_duration_ > 0.0 && !location_history_.empty() && location_history_.rbegin()->first-buffer_duration_ > location_history_.begin()->first)
     location_history_.erase(location_history_.begin()->first);
+
+  // thin older data
+  if(!location_history_.empty())
+  {
+    double low_res_end_time = location_history_.rbegin()->first - high_resolution_duration_;
+    std::vector<double> discard_pile;
+    auto location_iterator = location_history_.begin();
+    double last_keep_time = location_iterator->first;
+    location_iterator++;
+    while(location_iterator != location_history_.end() && location_iterator->first < low_res_end_time)
+    {
+      if(location_iterator->first >= last_keep_time+low_resolution_period_)
+      {
+        last_keep_time = location_iterator->first;
+      }
+      else
+      {
+        discard_pile.push_back(location_iterator->first);
+      }
+      location_iterator++;
+    }
+
+    for(auto discard: discard_pile)
+      location_history_.erase(discard);
+  }
+
+
   if(location.isValid())
     emit positionUpdate(location);
 }
