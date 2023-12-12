@@ -146,6 +146,7 @@ void Platform::update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platfor
     {
       m_nav_sources[nav.first] = new NavSource(nav, this, this);
       m_nav_sources[nav.first]->setHistoryDuration(7200);
+      connect(m_nav_sources[nav.first], &NavSource::beforeNavUpdate, this, &Platform::aboutToUpdateNav);
       connect(m_nav_sources[nav.first], &NavSource::positionUpdate, this, &Platform::updatePosition);
       if(m_nav_sources.size() == 1)
         connect(m_nav_sources[nav.first], &NavSource::sog, this, &Platform::updateSog);
