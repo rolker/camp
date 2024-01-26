@@ -75,7 +75,7 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
       case visualization_msgs::Marker::SPHERE:
       {
         QRectF bbox(marker.local_position, marker.local_position);
-        path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x /pixel_size_, marker.marker.scale.y/pixel_size_, marker.marker.scale.x/pixel_size_, marker.marker.scale.y/pixel_size_)));
+        path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x/2.0 /pixel_size_, marker.marker.scale.y/2.0/pixel_size_, marker.marker.scale.x/2.0/pixel_size_, marker.marker.scale.y/2.0/pixel_size_)));
         break;
       }
       case visualization_msgs::Marker::LINE_STRIP:
