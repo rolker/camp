@@ -127,6 +127,20 @@
            </layout>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="taskDataHorizontalLayout">
+            <item>
+             <widget class="QLabel" name="taskDataLabel">
+              <property name="text">
+               <string>Task data</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="taskDataLineEdit"/>
+            </item>
+           </layout>
+          </item>
+          <item>
            <widget class="DetailsView" name="detailsView" native="true"/>
           </item>
          </layout>

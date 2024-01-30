@@ -71,6 +71,9 @@ void MissionItem::write(QJsonObject& json) const
     json["speed"]=m_speed;
   json["priority"] = m_priority;
 
+  if (!task_data_.empty())
+    json["task_data"] = QString(task_data_.c_str());
+
   QJsonArray childrenArray;
   for(MissionItem *item: childMissionItems())
   {
@@ -91,6 +94,9 @@ void MissionItem::read(const QJsonObject& json)
     setObjectName(label);
   m_speed = json["speed"].toDouble();
   m_priority = json["priority"].toInt();
+  auto task_data = json["task_data"].toString();
+  if (task_data.size() > 0)
+    task_data_ = task_data.toStdString();
   readChildren(json["children"].toArray());
 }
 
@@ -199,3 +205,12 @@ void MissionItem::setPriority(int priority)
     m_priority = priority;
 }
 
+const std::string& MissionItem::taskData() const
+{
+    return task_data_;
+}
+
+void MissionItem::setTaskData(const std::string& data)
+{
+    task_data_ = data;
+}

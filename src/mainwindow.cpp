@@ -136,6 +136,7 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
     emit speedUpdated(i->speed());
     m_ui->priorityLineEdit->setText(QString::number(i->priority()));
+    m_ui->taskDataLineEdit->setText(QString(i->taskData().c_str()));
  }
 
 void MainWindow::on_speedLineEdit_editingFinished()
@@ -163,6 +164,14 @@ void MainWindow::on_priorityLineEdit_editingFinished()
             item->setPriority(priority);
     }
 }
+
+void MainWindow::on_taskDataLineEdit_editingFinished()
+{
+    auto item = project->currentSelected();
+    if(item) 
+        item->setTaskData(m_ui->taskDataLineEdit->text().toStdString());
+}
+
 
 void MainWindow::on_actionOpen_triggered()
 {

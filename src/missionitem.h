@@ -48,6 +48,10 @@ public:
 
     int priority() const;
     void setPriority(int priority);
+
+    const std::string& taskData() const;
+    void setTaskData(const std::string& data);
+
 signals:
     void speedChanged();
 
@@ -60,6 +64,8 @@ protected:
     /// Task priority, higher number is lower
     /// priority
     int m_priority = 0;
+
+    std::string task_data_;
 
     
 private:

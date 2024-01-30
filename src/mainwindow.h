@@ -81,6 +81,7 @@ private slots:
 
     void on_speedLineEdit_editingFinished();
     void on_priorityLineEdit_editingFinished();
+    void on_taskDataLineEdit_editingFinished();
 
 private:
     Ui::MainWindow *m_ui;
