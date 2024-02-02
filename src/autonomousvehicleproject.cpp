@@ -26,6 +26,7 @@
 #include "vector/linestring.h"
 #include "behavior.h"
 #include "orbit.h"
+#include "avoid_area.h"
 
 #include "platform_manager/platform.h"
 #include "mission_manager/mission_manager.h"
@@ -331,6 +332,28 @@ SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
     return sa;
 }
 
+AvoidArea * AutonomousVehicleProject::createAvoidArea(MissionItem* parent, int row, QString label)
+{
+    AvoidArea *aa;
+    if(label.isEmpty())
+        label = generateUniqueLabel("avoid");
+    if(!parent)
+        aa = potentialParentItemFor("AvoidArea")->createMissionItem<AvoidArea>(label, row);
+    else
+        aa = parent->createMissionItem<AvoidArea>(label, row);
+    connect(aa, &AvoidArea::avoidAreaChanged, this, &AutonomousVehicleProject::updateAvoidanceAreas);
+    return aa;
+}
+
+AvoidArea * AutonomousVehicleProject::addAvoidArea(QGeoCoordinate position)
+{
+    AvoidArea *aa = createAvoidArea();
+    aa->setPos(aa->geoToPixel(position,this));
+    aa->addPoint(position);
+    connect(this,&AutonomousVehicleProject::updatingBackground,aa,&AvoidArea::updateBackground);
+    return aa;
+}
+
 SearchPattern * AutonomousVehicleProject::createSearchPattern(MissionItem* parent, int row, QString label)
 {
   SearchPattern *sp;
@@ -488,6 +511,11 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
     GeoGraphicsMissionItem * gmi = qobject_cast<GeoGraphicsMissionItem*>(mi);
     if(gmi)
         gmi->lock();
+}
+
+void AutonomousVehicleProject::updateAvoidanceAreas()
+{
+    qDebug() << "updateAvoidanceAreas";
 }
 
 void AutonomousVehicleProject::appendMission(const QModelIndex& index)
