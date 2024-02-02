@@ -523,6 +523,19 @@ void MainWindow::on_actionOrbitFromContext_triggered()
     project->addOrbit();
 }
 
+void MainWindow::on_actionAvoid_triggered()
+{
+    project->setContextMode(false);
+    m_ui->projectView->setAddAvoidAreaMode();
+}
+
+void MainWindow::on_actionAvoidFromContext_triggered()
+{
+    project->setContextMode(true);
+    m_ui->projectView->setAddAvoidAreaMode();
+}
+
+
 void MainWindow::on_actionRadar_triggered()
 {
     qDebug() << "radar: " << m_ui->actionRadar->isChecked();

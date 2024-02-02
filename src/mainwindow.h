@@ -66,6 +66,8 @@ private slots:
     void on_actionOpenGeometry_triggered();
     void on_actionOrbit_triggered();
     void on_actionOrbitFromContext_triggered();
+    void on_actionAvoid_triggered();
+    void on_actionAvoidFromContext_triggered();
 
     void on_treeView_customContextMenuRequested(const QPoint &pos);
 

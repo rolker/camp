@@ -1,5 +1,6 @@
 set(SOURCES
     autonomousvehicleproject.cpp
+    avoid_area.cpp
     backgrounddetails.cpp
     backgroundraster.cpp
     detailsview.cpp

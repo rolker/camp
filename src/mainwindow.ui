@@ -201,6 +201,7 @@
     <addaction name="actionBehavior"/>
     <addaction name="actionSearchPattern"/>
     <addaction name="actionOrbit"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="menuSettings">
     <property name="title">
@@ -236,6 +237,7 @@
    <addaction name="actionBehavior"/>
    <addaction name="actionSearchPattern"/>
    <addaction name="actionOrbit"/>
+   <addaction name="actionAvoid"/>
   </widget>
   <widget class="QStatusBar" name="statusBar"/>
   <action name="actionOpen">
@@ -401,6 +403,11 @@
   <action name="actionMarkersManager">
    <property name="text">
     <string>Markers Manager</string>
+   </property>
+  </action>
+  <action name="actionAvoid">
+   <property name="text">
+    <string>Avoid</string>
    </property>
   </action>
  </widget>

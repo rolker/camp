@@ -37,7 +37,7 @@ signals:
     void waypointAboutToMove();
 
 protected:
-    QVariant itemChange(GraphicsItemChange change, const QVariant &value);
+    QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
     void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
     void hoverLeaveEvent(QGraphicsSceneHoverEvent * event) override;
 private:

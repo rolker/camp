@@ -31,6 +31,7 @@ public:
         GeovizDisplayType,
         SearchPatternType,
         GridType,
+        AvoidAreaType,
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

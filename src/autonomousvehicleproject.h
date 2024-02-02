@@ -23,6 +23,7 @@ class QSvgRenderer;
 //class ROSLink;
 class Behavior;
 class Platform;
+class AvoidArea;
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -44,6 +45,9 @@ public:
     
     SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyArea * addSurveyArea(QGeoCoordinate position);
+
+    AvoidArea * createAvoidArea(MissionItem* parent=nullptr, int row=-1, QString label = "");
+    AvoidArea * addAvoidArea(QGeoCoordinate position);
 
     SearchPattern * createSearchPattern(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SearchPattern * addSearchPattern(QGeoCoordinate position);
@@ -129,6 +133,8 @@ public slots:
     void updateActivePlatform(Platform *platform);
 
     void setSpeed(double speed);
+
+    void updateAvoidanceAreas();
 
 
 private:

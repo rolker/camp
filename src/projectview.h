@@ -14,6 +14,7 @@ class SearchPattern;
 class Waypoint;
 class BackgroundRaster;
 class MeasuringTool;
+class AvoidArea;
 
 class ProjectView : public QGraphicsView
 {
@@ -26,6 +27,7 @@ public:
     void setAddSurveyPatternMode();
     void setAddSurveyAreaMode();
     void setAddSearchPatternMode();
+    void setAddAvoidAreaMode();
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 
@@ -53,7 +55,7 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
-    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern, addSurveyArea, addSearchPattern};
+    enum class MouseMode {pan, addWaypoint, addTrackline, addSurveyPattern, addSurveyArea, addSearchPattern, addAvoidArea};
     QStatusBar * statusBar;
     QLabel * positionLabel;
     QLabel * modeLabel;
@@ -63,8 +65,10 @@ private:
     Waypoint * pendingTrackLineWaypoint;
     SurveyPattern * pendingSurveyPattern;
     SurveyArea * pendingSurveyArea;
+    AvoidArea * pendingAvoidArea;
     SearchPattern * pendingSearchPattern = nullptr;
     Waypoint * pendingSurveyAreaWaypoint;
+    Waypoint * pendingAvoidAreaWaypoint;
     MeasuringTool * measuringTool;
 
     QGeoCoordinate m_contextMenuLocation;

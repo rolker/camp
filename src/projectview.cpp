@@ -11,6 +11,7 @@
 #include "surveypattern.h"
 #include "surveyarea.h"
 #include "searchpattern.h"
+#include "avoid_area.h"
 #include <QDebug>
 #include <QMenu>
 #include "measuringtool.h"
@@ -112,6 +113,20 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
             }
             break;
+        case MouseMode::addAvoidArea:
+            if(!pendingAvoidArea)
+            {
+                if(bg)
+                {
+                    pendingAvoidArea = m_project->addAvoidArea(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(bg->pixelToGeo(mapToScene(event->pos())));
+                }
+            }
+            else
+            {
+                pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(bg->pixelToGeo(mapToScene(event->pos())));
+            }
+            break;
         case MouseMode::addSearchPattern:
             if(!pendingSearchPattern)
             {
@@ -138,7 +153,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         break;
 
     case Qt::RightButton:
-        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern || mouseMode == MouseMode::addSurveyArea || mouseMode == MouseMode::addSearchPattern)
+        if(mouseMode == MouseMode::addTrackline || mouseMode == MouseMode::addWaypoint || mouseMode == MouseMode::addSurveyPattern || mouseMode == MouseMode::addSurveyArea || mouseMode == MouseMode::addSearchPattern || mouseMode == MouseMode::addAvoidArea)
         {
             if(mouseMode == MouseMode::addTrackline && currentTrackLine)
             {
@@ -155,6 +170,15 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 m_project->scene()->update();
                 pendingSurveyAreaWaypoint = nullptr;
                 pendingSurveyArea = nullptr;
+                update();
+            }
+            if(mouseMode == MouseMode::addAvoidArea && pendingAvoidArea)
+            {
+                m_project->scene()->removeItem(pendingAvoidAreaWaypoint);
+                m_project->deleteItem(pendingAvoidAreaWaypoint);
+                m_project->scene()->update();
+                pendingAvoidAreaWaypoint = nullptr;
+                pendingAvoidArea = nullptr;
                 update();
             }
             setPanMode();
@@ -215,6 +239,10 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         {
             pendingSurveyAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
         }
+        if(pendingAvoidAreaWaypoint)
+        {
+            pendingAvoidAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
+        }
         if(pendingSearchPattern)
         {
             if(pendingSearchPattern->hasSpacingLocation())
@@ -272,6 +300,15 @@ void ProjectView::setAddSurveyAreaMode()
     modeLabel->setText("Mode: add survey area");
     setCursor(Qt::CrossCursor);
 }
+
+void ProjectView::setAddAvoidAreaMode()
+{
+    setDragMode(NoDrag);
+    mouseMode = MouseMode::addAvoidArea;
+    modeLabel->setText("Mode: add area to avoid");
+    setCursor(Qt::CrossCursor);
+}
+
 
 void ProjectView::setAddSearchPatternMode()
 {
