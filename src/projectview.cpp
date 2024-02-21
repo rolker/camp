@@ -179,6 +179,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 m_project->scene()->update();
                 pendingAvoidAreaWaypoint = nullptr;
                 pendingAvoidArea = nullptr;
+                m_project->updateAvoidanceAreas();
                 update();
             }
             setPanMode();

@@ -31,6 +31,8 @@ public:
     void setPanMode();
     void setProject(AutonomousVehicleProject *project);
 
+    bool isMouseModeAddAvoidArea() const;
+
 signals:
     void currentChanged(QModelIndex &index);
     void scaleChanged(qreal scale);

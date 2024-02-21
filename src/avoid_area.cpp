@@ -76,7 +76,7 @@ Waypoint * AvoidArea::createPoint()
   QString wplabel = "point"+QString::number(i);
   Waypoint *wp = createMissionItem<Waypoint>(wplabel);
   
-  connect(wp, &Waypoint::waypointMoved, autonomousVehicleProject(), &AutonomousVehicleProject::updateAvoidanceAreas);
+  //connect(wp, &Waypoint::waypointMoved, autonomousVehicleProject(), &AutonomousVehicleProject::updateAvoidanceAreas);
 
   wp->setFlag(QGraphicsItem::ItemIsMovable);
   wp->setFlag(QGraphicsItem::ItemIsSelectable);
@@ -144,8 +144,13 @@ bool AvoidArea::canBeSentToRobot() const
 
 QVariant AvoidArea::itemChange(GraphicsItemChange change, const QVariant &value)
 {
-  if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
-    emit avoidAreaChanged();
+  // if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
+  //   emit avoidAreaChanged();
 
   return QGraphicsItem::itemChange(change,value);
+}
+
+void AvoidArea::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+  emit avoidAreaChanged();
 }

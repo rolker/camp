@@ -515,7 +515,57 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 
 void AutonomousVehicleProject::updateAvoidanceAreas()
 {
-    qDebug() << "updateAvoidanceAreas";
+    project11_nav_msgs::GeoOccupancyVectorMap avoidance_map;
+    avoidance_map.header.frame_id = "wgs84";
+    avoidance_map.header.stamp = ros::Time::now();
+    avoidance_map.bounds.min_pt.altitude = std::nan("");
+    bool first_waypoint = true;
+
+    for(auto &mission_item: m_root->childMissionItems())
+    {
+        auto avoid_area = qobject_cast<AvoidArea*>(mission_item);
+        if(avoid_area)
+        {
+            auto waypoints = avoid_area->childMissionItems();
+            project11_nav_msgs::GeoOccupancyPolygon polygon;
+            polygon.occupancy_probability = 100;
+            for(auto item: waypoints)
+            {
+                auto wp_item = qobject_cast<Waypoint*>(item);
+                if(wp_item)
+                {
+                    geographic_msgs::GeoPoint gp;
+                    gp.latitude = wp_item->location().latitude();
+                    gp.longitude = wp_item->location().longitude();
+                    // following is probably not dateline proof
+                    if(first_waypoint)
+                    {
+                        avoidance_map.bounds.max_pt.latitude = gp.latitude;
+                        avoidance_map.bounds.max_pt.longitude = gp.longitude;
+                        avoidance_map.bounds.min_pt.latitude = gp.latitude;
+                        avoidance_map.bounds.min_pt.longitude = gp.longitude;
+                        first_waypoint = false;
+                    }
+                    else
+                    {
+                        avoidance_map.bounds.max_pt.latitude = std::max(gp.latitude, avoidance_map.bounds.max_pt.latitude);
+                        avoidance_map.bounds.max_pt.longitude = std::max(gp.longitude, avoidance_map.bounds.max_pt.longitude);
+                        avoidance_map.bounds.min_pt.latitude = std::min(gp.latitude, avoidance_map.bounds.min_pt.latitude);
+                        avoidance_map.bounds.min_pt.longitude = std::min(gp.longitude, avoidance_map.bounds.min_pt.longitude);
+                    }
+                    polygon.polygon.points.push_back(gp);
+                }
+            }
+            if(polygon.polygon.points.size() > 1)
+                avoidance_map.polygons.push_back(polygon);
+
+        }
+    }
+
+    if(m_activePlatform)
+    {
+        m_activePlatform->missionManager()->sendAvoidanceAreas(avoidance_map);
+    }
 }
 
 void AutonomousVehicleProject::appendMission(const QModelIndex& index)

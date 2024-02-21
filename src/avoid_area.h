@@ -31,13 +31,17 @@ public:
     bool canBeSentToRobot() const override;
 
 
+
     QVariant itemChange(GraphicsItemChange change, const QVariant &value) override;
 
 signals:
     void avoidAreaChanged();
 public slots:
     void updateProjectedPoints();
-    
+
+protected:
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+
 private:
 
 };

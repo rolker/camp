@@ -9,6 +9,7 @@ find_package(catkin REQUIRED COMPONENTS
     marine_ais_msgs
     marine_sensor_msgs
     project11_msgs
+    project11_nav_msgs
     roscpp
     rosgraph_msgs
     rqt_gui

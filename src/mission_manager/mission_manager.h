@@ -4,6 +4,7 @@
 #include <QWidget>
 #include "ros/ros.h"
 #include "project11_msgs/Heartbeat.h"
+#include <project11_nav_msgs/GeoOccupancyVectorMap.h>
 
 namespace Ui
 {
@@ -42,6 +43,8 @@ public slots:
   void sendGotoLine(int waypoint_index);
   void sendStartLine(int waypoint_index);
 
+  void sendAvoidanceAreas(const project11_nav_msgs::GeoOccupancyVectorMap& map);
+
 
 private slots:
   void updateMissionStatus(QString const &status);
@@ -61,6 +64,7 @@ private:
   Ui::MissionManager* m_ui;
   ros::Subscriber m_mission_status_subscriber;
   ros::Publisher m_send_command_publisher;
+  ros::Publisher send_avoidance_costmap_publisher_;
 
 
 };
