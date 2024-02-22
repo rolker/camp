@@ -2,15 +2,15 @@
 #define CAMP_ROS_NODE_H
 
 #include <QObject>
-#include <ros/ros.h>
-#include <tf2_ros/transform_listener.h>
+#include "rclcpp/rclcpp.hpp"
+#include "tf2_ros/transform_listener.h"
 
 namespace camp_ros
 {
 
 class NodeManager;
 
-class Node: public QObject
+class Node: public QObject, public rclcpp::Node
 {
   Q_OBJECT
 public:
@@ -27,7 +27,6 @@ signals:
   void shuttingDown();
 
 private:
-  std::unique_ptr<ros::NodeHandle> node_handle_;
   std::unique_ptr<tf2_ros::TransformListener> transform_listener_;
 };
 

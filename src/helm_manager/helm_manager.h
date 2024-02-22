@@ -2,8 +2,9 @@
 #define CAMP_HELM_MANAGER_H
 
 #include <QWidget>
-#include "ros/ros.h"
-#include "project11_msgs/Heartbeat.h"
+#include "rclcpp/rclcpp.hpp"
+#include "project11_msgs/msg/heartbeat.hpp"
+#include "std_msgs/msg/string.hpp"
 
 namespace Ui
 {
@@ -17,6 +18,8 @@ class HelmManager: public QWidget
 public:
   explicit HelmManager(QWidget *parent =0);
   ~HelmManager(); 
+
+  void setNode(rclcpp::Node::SharedPtr node);
 
 signals:
   void pilotingModeUpdated(QString piloting_mode);
@@ -39,20 +42,22 @@ private slots:
   void watchdogUpdate();
 
 private:
-  void heartbeatCallback(const project11_msgs::Heartbeat::ConstPtr& message);
+  void heartbeatCallback(const project11_msgs::msg::Heartbeat& message);
 
   Ui::HelmManager* ui;
 
-  ros::Subscriber m_heartbeat_subscriber;
-  ros::Publisher m_send_command_publisher;
+  rclcpp::Node::SharedPtr node_;
 
-  ros::Time m_last_heartbeat_timestamp;
-  ros::Time m_last_heartbeat_receive_time;
+  rclcpp::Subscription<project11_msgs::msg::Heartbeat>::SharedPtr heartbeat_subscription_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr send_command_publisher_;
+
+  rclcpp::Time last_heartbeat_timestamp_;
+  rclcpp::Time last_heartbeat_receive_time_;
     
   QTimer * m_watchdog_timer;
 
-  ros::Duration max_green_duration_ = ros::Duration(2.0);
-  ros::Duration max_yellow_duration_ = ros::Duration(5.0);
+  rclcpp::Duration max_green_duration_ = rclcpp::Duration(2, 0);
+  rclcpp::Duration max_yellow_duration_ = rclcpp::Duration(5, 0);
 
 };
 

@@ -1,6 +1,6 @@
 #include "rqt_helm_manager.h"
 #include "ui_rqt_helm_manager.h"
-#include <pluginlib/class_list_macros.h>
+#include <pluginlib/class_list_macros.hpp>
 
 namespace camp
 {
@@ -15,6 +15,8 @@ void HelmManagerPlugin::initPlugin(qt_gui_cpp::PluginContext& context)
   m_widget = new QWidget();
   m_ui = new Ui::HelmManagerPlugin;
   m_ui->setupUi(m_widget);
+
+  m_ui->helmManager->setNode(node_);
 
   connect(m_ui->robotNamespaceLineEdit, &QLineEdit::editingFinished, this, &HelmManagerPlugin::on_robotNamespaceLineEdit_editingFinished);
   
@@ -44,7 +46,7 @@ void HelmManagerPlugin::restoreSettings(const qt_gui_cpp::Settings& plugin_setti
 
 void HelmManagerPlugin::on_robotNamespaceLineEdit_editingFinished()
 {
-  ROS_INFO_STREAM(m_ui->robotNamespaceLineEdit->text().toStdString());
+  RCLCPP_INFO_STREAM(node_->get_logger(), m_ui->robotNamespaceLineEdit->text().toStdString());
   m_ui->helmManager->updateRobotNamespace(m_ui->robotNamespaceLineEdit->text());
 }
 

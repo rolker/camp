@@ -1,0 +1,17 @@
+<library path="rqt_helm_manager">
+    <class type="camp::HelmManagerPlugin" base_class_type="rqt_gui_cpp::Plugin">
+        <description>
+            Display Project11 helm_manager status.
+        </description>
+        <qtgui>
+            <group>
+                <label>Project11</label>
+                <icon type="theme">folder</icon>
+                <statustip>Plugins related to Project11.</statustip>
+            </group>
+            <label>Helm Manager Plugin</label>
+            <icon type="theme">image-x-generic</icon>
+            <statustip>Show Project11 helm status</statustip>
+        </qtgui>
+    </class>   
+</library>

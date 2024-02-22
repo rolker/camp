@@ -1,6 +1,6 @@
 #include "mission_manager.h"
 #include "ui_mission_manager.h"
-#include "std_msgs/String.h"
+#include "std_msgs/msg/string.hpp"
 #include <QMenu>
 #include <QGeoCoordinate>
 

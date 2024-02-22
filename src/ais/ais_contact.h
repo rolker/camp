@@ -2,10 +2,10 @@
 #define CAMP_AIS_CONTACT_H
 
 #include <QObject>
-#include "ship_track.h"
-#include "project11_msgs/Contact.h"
-#include "marine_ais_msgs/AISContact.h"
-#include "locationposition.h"
+#include "../ship_track.h"
+#include "project11_msgs/msg/contact.hpp"
+#include "marine_ais_msgs/msg/aiscontact.hpp"
+#include "../locationposition.h"
 
 struct AISContactDetails
 {

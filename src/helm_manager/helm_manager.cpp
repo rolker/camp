@@ -4,7 +4,7 @@
 #include <QStyle>
 #include <QPalette>
 #include <QTimer>
-#include "std_msgs/String.h"
+#include "std_msgs/msg/string.hpp"
 
 HelmManager::HelmManager(QWidget* parent):
   QWidget(parent),
@@ -27,6 +27,11 @@ HelmManager::~HelmManager()
   delete ui;
 }
 
+void HelmManager::setNode(rclcpp::Node::SharedPtr node)
+{
+  node_ = node;
+}
+
 void HelmManager::on_standbyPushButton_clicked(bool checked)
 {
   emit requestPilotingMode("standby");
@@ -42,38 +47,48 @@ void HelmManager::on_timeLatencyConfigPushButton_clicked(bool checked)
   Ui::HelmManagerConfig configDialogUI;
   QDialog configDialog;
   configDialogUI.setupUi(&configDialog);
-  configDialogUI.greenTimeoutSpinBox->setValue(max_green_duration_.toSec());
-  configDialogUI.yellowTimeoutSpinBox->setValue(max_yellow_duration_.toSec());
+  configDialogUI.greenTimeoutSpinBox->setValue(max_green_duration_.seconds());
+  configDialogUI.yellowTimeoutSpinBox->setValue(max_yellow_duration_.seconds());
   if(configDialog.exec())
   {
-    max_green_duration_ = ros::Duration(configDialogUI.greenTimeoutSpinBox->value());
-    max_yellow_duration_ = ros::Duration(configDialogUI.yellowTimeoutSpinBox->value());
+    max_green_duration_ = rclcpp::Duration::from_seconds(configDialogUI.greenTimeoutSpinBox->value());
+    max_yellow_duration_ = rclcpp::Duration::from_seconds(configDialogUI.yellowTimeoutSpinBox->value());
   }
 }
 
 void HelmManager::updateRobotNamespace(QString robot_namespace)
 {
-  ROS_DEBUG_STREAM("updateRobotNamespace: " << robot_namespace.toStdString());
-  ros::NodeHandle nh;
-  m_heartbeat_subscriber = nh.subscribe("/"+robot_namespace.toStdString()+"/project11/heartbeat" , 1, &HelmManager::heartbeatCallback, this);
-  m_send_command_publisher = nh.advertise<std_msgs::String>("/"+robot_namespace.toStdString()+"/project11/send_command",1);
+  RCLCPP_DEBUG_STREAM(node_->get_logger(), "updateRobotNamespace: " << robot_namespace.toStdString());
+
+  auto ns = robot_namespace.toStdString();
+
+  if(ns.empty() || ns[0] != '/')
+    ns = "/"+ns;
+
+  if(!ns.empty() && ns.back() != '/')
+    ns = ns + "/";
+  
+
+
+  heartbeat_subscription_ = node_->create_subscription<project11_msgs::msg::Heartbeat>(ns+"project11/heartbeat", 1, std::bind(&HelmManager::heartbeatCallback, this, std::placeholders::_1));
+  send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>(ns+"project11/send_command",1);
 }
 
 void HelmManager::sendPilotingModeRequest(QString piloting_mode)
 {
-  std_msgs::String cmd;
+  std_msgs::msg::String cmd;
   cmd.data = "piloting_mode "+piloting_mode.toStdString();
-  m_send_command_publisher.publish(cmd); 
+  send_command_publisher_->publish(cmd); 
 }
 
-void HelmManager::heartbeatCallback(const project11_msgs::Heartbeat::ConstPtr& message)
+void HelmManager::heartbeatCallback(const project11_msgs::msg::Heartbeat& message)
 {
-  ros::Time last_heartbeat_receive_time = ros::Time::now();
-  ros::Time last_heartbeat_timestamp = message->header.stamp;
+  rclcpp::Time last_heartbeat_receive_time = node_->get_clock()->now();
+  rclcpp::Time last_heartbeat_timestamp = message.header.stamp;
     
   QString status_string;
   QString piloting_mode;
-  for(auto kv: message->values)
+  for(auto kv: message.values)
   {
     status_string += kv.key.c_str();
     status_string += ": ";
@@ -85,7 +100,7 @@ void HelmManager::heartbeatCallback(const project11_msgs::Heartbeat::ConstPtr& m
 
   emit pilotingModeUpdated(piloting_mode);
   emit robotStatusUpdated(status_string);
-  emit heartbeatTimesUpdated(last_heartbeat_timestamp.toSec(), last_heartbeat_receive_time.toSec());
+  emit heartbeatTimesUpdated(last_heartbeat_timestamp.seconds(), last_heartbeat_receive_time.seconds());
 
 
 }
@@ -128,31 +143,30 @@ void HelmManager::updatePilotingMode(QString const &piloting_mode)
 
 void HelmManager::updateHeartbeatTimes(double last_heartbeat_timestamp, double last_heartbeat_receive_time)
 {
-  m_last_heartbeat_timestamp.fromSec(last_heartbeat_timestamp);
-  m_last_heartbeat_receive_time.fromSec(last_heartbeat_receive_time);
-
+  last_heartbeat_timestamp_ = rclcpp::Time() + rclcpp::Duration::from_seconds(last_heartbeat_timestamp);
+  last_heartbeat_receive_time_ = rclcpp::Time() + rclcpp::Duration::from_seconds(last_heartbeat_receive_time);
 }
 
 void HelmManager::watchdogUpdate()
 {
-  ros::Time now = ros::Time::now();
-  ros::Duration diff = now-m_last_heartbeat_timestamp;
-
-  QPalette pal = palette();
-  if(diff < max_green_duration_)
-    pal.setColor(QPalette::Background, Qt::green);
-  else if (diff < max_yellow_duration_)
-    pal.setColor(QPalette::Background, Qt::yellow);
-  else
-    pal.setColor(QPalette::Background, Qt::red);
-  this->setAutoFillBackground(true);
-  this->setPalette(pal);
-
-  if(m_last_heartbeat_timestamp.isValid())
+  auto now = node_->get_clock()->now();
+  if(last_heartbeat_timestamp_.nanoseconds() > 0)
   {
-    ros::Duration last_receive_duration = now-m_last_heartbeat_receive_time;
-    ros::Duration latency = m_last_heartbeat_receive_time - m_last_heartbeat_timestamp;
-    QString msg = "Last HB: " + QString::number(last_receive_duration.toSec()) + "s Latency: " + QString::number(latency.toSec()) +"s";
+    auto diff = now-last_heartbeat_timestamp_;
+
+    QPalette pal = palette();
+    if(diff < max_green_duration_)
+      pal.setColor(QPalette::Window, Qt::green);
+    else if (diff < max_yellow_duration_)
+      pal.setColor(QPalette::Window, Qt::yellow);
+    else
+      pal.setColor(QPalette::Window, Qt::red);
+    this->setAutoFillBackground(true);
+    this->setPalette(pal);
+
+    auto last_receive_duration = now-last_heartbeat_receive_time_;
+    auto latency = last_heartbeat_receive_time_ - last_heartbeat_timestamp_;
+    QString msg = "Last HB: " + QString::number(last_receive_duration.seconds()) + "s Latency: " + QString::number(latency.seconds()) +"s";
     ui->timeLatencyLabel->setText(msg);
   }
 }

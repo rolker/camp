@@ -2,9 +2,9 @@
 #define CAMP_MISSION_MANAGER_H
 
 #include <QWidget>
-#include "ros/ros.h"
-#include "project11_msgs/Heartbeat.h"
-#include <project11_nav_msgs/GeoOccupancyVectorMap.h>
+#include "rclcpp/rclcpp.hpp"
+#include "project11_msgs/msg/heartbeat.hpp"
+#include "project11_nav_msgs/msg/geooccupancyvectormap.hpp"
 
 namespace Ui
 {

@@ -2,8 +2,8 @@
 #define CAMP_ROS_LAYER_H
 
 #include "../map/layer.h"
-#include <ros/ros.h>
-#include <geometry_msgs/PoseStamped.h>
+#include "rclcpp/rclcpp.hpp"
+#include "geometry_msgs/msg/PoseStamped.h"
 
 namespace camp_ros
 {

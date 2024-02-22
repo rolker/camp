@@ -8,26 +8,25 @@
 
   <license>BSD</license>
   
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
   <build_depend>qtpositioning5-dev</build_depend>
   <build_depend>libqt5-svg-dev</build_depend>
   <build_depend>libgdal-dev</build_depend>
   <depend>grid_map_ros</depend>
   <depend>marine_ais_msgs</depend>
   <depend>marine_sensor_msgs</depend>
-  <depend>geographic_visualization_msgs</depend>
+  <depend>pluginlib</depend>
   <depend>project11_msgs</depend>
   <depend>project11_nav_msgs</depend>
-  <depend>roscpp</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>rqt_gui_cpp</depend>
   <depend>rqt_gui</depend>
-  <depend>sound_play</depend>
   <depend>yaml-cpp</depend>
   
   <export>
-    <rqt_gui plugin="${prefix}/src/helm_manager/plugin.xml"/>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
 
