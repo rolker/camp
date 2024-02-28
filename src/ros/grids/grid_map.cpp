@@ -1,9 +1,9 @@
 #include "grid_map.h"
 #include <grid_map_ros/grid_map_ros.hpp>
 #include "../../map_view/web_mercator.h"
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include "../node_manager.h"
-#include "gz4d_geo.h"
+#include "project11/gz4d_geo.h"
 #include <tf2/utils.h>
 
 namespace camp_ros
@@ -16,7 +16,7 @@ GridMap::GridMap(MapItem* parent, NodeManager* node_manager, QString topic):
 
   connect(this, &GridMap::newLayerData, this, &GridMap::updateGridLayer);
 
-  subscriber_ = ros::NodeHandle().subscribe(topic_, 10, &GridMap::gridMapCallback, this);
+  subscription_ = node_manager->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 10, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
   setStatus("[grid_map_msgs/GridMap]");
 }
 
@@ -45,17 +45,19 @@ void GridMap::updateGridLayer(const GridMapLayerData& data)
 
 }
 
-void GridMap::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
+void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 {
   grid_map::GridMap grid_map;
-  if(!grid_map::GridMapRosConverter::fromMessage(*data, grid_map))
+  auto node = node_manager_->node();
+  rclcpp::Clock clock;
+  if(!grid_map::GridMapRosConverter::fromMessage(data, grid_map))
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to convert GridMap message");
+    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2, "Unable to convert GridMap message");
     return;
   }
   if(grid_map.getLayers().empty())
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Got GridMap message with no layers");
+    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2.0, "Got GridMap message with no layers");
     return;
   }
   std::string layer;
@@ -70,7 +72,7 @@ void GridMap::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
   GridMapLayerData grid_data;
   auto size = grid_map.getSize();
   grid_data.grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
-  grid_data.meters_per_pixel = data->info.resolution;
+  grid_data.meters_per_pixel = data.info.resolution;
 
   if(layer == "speed")
     for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
@@ -94,12 +96,13 @@ void GridMap::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
 
   try
   {
-    grid_data.center = transformToWebMercator(data->info.pose, data->info.header);
+    grid_data.center = transformToWebMercator(data.info.pose, data.header);
     emit newLayerData(grid_data);
   }
   catch (tf2::TransformException &ex)
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for grid_map " << topic_ << " at lookup time: "<< data->info.header.stamp << " now: " << ros::Time::now() << " source frame: " << data->info.header.frame_id << " what: " << ex.what());
+    rclcpp::Clock clock;
+    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2000, "Unable to find transform to earth for grid_map " << topic_ << " at lookup time: "<< rclcpp::Time(data.header.stamp).seconds() << " now: " << node->get_clock()->now().seconds() << " source frame: " << data.header.frame_id << " what: " << ex.what());
   }
 
   

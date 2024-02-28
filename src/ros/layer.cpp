@@ -1,11 +1,11 @@
 #include "layer.h"
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include "node_manager.h"
-#include "gz4d_geo.h"
+#include "project11/gz4d_geo.h"
 #include <tf2/utils.h>
 #include "../map_view/web_mercator.h"
 #include <QApplication>
-
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 namespace camp_ros
 {
@@ -13,17 +13,17 @@ namespace camp_ros
 Layer::Layer(MapItem* parent, NodeManager* node_manager, const QString& object_name):
   map::Layer(parent, object_name), node_manager_(node_manager)
 {
-  connect(QApplication::instance(), &QCoreApplication::aboutToQuit, this, &Layer::unsubscribe);
-  connect(node_manager, &NodeManager::shuttingDownRos, this, &Layer::unsubscribe);
+  //connect(QApplication::instance(), &QCoreApplication::aboutToQuit, this, &Layer::unsubscribe);
+  //connect(node_manager, &NodeManager::shuttingDownRos, this, &Layer::unsubscribe);
 }
 
 
-QPointF Layer::transformToWebMercator(const geometry_msgs::Pose &pose, const std_msgs::Header &header)
+QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header)
 {
-  geometry_msgs::PoseStamped ps;
+  geometry_msgs::msg::PoseStamped ps;
   ps.header = header;
   ps.pose = pose;
-  auto ecef = node_manager_->transformBuffer().transform(ps, "earth", ros::Duration(1.5));
+  auto ecef = node_manager_->transformBuffer()->transform(ps, "earth", tf2::durationFromSec(1.5));
 
   gz4d::GeoPointECEF ecef_point;
   ecef_point[0] = ecef.pose.position.x;
@@ -43,9 +43,5 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::Pose &pose, const std
   // return {};
 }
 
-void Layer::unsubscribe()
-{
-  subscriber_.shutdown();
-}
 
 } // namespace camp_ros

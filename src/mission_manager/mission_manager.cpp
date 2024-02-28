@@ -1,10 +1,10 @@
 #include "mission_manager.h"
 #include "ui_mission_manager.h"
-#include "std_msgs/msg/string.hpp"
 #include <QMenu>
 #include <QGeoCoordinate>
 
-MissionManager::MissionManager(QWidget *parent):QWidget(parent), m_ui(new Ui::MissionManager)
+MissionManager::MissionManager(QWidget *parent)
+  :camp_ros::ROSWidget(parent), m_ui(new Ui::MissionManager)
 {
   m_ui->setupUi(this);
 }
@@ -16,11 +16,16 @@ MissionManager::~MissionManager()
 
 void MissionManager::updateRobotNamespace(QString robot_namespace)
 {
-  ros::NodeHandle nh;
-  m_mission_status_subscriber = nh.subscribe("/"+robot_namespace.toStdString()+"/project11/status/mission_manager" , 1, &MissionManager::missionStatusCallback, this);
-  m_send_command_publisher = nh.advertise<std_msgs::String>("/"+robot_namespace.toStdString()+"/project11/send_command",1);
+  if(node_)
+  {
+    mission_status_subscription_ = node_->create_subscription<project11_msgs::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/project11/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
+    send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/project11/send_command",1);
 
-  send_avoidance_costmap_publisher_ = nh.advertise<project11_nav_msgs::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/project11/avoidance_map", 1, true);
+    rclcpp::QoS qos(1);
+    qos.transient_local();
+
+    send_avoidance_costmap_publisher_ = node_->create_publisher<project11_nav_msgs::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/project11/avoidance_map", qos);
+  }
 }
 
 void MissionManager::updateMissionStatus(const QString& status)
@@ -74,24 +79,24 @@ void MissionManager::on_cancelOverridePushButton_clicked(bool checked)
   sendCancelOverride();
 }
 
-void MissionManager::missionStatusCallback(const project11_msgs::Heartbeat::ConstPtr& message)
+void MissionManager::missionStatusCallback(const project11_msgs::msg::Heartbeat& message)
 {
-    QString status_string;
-    for(auto kv: message->values)
-    {
-        status_string += kv.key.c_str();
-        status_string += ": ";
-        status_string += kv.value.c_str();
-        status_string += "\n";
-    }
-    
-    QMetaObject::invokeMethod(this, "updateMissionStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
+  QString status_string;
+  for(auto kv: message.values)
+  {
+    status_string += kv.key.c_str();
+    status_string += ": ";
+    status_string += kv.value.c_str();
+    status_string += "\n";
+  }
+  
+  QMetaObject::invokeMethod(this, "updateMissionStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
 }
 
 void MissionManager::sendMissionPlan(const QString& plan)
 {
     //sendCommand("mission_plan "+plan.toStdString());
-    sendCommand("mission_manager replace_task mission_plan "+plan);
+  sendCommand("mission_manager replace_task mission_plan "+plan);
 //     std_msgs::String mp;
 //     mp.data = plan.toStdString();
 //     if(m_node)
@@ -100,55 +105,55 @@ void MissionManager::sendMissionPlan(const QString& plan)
 
 void MissionManager::appendMission(const QString& plan)
 {
-    sendCommand("mission_manager append_task mission_plan "+plan);
+  sendCommand("mission_manager append_task mission_plan "+plan);
 }
 
 void MissionManager::clearTasks()
 {
-    sendCommand("mission_manager clear_tasks");
+  sendCommand("mission_manager clear_tasks");
 }
 
 void MissionManager::sendCancelOverride()
 {
-    sendCommand("mission_manager cancel_override");
+  sendCommand("mission_manager cancel_override");
 }
 
 void MissionManager::prependMission(const QString& plan)
 {
-    sendCommand("mission_manager prepend_task mission_plan "+plan);
+  sendCommand("mission_manager prepend_task mission_plan "+plan);
 }
 
 void MissionManager::updateMission(const QString& plan)
 {
-    sendCommand("mission_manager update_task mission_plan "+plan);
+  sendCommand("mission_manager update_task mission_plan "+plan);
 }
 
 void MissionManager::sendHover(const QGeoCoordinate& hoverLocation)
 {
-    std::stringstream updates;
-    updates << std::fixed << std::setprecision(7) << "mission_manager override hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
+  std::stringstream updates;
+  updates << std::fixed << std::setprecision(7) << "mission_manager override hover " << hoverLocation.latitude() << " " << hoverLocation.longitude();
         
-    sendCommand(updates.str().c_str());
+  sendCommand(updates.str().c_str());
 }  
 
 void MissionManager::sendGoto(const QGeoCoordinate& gotoLocation)
 {
-    std::stringstream updates;
-    updates << std::fixed << std::setprecision(7) << "mission_manager override goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
+  std::stringstream updates;
+  updates << std::fixed << std::setprecision(7) << "mission_manager override goto " << gotoLocation.latitude() << " " << gotoLocation.longitude();
         
-    sendCommand(updates.str().c_str());
+  sendCommand(updates.str().c_str());
 }
 
 void MissionManager::sendIdle()
 {
-    sendCommand("mission_manager override idle");
+  sendCommand("mission_manager override idle");
 }
 
 
 void MissionManager::sendNextItem()
 {
-    std::stringstream updates;
-    updates << "mission_manager next_task";
+  std::stringstream updates;
+  updates << "mission_manager next_task";
         
     sendCommand(updates.str().c_str());
 }
@@ -180,13 +185,17 @@ void MissionManager::sendStartLine(int waypoint_index)
 
 void MissionManager::sendCommand(const QString& command)
 {
-    std_msgs::String cmd;
+    std_msgs::msg::String cmd;
     cmd.data = command.toStdString();
     //qDebug() << command;
-    m_send_command_publisher.publish(cmd);
+    send_command_publisher_->publish(cmd);
 }
 
-void MissionManager::sendAvoidanceAreas(const project11_nav_msgs::GeoOccupancyVectorMap& map)
+void MissionManager::sendAvoidanceAreas(project11_nav_msgs::msg::GeoOccupancyVectorMap& map)
 {
-    send_avoidance_costmap_publisher_.publish(map);
+  if(node_)
+  {
+    map.header.stamp = node_->get_clock()->now();
+    send_avoidance_costmap_publisher_->publish(map);
+  }
 }

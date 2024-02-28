@@ -2,7 +2,7 @@
 #define CAMP_ROS_MARKERS_MARKERS_H
 
 #include "../layer.h"
-#include <visualization_msgs/MarkerArray.h>
+#include <visualization_msgs/msg/marker_array.hpp>
 #include <QGeoCoordinate>
 
 namespace camp_ros
@@ -10,7 +10,7 @@ namespace camp_ros
 
 struct MarkerData
 {
-  visualization_msgs::Marker marker;
+  visualization_msgs::msg::Marker marker;
   QPointF position;
   double rotation = 0.0;
 };
@@ -30,9 +30,9 @@ signals:
   void newMarkerData(MarkerData data);
 
 private:
-  void markerArrayCallback(const visualization_msgs::MarkerArrayConstPtr &data);
-  void markerCallback(const visualization_msgs::MarkerConstPtr &data);
-  void addMarkers(const std::vector<visualization_msgs::Marker> &markers);
+  void markerArrayCallback(const visualization_msgs::msg::MarkerArray &data);
+  void markerCallback(const visualization_msgs::msg::Marker &data);
+  void addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers);
 
 
   MarkerNamespace * markerNamespace(const QString& marker_namepsace) const;
@@ -42,6 +42,9 @@ private slots:
 
 private:
   std::string topic_;
+
+  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr marker_subscription_;
+  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 
 };
 

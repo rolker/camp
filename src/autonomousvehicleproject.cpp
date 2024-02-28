@@ -515,9 +515,8 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 
 void AutonomousVehicleProject::updateAvoidanceAreas()
 {
-    project11_nav_msgs::GeoOccupancyVectorMap avoidance_map;
+    project11_nav_msgs::msg::GeoOccupancyVectorMap avoidance_map;
     avoidance_map.header.frame_id = "wgs84";
-    avoidance_map.header.stamp = ros::Time::now();
     avoidance_map.bounds.min_pt.altitude = std::nan("");
     bool first_waypoint = true;
 
@@ -527,14 +526,14 @@ void AutonomousVehicleProject::updateAvoidanceAreas()
         if(avoid_area)
         {
             auto waypoints = avoid_area->childMissionItems();
-            project11_nav_msgs::GeoOccupancyPolygon polygon;
+            project11_nav_msgs::msg::GeoOccupancyPolygon polygon;
             polygon.occupancy_probability = 100;
             for(auto item: waypoints)
             {
                 auto wp_item = qobject_cast<Waypoint*>(item);
                 if(wp_item)
                 {
-                    geographic_msgs::GeoPoint gp;
+                    geographic_msgs::msg::GeoPoint gp;
                     gp.latitude = wp_item->location().latitude();
                     gp.longitude = wp_item->location().longitude();
                     // following is probably not dateline proof

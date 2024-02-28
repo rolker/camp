@@ -1,10 +1,11 @@
 #include "nav_source.h"
 #include <tf2/utils.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <QPainter>
 #include <QTimer>
 #include <QDebug>
 
-NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
+NavSource::NavSource(const project11_msgs::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem): camp_ros::ROSObject(parent), GeoGraphicsItem(parentItem)
 {
   setColor(color_);
   pending_position_topic_ = source.position_topic;
@@ -14,69 +15,57 @@ NavSource::NavSource(const project11_msgs::NavSource& source, QObject* parent, Q
   trySubscribe();
 }
 
-NavSource::NavSource(std::pair<const std::string, XmlRpc::XmlRpcValue> &source, QObject* parent, QGraphicsItem *parentItem): QObject(parent), GeoGraphicsItem(parentItem)
-{
-  setColor(color_);
-  if (source.second.hasMember("position_topic"))
-    pending_position_topic_ = std::string(source.second["position_topic"]);
-  if (source.second.hasMember("orientation_topic"))
-    pending_orientation_topic_ = std::string(source.second["orientation_topic"]);
-  if (source.second.hasMember("velocity_topic"))
-    pending_velocity_topic_ = std::string(source.second["velocity_topic"]);
-  setObjectName(source.first.c_str());
-  trySubscribe();
-}
 
 void NavSource::trySubscribe()
 {
-  ros::master::V_TopicInfo topic_info;
-  ros::master::getTopics(topic_info);
-  ros::NodeHandle nh;
+  if(node_)
+  {
+    auto topics = node_->get_topic_names_and_types();
+    for(auto topic: topics)
+    {
+      auto name = topic.first;
+      
+      if(!pending_position_topic_.empty() && name == pending_position_topic_)
+      {
+        for (auto topic_type: topic.second)
+        {
+          if(topic_type == "sensor_msgs/NavSatFix")
+          {
+            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, 1, std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
+            pending_position_topic_.clear();
+          }
+          else if(topic_type == "geographic_msgs/GeoPoseStamped")
+          {
+            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, 1, std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
+            pending_position_topic_.clear();
+          }
+        }
+      }
+      
+      if(!pending_orientation_topic_.empty() && name == pending_orientation_topic_)
+      {
+        for (auto topic_type: topic.second)
+        {
+          if(topic_type == "sensor_msgs/Imu")
+          {
+            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, 1, std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
+            pending_orientation_topic_.clear();
+          }
+        }
+      }
 
-  if(!pending_position_topic_.empty())
-  {
-    for(const auto t: topic_info)
-      if(t.name == pending_position_topic_)
+      if(!pending_velocity_topic_.empty() && name == pending_velocity_topic_)
       {
-        if(t.datatype == "sensor_msgs/NavSatFix")
+        for (auto topic_type: topic.second)
         {
-          m_position_sub = nh.subscribe(pending_position_topic_, 1, &NavSource::positionCallback, this);
-          pending_position_topic_.clear();
+          if(topic_type == "geometry_msgs/TwistWithCovarianceStamped")
+          {
+            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, 1, std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
+            pending_velocity_topic_.clear();
+          }
         }
-        else if(t.datatype == "geographic_msgs/GeoPoseStamped")
-        {
-          m_position_sub = nh.subscribe(pending_position_topic_, 1, &NavSource::geoPoseCallback, this);
-          pending_position_topic_.clear();
-        }
-        break;
       }
-  }
-  if(!pending_orientation_topic_.empty())
-  {
-    for(const auto t: topic_info)
-      if(t.name == pending_orientation_topic_)
-      {
-        if(t.datatype == "sensor_msgs/Imu")
-        {
-          m_orientation_sub = nh.subscribe(pending_orientation_topic_, 1, &NavSource::orientationCallback, this);
-          pending_orientation_topic_.clear();
-        }
-        break;
-      }
-
-  }
-  if(!pending_velocity_topic_.empty())
-  {
-    for(const auto t: topic_info)
-      if(t.name == pending_velocity_topic_)
-      {
-        if(t.datatype == "geometry_msgs/TwistWithCovarianceStamped")
-        {
-          m_velocity_sub = nh.subscribe(pending_velocity_topic_, 1, &NavSource::velocityCallback, this);
-          pending_velocity_topic_.clear();
-        }
-        break;
-      }
+    }
   }
 
   if(!pending_position_topic_.empty() || !pending_orientation_topic_.empty() || !pending_velocity_topic_.empty())
@@ -139,6 +128,7 @@ std::pair<QPainterPath, QPainterPath> NavSource::shapes() const
       if(location_iterator->first < latest_time-60.0)
         break;
       if(location_iterator->second.location.isValid())
+      {
         if(first_point)
         {
           paths.first.moveTo(location_iterator->second.pos);
@@ -149,6 +139,7 @@ std::pair<QPainterPath, QPainterPath> NavSource::shapes() const
           paths.first.lineTo(location_iterator->second.pos);
           last_point = location_iterator;
         }
+      }
       location_iterator++;
     }
     if(last_point != location_history_.rend())
@@ -161,6 +152,7 @@ std::pair<QPainterPath, QPainterPath> NavSource::shapes() const
     while(location_iterator != location_history_.rend())
     {
       if(location_iterator->second.location.isValid())
+      {
         if(first_point)
         {
           paths.second.moveTo(location_iterator->second.pos);
@@ -170,6 +162,7 @@ std::pair<QPainterPath, QPainterPath> NavSource::shapes() const
         {
           paths.second.lineTo(location_iterator->second.pos);
         }
+      }
       location_iterator++;
     }
   }
@@ -177,46 +170,46 @@ std::pair<QPainterPath, QPainterPath> NavSource::shapes() const
 }
 
 
-void NavSource::positionCallback(const sensor_msgs::NavSatFix::ConstPtr& message)
+void NavSource::positionCallback(const sensor_msgs::msg::NavSatFix& message)
 {
-  if(message->status.status != sensor_msgs::NavSatStatus::STATUS_NO_FIX)
+  if(message.status.status != sensor_msgs::msg::NavSatStatus::STATUS_NO_FIX)
   {
-    QGeoCoordinate position(message->latitude, message->longitude, message->altitude);
-    QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, std::nan("")), Q_ARG(double, message->header.stamp.toSec()));
+    QGeoCoordinate position(message.latitude, message.longitude, message.altitude);
+    QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, std::nan("")), Q_ARG(double, rclcpp::Time(message.header.stamp).seconds()));
   }
 }
 
-void NavSource::geoPointCallback(const geographic_msgs::GeoPointStamped::ConstPtr& message)
+void NavSource::geoPointCallback(const geographic_msgs::msg::GeoPointStamped& message)
 {
-  QGeoCoordinate position(message->position.latitude, message->position.longitude, message->position.altitude);
-  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, std::nan("")), Q_ARG(double, message->header.stamp.toSec()));
+  QGeoCoordinate position(message.position.latitude, message.position.longitude, message.position.altitude);
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, std::nan("")), Q_ARG(double, rclcpp::Time(message.header.stamp).seconds()));
 }
 
-void NavSource::geoPoseCallback(const geographic_msgs::GeoPoseStamped::ConstPtr& message)
+void NavSource::geoPoseCallback(const geographic_msgs::msg::GeoPoseStamped& message)
 {
-  QGeoCoordinate position(message->pose.position.latitude, message->pose.position.longitude, message->pose.position.altitude);
+  QGeoCoordinate position(message.pose.position.latitude, message.pose.position.longitude, message.pose.position.altitude);
   double yaw = std::nan("");
-  if(message->pose.orientation.w != 0 ||  message->pose.orientation.x != 0 || message->pose.orientation.y != 0 || message->pose.orientation.z != 0)
-    yaw = tf2::getYaw(message->pose.orientation);
+  if(message.pose.orientation.w != 0 ||  message.pose.orientation.x != 0 || message.pose.orientation.y != 0 || message.pose.orientation.z != 0)
+    yaw = tf2::getYaw(message.pose.orientation);
   double heading = 90-180*yaw/M_PI;
   if(heading < 0.0)
     heading += 360.0;
-  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, heading), Q_ARG(double, message->header.stamp.toSec()));
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, position), Q_ARG(float, heading), Q_ARG(double, rclcpp::Time(message.header.stamp).seconds()));
 }
 
 
-void NavSource::orientationCallback(const sensor_msgs::Imu::ConstPtr& message)
+void NavSource::orientationCallback(const sensor_msgs::msg::Imu& message)
 {
-  double yaw = tf2::getYaw(message->orientation);
+  double yaw = tf2::getYaw(message.orientation);
   double heading = 90-180*yaw/M_PI;
   if(heading < 0.0)
     heading += 360.0;
-  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, QGeoCoordinate()), Q_ARG(float, heading), Q_ARG(double, message->header.stamp.toSec()));
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, QGeoCoordinate()), Q_ARG(float, heading), Q_ARG(double, rclcpp::Time(message.header.stamp).seconds()));
 }
 
-void NavSource::velocityCallback(const geometry_msgs::TwistWithCovarianceStamped::ConstPtr& message)
+void NavSource::velocityCallback(const geometry_msgs::msg::TwistWithCovarianceStamped& message)
 {
-  QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(double, sqrt(pow(message->twist.twist.linear.x,2) + pow(message->twist.twist.linear.y, 2))));
+  QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(double, sqrt(pow(message.twist.twist.linear.x,2) + pow(message.twist.twist.linear.y, 2))));
 }
 
 

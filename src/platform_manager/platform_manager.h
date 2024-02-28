@@ -1,12 +1,11 @@
 #ifndef CAMP_PLATFORM_MANAGER_H
 #define CAMP_PLATFORM_MANAGER_H
 
-#include <QWidget>
+#include "ros/ros_widget.h"
 #include <QGeoCoordinate>
-#include "ros/ros.h"
-#include "project11_msgs/PlatformList.h"
+#include "project11_msgs/msg/platform_list.hpp"
 
-Q_DECLARE_METATYPE(project11_msgs::Platform);
+Q_DECLARE_METATYPE(project11_msgs::msg::Platform);
 
 namespace Ui
 {
@@ -16,12 +15,14 @@ namespace Ui
 class Platform;
 class BackgroundRaster;
 
-class PlatformManager: public QWidget
+class PlatformManager: public camp_ros::ROSWidget
 {
   Q_OBJECT
 public:
   explicit PlatformManager(QWidget *parent=0);
   ~PlatformManager();
+
+  void onNodeUpdated() override;
 
 signals:
   void currentPlatform(Platform* platform);
@@ -29,19 +30,17 @@ signals:
 
 public slots:
   void updateBackground(BackgroundRaster * bg);
-  void loadFromParameters();
   void platformPosition(Platform * platform, QGeoCoordinate position);
   
 private slots:
-  void updatePlatform(project11_msgs::Platform platform);
+  void updatePlatform(project11_msgs::msg::Platform platform);
   void on_tabWidget_currentChanged(int index);
 
 private:
-  void platformListCallback(const project11_msgs::PlatformList::ConstPtr &message);
-
+  void platformListCallback(const project11_msgs::msg::PlatformList &message);
 
   Ui::PlatformManager* m_ui;
-  ros::Subscriber m_platform_list_sub;
+  rclcpp::Subscription<project11_msgs::msg::PlatformList>::SharedPtr platform_list_subscription_;
 
   std::map<std::string, Platform*> m_platforms;
 

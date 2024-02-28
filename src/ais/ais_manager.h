@@ -1,10 +1,9 @@
 #ifndef CAMP_AIS_MANAGER_H
 #define CAMP_AIS_MANAGER_H
 
-#include <QWidget>
-#include "ros/ros.h"
-#include "project11_msgs/Contact.h"
-#include "marine_ais_msgs/AISContact.h"
+#include "ros/ros_widget.h"
+#include "project11_msgs/msg/contact.hpp"
+#include "marine_ais_msgs/msg/ais_contact.hpp"
 #include "ais_contact.h"
 
 namespace Ui
@@ -14,7 +13,7 @@ class AISManager;
 
 class BackgroundRaster;
 
-class AISManager: public QWidget
+class AISManager: public camp_ros::ROSWidget
 {
   Q_OBJECT
 
@@ -34,11 +33,11 @@ private slots:
   void addAisReport(AISReport *report);
 
 private:
-  void contactCallback(const project11_msgs::Contact::ConstPtr& message);
-  void aisContactCallback(const marine_ais_msgs::AISContact::ConstPtr& message);
+  void contactCallback(const project11_msgs::msg::Contact& message);
+  void aisContactCallback(const marine_ais_msgs::msg::AISContact& message);
 
   Ui::AISManager* m_ui;
-  std::map<std::string, ros::Subscriber> m_sources;
+  std::map<std::string, rclcpp::Subscription<marine_ais_msgs::msg::AISContact>::SharedPtr > m_sources;
   QTimer* m_scan_timer;
   QTimer* m_update_timer;
   std::map<uint32_t, AISContact*> m_contacts;

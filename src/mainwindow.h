@@ -90,7 +90,7 @@ private:
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager;
-    RadarManager* m_radar_manager = nullptr;
+    //RadarManager* m_radar_manager = nullptr;
     GridManager* m_grid_manager = nullptr;
     MarkersManager* m_markers_manager = nullptr;
     SoundPlay* m_sound_play;

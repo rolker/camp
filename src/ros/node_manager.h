@@ -3,7 +3,7 @@
 
 #include "../tools/layer_manager.h"
 #include <QThread>
-#include <tf2_ros/transform_listener.h>
+#include "ros_common.h"
 
 namespace tools
 {
@@ -35,28 +35,27 @@ public:
   // not be changed once the application is started.
   static void init(int& argc, char **argv);
 
-  tf2_ros::Buffer& transformBuffer();
+  tf2_ros::Buffer::SharedPtr transformBuffer();
+  rclcpp::Node::SharedPtr node();
 
 public slots:
-  void nodeStarted();
+  void nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer);
   void nodeShuttingDown();
 
 signals:
-  void startNode(NodeManager* node_manager);
+  void startNode();
 
-  // Signal emitted with the current list of avaiable topics.
+  // Signal emitted with the current list of available topics.
   // Topics are listed in a map of topic name as keys and type as values.
   void topicsAvailable(QMap<QString, QString> topics);
 
   void shuttingDownRos();
 
-private slots:
-  void checkRosCore();
-
 private:
   QThread node_thread_;
 
-  tf2_ros::Buffer transform_buffer_;
+  rclcpp::Node::SharedPtr node_;
+  tf2_ros::Buffer::SharedPtr transform_buffer_;
 
 };
 

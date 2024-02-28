@@ -2,31 +2,30 @@
 #define CAMP_ROS_NODE_H
 
 #include <QObject>
-#include "rclcpp/rclcpp.hpp"
-#include "tf2_ros/transform_listener.h"
+
+#include "ros_common.h"
 
 namespace camp_ros
 {
 
 class NodeManager;
 
-class Node: public QObject, public rclcpp::Node
+class NodeThread: public QObject
 {
   Q_OBJECT
 public:
-  Node();
-
-
+  NodeThread();
 
 public slots:
-  // Starts the ROS node by creating a node handle.
-  void start(NodeManager* node_manager);
+  // Starts the ROS node.
+  void start();
 
 signals:
-  void started();
+  void started(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr);
   void shuttingDown();
 
 private:
+  rclcpp::Node::SharedPtr node_;
   std::unique_ptr<tf2_ros::TransformListener> transform_listener_;
 };
 

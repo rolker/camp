@@ -22,7 +22,7 @@ QRectF TileLayout::ZoomLevel::boundingRect() const
 std::string TileLayout::getUrl(const TileAddress& address) const
 {
   std::string url;
-  for(int i = 0; i < std::max(url_static_parts.size(), url_variable_keys.size()); i++)
+  for(std::size_t i = 0; i < std::max(url_static_parts.size(), url_variable_keys.size()); i++)
   {
     if(i < url_static_parts.size())
       url += url_static_parts[i];

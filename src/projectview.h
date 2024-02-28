@@ -64,13 +64,13 @@ private:
     MouseMode mouseMode;
     AutonomousVehicleProject *m_project;
     TrackLine * currentTrackLine;
-    Waypoint * pendingTrackLineWaypoint;
-    SurveyPattern * pendingSurveyPattern;
-    SurveyArea * pendingSurveyArea;
-    AvoidArea * pendingAvoidArea;
+    Waypoint * pendingTrackLineWaypoint = nullptr;
+    SurveyPattern * pendingSurveyPattern = nullptr;
+    SurveyArea * pendingSurveyArea = nullptr;
+    AvoidArea * pendingAvoidArea = nullptr;
     SearchPattern * pendingSearchPattern = nullptr;
-    Waypoint * pendingSurveyAreaWaypoint;
-    Waypoint * pendingAvoidAreaWaypoint;
+    Waypoint * pendingSurveyAreaWaypoint = nullptr;
+    Waypoint * pendingAvoidAreaWaypoint = nullptr;
     MeasuringTool * measuringTool;
 
     QGeoCoordinate m_contextMenuLocation;

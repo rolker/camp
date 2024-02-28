@@ -341,6 +341,7 @@ void ProjectView::setPanMode()
     pendingSurveyPattern = nullptr;
     currentTrackLine = nullptr;
     pendingSearchPattern = nullptr;
+    pendingAvoidArea = nullptr;
 }
 
 void ProjectView::contextMenuEvent(QContextMenuEvent* event)

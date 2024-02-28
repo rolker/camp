@@ -4,7 +4,7 @@
 #include "backgroundraster.h"
 
 AISManager::AISManager(QWidget* parent):
-  QWidget(parent),
+  camp_ros::ROSWidget(parent),
   m_ui(new Ui::AISManager)
 {
   m_ui->setupUi(this);
@@ -26,37 +26,32 @@ AISManager::~AISManager()
 
 void AISManager::scanForSources()
 {
-  ros::NodeHandle nh;
-
-  ros::master::V_TopicInfo topic_info;
-  ros::master::getTopics(topic_info);
-
-  for(const auto t: topic_info)
-    if (t.datatype == "project11_msgs/Contact" || t.datatype == "marine_ais_msgs/AISContact")
-      if (m_sources.find(t.name) == m_sources.end())
+  if(node_)
+  {
+    auto topics = node_->get_topic_names_and_types();
+    for(auto topic: topics)
+    {
+      auto name = topic.first;
+      if(m_sources.find(name) == m_sources.end())
       {
-        if(t.datatype == "project11_msgs/Contact")
-          m_sources[t.name] = nh.subscribe(t.name, 10, &AISManager::contactCallback, this);
-        else
-          m_sources[t.name] = nh.subscribe(t.name, 10, &AISManager::aisContactCallback, this);
-        m_ui->sourcesListWidget->addItem(t.name.c_str());
+        for(auto topic_type: topic.second)
+        {
+          if (topic_type == "marine_ais_msgs/AISContact")
+          {
+            m_sources[name] = node_->create_subscription<marine_ais_msgs::msg::AISContact>(name, 10, std::bind(&AISManager::aisContactCallback, this, std::placeholders::_1));
+            m_ui->sourcesListWidget->addItem(name.c_str());
+            break;
+          }
+        }
       }
+    }
+  }
 
 }
 
-void AISManager::contactCallback(const project11_msgs::Contact::ConstPtr& message)
+void AISManager::aisContactCallback(const marine_ais_msgs::msg::AISContact& message)
 {
-    if(message->position.latitude > 90 || message->position.longitude > 180)
-        return;
-
-    AISReport* r = new AISReport(message);
-    emit newAisReport(r);
-    r->deleteLater();
-}
-
-void AISManager::aisContactCallback(const marine_ais_msgs::AISContact::ConstPtr& message)
-{
-  if(isnan(message->pose.position.latitude) || isnan(message->pose.position.longitude))
+  if(isnan(message.pose.position.latitude) || isnan(message.pose.position.longitude))
     return;
 
   AISReport* r = new AISReport(message);

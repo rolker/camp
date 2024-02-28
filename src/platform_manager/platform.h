@@ -1,10 +1,9 @@
 #ifndef PLATFORM_H
 #define PLATFORM_H
 
-#include <QWidget>
+#include "ros/ros_widget.h"
 #include "ship_track.h"
-#include "ros/ros.h"
-#include "project11_msgs/PlatformList.h"
+#include "project11_msgs/msg/platform_list.hpp"
 
 namespace Ui
 {
@@ -15,7 +14,7 @@ class NavSource;
 class MissionManager;
 class HelmManager;
 
-class Platform : public QWidget, public ShipTrack
+class Platform : public camp_ros::ROSWidget, public ShipTrack
 {
   Q_OBJECT
 public:
@@ -28,8 +27,7 @@ public:
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
   QPainterPath shape() const override;
 
-  void update(project11_msgs::Platform &platform);
-  void update(std::pair<const std::string, XmlRpc::XmlRpcValue> &platform);
+  void update(const project11_msgs::msg::Platform &platform);
 
   MissionManager* missionManager() const;
   HelmManager* helmManager() const;
@@ -57,7 +55,6 @@ private:
 
   std::map<std::string, NavSource*> m_nav_sources;
 
-  ros::Subscriber m_sog_subscriber;
   QList<qreal> m_sog_history;
   qreal m_sog;
   qreal m_sog_avg;

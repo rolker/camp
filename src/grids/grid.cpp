@@ -2,18 +2,19 @@
 #include <QPainter>
 #include <tf2_ros/transform_listener.h>
 #include <tf2/utils.h>
-#include "gz4d_geo.h"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include "project11/gz4d_geo.h"
 #include <QDebug>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include "backgroundraster.h"
 #include <grid_map_ros/grid_map_ros.hpp>
 
-Grid::Grid(QWidget* parent, QGraphicsItem *parentItem):
-  QWidget(parent),
+Grid::Grid(QWidget* parent, QGraphicsItem *parentItem)
+  :camp_ros::ROSWidget(parent),
   GeoGraphicsItem(parentItem)
 {
   ui_.setupUi(this);
-  connect(this, &Grid::newGridMadeAvaiable, this, &Grid::newGridAvailable, Qt::QueuedConnection);
+  connect(this, &Grid::newGridMadeAvailable, this, &Grid::newGridAvailable, Qt::QueuedConnection);
   connect(ui_.displayCheckBox, &QCheckBox::stateChanged, this, &Grid::visibilityChanged);
 }
 
@@ -44,21 +45,11 @@ void Grid::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWid
 
 void Grid::setTopic(std::string topic, std::string type)
 {
-  if(!spinner_)
-  {
-    spinner_ = std::make_shared<ros::AsyncSpinner>(1, &ros_queue_);
-    spinner_->start();
-  }
-
   topic_ = topic;
   type_ = type;
 
   ui_.topicLabel->setText(topic.c_str());
-}
-
-void Grid::setTF2Buffer(tf2_ros::Buffer* buffer)
-{
-  tf_buffer_ = buffer;
+  visibilityChanged();
 }
 
 void Grid::setPixelSize(double s)
@@ -66,49 +57,51 @@ void Grid::setPixelSize(double s)
   pixel_size_ = s;
 }
 
-void Grid::occupancyGridCallback(const nav_msgs::OccupancyGrid::ConstPtr &data)
+void Grid::occupancyGridCallback(const nav_msgs::msg::OccupancyGrid &data)
 {
   auto grid_data = std::make_shared<GridData>();
-  grid_data->grid_image = QImage(data->info.width, data->info.height, QImage::Format_ARGB32);
-  grid_data->meters_per_pixel = data->info.resolution;
-  for(int row = 0; row < data->info.height; row++)
+  grid_data->grid_image = QImage(data.info.width, data.info.height, QImage::Format_ARGB32);
+  grid_data->meters_per_pixel = data.info.resolution;
+  for(int row = 0; row < data.info.height; row++)
   {
     // occupancy grid values are 0 to 100 percent or -1 for unknown
-    auto row_start = row*data->info.width;
-    for(int col = 0; col < data->info.width; col++)
+    auto row_start = row*data.info.width;
+    for(int col = 0; col < data.info.width; col++)
     {
       QColor color;
-      if( data->data[row_start+col] < 0)
+      if( data.data[row_start+col] < 0)
         color = QColor(128, 128, 128, 128);
-      else if( data->data[row_start+col] >= 100)
+      else if( data.data[row_start+col] >= 100)
         color = QColor(255, 255, 255, 255);
       else
-        color = QColor(0, 255, 0, data->data[row_start+col]*2.55); // 0-100 -> 0-255
-      grid_data->grid_image.setPixelColor(QPoint(col, data->info.height-1-row), color);
+        color = QColor(0, 255, 0, data.data[row_start+col]*2.55); // 0-100 -> 0-255
+      grid_data->grid_image.setPixelColor(QPoint(col, data.info.height-1-row), color);
     }
   }
-  geometry_msgs::Pose center_pose = data->info.origin;
-  center_pose.position.x += data->info.resolution*data->info.width/2.0;
-  center_pose.position.y += data->info.resolution*data->info.height/2.0;
-  grid_data->center = getGeoCoordinate(center_pose, data->header);
+  geometry_msgs::msg::Pose center_pose = data.info.origin;
+  center_pose.position.x += data.info.resolution*data.info.width/2.0;
+  center_pose.position.y += data.info.resolution*data.info.height/2.0;
+  grid_data->center = getGeoCoordinate(center_pose, data.header);
   {
     std::lock_guard<std::mutex> lock(new_grid_mutex_);
     new_grid_ = grid_data;
   }
-  emit newGridMadeAvaiable();
+  emit newGridMadeAvailable();
 }
 
-void Grid::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
+void Grid::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 {
   grid_map::GridMap grid_map;
-  if(!grid_map::GridMapRosConverter::fromMessage(*data, grid_map))
+  if(!grid_map::GridMapRosConverter::fromMessage(data, grid_map))
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to convert GridMap message");
+    rclcpp::Clock clock;
+    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 2000, "Unable to convert GridMap message");
     return;
   }
   if(grid_map.getLayers().empty())
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Got GridMap message with no layers");
+    rclcpp::Clock clock;
+    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 2000, "Got GridMap message with no layers");
     return;
   }
   std::string layer;
@@ -123,7 +116,7 @@ void Grid::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
   auto grid_data = std::make_shared<GridData>();
   auto size = grid_map.getSize();
   grid_data->grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
-  grid_data->meters_per_pixel = data->info.resolution;
+  grid_data->meters_per_pixel = data.info.resolution;
 
   if(layer == "speed")
     for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
@@ -145,27 +138,28 @@ void Grid::gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data)
       grid_data->grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(0, ival, 0, ival));
     }
 
-  grid_data->center = getGeoCoordinate(data->info.pose, data->info.header);
+  grid_data->center = getGeoCoordinate(data.info.pose, data.header);
   {
     std::lock_guard<std::mutex> lock(new_grid_mutex_);
     new_grid_ = grid_data;
   }
-  emit newGridMadeAvaiable();
+  emit newGridMadeAvailable();
 }
 
-QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::Pose &pose, const std_msgs::Header &header)
+QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header)
 {
   if(header.frame_id.empty())
   {
-    ROS_DEBUG_STREAM_THROTTLE(1.0, "Grid: Missing frame_id: " << header);
+    rclcpp::Clock clock;
+    RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), clock, 1000, "Grid: Missing frame_id");
     return {};
   }
   try
   {
-    geometry_msgs::PoseStamped grid_corner;
+    geometry_msgs::msg::PoseStamped grid_corner;
     grid_corner.header = header;
     grid_corner.pose = pose;
-    auto ecef = tf_buffer_->transform(grid_corner, "earth", ros::Duration(0.5));
+    auto ecef = transform_buffer_->transform(grid_corner, "earth", tf2::durationFromSec(0.5));
 
     gz4d::GeoPointECEF ecef_point;
     ecef_point[0] = ecef.pose.position.x;
@@ -176,7 +170,8 @@ QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::Pose &pose, const std
   }
   catch (tf2::TransformException &ex)
   {
-    ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for grid: " << ex.what() << " lookup time: " << header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id);
+    rclcpp::Clock clock;
+    RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 2000, "Unable to find transform to earth for grid: " << ex.what() << " lookup time: " << rclcpp::Time(header.stamp).seconds() << " now: " << node_->get_clock()->now().seconds() << " source frame: " << header.frame_id);
   }
   return {};
 }
@@ -206,17 +201,18 @@ void Grid::visibilityChanged()
 {
   prepareGeometryChange();
   is_visible_ = ui_.displayCheckBox->isChecked();
-  if(is_visible_)
+  if(is_visible_ && node_)
   {
-    ros::SubscribeOptions ops;
     if(type_ == "nav_msgs/OccupancyGrid")
-      ops = ros::SubscribeOptions::create<nav_msgs::OccupancyGrid>(topic_, 1, boost::bind(&Grid::occupancyGridCallback, this, _1), ros::VoidPtr(), &ros_queue_);
+      occupancy_grid_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(topic_, 1, std::bind(&Grid::occupancyGridCallback, this, std::placeholders::_1));
     if(type_ == "grid_map_msgs/GridMap")
-      ops = ros::SubscribeOptions::create<grid_map_msgs::GridMap>(topic_, 1, boost::bind(&Grid::gridMapCallback, this, _1), ros::VoidPtr(), &ros_queue_);
-    subscriber_ = ros::NodeHandle().subscribe(ops);
+      grid_map_subscription_ = node_->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 1, std::bind(&Grid::gridMapCallback, this, std::placeholders::_1));
   }
   else
-    subscriber_.shutdown();
+  {
+    occupancy_grid_subscription_.reset();
+    grid_map_subscription_.reset();
+  }
 
   GeoGraphicsItem::update();
 }

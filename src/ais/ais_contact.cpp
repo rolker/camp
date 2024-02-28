@@ -11,24 +11,24 @@ AISContactDetails::AISContactDetails()
 
 }
 
-AISContactDetails::AISContactDetails(const project11_msgs::Contact::ConstPtr& message)
+AISContactDetails::AISContactDetails(const project11_msgs::msg::Contact& message)
 {
-  mmsi = message->mmsi;
-  name = message->name;
-  dimension_to_bow = message->dimension_to_bow;
-  dimension_to_port = message->dimension_to_port;
-  dimension_to_stbd = message->dimension_to_stbd;
-  dimension_to_stern = message->dimension_to_stern;
+  mmsi = message.mmsi;
+  name = message.name;
+  dimension_to_bow = message.dimension_to_bow;
+  dimension_to_port = message.dimension_to_port;
+  dimension_to_stbd = message.dimension_to_stbd;
+  dimension_to_stern = message.dimension_to_stern;
 }
 
-AISContactDetails::AISContactDetails(const marine_ais_msgs::AISContact::ConstPtr& message)
+AISContactDetails::AISContactDetails(const marine_ais_msgs::msg::AISContact& message)
 {
-  mmsi = message->id;
-  name = message->static_info.name;
-  dimension_to_bow = message->static_info.reference_to_bow_distance;
-  dimension_to_port = message->static_info.reference_to_port_distance;
-  dimension_to_stbd = message->static_info.reference_to_starboard_distance;
-  dimension_to_stern = message->static_info.reference_to_stern_distance;
+  mmsi = message.id;
+  name = message.static_info.name;
+  dimension_to_bow = message.static_info.reference_to_bow_distance;
+  dimension_to_port = message.static_info.reference_to_port_distance;
+  dimension_to_stbd = message.static_info.reference_to_starboard_distance;
+  dimension_to_stern = message.static_info.reference_to_stern_distance;
 }
 
 
@@ -37,30 +37,30 @@ AISContactState::AISContactState()
 
 }
 
-AISContactState::AISContactState(const project11_msgs::Contact::ConstPtr& message)
+AISContactState::AISContactState(const project11_msgs::msg::Contact& message)
 {
-  timestamp = message->header.stamp;
-  location.location.setLatitude(message->position.latitude);
-  location.location.setLongitude(message->position.longitude);
-  if(message->heading < 0)
-    if(message->sog > 0.25)
-      heading = message->cog*180.0/M_PI;
+  timestamp = message.header.stamp;
+  location.location.setLatitude(message.position.latitude);
+  location.location.setLongitude(message.position.longitude);
+  if(message.heading < 0)
+    if(message.sog > 0.25)
+      heading = message.cog*180.0/M_PI;
     else
       heading = std::nan("");
   else
-    heading = message->heading*180.0/M_PI;
-  cog = message->cog*180.0/M_PI;
-  sog = message->sog;
+    heading = message.heading*180.0/M_PI;
+  cog = message.cog*180.0/M_PI;
+  sog = message.sog;
 }
 
-AISContactState::AISContactState(const marine_ais_msgs::AISContact::ConstPtr& message)
+AISContactState::AISContactState(const marine_ais_msgs::msg::AISContact& message)
 {
-  timestamp = message->header.stamp;
-  location.location.setLatitude(message->pose.position.latitude);
-  location.location.setLongitude(message->pose.position.longitude);
+  timestamp = message.header.stamp;
+  location.location.setLatitude(message.pose.position.latitude);
+  location.location.setLongitude(message.pose.position.longitude);
 
   tf2::Vector3 motion;
-  tf2::fromMsg(message->twist.twist.linear, motion);
+  tf2::fromMsg(message.twist.twist.linear, motion);
   sog = motion.length();
   if (motion.length() > 0.0)
   {
@@ -70,7 +70,7 @@ AISContactState::AISContactState(const marine_ais_msgs::AISContact::ConstPtr& me
   }
 
   tf2::Quaternion orientation_quat;
-  tf2::fromMsg(message->pose.orientation, orientation_quat);
+  tf2::fromMsg(message.pose.orientation, orientation_quat);
   if (orientation_quat.length2() > 0.1) // make sure it's not a null orientation
   {
     double roll,pitch,yaw;
@@ -91,7 +91,7 @@ AISReport::AISReport(QObject *parent):QObject(parent)
 
 }
 
-AISReport::AISReport(const project11_msgs::Contact::ConstPtr& message, QObject *parent):
+AISReport::AISReport(const project11_msgs::msg::Contact& message, QObject *parent):
   QObject(parent),
   AISContactDetails(message),
   AISContactState(message)
@@ -99,7 +99,7 @@ AISReport::AISReport(const project11_msgs::Contact::ConstPtr& message, QObject *
 
 }
 
-AISReport::AISReport(const marine_ais_msgs::AISContact::ConstPtr& message, QObject *parent):
+AISReport::AISReport(const marine_ais_msgs::msg::AISContact& message, QObject *parent):
   QObject(parent),
   AISContactDetails(message),
   AISContactState(message)
@@ -108,13 +108,14 @@ AISReport::AISReport(const marine_ais_msgs::AISContact::ConstPtr& message, QObje
 }
 
 
-AISContact::AISContact(QObject *parent, QGraphicsItem *parentItem):QObject(parent), ShipTrack(parentItem)
+AISContact::AISContact(QObject *parent, QGraphicsItem *parentItem)
+  :camp_ros::ROSObject(parent), ShipTrack(parentItem)
 {
   setAcceptHoverEvents(true);
 }
 
 AISContact::AISContact(AISReport* report, QObject *parent, QGraphicsItem *parentItem):
-  QObject(parent),
+  camp_ros::ROSObject(parent),
   ShipTrack(parentItem),
   AISContactDetails(*report)
 {
@@ -128,9 +129,12 @@ AISContact::~AISContact()
 
 void AISContact::updateView()
 {
-  prepareGeometryChange();
-  m_displayTime = ros::Time::now();
-  update();
+  if(node_)
+  {
+    prepareGeometryChange();
+    m_displayTime = node_->get_clock()->now();
+    update();
+  }
 }
 
 void AISContact::newReport(AISReport *report)
@@ -209,9 +213,9 @@ QPainterPath AISContact::shape() const
   QPainterPath ret;
   // History length should be configurable and displayTime could be set
   // somwhere else to support rewinding time
-  if(!m_displayTime.isZero())
+  if(m_displayTime.seconds() != 0)
   {
-    ros::Time historyStartTime = m_displayTime - ros::Duration(300);
+    auto historyStartTime = m_displayTime - rclcpp::Duration::from_seconds(300);
 
     auto state = m_states.lower_bound(historyStartTime);
     if(state != m_states.end() && state->first <= m_displayTime)
@@ -253,7 +257,7 @@ QPainterPath AISContact::shape() const
 QPainterPath AISContact::predictionShape() const
 {
   QPainterPath ret;
-  if(!m_displayTime.isZero())
+  if(m_displayTime.seconds() != 0)
   {
     auto state = m_states.rbegin();
     while(state != m_states.rend() && state->first > m_displayTime)
@@ -262,8 +266,8 @@ QPainterPath AISContact::predictionShape() const
     {
       ret.moveTo(state->second.location.pos);
       QGeoCoordinate futureLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*300, state->second.cog);
-      ros::Duration timeSinceReport = m_displayTime - state->first;
-      QGeoCoordinate predicatedLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*timeSinceReport.toSec(), state->second.cog);
+      auto timeSinceReport = m_displayTime - state->first;
+      QGeoCoordinate predicatedLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*timeSinceReport.seconds(), state->second.cog);
       BackgroundRaster* bg = findParentBackgroundRaster();
       if(bg)
       {

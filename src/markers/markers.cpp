@@ -1,16 +1,17 @@
 #include "markers.h"
 #include <QPainter>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 #include <tf2/utils.h>
-#include "gz4d_geo.h"
+#include "project11/gz4d_geo.h"
 #include <QDebug>
-#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/msg/pose_stamped.hpp>
 #include "backgroundraster.h"
 #include <grid_map_ros/grid_map_ros.hpp>
 #include <QTimer>
 
 Markers::Markers(QWidget* parent, QGraphicsItem *parentItem):
-  QWidget(parent),
+  camp_ros::ROSWidget(parent),
   GeoGraphicsItem(parentItem)
 {
   ui_.setupUi(this);
@@ -45,18 +46,18 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         painter->save();
         QPen p;
         p.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*255));
-        if(m.second->marker.type == visualization_msgs::Marker::LINE_STRIP)
+        if(m.second->marker.type == visualization_msgs::msg::Marker::LINE_STRIP)
         {
           p.setWidthF(m.second->marker.scale.x/pixel_size_);
           // p.setWidth(0);
           // p.setCosmetic(true);
         }
-        if(m.second->marker.type == visualization_msgs::Marker::TEXT_VIEW_FACING)
+        if(m.second->marker.type == visualization_msgs::msg::Marker::TEXT_VIEW_FACING)
           p.setCosmetic(true);
         painter->setPen(p);
         QBrush b = painter->brush();
         b.setColor(QColor(m.second->marker.color.r*255, m.second->marker.color.g*255, m.second->marker.color.b*255, m.second->marker.color.a*128));
-        if(m.second->marker.type == visualization_msgs::Marker::SPHERE || m.second->marker.type == visualization_msgs::Marker::TEXT_VIEW_FACING)
+        if(m.second->marker.type == visualization_msgs::msg::Marker::SPHERE || m.second->marker.type == visualization_msgs::msg::Marker::TEXT_VIEW_FACING)
           b.setStyle(Qt::BrushStyle::SolidPattern);
         painter->setBrush(b);
         painter->drawPath(markerPath(*m.second, bg));
@@ -72,13 +73,13 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
   {
     switch(marker.marker.type)
     {
-      case visualization_msgs::Marker::SPHERE:
+      case visualization_msgs::msg::Marker::SPHERE:
       {
         QRectF bbox(marker.local_position, marker.local_position);
         path.addEllipse(bbox.marginsAdded(QMarginsF(marker.marker.scale.x/2.0 /pixel_size_, marker.marker.scale.y/2.0/pixel_size_, marker.marker.scale.x/2.0/pixel_size_, marker.marker.scale.y/2.0/pixel_size_)));
         break;
       }
-      case visualization_msgs::Marker::LINE_STRIP:
+      case visualization_msgs::msg::Marker::LINE_STRIP:
       {
         auto cosr = cos(-marker.rotation);
         auto sinr = sin(-marker.rotation);
@@ -95,7 +96,7 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
         }
         break;
       }
-      case visualization_msgs::Marker::TEXT_VIEW_FACING:
+      case visualization_msgs::msg::Marker::TEXT_VIEW_FACING:
       {
         {
           QFont font;
@@ -109,7 +110,7 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
         break;
       }
       default:
-        ROS_WARN_STREAM("marker type not handles: " << marker.marker.type);
+        RCLCPP_WARN_STREAM(node_->get_logger(), "marker type not handles: " << marker.marker.type);
     }
   }
   return path;
@@ -117,25 +118,16 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
 
 void Markers::setTopic(std::string topic, std::string type)
 {
-  if(!spinner_)
+  if(node_)
   {
-    spinner_ = std::make_shared<ros::AsyncSpinner>(1, &ros_queue_);
-    spinner_->start();
+    if(type == "visualization_msgs/MarkerArray")
+      marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(topic, 1, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
+    if(type == "visualization_msgs/Marker")
+      marker_subscription_ = node_->create_subscription<visualization_msgs::msg::Marker>(topic, 1, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
+
+    ui_.topicLabel->setText(topic.c_str());
   }
-  ros::SubscribeOptions ops;
-  
-  if(type == "visualization_msgs/MarkerArray")
-    ops = ros::SubscribeOptions::create<visualization_msgs::MarkerArray>(topic, 1, boost::bind(&Markers::markerArrayCallback, this, _1), ros::VoidPtr(), &ros_queue_);
-  if(type == "visualization_msgs/Marker")
-    ops = ros::SubscribeOptions::create<visualization_msgs::Marker>(topic, 1, boost::bind(&Markers::markerCallback, this, _1), ros::VoidPtr(), &ros_queue_);
-  subscriber_ = ros::NodeHandle().subscribe(ops);
 
-  ui_.topicLabel->setText(topic.c_str());
-}
-
-void Markers::setTF2Buffer(tf2_ros::Buffer* buffer)
-{
-  tf_buffer_ = buffer;
 }
 
 void Markers::setPixelSize(double s)
@@ -143,19 +135,19 @@ void Markers::setPixelSize(double s)
   pixel_size_ = s;
 }
 
-void Markers::markerArrayCallback(const visualization_msgs::MarkerArrayConstPtr &data)
+void Markers::markerArrayCallback(const visualization_msgs::msg::MarkerArray &data)
 {
-  addMarkers(data->markers);
+  addMarkers(data.markers);
 }
 
-void Markers::markerCallback(const visualization_msgs::MarkerConstPtr &data)
+void Markers::markerCallback(const visualization_msgs::msg::Marker &data)
 {
-  std::vector<visualization_msgs::Marker> markers;
-  markers.push_back(*data);
+  std::vector<visualization_msgs::msg::Marker> markers;
+  markers.push_back(data);
   addMarkers(markers);
 }
 
-void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
+void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers)
 {
   for(auto m: markers)
   {
@@ -163,16 +155,19 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
     marker_data->marker = m;
     try
     {
-      if(m.action == visualization_msgs::Marker::ADD)
+      if(m.action == visualization_msgs::msg::Marker::ADD)
       {
-        if(!m.lifetime.isZero() && m.header.stamp+m.lifetime < ros::Time::now())
+        auto now = node_->get_clock()->now();
+        if(rclcpp::Duration(m.lifetime).nanoseconds() != 0 && rclcpp::Time(m.header.stamp)+rclcpp::Duration(m.lifetime) < now)
         {
-          ROS_DEBUG_STREAM_THROTTLE(5.0, "Expired marker: "<< m.ns << " id: " << m.id);
+          rclcpp::Clock clock;
+          RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), clock, 5000, "Expired marker: "<< m.ns << " id: " << m.id);
           continue;
         }
         if(m.header.frame_id.empty())
         {
-          ROS_DEBUG_STREAM_THROTTLE(1.0, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
+          rclcpp::Clock clock;
+          RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), clock, 1000, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
           continue;;
         }
         marker_data->position = getGeoCoordinate(m.pose, m.header);
@@ -183,13 +178,14 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
     }
     catch (tf2::TransformException &ex)
     {
-      ROS_WARN_STREAM_THROTTLE(1.0, "Unable to find transform to earth for marker: " << m.ns << " id: " << m.id << " what: " << ex.what());
+      rclcpp::Clock clock;
+      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 1000, "Unable to find transform to earth for marker: " << m.ns << " id: " << m.id << " what: " << ex.what());
     }
   }
   emit newMarkersMadeAvailable();
 }
 
-QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const std_msgs::Header &header)
+QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header)
 {
   // if(header.frame_id.empty())
   // {
@@ -198,10 +194,10 @@ QGeoCoordinate Markers::getGeoCoordinate(const geometry_msgs::Pose &pose, const 
   // }
   // try
   // {
-    geometry_msgs::PoseStamped ps;
+    geometry_msgs::msg::PoseStamped ps;
     ps.header = header;
     ps.pose = pose;
-    auto ecef = tf_buffer_->transform(ps, "earth", ros::Duration(1.5));
+    auto ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
 
     gz4d::GeoPointECEF ecef_point;
     ecef_point[0] = ecef.pose.position.x;
@@ -234,36 +230,36 @@ void Markers::newMarkersAvailable()
   {
     switch(marker->marker.action)
     {
-      case visualization_msgs::Marker::ADD:
+      case visualization_msgs::msg::Marker::ADD:
         if(bg)
           marker->local_position = geoToPixel(marker->position, bg);
         //ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
         current_markers_[marker->marker.ns][marker->marker.id] = marker;
-        if(!marker->marker.lifetime.isZero())
-          QTimer::singleShot((marker->marker.lifetime.toSec()+1.0)*1000, this, &Markers::newMarkersAvailable);
+        if(rclcpp::Duration(marker->marker.lifetime).seconds() != 0)
+          QTimer::singleShot((rclcpp::Duration(marker->marker.lifetime).seconds()+1.0)*1000, this, &Markers::newMarkersAvailable);
         break;
-      case visualization_msgs::Marker::DELETE:
+      case visualization_msgs::msg::Marker::DELETE:
         current_markers_[marker->marker.ns][marker->marker.id].reset();
         break;
-      case visualization_msgs::Marker::DELETEALL:
+      case visualization_msgs::msg::Marker::DELETEALL:
         current_markers_[marker->marker.ns].clear();
         break;
       default:
-        ROS_WARN_STREAM("Unknown marker action: " << marker->marker.action);
+        RCLCPP_WARN_STREAM(node_->get_logger(), "Unknown marker action: " << marker->marker.action);
     }
   }
 
-  auto now = ros::Time::now();
+  auto now = node_->get_clock()->now();
 
   for(auto& ns: current_markers_)
   {
     std::vector<int32_t> expired;
     for(auto m: ns.second)
-      if(!m.second->marker.header.stamp.isZero() && !m.second->marker.lifetime.isZero()&& m.second->marker.header.stamp + m.second->marker.lifetime < now)
+      if(rclcpp::Time(m.second->marker.header.stamp).seconds() != 0.0 && rclcpp::Duration(m.second->marker.lifetime).seconds() != 0 && rclcpp::Time(m.second->marker.header.stamp) + rclcpp::Duration(m.second->marker.lifetime) < now)
         expired.push_back(m.first);
     for(auto e: expired)
     {
-      ROS_DEBUG_STREAM("Purging " << ns.first << ": " << e);
+      RCLCPP_DEBUG_STREAM(node_->get_logger(), "Purging " << ns.first << ": " << e);
       ns.second.erase(e);
 
     }

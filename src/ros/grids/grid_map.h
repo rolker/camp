@@ -2,7 +2,7 @@
 #define CAMP_ROS_GRIDS_GRID_MAP_H
 
 #include "../layer.h"
-#include "grid_map_msgs/GridMap.h"
+#include "grid_map_msgs/msg/grid_map.hpp"
 
 namespace camp_ros
 {
@@ -32,8 +32,9 @@ public slots:
   void updateGridLayer(const GridMapLayerData& data);
 
 private:
-  void gridMapCallback(const grid_map_msgs::GridMap::ConstPtr &data);
-  
+  void gridMapCallback(const grid_map_msgs::msg::GridMap &data);
+
+  rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr subscription_;  
   std::string topic_;
 
 };

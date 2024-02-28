@@ -4,7 +4,7 @@
 #include <QTimer>
 
 MarkersManager::MarkersManager(QWidget* parent):
-  QWidget(parent)
+  camp_ros::ROSWidget(parent)
 {
   ui_.setupUi(this);
 
@@ -20,31 +20,32 @@ MarkersManager::~MarkersManager()
 
 void MarkersManager::scanForSources()
 {
-  ros::NodeHandle nh;
-
-  ros::master::V_TopicInfo topic_info;
-  ros::master::getTopics(topic_info);
-
-  for(const auto t: topic_info)
-    if (t.datatype == "visualization_msgs/MarkerArray" || t.datatype == "visualization_msgs/Marker")
-      if (markers_.find(t.name) == markers_.end())
+  if(node_)
+  {
+    auto topics = node_->get_topic_names_and_types();
+    for(auto topic: topics)
+    {
+      auto name = topic.first;
+      for(auto topic_type: topic.second)
       {
-        markers_[t.name] = new Markers(this, background_);
-        markers_[t.name]->setTopic(t.name, t.datatype);
-        markers_[t.name]->setTF2Buffer(tf_buffer_);
-        markers_[t.name]->setObjectName(t.name.c_str());
-        if(background_)
-          markers_[t.name]->setPixelSize(background_->pixelSize());
-        ui_.markersLayout->addWidget(markers_[t.name]);
+        if (topic_type == "visualization_msgs/MarkerArray" || topic_type == "visualization_msgs/Marker")
+        {
+          if(markers_.find(name) == markers_.end())
+          {
+            markers_[name] = new Markers(this, background_);
+            markers_[name]->nodeStarted(node_, transform_buffer_);
+            markers_[name]->setTopic(name, topic_type);
+            markers_[name]->setObjectName(name.c_str());
+            if(background_)
+              markers_[name]->setPixelSize(background_->pixelSize());
+            ui_.markersLayout->addWidget(markers_[name]);
+          }
+        }
       }
+    }
+  }
 }
 
-void MarkersManager::setTFBuffer(tf2_ros::Buffer* buffer)
-{
-  tf_buffer_ = buffer;
-  for(auto og: markers_)
-    og.second->setTF2Buffer(buffer);
-}
 
 void MarkersManager::updateBackground(BackgroundRaster * bg)
 {

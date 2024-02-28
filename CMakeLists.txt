@@ -9,24 +9,32 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(grid_map_ros REQUIRED)
 find_package(marine_ais_msgs REQUIRED)
 find_package(marine_sensor_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
+find_package(project11 REQUIRED)
 find_package(project11_msgs REQUIRED)
 find_package(project11_nav_msgs REQUIRED)
-find_package(rosgraph_msgs REQUIRED)
+find_package(sound_play REQUIRED)
 find_package(qt_gui_cpp REQUIRED)
+find_package(rosgraph_msgs REQUIRED)
 find_package(rqt_gui_cpp REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
 
 set(CMAKE_AUTOMOC ON)
-set(CMAKE_INCLUDE_CURRENT_DIR ON)
-set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt5 COMPONENTS Core Widgets Test Concurrent Positioning Network Xml)
+set(CMAKE_AUTOUIC ON)
+
+if(CMAKE_VERSION VERSION_LESS "3.7.0")
+    set(CMAKE_INCLUDE_CURRENT_DIR ON)
+endif()
+
+find_package(Qt5 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
 
 if (Qt5Widgets_FOUND)
     if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)
@@ -49,137 +57,123 @@ if (DOXYGEN_FOUND)
 endif()
 
 set(SOURCES
-    autonomousvehicleproject.cpp
-    avoid_area.cpp
-    backgrounddetails.cpp
-    backgroundraster.cpp
-    detailsview.cpp
-    geographicsitem.cpp
-    georeferenced.cpp
-    grids/grid.cpp
-    grids/grid_manager.cpp
-    main.cpp
-    mainwindow.cpp
-    markers/markers.cpp
-    markers/markers_manager.cpp
-    missionitem.cpp
-    mission_manager/mission_manager.cpp
-    orbit.cpp
-    orbitdetails.cpp
-    platform_manager/platform.cpp
-    platform_manager/platform_manager.cpp
-    projectview.cpp
-    radar/radar_display.cpp
-    radar/radar_manager.cpp
-    searchpattern.cpp
-    surveypattern.cpp
-    surveypatterndetails.cpp
-    trackline.cpp
-    tracklinedetails.cpp
-    waypoint.cpp
-    waypointdetails.cpp
+    src/autonomousvehicleproject.cpp
+    src/avoid_area.cpp
+    src/backgrounddetails.cpp
+    src/backgroundraster.cpp
+    src/detailsview.cpp
+    src/geographicsitem.cpp
+    src/georeferenced.cpp
+    src/grids/grid.cpp
+    src/grids/grid_manager.cpp
+    src/main.cpp
+    src/mainwindow.cpp
+    src/markers/markers.cpp
+    src/markers/markers_manager.cpp
+    src/missionitem.cpp
+    src/mission_manager/mission_manager.cpp
+    src/orbit.cpp
+    src/orbitdetails.cpp
+    src/platform_manager/platform.cpp
+    src/platform_manager/platform_manager.cpp
+    src/projectview.cpp
+    src/ros/node_thread.cpp
+    src/ros/ros_object.cpp
+    src/ros/ros_widget.cpp
+    src/searchpattern.cpp
+    src/sound_play/sound_play_widget.cpp
+    src/sound_play/speech_alerts.cpp
+    src/surveypattern.cpp
+    src/surveypatterndetails.cpp
+    src/trackline.cpp
+    src/tracklinedetails.cpp
+    src/waypoint.cpp
+    src/waypointdetails.cpp
 
-    vector/vectordataset.cpp
-    group.cpp
-    vector/point.cpp
-    vector/linestring.cpp
-    vector/polygon.cpp
-    geographicsmissionitem.cpp
-    surveyarea.cpp
-    measuringtool.cpp
-    behavior.cpp
-    behaviordetails.cpp
-    astar.cpp
-    ship_track.cpp
-    ais/ais_contact.cpp
-    ais/ais_manager.cpp
-    helm_manager/helm_manager.cpp
-    sound_play/sound_play_widget.cpp
-    sound_play/speech_alerts.cpp
-    roslink.cpp
-    nav_source.cpp
+    src/vector/vectordataset.cpp
+    src/group.cpp
+    src/vector/point.cpp
+    src/vector/linestring.cpp
+    src/vector/polygon.cpp
+    src/geographicsmissionitem.cpp
+    src/surveyarea.cpp
+    src/measuringtool.cpp
+    src/behavior.cpp
+    src/behaviordetails.cpp
+    src/astar.cpp
+    src/ship_track.cpp
+    src/ais/ais_contact.cpp
+    src/ais/ais_manager.cpp
+    src/helm_manager/helm_manager.cpp
+    src/roslink.cpp
+    src/nav_source.cpp
 )
 
-set(HEADERS
-    autonomousvehicleproject.h
-    backgroundraster.h
-    georeferenced.h
-    mainwindow.h
-    grids/grid.h
-    grids/grid_manager.h
-    markers/markers.h
-    markers/markers_manager.h
-    orbit.h
-    orbitdetails.h
-    radar/radar_display.h
-    radar/radar_manager.h
-    waypoint.h
-    projectview.h
-    trackline.h
-    geographicsitem.h
-    surveypattern.h
-    detailsview.h
-    waypointdetails.h
-    tracklinedetails.h
-    surveypatterndetails.h
-    platform_manager/platform.h
-    platform_manager/platform_manager.h
-    missionitem.h
-    backgrounddetails.h
-    vector/vectordataset.h
-    group.h
-    vector/point.h
-    vector/linestring.h
-    vector/polygon.h
-    geographicsmissionitem.h
-    surveyarea.h
-    measuringtool.h
-    behavior.h
-    behaviordetails.h
-    astar.h
-    ship_track.h
-    ais/ais_contact.h
-    ais/ais_manager.h
-    helm_manager/helm_manager.h
-    sound_play/sound_play_widget.h
-    sound_play/speech_alerts.h
-    roslink.h
-    nav_source.h
-    mission_manager/mission_manager.h
-    
-    searchpattern.h
-)
+# src/radar/radar_display.cpp
+# src/radar/radar_manager.cpp
 
 set ( RESOURCES
-    main.qrc
+    src/main.qrc
 )
 
-# add_executable(CCOMAutonomousMissionPlanner ${HEADERS} ${SOURCES} ${RESOURCES})
+set (UIS
+    src/behaviordetails.ui
+    src/main/camp_main_window.ui
+    src/sonar_manager/sonar_manager.ui
+    src/sound_play/sound_play_widget.ui
+    src/platform_manager/platform.ui
+    src/platform_manager/platform_manager.ui
+    src/orbitdetails.ui
+    src/mainwindow.ui
+    src/markers/markers.ui
+    src/markers/markers_manager.ui
+    src/waypointdetails.ui
+    src/grids/grid.ui
+    src/grids/grid_manager.ui
+    src/helm_manager/helm_manager_config.ui
+    src/helm_manager/helm_manager.ui
+    src/backgrounddetails.ui
+    src/roslink.ui
+    src/surveypatterndetails.ui
+    src/mission_manager/mission_manager.ui
+    src/ais/ais_manager.ui
+    src/tracklinedetails.ui
+)
 
-# target_include_directories(CCOMAutonomousMissionPlanner PUBLIC
-#     "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>"
-# )
+add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 
-# ament_target_dependencies(CCOMAutonomousMissionPlanner
-#     marine_ais_msgs
-#     project11_msgs
-#     project11_nav_msgs
-#     tf2
-#     rclcpp
-# )
+target_include_directories(CCOMAutonomousMissionPlanner
+    PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
 
-# target_link_libraries(CCOMAutonomousMissionPlanner
-#     Qt5::Core 
-#     Qt5::Widgets
-#     Qt5::Concurrent
-#     Qt5::Network
-#     Qt5::Positioning
-# )
+ament_target_dependencies(CCOMAutonomousMissionPlanner
+    grid_map_ros
+    marine_ais_msgs
+    nav_msgs
+    project11
+    project11_msgs
+    project11_nav_msgs
+    rclcpp
+    sound_play
+    tf2
+    tf2_geometry_msgs
+    tf2_ros
+    visualization_msgs
+)
 
-# target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} yaml-cpp)
+target_link_libraries(CCOMAutonomousMissionPlanner
+    Qt5::Widgets
+    Qt5::Concurrent
+    Qt5::Network
+    Qt5::Positioning
+    Qt5::Svg
+)
 
-# install (TARGETS CCOMAutonomousMissionPlanner
-#     DESTINATION lib/${PROJECT_NAME})
+target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} yaml-cpp)
+
+install (TARGETS CCOMAutonomousMissionPlanner
+    DESTINATION lib/${PROJECT_NAME})
 
 
 #rqt plugins
@@ -248,69 +242,80 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 # test map view
 
 set( CAMP_SOURCES
-    background/background_manager.cpp
-    main/cached_file_loader.cpp
-    main/camp_main_window.cpp
-    main/main.cpp
-    map/map.cpp
-    map/map_item.cpp
-    map/map_item_mime_data.cpp
-    map/layer_list.cpp
-    map/layer.cpp
-    map_tiles/cached_tile_loader.cpp
-    map_tiles/map_tiles.cpp
-    map_tiles/tile.cpp
-    map_tiles/tile_address.cpp
-    map_tiles/tile_layout.cpp
-    map_tiles/osm.cpp
-    map_tree_view/map_item_delegate.cpp
-    map_tree_view/map_tree_view.cpp
-    map_view/map_view.cpp
-    map_view/web_mercator.cpp
-    raster/raster_layer.cpp
-    ros/layer.cpp
-    ros/node.cpp
-    ros/node_manager.cpp
-    ros/grids/grid_manager.cpp
-    ros/grids/grid_map.cpp
-    ros/markers/marker.cpp
-    ros/markers/marker_namespace.cpp
-    ros/markers/markers.cpp
-    ros/markers/markers_manager.cpp
-    tools/layer_manager.cpp
-    tools/map_tool.cpp
-    tools/tools_manager.cpp
-    wmts/capabilities.cpp
-    wmts/layer.cpp
-    wmts/tile_matrix_set.cpp
+    src/background/background_manager.cpp
+    src/main/cached_file_loader.cpp
+    src/main/camp_main_window.cpp
+    src/main/main.cpp
+    src/map/map.cpp
+    src/map/map_item.cpp
+    src/map/map_item_mime_data.cpp
+    src/map/layer_list.cpp
+    src/map/layer.cpp
+    src/map_tiles/cached_tile_loader.cpp
+    src/map_tiles/map_tiles.cpp
+    src/map_tiles/tile.cpp
+    src/map_tiles/tile_address.cpp
+    src/map_tiles/tile_layout.cpp
+    src/map_tiles/osm.cpp
+    src/map_tree_view/map_item_delegate.cpp
+    src/map_tree_view/map_tree_view.cpp
+    src/map_view/map_view.cpp
+    src/map_view/web_mercator.cpp
+    src/raster/raster_layer.cpp
+    src/ros/grids/grid_manager.cpp
+    src/ros/grids/grid_map.cpp
+    src/ros/layer.cpp
+    src/ros/markers/marker.cpp
+    src/ros/markers/marker_namespace.cpp
+    src/ros/markers/markers.cpp
+    src/ros/markers/markers_manager.cpp
+    src/ros/node_manager.cpp
+    src/ros/node_thread.cpp
+    src/tools/layer_manager.cpp
+    src/tools/map_tool.cpp
+    src/tools/tools_manager.cpp
+    src/wmts/capabilities.cpp
+    src/wmts/layer.cpp
+    src/wmts/tile_matrix_set.cpp
 )
 
 
-# add_executable(camp2 ${CAMP_SOURCES})
 
-# ament_target_dependencies(camp2
-#     grid_map_ros
-#     marine_ais_msgs
-#     project11_msgs
-#     project11_nav_msgs
-#     rclcpp
-#     tf2_ros
-# )
 
-# target_link_libraries(camp2
-#     ${QT_LIBRARIES}
-#     ${GDAL_LIBRARY}
-#     Qt5::Core
-#     Qt5::Widgets
-#     Qt5::Concurrent
-#     Qt5::Network
-#     Qt5::Test
-#     Qt5::Xml
-#     Qt5::Positioning
-# )
+add_executable(camp2 ${CAMP_SOURCES})
 
-# install (TARGETS camp2
-#     DESTINATION lib/${PROJECT_NAME})
+target_include_directories(camp2
+    PRIVATE 
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+ament_target_dependencies(camp2
+    geometry_msgs
+    grid_map_ros
+    marine_ais_msgs
+    project11
+    project11_msgs
+    project11_nav_msgs
+    rclcpp
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
+)
+
+target_link_libraries(camp2
+    ${QT_LIBRARIES}
+    ${GDAL_LIBRARY}
+    Qt5::Core
+    Qt5::Widgets
+    Qt5::Concurrent
+    Qt5::Network
+    Qt5::Test
+    Qt5::Xml
+    Qt5::Positioning
+)
+
+install (TARGETS camp2
+    DESTINATION lib/${PROJECT_NAME})
 
 
 ament_package(

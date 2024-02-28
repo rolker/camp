@@ -1,7 +1,9 @@
 #include "roslink.h"
 #include "ui_roslink.h"
-#include "std_msgs/Bool.h"
-#include "std_msgs/String.h"
+#include "ros/node_thread.h"
+
+#include "std_msgs/msg/bool.hpp"
+#include "std_msgs/msg/string.hpp"
 #include <QDebug>
 #include <QPainter>
 #include <QGraphicsSvgItem>
@@ -10,118 +12,58 @@
 #include "backgroundraster.h"
 #include <QTimer>
 #include <tf2/utils.h>
-#include "geographic_msgs/GeoPoint.h"
+//#include "geographic_msgs/GeoPoint.h"
 
 
-ROSLink::ROSLink(QWidget* parent): QWidget(parent), m_ui(new Ui::ROSLink), m_range(0.0),m_bearing(0.0),m_show_tail(true)
+ROSLink::ROSLink(QWidget* parent): QWidget(parent), m_ui(new Ui::ROSLink)
 {
     m_ui->setupUi(this);
 
-    m_base_dimension_to_bow = 1.0;
-    m_base_dimension_to_stern = 1.0;
-    m_base_dimension_to_port = 1.0;
-    m_base_dimension_to_stbd = 1.0;
-    
+  qRegisterMetaType<rclcpp::Node::SharedPtr>();
+  qRegisterMetaType<tf2_ros::Buffer::SharedPtr>();
     
     qRegisterMetaType<QGeoCoordinate>();
     //connectROS();
     
-    m_watchdog_timer = new QTimer(this);
-    connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
+    // m_watchdog_timer = new QTimer(this);
+    // connect(m_watchdog_timer, SIGNAL(timeout()), this, SLOT(watchdogUpdate()));
 }
 
 void ROSLink::connectROS()
 {    
-    ros::NodeHandle nh;
-    m_spinner = new ros::AsyncSpinner(0);
-
-    m_tf_buffer = new tf2_ros::Buffer;
-    m_tf_listener = new tf2_ros::TransformListener(*m_tf_buffer);
-
-    std::string robotNamespace = ros::param::param<std::string>("~robotNamespace","ben");
-    m_mapFrame = robotNamespace+"/map";
-    emit robotNamespaceUpdated(robotNamespace.c_str());
+  camp_ros::NodeThread* node = new camp_ros::NodeThread();
+  node->moveToThread(&node_thread_);
+  connect(&node_thread_, &QThread::finished, node, &QObject::deleteLater);
+  connect(this, &ROSLink::startNode, node, &camp_ros::NodeThread::start);
+  connect(node, &camp_ros::NodeThread::started, this, &ROSLink::nodeStarted);
+  connect(node, &camp_ros::NodeThread::shuttingDown, this, &ROSLink::nodeShuttingDown);
 
 
-    m_range_subscriber = nh.subscribe("range", 10, &ROSLink::rangeCallback, this);
-    m_bearing_subscriber = nh.subscribe("bearing",10, &ROSLink::bearingCallback, this);
+  node_thread_.start();
+  emit startNode();
 
-    m_look_at_publisher = nh.advertise<geographic_msgs::GeoPoint>("base/camera/look_at",1);
-    m_look_at_mode_publisher = nh.advertise<std_msgs::String>("base/camera/look_at_mode",1);
-
-    nh.param("base/dimension_to_bow",m_base_dimension_to_bow,m_base_dimension_to_bow);
-    nh.param("base/dimension_to_stern",m_base_dimension_to_stern,m_base_dimension_to_stern);
-    nh.param("base/dimension_to_stbd",m_base_dimension_to_stbd,m_base_dimension_to_stbd);
-    nh.param("base/dimension_to_port",m_base_dimension_to_port,m_base_dimension_to_port);
-
-    //m_radar_displays["/radar/HaloA/data"]->setPos(m_base_location.pos);
-    //m_radar_displays["/radar/HaloA/data"]->setRotation(m_base_heading);
-
-    m_spinner->start();
-    m_watchdog_timer->start(500);
-    emit rosConnected(true);
 }
 
-void ROSLink::rangeCallback(const std_msgs::Float32::ConstPtr& message)
+void ROSLink::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
 {
-    m_range_timestamp = ros::Time::now();
-    m_range = message->data;
+  node_ = node;
+  transform_buffer_ = buffer;
+  emit rosConnected(node, buffer);
 }
 
-void ROSLink::bearingCallback(const std_msgs::Float32::ConstPtr& message)
+void ROSLink::nodeShuttingDown()
 {
-    m_bearing_timestamp = ros::Time::now();
-    m_bearing = message->data;
+  node_.reset();
+  transform_buffer_.reset();
+  emit rosConnected(node_, transform_buffer_);
 }
 
-void ROSLink::watchdogUpdate()
+rclcpp::Node::SharedPtr ROSLink::node()
 {
-    rangeAndBearingUpdate(m_range,m_range_timestamp,m_bearing,m_bearing_timestamp);
+  return node_;
 }
 
-void ROSLink::sendLookAt(QGeoCoordinate const &targetLocation)
+tf2_ros::Buffer::SharedPtr ROSLink::tfBuffer()
 {
-    geographic_msgs::GeoPoint gp;
-    gp.latitude = targetLocation.latitude();
-    gp.longitude = targetLocation.longitude();
-    m_look_at_publisher.publish(gp);
-}
-
-void ROSLink::sendLookAtMode(std::string const &mode)
-{
-    std_msgs::String mode_string;
-    mode_string.data = mode;
-    m_look_at_mode_publisher.publish(mode_string);
-}
-
-void ROSLink::showTail(bool show)
-{
-    m_show_tail = show;
-    update();
-}
-
-void ROSLink::rangeAndBearingUpdate(double range, ros::Time const & range_timestamp, double bearing, ros::Time const & bearing_timestamp)
-{
-    QString rblabel = "Range: " + QString::number(int(range)) + " m, Bearing: " + QString::number(int(bearing)) + " degs";
-    m_ui->rangeBearingLineEdit->setText(rblabel);
-
-    ros::Time now = ros::Time::now();
-    QPalette pal = palette();
-    if(now-range_timestamp < ros::Duration(5) && now-bearing_timestamp < ros::Duration(5))
-    {
-        pal.setColor(QPalette::Foreground, Qt::black);
-        pal.setColor(QPalette::Background, Qt::white);
-    }
-    else
-    {
-        pal.setColor(QPalette::Foreground, Qt::darkGray);
-        pal.setColor(QPalette::Background, Qt::yellow);
-    }
-    m_ui->rangeBearingLineEdit->setPalette(pal);
-    
-}
-
-tf2_ros::Buffer* ROSLink::tfBuffer()
-{
-    return m_tf_buffer;
+  return transform_buffer_;
 }

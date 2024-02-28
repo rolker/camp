@@ -1,21 +1,19 @@
 #ifndef MARKERS_MANAGER_H
 #define MARKERS_MANAGER_H
 
-#include <QWidget>
+#include "ros/ros_widget.h"
 #include "ui_markers_manager.h"
-#include <tf2_ros/transform_listener.h>
 
 class BackgroundRaster;
 class Markers;
 
-class MarkersManager: public QWidget
+class MarkersManager: public camp_ros::ROSWidget
 {
   Q_OBJECT
 
 public:
   explicit MarkersManager(QWidget* parent=nullptr);
   ~MarkersManager();
-  void setTFBuffer(tf2_ros::Buffer *buffer);
 
 public slots:
   void updateBackground(BackgroundRaster * bg);
@@ -30,7 +28,6 @@ private:
 
   QTimer* scan_timer_;
   BackgroundRaster* background_ = nullptr;
-  tf2_ros::Buffer* tf_buffer_ = nullptr;
 };
 
 #endif

@@ -3,8 +3,8 @@
 #include "grid.h"
 #include <QTimer>
 
-GridManager::GridManager(QWidget* parent):
-  QWidget(parent)
+GridManager::GridManager(QWidget* parent)
+  : camp_ros::ROSWidget(parent)
 {
   ui_.setupUi(this);
 
@@ -20,30 +20,36 @@ GridManager::~GridManager()
 
 void GridManager::scanForSources()
 {
-  ros::NodeHandle nh;
-
-  ros::master::V_TopicInfo topic_info;
-  ros::master::getTopics(topic_info);
-
-  for(const auto t: topic_info)
-    if (t.datatype == "nav_msgs/OccupancyGrid" || t.datatype == "grid_map_msgs/GridMap")
-      if (grids_.find(t.name) == grids_.end())
+  if(node_)
+  {
+    auto topics = node_->get_topic_names_and_types();
+    for(auto topic: topics)
+    {
+      for(auto topic_type: topic.second)
       {
-        grids_[t.name] = new Grid(this, background_);
-        grids_[t.name]->setTopic(t.name, t.datatype);
-        grids_[t.name]->setTF2Buffer(tf_buffer_);
-        grids_[t.name]->setObjectName(t.name.c_str());
-        if(background_)
-          grids_[t.name]->setPixelSize(background_->pixelSize());
-        ui_.gridLayout->addWidget(grids_[t.name]);
+        if(topic_type == "nav_msgs/OccupancyGrid" || topic_type == "grid_map_msgs/GridMap")
+        {
+          auto name = topic.first;
+          if (grids_.find(name) == grids_.end())
+          {
+            grids_[name] = new Grid(this, background_);
+            grids_[name]->nodeStarted(node_, transform_buffer_);
+            grids_[name]->setTopic(name, topic_type);
+            grids_[name]->setObjectName(name.c_str());
+            if(background_)
+              grids_[name]->setPixelSize(background_->pixelSize());
+            ui_.gridLayout->addWidget(grids_[name]);
+          }
+        }
       }
+    }
+  }
 }
 
-void GridManager::setTFBuffer(tf2_ros::Buffer* buffer)
+void GridManager::onNodeUpdated()
 {
-  tf_buffer_ = buffer;
   for(auto og: grids_)
-    og.second->setTF2Buffer(buffer);
+    og.second->nodeStarted(node_, transform_buffer_);
 }
 
 void GridManager::updateBackground(BackgroundRaster * bg)

@@ -2,9 +2,10 @@
 #define CAMP_MISSION_MANAGER_H
 
 #include <QWidget>
-#include "rclcpp/rclcpp.hpp"
+#include "ros/ros_widget.h"
 #include "project11_msgs/msg/heartbeat.hpp"
-#include "project11_nav_msgs/msg/geooccupancyvectormap.hpp"
+#include "project11_nav_msgs/msg/geo_occupancy_vector_map.hpp"
+#include "std_msgs/msg/string.hpp"
 
 namespace Ui
 {
@@ -13,7 +14,7 @@ class MissionManager;
 
 class QGeoCoordinate;
 
-class MissionManager: public QWidget
+class MissionManager: public camp_ros::ROSWidget
 {
   Q_OBJECT
 
@@ -43,7 +44,7 @@ public slots:
   void sendGotoLine(int waypoint_index);
   void sendStartLine(int waypoint_index);
 
-  void sendAvoidanceAreas(const project11_nav_msgs::GeoOccupancyVectorMap& map);
+  void sendAvoidanceAreas(project11_nav_msgs::msg::GeoOccupancyVectorMap& map);
 
 
 private slots:
@@ -59,12 +60,12 @@ private slots:
   void on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos);
 
 private:
-  void missionStatusCallback(const project11_msgs::Heartbeat::ConstPtr& message);
+  void missionStatusCallback(const project11_msgs::msg::Heartbeat& message);
 
   Ui::MissionManager* m_ui;
-  ros::Subscriber m_mission_status_subscriber;
-  ros::Publisher m_send_command_publisher;
-  ros::Publisher send_avoidance_costmap_publisher_;
+  rclcpp::Subscription<project11_msgs::msg::Heartbeat>::SharedPtr mission_status_subscription_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr send_command_publisher_;
+  rclcpp::Publisher<project11_nav_msgs::msg::GeoOccupancyVectorMap>::SharedPtr send_avoidance_costmap_publisher_;
 
 
 };

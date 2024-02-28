@@ -3,7 +3,7 @@
 
 #include "../map/layer.h"
 #include "rclcpp/rclcpp.hpp"
-#include "geometry_msgs/msg/PoseStamped.h"
+#include "geometry_msgs/msg/pose_stamped.hpp"
 
 namespace camp_ros
 {
@@ -25,16 +25,11 @@ public:
   }
 
 protected:
-  QPointF transformToWebMercator(const geometry_msgs::Pose &pose, const std_msgs::Header &header);
+  QPointF transformToWebMercator(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header);
 
-
-protected slots:
-  void unsubscribe();
 
 protected:
   NodeManager* node_manager_ = nullptr;
-
-  ros::Subscriber subscriber_;
 
 };
 

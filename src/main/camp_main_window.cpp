@@ -11,6 +11,7 @@ namespace camp
 {
 
 MainWindow::MainWindow(QWidget *parent)
+  :QMainWindow(parent)
 {
   QCoreApplication::setOrganizationName("UNH-CCOMJHC");
   QCoreApplication::setOrganizationDomain("ccom.unh.edu");

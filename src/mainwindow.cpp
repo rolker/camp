@@ -18,7 +18,7 @@
 #include "searchpattern.h"
 
 #include "ais/ais_manager.h"
-#include "radar/radar_manager.h"
+//#include "radar/radar_manager.h"
 #include "sound_play/sound_play_widget.h"
 #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
@@ -53,53 +53,41 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
     connect(m_ui->platformManager, &PlatformManager::currentPlatformPosition, this, &MainWindow::activePlatformPosition);
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_ui->platformManager, &PlatformManager::nodeStarted);
 
-    //m_ui->rosDetails->setEnabled(false);
-    //connect(project->rosLink(), &ROSLink::robotNamespaceUpdated, m_ui->helmManager, &HelmManager::updateRobotNamespace);
-    //connect(project->rosLink(), &ROSLink::rosConnected,this,&MainWindow::onROSConnected);
-    //m_ui->rosDetails->setROSLink(project->rosLink());
-
-    //project->rosLink()->connectROS();
-    m_ui->rosLink->connectROS();
-
-    //connect(project->rosLink(), &ROSLink::centerMap, m_ui->projectView, &ProjectView::centerMap);
-
-    //connect(m_ui->detailsView, &DetailsView::clearTasks, project->rosLink(), &ROSLink::clearTasks);
-    
     connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
-    m_ais_manager = new AISManager();
+    m_ais_manager = new AISManager(m_ui->rosLink);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
-
-    //m_radar_manager = new RadarManager();
-    //m_radar_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
-    //connect(project, &AutonomousVehicleProject::backgroundUpdated, m_radar_manager, &RadarManager::updateBackground);
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
 
     m_grid_manager = new GridManager();
-    m_grid_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_grid_manager, &GridManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_grid_manager, &GridManager::updateBackground);
     connect(this, &MainWindow::closing, m_grid_manager, &QWidget::close);
 
     m_markers_manager = new MarkersManager();
-    m_markers_manager->setTFBuffer(m_ui->rosLink->tfBuffer());
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_markers_manager, &MarkersManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
     connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
 
     m_sound_play = new SoundPlay();
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
 
     m_speech_alerts = new SpeechAlerts(this);
     connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
     //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
 
-    m_ui->platformManager->loadFromParameters();
+    m_ui->rosLink->connectROS();
+
 }
 
 MainWindow::~MainWindow()
 {
     delete m_ui;
     delete m_ais_manager;
-    delete m_radar_manager;
+    //delete m_radar_manager;
     delete m_grid_manager;
 }
 

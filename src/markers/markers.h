@@ -1,19 +1,13 @@
 #ifndef MARKERS_H
 #define MARKERS_H
 
-#include <QWidget>
+#include "ros/ros_widget.h"
 #include "geographicsitem.h"
 #include "ui_markers.h"
-#include "visualization_msgs/MarkerArray.h"
-#include "ros/ros.h"
-#include <ros/callback_queue.h>
+#include "visualization_msgs/msg/marker_array.hpp"
 
-namespace tf2_ros
-{
-  class Buffer;
-}
 
-class Markers: public QWidget, public GeoGraphicsItem
+class Markers: public camp_ros::ROSWidget, public GeoGraphicsItem
 {
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
@@ -22,7 +16,7 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
   int type() const override {return GridType;}
-  void setTF2Buffer(tf2_ros::Buffer *buffer);
+
   void setPixelSize(double s);
 
 signals:
@@ -35,15 +29,15 @@ public slots:
   void newMarkersAvailable();
 
 private:
-  void markerArrayCallback(const visualization_msgs::MarkerArrayConstPtr &data);
-  void markerCallback(const visualization_msgs::MarkerConstPtr &data);
-  void addMarkers(const std::vector<visualization_msgs::Marker> &markers);
+  void markerArrayCallback(const visualization_msgs::msg::MarkerArray &data);
+  void markerCallback(const visualization_msgs::msg::Marker &data);
+  void addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers);
 
-  QGeoCoordinate getGeoCoordinate(const geometry_msgs::Pose &pose, const std_msgs::Header &header);
+  QGeoCoordinate getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header);
 
   struct MarkerData
   {
-    visualization_msgs::Marker marker;
+    visualization_msgs::msg::Marker marker;
     QGeoCoordinate position;
     QPointF local_position;
     double rotation;
@@ -57,14 +51,12 @@ private:
   std::vector<std::shared_ptr<MarkerData> > new_markers_;
   std::mutex new_markers_mutex_;
 
-  ros::CallbackQueue ros_queue_;
-  std::shared_ptr<ros::AsyncSpinner> spinner_;
-  ros::Subscriber subscriber_;
+  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr marker_subscription_;
+  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 
   double pixel_size_ = 1.0;
   bool is_visible_ = false;
 
-  tf2_ros::Buffer* tf_buffer_ = nullptr;
 };
 
 #endif

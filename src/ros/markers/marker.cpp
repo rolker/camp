@@ -3,6 +3,7 @@
 #include <QPainter>
 #include <QGraphicsScene>
 #include "../../map_view/web_mercator.h"
+#include "../node_manager.h"
 
 namespace camp_ros
 {
@@ -23,7 +24,7 @@ void Marker::updateMarker(const MarkerData& data)
       child->scene()->removeItem(child);
     delete child;
   }
-  if(data.marker.action == visualization_msgs::Marker::ADD)
+  if(data.marker.action == visualization_msgs::msg::Marker::ADD)
   {
     setPos(data.position);
     auto map_distortion = web_mercator::metersPerUnit(data.position);
@@ -40,22 +41,22 @@ void Marker::updateMarker(const MarkerData& data)
 
     switch(data.marker.type)
     {
-      case visualization_msgs::Marker::CUBE:
+      case visualization_msgs::msg::Marker::CUBE:
       {
         auto cube = new QGraphicsRectItem(0, 0, data.marker.scale.x, data.marker.scale.y, this);
         cube->setPen(p);
         cube->setBrush(b);
         break;
       }
-      case visualization_msgs::Marker::SPHERE:
+      case visualization_msgs::msg::Marker::SPHERE:
       {
         auto sphere = new QGraphicsEllipseItem(0,0,data.marker.scale.x, data.marker.scale.y, this);
         sphere->setPen(p);
         sphere->setBrush(b);
         break;
       }
-      case visualization_msgs::Marker::LINE_STRIP:
-      case visualization_msgs::Marker::LINE_LIST:
+      case visualization_msgs::msg::Marker::LINE_STRIP:
+      case visualization_msgs::msg::Marker::LINE_LIST:
       {
         for(auto p1 = data.marker.points.begin(); p1 != data.marker.points.end(); ++p1)
         {
@@ -73,7 +74,7 @@ void Marker::updateMarker(const MarkerData& data)
             line->setPen(p);
             // \todo use colors field to add gradients for per vertex colors
           }
-          if(data.marker.type == visualization_msgs::Marker::LINE_LIST)
+          if(data.marker.type == visualization_msgs::msg::Marker::LINE_LIST)
           {
             p1++;
             if(p1 == data.marker.points.end())
@@ -82,14 +83,14 @@ void Marker::updateMarker(const MarkerData& data)
         }
         break;
       }
-      case visualization_msgs::Marker::TEXT_VIEW_FACING:
+      case visualization_msgs::msg::Marker::TEXT_VIEW_FACING:
       {
         auto text = new QGraphicsSimpleTextItem(data.marker.text.c_str(), this);
         text->setBrush(b);
         break;
       }
       default:
-        ROS_WARN_STREAM("marker type not handles: " << data_.marker.type);
+        RCLCPP_WARN_STREAM(node_manager_->node()->get_logger(), "marker type not handled: " << data_.marker.type);
     }
   }
   data_ = data;
@@ -102,8 +103,8 @@ uint32_t Marker::id() const
 
 void Marker::checkExpired()
 {
-  auto now = ros::Time::now();
-  bool expired = !data_.marker.header.stamp.isZero() && !data_.marker.lifetime.isZero()&& data_.marker.header.stamp + data_.marker.lifetime < now;
+  auto now = node_manager_->node()->get_clock()->now();
+  bool expired = rclcpp::Time(data_.marker.header.stamp).nanoseconds() != 0 && rclcpp::Duration(data_.marker.lifetime).nanoseconds() != 0 && rclcpp::Time(data_.marker.header.stamp) + rclcpp::Duration(data_.marker.lifetime) < now;
   expired |= data_.marker.action != 0; // consider deleted as expired
   if(expired)
     for(auto child: childItems())

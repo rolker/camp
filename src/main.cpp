@@ -3,11 +3,12 @@
 #include <QString>
 #include <QFileInfo>
 
-#include "ros/ros.h"
+#include "rclcpp/rclcpp.hpp"
 
 int main(int argc, char *argv[])
 {
-    ros::init(argc,argv, "CCOMAutonomousMissionPlanner", ros::init_options::AnonymousName);
+    rclcpp::init(argc, argv);
+    //ros::init(argc,argv, "CCOMAutonomousMissionPlanner", ros::init_options::AnonymousName);
     QApplication a(argc, argv);
     MainWindow w;
     w.setStyleSheet("QSplitter::handle{background: #8080A0;}");

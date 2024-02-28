@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include <QColor>
-#include "ros/ros.h"
+#include "rclcpp/rclcpp.hpp"
 #include "geographic_visualization_msgs/GeoVizItem.h"
 
 #include "geographicsitem.h"

@@ -1,26 +1,22 @@
 #ifndef CAMP_SOUND_PLAY_H
 #define CAMP_SOUND_PLAY_H
 
-#include <QWidget>
-#include <memory>
-
-namespace Ui
-{
-  class SoundPlay;
-}
+#include "ros/ros_widget.h"
+#include "ui_sound_play_widget.h"
 
 namespace sound_play
 {
   class SoundClient;
 }
 
-class SoundPlay: public QWidget
+class SoundPlay: public camp_ros::ROSWidget
 {
   Q_OBJECT
 public:
   explicit SoundPlay(QWidget *parent =0);
   ~SoundPlay();
 
+  void onNodeUpdated() override;
 
 public slots:
   void say(QString speech);
@@ -30,9 +26,9 @@ private slots:
   void on_whatToSayLineEdit_returnPressed();
 
 private:
-  Ui::SoundPlay* m_ui;
+  Ui::SoundPlay ui_;
 
-  std::shared_ptr<sound_play::SoundClient> m_soundClient;
+  std::shared_ptr<sound_play::SoundClient> sound_client_;
 
 };
 

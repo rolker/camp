@@ -1,6 +1,8 @@
 #include "markers.h"
 #include <tf2/utils.h>
 #include "marker_namespace.h"
+#include "../node_manager.h"
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 namespace camp_ros
 {
@@ -14,31 +16,31 @@ Markers::Markers(MapItem* parent, NodeManager* node_manager, QString topic, QStr
 
   if(topic_type == "visualization_msgs/MarkerArray")
   {
-    subscriber_ = ros::NodeHandle().subscribe(topic_, 10, &Markers::markerArrayCallback, this);
+    marker_array_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::MarkerArray>(topic_, 10, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
     setStatus("[visualization_msgs/MarkerArray]");
   }
   else if(topic_type == "visualization_msgs/Marker")
   {
-    subscriber_ = ros::NodeHandle().subscribe(topic_, 10, &Markers::markerCallback, this);
+    marker_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::Marker>(topic_, 10, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
     setStatus("[visualization_msgs/Marker]");
 
   }
 }
 
 
-void Markers::markerArrayCallback(const visualization_msgs::MarkerArrayConstPtr &data)
+void Markers::markerArrayCallback(const visualization_msgs::msg::MarkerArray &data)
 {
-  addMarkers(data->markers);
+  addMarkers(data.markers);
 }
 
-void Markers::markerCallback(const visualization_msgs::MarkerConstPtr &data)
+void Markers::markerCallback(const visualization_msgs::msg::Marker &data)
 {
-  std::vector<visualization_msgs::Marker> markers;
-  markers.push_back(*data);
+  std::vector<visualization_msgs::msg::Marker> markers;
+  markers.push_back(data);
   addMarkers(markers);
 }
 
-void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
+void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers)
 {
   for(auto m: markers)
   {
@@ -46,7 +48,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
     {
       MarkerData marker_data;
       marker_data.marker = m;
-      if(m.action == visualization_msgs::Marker::ADD)
+      if(m.action == visualization_msgs::msg::Marker::ADD)
       {
         marker_data.position = transformToWebMercator(m.pose, m.header);
         marker_data.rotation = tf2::getYaw(m.pose.orientation);
@@ -55,7 +57,8 @@ void Markers::addMarkers(const std::vector<visualization_msgs::Marker> &markers)
     }
     catch (tf2::TransformException &ex)
     {
-      ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " at lookup time: " << m.header.stamp << " now: " << ros::Time::now() << " source frame: " << m.header.frame_id << " what: " << ex.what());
+      rclcpp::Clock clock;
+      RCLCPP_WARN_STREAM_THROTTLE(node_manager_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " at lookup time: " << rclcpp::Time(m.header.stamp).seconds() << " now: " << node_manager_->node()->get_clock()->now().seconds() << " source frame: " << m.header.frame_id << " what: " << ex.what());
     }
   }
 }

@@ -13,12 +13,16 @@
   <build_depend>qtpositioning5-dev</build_depend>
   <build_depend>libqt5-svg-dev</build_depend>
   <build_depend>libgdal-dev</build_depend>
+  <depend>geometry_msgs</depend>
   <depend>grid_map_ros</depend>
   <depend>marine_ais_msgs</depend>
   <depend>marine_sensor_msgs</depend>
+  <depend>nav_msgs</depend>
   <depend>pluginlib</depend>
+  <depend>project11</depend>
   <depend>project11_msgs</depend>
   <depend>project11_nav_msgs</depend>
+  <depend>sound_play</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
   <depend>rqt_gui_cpp</depend>

@@ -29,7 +29,7 @@
         </sizepolicy>
        </property>
        <property name="renderHints">
-        <set>QPainter::Antialiasing|QPainter::HighQualityAntialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
+        <set>QPainter::Antialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
        </property>
        <property name="dragMode">
         <enum>QGraphicsView::ScrollHandDrag</enum>

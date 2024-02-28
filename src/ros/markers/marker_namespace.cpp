@@ -12,7 +12,7 @@ MarkerNamespace::MarkerNamespace(MapItem* parent, NodeManager* node_manager, QSt
 void MarkerNamespace::updateMarker(const MarkerData& data)
 {
   auto markers_map = markers();
-  if(data.marker.action == visualization_msgs::Marker::DELETEALL)
+  if(data.marker.action == visualization_msgs::msg::Marker::DELETEALL)
   {
     for(auto m: markers_map)
       m.second->updateMarker(data);

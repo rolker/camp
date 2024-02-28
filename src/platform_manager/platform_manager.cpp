@@ -4,52 +4,33 @@
 #include "backgroundraster.h"
 
 PlatformManager::PlatformManager(QWidget* parent):
-  QWidget(parent),
+  camp_ros::ROSWidget(parent),
   m_ui(new Ui::PlatformManager)
 {
   m_ui->setupUi(this);
-  ros::NodeHandle nh;
-  m_platform_list_sub = nh.subscribe("/project11/platforms", 5, &PlatformManager::platformListCallback, this);
   
 }
 
-void PlatformManager::loadFromParameters()
-{
-  ros::NodeHandle nh;
-  XmlRpc::XmlRpcValue platforms_dict;
-  
-  if(nh.getParam("project11/platforms", platforms_dict))
-  {
-    if(platforms_dict.getType() == XmlRpc::XmlRpcValue::TypeStruct)
-    {
-      for(auto platform:platforms_dict)
-      {
-        m_platforms[platform.first] = new Platform(this, m_background);
-        m_ui->tabWidget->addTab(m_platforms[platform.first], platform.first.c_str());
-        m_platforms[platform.first]->update(platform);
-        connect(m_platforms[platform.first], &Platform::platformPosition, this, &PlatformManager::platformPosition);
-      }
-    }
-  }
-  if(m_ui->tabWidget->count()>0)
-    on_tabWidget_currentChanged(0);
-
-}
 
 PlatformManager::~PlatformManager()
 {
   delete m_ui;
 }
 
-void PlatformManager::platformListCallback(const project11_msgs::PlatformList::ConstPtr &message)
+void PlatformManager::onNodeUpdated()
 {
-  for(auto platform: message->platforms)
+  platform_list_subscription_ = node_->create_subscription<project11_msgs::msg::PlatformList>("/project11/platforms", 5, std::bind(&PlatformManager::platformListCallback, this, std::placeholders::_1));
+}
+
+void PlatformManager::platformListCallback(const project11_msgs::msg::PlatformList &message)
+{
+  for(const auto& platform: message.platforms)
   {
-    QMetaObject::invokeMethod(this, "updatePlatform", Qt::QueuedConnection, Q_ARG(project11_msgs::Platform, platform));
+    QMetaObject::invokeMethod(this, "updatePlatform", Qt::QueuedConnection, Q_ARG(project11_msgs::msg::Platform, platform));
   }
 }
 
-void PlatformManager::updatePlatform(project11_msgs::Platform platform)
+void PlatformManager::updatePlatform(project11_msgs::msg::Platform platform)
 {
   if(m_platforms.find(platform.name) == m_platforms.end())
   {
