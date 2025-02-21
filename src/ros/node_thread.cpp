@@ -17,7 +17,7 @@ void NodeThread::start()
   executor.add_node(node_);
 
   auto buffer = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
-  transform_listener_ = std::make_unique<tf2_ros::TransformListener>(*buffer);
+  transform_listener_ = std::make_unique<tf2_ros::TransformListener>(*buffer, node_);
   
   emit started(node_, buffer);
 
