@@ -318,6 +318,10 @@ install (TARGETS camp2
     DESTINATION lib/${PROJECT_NAME})
 
 
+install (DIRECTORY launch
+    DESTINATION share/${PROJECT_NAME}
+)
+
 install (DIRECTORY workspace
     DESTINATION share/${PROJECT_NAME})
 

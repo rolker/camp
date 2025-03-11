@@ -37,12 +37,12 @@ void NavSource::trySubscribe()
           RCLCPP_INFO_STREAM(node_->get_logger(), "   type: " << topic_type);
           if(topic_type == "sensor_msgs/msg/NavSatFix")
           {
-            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, 1, std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
+            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
           else if(topic_type == "geographic_msgs/msg/GeoPoseStamped")
           {
-            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, 1, std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
+            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
         }
@@ -54,7 +54,7 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "sensor_msgs/msg/Imu")
           {
-            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, 1, std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
+            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
             pending_orientation_topic_.clear();
           }
         }
@@ -66,7 +66,12 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "geometry_msgs/msg/TwistWithCovarianceStamped")
           {
-            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, 1, std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
+            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
+            pending_velocity_topic_.clear();
+          }
+          if(topic_type == "geometry_msgs/msg/TwistStamped")
+          {
+            velocity_twist_stamped_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::velocityTwistStampedCallback, this, std::placeholders::_1));
             pending_velocity_topic_.clear();
           }
         }
@@ -216,6 +221,11 @@ void NavSource::orientationCallback(const sensor_msgs::msg::Imu& message)
 void NavSource::velocityCallback(const geometry_msgs::msg::TwistWithCovarianceStamped& message)
 {
   QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(double, sqrt(pow(message.twist.twist.linear.x,2) + pow(message.twist.twist.linear.y, 2))));
+}
+
+void NavSource::velocityTwistStampedCallback(const geometry_msgs::msg::TwistStamped& message)
+{
+  QMetaObject::invokeMethod(this,"updateSog", Qt::QueuedConnection, Q_ARG(double, sqrt(pow(message.twist.linear.x,2) + pow(message.twist.linear.y, 2))));
 }
 
 
