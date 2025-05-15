@@ -120,9 +120,9 @@ void Markers::setTopic(std::string topic, std::string type)
 {
   if(node_)
   {
-    if(type == "visualization_msgs/MarkerArray")
+    if(type == "visualization_msgs/msg/MarkerArray")
       marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(topic, 1, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
-    if(type == "visualization_msgs/Marker")
+    if(type == "visualization_msgs/msg/Marker")
       marker_subscription_ = node_->create_subscription<visualization_msgs::msg::Marker>(topic, 1, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
 
     ui_.topicLabel->setText(topic.c_str());

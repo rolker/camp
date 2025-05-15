@@ -28,7 +28,7 @@ void MarkersManager::scanForSources()
       auto name = topic.first;
       for(auto topic_type: topic.second)
       {
-        if (topic_type == "visualization_msgs/MarkerArray" || topic_type == "visualization_msgs/Marker")
+        if (topic_type == "visualization_msgs/msg/MarkerArray" || topic_type == "visualization_msgs/msg/Marker")
         {
           if(markers_.find(name) == markers_.end())
           {
