@@ -17,6 +17,7 @@
   <depend>grid_map_ros</depend>
   <depend>marine_ais_msgs</depend>
   <depend>marine_sensor_msgs</depend>
+  <depend>message_filters</depend>
   <depend>nav_msgs</depend>
   <depend>pluginlib</depend>
   <depend>project11</depend>

@@ -13,6 +13,7 @@ find_package(geometry_msgs REQUIRED)
 find_package(grid_map_ros REQUIRED)
 find_package(marine_ais_msgs REQUIRED)
 find_package(marine_sensor_msgs REQUIRED)
+find_package(message_filters REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(project11 REQUIRED)
@@ -149,6 +150,7 @@ target_include_directories(CCOMAutonomousMissionPlanner
 
 ament_target_dependencies(CCOMAutonomousMissionPlanner
     grid_map_ros
+    message_filters
     marine_ais_msgs
     nav_msgs
     project11

@@ -57,6 +57,11 @@ void NavSource::trySubscribe()
             orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
             pending_orientation_topic_.clear();
           }
+          if(topic_type == "geometry_msgs/msg/QuaternionStamped")
+          {
+            quaternion_subscription_ = node_->create_subscription<geometry_msgs::msg::QuaternionStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::quaternionCallback, this, std::placeholders::_1));
+            pending_orientation_topic_.clear();
+          }
         }
       }
 
@@ -212,6 +217,15 @@ void NavSource::geoPoseCallback(const geographic_msgs::msg::GeoPoseStamped& mess
 void NavSource::orientationCallback(const sensor_msgs::msg::Imu& message)
 {
   double yaw = tf2::getYaw(message.orientation);
+  double heading = 90-180*yaw/M_PI;
+  if(heading < 0.0)
+    heading += 360.0;
+  QMetaObject::invokeMethod(this,"updateLocation", Qt::QueuedConnection, Q_ARG(QGeoCoordinate, QGeoCoordinate()), Q_ARG(float, heading), Q_ARG(double, rclcpp::Time(message.header.stamp).seconds()));
+}
+
+void NavSource::quaternionCallback(const geometry_msgs::msg::QuaternionStamped& message)
+{
+  double yaw = tf2::getYaw(message.quaternion);
   double heading = 90-180*yaw/M_PI;
   if(heading < 0.0)
     heading += 360.0;
