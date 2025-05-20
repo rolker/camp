@@ -33,7 +33,6 @@ private:
   void markerCallback(const visualization_msgs::msg::Marker &data);
   void addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers);
 
-  QGeoCoordinate getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header);
 
   struct MarkerData
   {

@@ -14,6 +14,7 @@ Platform::Platform(QWidget* parent, QGraphicsItem *parentItem):
   m_ui->setupUi(this);
   setAcceptHoverEvents(true);
   setZValue(6.0);
+  connect(this, &Platform::pathUpdated, this, &Platform::updatePath, Qt::QueuedConnection);
 }
 
 Platform::~Platform()
@@ -74,6 +75,16 @@ QPainterPath Platform::shape() const
         }
       }
   }
+
+  if(!path_local_points_.empty())
+  {
+    QPainterPath path;
+    path.moveTo(path_local_points_.front());
+    for(auto p: path_local_points_)
+      path.lineTo(p);
+    ret.addPath(path);
+  }
+
   return ret;
 }
 
@@ -88,6 +99,9 @@ void Platform::update(const project11_msgs::msg::Platform& platform)
     platformNamespace = platform.platform_namespace;
   m_ui->helmManager->updateRobotNamespace(platformNamespace.c_str());
   m_ui->missionManager->updateRobotNamespace(platformNamespace.c_str());
+
+  path_topic_ = platformNamespace + "/received_global_path";
+  subscribeToPathTopic();
 
   m_width = platform.width;
   m_length = platform.length;
@@ -212,4 +226,36 @@ void Platform::onNodeUpdated()
     ns.second->nodeStarted(node_, transform_buffer_);
   m_ui->helmManager->setNode(node_);
   m_ui->missionManager->nodeStarted(node_, transform_buffer_);
+  subscribeToPathTopic();
+}
+
+void Platform::subscribeToPathTopic()
+{
+  if(!path_topic_.empty() && node_ && !path_subscription_)
+  {
+    path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(path_topic_, 10, std::bind(&Platform::pathCallback, this, std::placeholders::_1));
+  }
+}
+
+void Platform::pathCallback(const nav_msgs::msg::Path::SharedPtr msg)
+{
+  path_geopoints_.clear();
+  std::vector<QPointF> path_local_points;
+
+  auto bg = findParentBackgroundRaster();
+
+  for(const auto& p: msg->poses)
+  {
+    path_geopoints_.push_back(getGeoCoordinate(p.pose, p.header));
+    path_local_points.push_back(geoToPixel(path_geopoints_.back(), bg));
+  }
+  emit pathUpdated(path_local_points);
+  
+}
+
+void Platform::updatePath(std::vector<QPointF> path_local_points)
+{
+  prepareGeometryChange();
+  path_local_points_ = path_local_points;
+  GeoGraphicsItem::update();
 }

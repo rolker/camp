@@ -4,6 +4,7 @@
 #include "ros/ros_widget.h"
 #include "ship_track.h"
 #include "project11_msgs/msg/platform_list.hpp"
+#include "nav_msgs/msg/path.hpp"
 
 namespace Ui
 {
@@ -36,6 +37,7 @@ public:
 
 signals:
   void platformPosition(Platform* platform, QGeoCoordinate position);
+  void pathUpdated(std::vector<QPointF> path_local_points);
 
 
 public slots:
@@ -43,6 +45,7 @@ public slots:
   void aboutToUpdateNav();
   void updateSog(double sog);
   void updatePosition(QGeoCoordinate position);
+  void updatePath(std::vector<QPointF> path_local_points);
 
 protected:
   void hoverEnterEvent(QGraphicsSceneHoverEvent * event) override;
@@ -51,6 +54,9 @@ protected:
 private:
   void updateLabel();
   void setColor(QColor color);
+  void subscribeToPathTopic();
+  void pathCallback(const nav_msgs::msg::Path::SharedPtr msg);
+
 
   Ui::Platform* m_ui;
 
@@ -67,6 +73,12 @@ private:
   float m_reference_y = 0.0;
 
   QColor m_color = QColor(0,0,255,255);
+
+  rclcpp::Subscription<nav_msgs::msg::Path>::SharedPtr path_subscription_;
+  std::string path_topic_;
+  nav_msgs::msg::Path path_;
+  std::vector<QGeoCoordinate> path_geopoints_;
+  std::vector<QPointF> path_local_points_;
 
 };
 
