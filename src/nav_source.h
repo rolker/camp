@@ -9,6 +9,7 @@
 #include "sensor_msgs/msg/imu.hpp"
 #include "geographic_msgs/msg/geo_point_stamped.hpp"
 #include "geographic_msgs/msg/geo_pose_stamped.hpp"
+#include "geometry_msgs/msg/quaternion_stamped.hpp"
 #include "geometry_msgs/msg/twist_stamped.hpp"
 #include "geometry_msgs/msg/twist_with_covariance_stamped.hpp"
 
@@ -49,6 +50,7 @@ public slots:
 private:
   void positionCallback(const sensor_msgs::msg::NavSatFix& message);
   void orientationCallback(const sensor_msgs::msg::Imu& message);
+  void quaternionCallback(const geometry_msgs::msg::QuaternionStamped& message);
   void velocityCallback(const geometry_msgs::msg::TwistWithCovarianceStamped& message);
   void velocityTwistStampedCallback(const geometry_msgs::msg::TwistStamped& message);
   void geoPointCallback(const geographic_msgs::msg::GeoPointStamped& message);
@@ -56,6 +58,7 @@ private:
 
   rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr position_subscription_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr orientation_subscription_;
+  rclcpp::Subscription<geometry_msgs::msg::QuaternionStamped>::SharedPtr quaternion_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::TwistWithCovarianceStamped>::SharedPtr velocity_subscription_;
   rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr velocity_twist_stamped_subscription_;
   rclcpp::Subscription<geographic_msgs::msg::GeoPointStamped>::SharedPtr geo_point_subscription_;
