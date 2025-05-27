@@ -149,6 +149,7 @@ target_include_directories(CCOMAutonomousMissionPlanner
 )
 
 ament_target_dependencies(CCOMAutonomousMissionPlanner
+    geometry_msgs
     grid_map_ros
     message_filters
     marine_ais_msgs

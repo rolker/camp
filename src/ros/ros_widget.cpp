@@ -1,5 +1,6 @@
 #include "ros_widget.h"
 #include "project11/gz4d_geo.h"
+#include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 
 namespace camp_ros
 {
