@@ -100,7 +100,7 @@ void Platform::update(const project11_msgs::msg::Platform& platform)
   m_ui->helmManager->updateRobotNamespace(platformNamespace.c_str());
   m_ui->missionManager->updateRobotNamespace(platformNamespace.c_str());
 
-  path_topic_ = platformNamespace + "/received_global_path";
+  path_topic_ = "/" + platformNamespace + "/received_global_path";
   subscribeToPathTopic();
 
   m_width = platform.width;
