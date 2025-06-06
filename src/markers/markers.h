@@ -4,6 +4,7 @@
 #include "ros/ros_widget.h"
 #include "geographicsitem.h"
 #include "message_filters/subscriber.hpp"
+#include "message_filters/simple_filter.hpp"
 #include "tf2_ros/message_filter.h"
 #include "ui_markers.h"
 #include "visualization_msgs/msg/marker_array.hpp"
@@ -54,10 +55,7 @@ private:
 
   message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subsciption_;
   std::shared_ptr<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>> marker_tf2_filter_;
-  message_filters::Subscriber<visualization_msgs::msg::MarkerArray> marker_array_subscription_;
-  std::shared_ptr<tf2_ros::MessageFilter<visualization_msgs::msg::MarkerArray>> marker_array_tf2_filter_;
-  //rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr marker_subscription_;
-  //rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
+  rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 
   double pixel_size_ = 1.0;
   bool is_visible_ = false;

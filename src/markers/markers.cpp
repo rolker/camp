@@ -123,17 +123,15 @@ void Markers::setTopic(std::string topic, std::string type)
     std::chrono::duration<int> buffer_timeout(1);
     if(type == "visualization_msgs/msg/MarkerArray")
     {
-      // marker_array_subscription_.subscribe(node_, topic);
-      // marker_array_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::MarkerArray>>(marker_array_subscription_, *transform_buffer_, "earth", 50, node_, buffer_timeout);
-      // marker_array_tf2_filter_->registerCallback(&Markers::markerArrayCallback, this);
-      //marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(topic, 1, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
+      marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(*transform_buffer_, "earth", 50, node_, buffer_timeout);
+      marker_tf2_filter_->registerCallback(&Markers::markerCallback, this);
+      marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(topic, 1, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
     }
     if(type == "visualization_msgs/msg/Marker")
     {
       marker_subsciption_.subscribe(node_, topic);
       marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(marker_subsciption_, *transform_buffer_, "earth", 50, node_, buffer_timeout);
       marker_tf2_filter_->registerCallback(&Markers::markerCallback, this);
-      //marker_subscription_ = node_->create_subscription<visualization_msgs::msg::Marker>(topic, 1, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
     }
 
     ui_.topicLabel->setText(topic.c_str());
@@ -148,7 +146,11 @@ void Markers::setPixelSize(double s)
 
 void Markers::markerArrayCallback(const visualization_msgs::msg::MarkerArray &data)
 {
-  addMarkers(data.markers);
+  for(const auto &marker: data.markers)
+  {
+    auto marker_ptr = std::make_shared<visualization_msgs::msg::Marker>(marker);
+    marker_tf2_filter_->add(marker_ptr);
+  }
 }
 
 void Markers::markerCallback(const visualization_msgs::msg::Marker &data)
