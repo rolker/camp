@@ -203,9 +203,9 @@ void Grid::visibilityChanged()
   is_visible_ = ui_.displayCheckBox->isChecked();
   if(is_visible_ && node_)
   {
-    if(type_ == "nav_msgs/OccupancyGrid")
+    if(type_ == "nav_msgs/msg/OccupancyGrid")
       occupancy_grid_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(topic_, 1, std::bind(&Grid::occupancyGridCallback, this, std::placeholders::_1));
-    if(type_ == "grid_map_msgs/GridMap")
+    if(type_ == "grid_map_msgs/msg/GridMap")
       grid_map_subscription_ = node_->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 1, std::bind(&Grid::gridMapCallback, this, std::placeholders::_1));
   }
   else

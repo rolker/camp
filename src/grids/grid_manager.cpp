@@ -27,7 +27,7 @@ void GridManager::scanForSources()
     {
       for(auto topic_type: topic.second)
       {
-        if(topic_type == "nav_msgs/OccupancyGrid" || topic_type == "grid_map_msgs/GridMap")
+        if(topic_type == "nav_msgs/msg/OccupancyGrid" || topic_type == "grid_map_msgs/msg/GridMap")
         {
           auto name = topic.first;
           if (grids_.find(name) == grids_.end())
