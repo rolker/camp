@@ -57,10 +57,11 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
-    m_ais_manager = new AISManager(m_ui->rosLink);
+    m_ais_manager = new AISManager();
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
+    connect(this, &MainWindow::closing, m_ais_manager, &QWidget::close);
 
     m_grid_manager = new GridManager();
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_grid_manager, &GridManager::nodeStarted);

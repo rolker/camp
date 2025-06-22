@@ -207,10 +207,7 @@
     <property name="title">
      <string>Setti&amp;ngs</string>
     </property>
-    <addaction name="actionRadar"/>
-    <addaction name="actionRadarColor"/>
     <addaction name="actionShowTail"/>
-    <addaction name="actionRadarManager"/>
     <addaction name="actionGridManager"/>
     <addaction name="actionMarkersManager"/>
     <addaction name="actionAISManager"/>

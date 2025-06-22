@@ -21,6 +21,8 @@ public:
   explicit AISManager(QWidget *parent =0);
   ~AISManager();
 
+  void onNodeUpdated() override;
+
 signals:
   void newAisReport(AISReport *report);
 

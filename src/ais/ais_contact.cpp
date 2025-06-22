@@ -213,7 +213,7 @@ QPainterPath AISContact::shape() const
   QPainterPath ret;
   // History length should be configurable and displayTime could be set
   // somwhere else to support rewinding time
-  if(m_displayTime.seconds() != 0)
+  if(m_displayTime.nanoseconds() != 0)
   {
     auto historyStartTime = m_displayTime - rclcpp::Duration::from_seconds(300);
 
@@ -257,7 +257,7 @@ QPainterPath AISContact::shape() const
 QPainterPath AISContact::predictionShape() const
 {
   QPainterPath ret;
-  if(m_displayTime.seconds() != 0)
+  if(m_displayTime.nanoseconds() != 0)
   {
     auto state = m_states.rbegin();
     while(state != m_states.rend() && state->first > m_displayTime)
