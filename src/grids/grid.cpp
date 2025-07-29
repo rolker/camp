@@ -68,13 +68,16 @@ void Grid::occupancyGridCallback(const nav_msgs::msg::OccupancyGrid &data)
     auto row_start = row*data.info.width;
     for(int col = 0; col < data.info.width; col++)
     {
+      auto value = data.data[row_start+col];
       QColor color;
-      if( data.data[row_start+col] < 0)
+      if ( value == -1)
         color = QColor(128, 128, 128, 128);
-      else if( data.data[row_start+col] >= 100)
-        color = QColor(255, 255, 255, 255);
+      else if( value == 100)
+        color = QColor(255, 0, 255, 225);
+      else if( value == 99)
+        color = QColor(0, 255, 255, 225);
       else
-        color = QColor(0, 255, 0, data.data[row_start+col]*2.55); // 0-100 -> 0-255
+        color = QColor(255*value/100.0, 0, 255*(100-value)/100.0, value+100);
       grid_data->grid_image.setPixelColor(QPoint(col, data.info.height-1-row), color);
     }
   }

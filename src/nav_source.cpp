@@ -40,6 +40,11 @@ void NavSource::trySubscribe()
             position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
+          else if(topic_type == "geographic_msgs/msg/GeoPointStamped")
+          {
+            geo_point_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPointStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::geoPointCallback, this, std::placeholders::_1));
+            pending_position_topic_.clear();
+          }
           else if(topic_type == "geographic_msgs/msg/GeoPoseStamped")
           {
             geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
