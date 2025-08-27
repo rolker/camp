@@ -28,5 +28,6 @@ def generate_launch_description():
         ]),
         background_chart
       ],
+      emulate_tty=True
     )
   ])
