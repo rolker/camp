@@ -11,8 +11,8 @@ class MainWindow;
 
 class AISManager;
 class RadarManager;
-class SoundPlay;
-class SpeechAlerts;
+// class SoundPlay;
+// class SpeechAlerts;
 class GridManager;
 class MarkersManager;
 
@@ -78,7 +78,7 @@ private slots:
     void on_actionGridManager_triggered();
     void on_actionMarkersManager_triggered();
     void on_actionRadarManager_triggered();
-    void on_actionSay_something_triggered();
+    //void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
 
     void on_speedLineEdit_editingFinished();
@@ -93,8 +93,8 @@ private:
     //RadarManager* m_radar_manager = nullptr;
     GridManager* m_grid_manager = nullptr;
     MarkersManager* m_markers_manager = nullptr;
-    SoundPlay* m_sound_play;
-    SpeechAlerts* m_speech_alerts;
+    // SoundPlay* m_sound_play;
+    // SpeechAlerts* m_speech_alerts;
 
     void exportHypack() const;
     void exportMissionPlan() const;

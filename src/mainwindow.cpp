@@ -19,8 +19,8 @@
 
 #include "ais/ais_manager.h"
 //#include "radar/radar_manager.h"
-#include "sound_play/sound_play_widget.h"
-#include "sound_play/speech_alerts.h"
+// #include "sound_play/sound_play_widget.h"
+// #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
 #include "grids/grid_manager.h"
 #include "markers/markers_manager.h"
@@ -73,11 +73,11 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
     connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
 
-    m_sound_play = new SoundPlay();
-    connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
+    // m_sound_play = new SoundPlay();
+    // connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
 
-    m_speech_alerts = new SpeechAlerts(this);
-    connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
+    // m_speech_alerts = new SpeechAlerts(this);
+    // connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
     //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
 
     m_ui->rosLink->connectROS();
@@ -577,7 +577,7 @@ void MainWindow::on_actionMarkersManager_triggered()
     m_markers_manager->show();
 }
 
-void MainWindow::on_actionSay_something_triggered()
-{
-    m_sound_play->show();
-}
+// void MainWindow::on_actionSay_something_triggered()
+// {
+//     m_sound_play->show();
+// }
