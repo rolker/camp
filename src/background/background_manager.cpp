@@ -33,9 +33,9 @@ void BackgroundManager::createDefaultLayers()
     noaa_charts->setLayoutFromWMTS(*caps);
     caps->setUrl("https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS");
 
-    new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
+    // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
 
-    new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
+    // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
   }
 }
 

@@ -50,7 +50,7 @@ void Marker::updateMarker(const MarkerData& data)
       }
       case visualization_msgs::msg::Marker::SPHERE:
       {
-        auto sphere = new QGraphicsEllipseItem(0,0,data.marker.scale.x, data.marker.scale.y, this);
+        auto sphere = new QGraphicsEllipseItem(-data.marker.scale.x/2.0, -data.marker.scale.y/2.0, data.marker.scale.x, data.marker.scale.y, this);
         sphere->setPen(p);
         sphere->setBrush(b);
         break;

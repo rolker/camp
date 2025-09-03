@@ -12,23 +12,29 @@ MarkersManager::MarkersManager(NodeManager* parent):
   connect(parent, &NodeManager::topicsAvailable, this, &MarkersManager::updateTopics);
 }
 
-void MarkersManager::updateTopics(const QMap<QString, QString> &topics)
+void MarkersManager::updateTopics(const NodeManager::TopicMap &topics)
 {
-  for(auto topic: topics.keys())
+  for(const auto& topic: topics)
   {
-    if(topics[topic] == "visualization_msgs/MarkerArray" || topics[topic] == "visualization_msgs/Marker")
+    for(const auto& type: topic.second)
     {
-      if(!markers_[topic.toStdString()])
+      if(type == "visualization_msgs/msg/MarkerArray" || type == "visualization_msgs/msg/Marker")
+    {
+      if(!markers_[topic.first])
       {
         auto layers = topLevelLayers();
         if(layers)
         {
           auto node_manager = qgraphicsitem_cast<NodeManager*>(parentItem());
-          auto markers = new Markers(layers, node_manager, topic, topics[topic]);
-          markers_[topic.toStdString()] = true;
+          auto markers = new Markers(layers, node_manager, topic.first.c_str(), type.c_str());
+          markers_[topic.first] = true;
         }
       }
     }
+
+    }
+  }
+  {
   }
 }
 

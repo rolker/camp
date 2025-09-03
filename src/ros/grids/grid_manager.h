@@ -2,10 +2,10 @@
 #define CAMP_ROS_GRIDS_GRID_MANAGER_H
 
 #include "../../tools/layer_manager.h"
+#include "../node_manager.h"
 
 namespace camp_ros
 {
-class NodeManager;
 
 class GridManager: public tools::LayerManager
 {
@@ -14,7 +14,7 @@ public:
   GridManager(NodeManager* parent);
 
 public slots:
-  void updateTopics(const QMap<QString, QString>& topics);
+  void updateTopics(const NodeManager::TopicMap& topics);
 
 private:
   std::map <std::string, bool> grids_;

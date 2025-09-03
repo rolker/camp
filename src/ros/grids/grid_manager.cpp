@@ -1,6 +1,7 @@
 #include "grid_manager.h"
 #include "../node_manager.h"
 #include "grid_map.h"
+#include "occupancy_grid.h"
 #include "../../map/layer_list.h"
 
 #include <QDebug>
@@ -14,26 +15,42 @@ GridManager::GridManager(NodeManager* parent):
   connect(parent, &NodeManager::topicsAvailable, this, &GridManager::updateTopics);
 }
 
-void GridManager::updateTopics(const QMap<QString, QString> &topics)
+void GridManager::updateTopics(const NodeManager::TopicMap &topics)
 {
-  for(auto topic: topics.keys())
+  auto node_manager = qgraphicsitem_cast<NodeManager*>(parentItem());
+  auto node = node_manager->node();
+  if(!node)
+    return;
+  for(const auto& topic: topics)
   {
-    if(topics[topic] == "nav_msgs/OccupancyGrid")
+    if(node->count_publishers(topic.first) == 0)
+      continue;
+    for(const auto& type: topic.second)
     {
-      //qDebug() << topic << " type: " << topics[topic];
-    }
-    if(topics[topic] == "grid_map_msgs/GridMap")
-    {
-      if(!grids_[topic.toStdString()])
+      if(type == "nav_msgs/msg/OccupancyGrid")
       {
-        auto layers = topLevelLayers();
-        if(layers)
+        if(!grids_[topic.first])
         {
-          auto node_manager = qgraphicsitem_cast<NodeManager*>(parentItem());
-          auto grid = new GridMap(layers, node_manager, topic);
-          grids_[topic.toStdString()] = true;
+          auto layers = topLevelLayers();
+          if(layers)
+          {
+            auto grid = new OccupancyGrid(layers, node_manager, topic.first.c_str());
+            grids_[topic.first] = true;
+          }
         }
+      }
+      if(type == "grid_map_msgs/msg/GridMap")
+      {
+        if(!grids_[topic.first])
+        {
+          auto layers = topLevelLayers();
+          if(layers)
+          {
+            auto grid = new GridMap(layers, node_manager, topic.first.c_str());
+            grids_[topic.first] = true;
+          }
 
+        }
       }
     }
   }

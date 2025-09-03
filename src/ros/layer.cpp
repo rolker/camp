@@ -23,7 +23,10 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, cons
   geometry_msgs::msg::PoseStamped ps;
   ps.header = header;
   ps.pose = pose;
-  auto ecef = node_manager_->transformBuffer()->transform(ps, "earth", tf2::durationFromSec(1.5));
+  auto transform = node_manager_->transformBuffer()->lookupTransform("earth", ps.header.frame_id, tf2::TimePointZero);
+
+  geometry_msgs::msg::PoseStamped ecef;
+  tf2::doTransform(ps, ecef, transform);
 
   gz4d::GeoPointECEF ecef_point;
   ecef_point[0] = ecef.pose.position.x;

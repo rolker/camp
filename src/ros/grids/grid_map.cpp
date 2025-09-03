@@ -5,6 +5,7 @@
 #include "../node_manager.h"
 #include "project11/gz4d_geo.h"
 #include <tf2/utils.h>
+#include "grid_layer.h"
 
 namespace camp_ros
 {
@@ -16,36 +17,23 @@ GridMap::GridMap(MapItem* parent, NodeManager* node_manager, QString topic):
 
   connect(this, &GridMap::newLayerData, this, &GridMap::updateGridLayer);
 
-  subscription_ = node_manager->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 10, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
-  setStatus("[grid_map_msgs/GridMap]");
+  rclcpp::QoS qos(1);
+  qos.durability_best_available();
+
+  subscription_ = node_manager->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, qos, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
+  setStatus("[grid_map_msgs/msg/GridMap]");
 }
 
-void GridMap::updateGridLayer(const GridMapLayerData& data)
-{
-  QGraphicsPixmapItem* pixmap = nullptr;
-  for(auto child: childItems())
-  {
-    pixmap = qgraphicsitem_cast<QGraphicsPixmapItem*>(child);
-    if(pixmap)
-      break;
-  }
-  if(!pixmap)
-    pixmap = new QGraphicsPixmapItem(this);
-
-  QPixmap pm;
-  pm.convertFromImage(data.grid_image);
-  pixmap->setPixmap(pm);
-
-  auto map_distortion = web_mercator::metersPerUnit(data.center);
-  double scale = data.meters_per_pixel/map_distortion;
-
-  pixmap->setTransform(QTransform::fromScale(scale, -scale));
-  QPointF position(data.center.x() - scale * data.grid_image.size().width()/2.0, data.center.y() + scale * data.grid_image.size().height()/2.0);
-  pixmap->setPos(position);
-
-}
 
 void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
+{
+  if(!process_future_.isRunning())
+  {
+    process_future_ = QtConcurrent::run(this, &GridMap::processGridMap, data);
+  }
+}
+
+void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
 {
   grid_map::GridMap grid_map;
   auto node = node_manager_->node();
@@ -60,53 +48,80 @@ void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
     RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2.0, "Got GridMap message with no layers");
     return;
   }
-  std::string layer;
-  for(auto l: grid_map.getLayers())
-    if(l == "speed")
-    {
-      layer = l;
-      break;
-    }
-  if(layer.empty())
-   layer = grid_map.getLayers().front(); 
-  GridMapLayerData grid_data;
-  auto size = grid_map.getSize();
-  grid_data.grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
-  grid_data.meters_per_pixel = data.info.resolution;
+  for(const auto & layer: grid_map.getLayers())
+  {
+    GridMapLayerData grid_data;
+    grid_data.layer_name = layer;
+    auto size = grid_map.getSize();
+    grid_data.grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
+    grid_data.grid_image.fill(Qt::transparent);
+    grid_data.meters_per_pixel = data.info.resolution;
 
-  if(layer == "speed")
+    double min_value = std::numeric_limits<double>::max();
+    double max_value = std::numeric_limits<double>::lowest();
+
     for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
     {
       double value = grid_map.at(layer, *iterator);
-      if(value < 0.0)
-        grid_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(255, 0, 0, 255));
-      else
+      min_value = std::min(min_value, value);
+      max_value = std::max(max_value, value);
+    }
+
+    grid_data.range = std::make_pair(min_value, max_value);
+
+    // If all values are identical, slightly adjust the range
+    // This avoids division by zero and treats the value as a flag
+    // Indicating a valid cell (This assumes invalid cells hold nan)
+    if(min_value == max_value)
+    {
+      min_value -= 1.0;
+    }
+
+    if(min_value < max_value)
+    {
+      for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
       {
-        uint8_t ival = std::min(1.0,std::max(0.0, value/3.0))*255;
-        grid_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(255-ival, 255, 0, 255));
+        double value = grid_map.at(layer, *iterator);
+        if(!std::isnan(value))
+        {
+          value = (value - min_value) / (max_value - min_value);
+          uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
+          grid_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(ival, ival, ival, 255));
+        }
       }
     }
-  else
-    for(grid_map::GridMapIterator iterator(grid_map); !iterator.isPastEnd(); ++iterator)
+
+    try
     {
-      double value = grid_map.at(layer, *iterator);
-      uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
-      grid_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(0, ival, 0, ival));
+      grid_data.center = transformToWebMercator(data.info.pose, data.header);
+      emit newLayerData(grid_data);
     }
-
-  try
-  {
-    grid_data.center = transformToWebMercator(data.info.pose, data.header);
-    emit newLayerData(grid_data);
+    catch (tf2::TransformException &ex)
+    {
+      RCLCPP_WARN_STREAM(node->get_logger(), ex.what());
+    }
   }
-  catch (tf2::TransformException &ex)
-  {
-    rclcpp::Clock clock;
-    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2000, "Unable to find transform to earth for grid_map " << topic_ << " at lookup time: "<< rclcpp::Time(data.header.stamp).seconds() << " now: " << node->get_clock()->now().seconds() << " source frame: " << data.header.frame_id << " what: " << ex.what());
-  }
-
-  
 }
 
+GridLayer * GridMap::gridLayer(const QString & layer_name) const
+{
+  for(auto item: childItems())
+  {
+    GridLayer * layer = qgraphicsitem_cast<GridLayer*>(item);
+    if(layer && layer->objectName() == layer_name)
+      return layer;
+  }
+  return nullptr;
+}
+
+void GridMap::updateGridLayer(const GridMapLayerData& data)
+{
+  GridLayer * layer = gridLayer(QString::fromStdString(data.layer_name));
+  if(!layer)
+  {
+    layer = new GridLayer(this, node_manager_, data.layer_name.c_str());
+  }
+  layer->updateGridLayer(data);
+}
 
 } // namepsace camp_ros

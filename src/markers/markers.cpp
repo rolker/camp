@@ -129,8 +129,8 @@ void Markers::setTopic(std::string topic, std::string type)
     }
     if(type == "visualization_msgs/msg/Marker")
     {
-      marker_subsciption_.subscribe(node_, topic);
-      marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(marker_subsciption_, *transform_buffer_, "earth", 50, node_, buffer_timeout);
+      marker_subscription_.subscribe(node_, topic);
+      marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(marker_subscription_, *transform_buffer_, "earth", 50, node_, buffer_timeout);
       marker_tf2_filter_->registerCallback(&Markers::markerCallback, this);
     }
 

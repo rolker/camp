@@ -265,8 +265,10 @@ set( CAMP_SOURCES
     src/map_view/map_view.cpp
     src/map_view/web_mercator.cpp
     src/raster/raster_layer.cpp
+    src/ros/grids/grid_layer.cpp
     src/ros/grids/grid_manager.cpp
     src/ros/grids/grid_map.cpp
+    src/ros/grids/occupancy_grid.cpp
     src/ros/layer.cpp
     src/ros/markers/marker.cpp
     src/ros/markers/marker_namespace.cpp

@@ -51,9 +51,11 @@ void NodeManager::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::Sha
   transform_buffer_ = buffer;
 
   GridManager* grid_manager = new GridManager(this);
-  //connect(this, &NodeManager::topicsAvailable, grid_manager, &GridManager::updateTopics);
-
   MarkersManager* markers_manager = new MarkersManager(this);
+
+  scan_timer_ = new QTimer(this);
+  connect(scan_timer_, &QTimer::timeout, this, &NodeManager::scanForSources);
+  scan_timer_->start(1000);
 }
 
 void NodeManager::nodeShuttingDown()
@@ -70,6 +72,15 @@ tf2_ros::Buffer::SharedPtr NodeManager::transformBuffer()
 rclcpp::Node::SharedPtr NodeManager::node()
 {
   return node_;
+}
+
+void NodeManager::scanForSources()
+{
+  if(node_)
+  {
+    auto topics = node_->get_topic_names_and_types();
+    emit topicsAvailable(topics);
+  }
 }
 
 } // namespace camp_ros

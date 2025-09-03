@@ -53,7 +53,7 @@ private:
   std::vector<std::shared_ptr<MarkerData> > new_markers_;
   std::mutex new_markers_mutex_;
 
-  message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subsciption_;
+  message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subscription_;
   std::shared_ptr<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>> marker_tf2_filter_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 

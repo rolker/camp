@@ -38,6 +38,9 @@ public:
   tf2_ros::Buffer::SharedPtr transformBuffer();
   rclcpp::Node::SharedPtr node();
 
+
+  using TopicMap = std::map<std::string, std::vector<std::string>>;
+
 public slots:
   void nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer);
   void nodeShuttingDown();
@@ -47,9 +50,13 @@ signals:
 
   // Signal emitted with the current list of available topics.
   // Topics are listed in a map of topic name as keys and type as values.
-  void topicsAvailable(QMap<QString, QString> topics);
+  //void topicsAvailable(QMap<QString, QString> topics);
+  void topicsAvailable(TopicMap topics);
 
   void shuttingDownRos();
+
+  private slots:
+  void scanForSources();
 
 private:
   QThread node_thread_;
@@ -57,6 +64,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   tf2_ros::Buffer::SharedPtr transform_buffer_;
 
+  QTimer* scan_timer_;
 };
 
 } // namespace camp_ros

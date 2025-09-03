@@ -14,15 +14,19 @@ Markers::Markers(MapItem* parent, NodeManager* node_manager, QString topic, QStr
 
   connect(this, &Markers::newMarkerData, this, &Markers::updateMarker);
 
-  if(topic_type == "visualization_msgs/MarkerArray")
+
+  rclcpp::QoS qos(10);
+  qos.durability_volatile();
+
+  if(topic_type == "visualization_msgs/msg/MarkerArray")
   {
-    marker_array_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::MarkerArray>(topic_, 10, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
-    setStatus("[visualization_msgs/MarkerArray]");
+    marker_array_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::MarkerArray>(topic_, qos, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
+    setStatus("[visualization_msgs/msg/MarkerArray]");
   }
-  else if(topic_type == "visualization_msgs/Marker")
+  else if(topic_type == "visualization_msgs/msg/Marker")
   {
-    marker_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::Marker>(topic_, 10, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
-    setStatus("[visualization_msgs/Marker]");
+    marker_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::Marker>(topic_, qos, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
+    setStatus("[visualization_msgs/msg/Marker]");
 
   }
 }
@@ -58,7 +62,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &mar
     catch (tf2::TransformException &ex)
     {
       rclcpp::Clock clock;
-      RCLCPP_WARN_STREAM_THROTTLE(node_manager_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " at lookup time: " << rclcpp::Time(m.header.stamp).seconds() << " now: " << node_manager_->node()->get_clock()->now().seconds() << " source frame: " << m.header.frame_id << " what: " << ex.what());
+      RCLCPP_WARN_STREAM_THROTTLE(node_manager_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " what: " << ex.what());
     }
   }
 }

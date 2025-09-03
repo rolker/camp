@@ -34,6 +34,7 @@ enum ItemType
   RosLayerType,
   MarkerNamespaceType,
   MarkerType,
+  GridLayerType,
 
   // other QGraphicsItem descendants
   TileType,
