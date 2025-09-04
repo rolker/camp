@@ -3,7 +3,7 @@
 
 #include <QGraphicsObject>
 #include "../map_view/map_view.h"
-#include "../geographicsitem.h"
+//#include "../geographicsitem.h"
 #include "../map_view/web_mercator.h"
 #include <QNetworkReply>
 #include "tile_address.h"

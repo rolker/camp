@@ -58,94 +58,93 @@ if (DOXYGEN_FOUND)
 endif()
 
 set(SOURCES
-    src/autonomousvehicleproject.cpp
-    src/avoid_area.cpp
-    src/backgrounddetails.cpp
-    src/backgroundraster.cpp
-    src/detailsview.cpp
-    src/geographicsitem.cpp
-    src/georeferenced.cpp
-    src/grids/grid.cpp
-    src/grids/grid_manager.cpp
-    src/main.cpp
-    src/mainwindow.cpp
-    src/markers/markers.cpp
-    src/markers/markers_manager.cpp
-    src/missionitem.cpp
-    src/mission_manager/mission_manager.cpp
-    src/orbit.cpp
-    src/orbitdetails.cpp
-    src/platform_manager/platform.cpp
-    src/platform_manager/platform_manager.cpp
-    src/projectview.cpp
-    src/ros/node_thread.cpp
-    src/ros/ros_object.cpp
-    src/ros/ros_widget.cpp
-    src/searchpattern.cpp
-    # src/sound_play/sound_play_widget.cpp
-    # src/sound_play/speech_alerts.cpp
-    src/surveypattern.cpp
-    src/surveypatterndetails.cpp
-    src/trackline.cpp
-    src/tracklinedetails.cpp
-    src/waypoint.cpp
-    src/waypointdetails.cpp
+    src/camp/autonomousvehicleproject.cpp
+    src/camp/avoid_area.cpp
+    src/camp/backgrounddetails.cpp
+    src/camp/backgroundraster.cpp
+    src/camp/detailsview.cpp
+    src/camp/geographicsitem.cpp
+    src/camp/georeferenced.cpp
+    src/camp/grids/grid.cpp
+    src/camp/grids/grid_manager.cpp
+    src/camp/main.cpp
+    src/camp/mainwindow.cpp
+    src/camp/markers/markers.cpp
+    src/camp/markers/markers_manager.cpp
+    src/camp/missionitem.cpp
+    src/camp/mission_manager/mission_manager.cpp
+    src/camp/orbit.cpp
+    src/camp/orbitdetails.cpp
+    src/camp/platform_manager/platform.cpp
+    src/camp/platform_manager/platform_manager.cpp
+    src/camp/projectview.cpp
+    src/camp/ros/node_thread.cpp
+    src/camp/ros/ros_object.cpp
+    src/camp/ros/ros_widget.cpp
+    src/camp/searchpattern.cpp
+    # src/camp/sound_play/sound_play_widget.cpp
+    # src/camp/sound_play/speech_alerts.cpp
+    src/camp/surveypattern.cpp
+    src/camp/surveypatterndetails.cpp
+    src/camp/trackline.cpp
+    src/camp/tracklinedetails.cpp
+    src/camp/waypoint.cpp
+    src/camp/waypointdetails.cpp
 
-    src/vector/vectordataset.cpp
-    src/group.cpp
-    src/vector/point.cpp
-    src/vector/linestring.cpp
-    src/vector/polygon.cpp
-    src/geographicsmissionitem.cpp
-    src/surveyarea.cpp
-    src/measuringtool.cpp
-    src/behavior.cpp
-    src/behaviordetails.cpp
-    src/astar.cpp
-    src/ship_track.cpp
-    src/ais/ais_contact.cpp
-    src/ais/ais_manager.cpp
-    src/helm_manager/helm_manager.cpp
-    src/roslink.cpp
-    src/nav_source.cpp
+    src/camp/vector/vectordataset.cpp
+    src/camp/group.cpp
+    src/camp/vector/point.cpp
+    src/camp/vector/linestring.cpp
+    src/camp/vector/polygon.cpp
+    src/camp/geographicsmissionitem.cpp
+    src/camp/surveyarea.cpp
+    src/camp/measuringtool.cpp
+    src/camp/behavior.cpp
+    src/camp/behaviordetails.cpp
+    src/camp/astar.cpp
+    src/camp/ship_track.cpp
+    src/camp/ais/ais_contact.cpp
+    src/camp/ais/ais_manager.cpp
+    src/camp/helm_manager/helm_manager.cpp
+    src/camp/roslink.cpp
+    src/camp/nav_source.cpp
 )
 
 # src/radar/radar_display.cpp
 # src/radar/radar_manager.cpp
 
 set ( RESOURCES
-    src/main.qrc
+    src/camp/main.qrc
 )
 
 set (UIS
-    src/behaviordetails.ui
-    src/main/camp_main_window.ui
-    src/sonar_manager/sonar_manager.ui
-    # src/sound_play/sound_play_widget.ui
-    src/platform_manager/platform.ui
-    src/platform_manager/platform_manager.ui
-    src/orbitdetails.ui
-    src/mainwindow.ui
-    src/markers/markers.ui
-    src/markers/markers_manager.ui
-    src/waypointdetails.ui
-    src/grids/grid.ui
-    src/grids/grid_manager.ui
-    src/helm_manager/helm_manager_config.ui
-    src/helm_manager/helm_manager.ui
-    src/backgrounddetails.ui
-    src/roslink.ui
-    src/surveypatterndetails.ui
-    src/mission_manager/mission_manager.ui
-    src/ais/ais_manager.ui
-    src/tracklinedetails.ui
+    src/camp/behaviordetails.ui
+    src/camp/sonar_manager/sonar_manager.ui
+    # src/camp/sound_play/sound_play_widget.ui
+    src/camp/platform_manager/platform.ui
+    src/camp/platform_manager/platform_manager.ui
+    src/camp/orbitdetails.ui
+    src/camp/mainwindow.ui
+    src/camp/markers/markers.ui
+    src/camp/markers/markers_manager.ui
+    src/camp/waypointdetails.ui
+    src/camp/grids/grid.ui
+    src/camp/grids/grid_manager.ui
+    src/camp/helm_manager/helm_manager_config.ui
+    src/camp/helm_manager/helm_manager.ui
+    src/camp/backgrounddetails.ui
+    src/camp/roslink.ui
+    src/camp/surveypatterndetails.ui
+    src/camp/mission_manager/mission_manager.ui
+    src/camp/ais/ais_manager.ui
+    src/camp/tracklinedetails.ui
 )
 
 add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 
 target_include_directories(CCOMAutonomousMissionPlanner
     PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
 )
 
 ament_target_dependencies(CCOMAutonomousMissionPlanner
@@ -186,8 +185,8 @@ install (TARGETS CCOMAutonomousMissionPlanner
 
 
 set(rqt_helm_manager_SRCS
-  src/helm_manager/rqt_helm_manager.cpp
-  src/helm_manager/helm_manager.cpp
+  src/camp/helm_manager/rqt_helm_manager.cpp
+  src/camp/helm_manager/helm_manager.cpp
 )
 
 # set(rqt_helm_manager_HDRS
@@ -206,8 +205,8 @@ add_library(rqt_helm_manager SHARED
 
 target_include_directories(rqt_helm_manager
     PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/helm_manager
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp/helm_manager
 )
 
 ament_target_dependencies(rqt_helm_manager
@@ -242,56 +241,53 @@ pluginlib_export_plugin_description_file(rqt_gui "plugins.xml")
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 
-# test map view
+# camp2
 
-set( CAMP_SOURCES
-    src/background/background_manager.cpp
-    src/main/cached_file_loader.cpp
-    src/main/camp_main_window.cpp
-    src/main/main.cpp
-    src/map/map.cpp
-    src/map/map_item.cpp
-    src/map/map_item_mime_data.cpp
-    src/map/layer_list.cpp
-    src/map/layer.cpp
-    src/map_tiles/cached_tile_loader.cpp
-    src/map_tiles/map_tiles.cpp
-    src/map_tiles/tile.cpp
-    src/map_tiles/tile_address.cpp
-    src/map_tiles/tile_layout.cpp
-    src/map_tiles/osm.cpp
-    src/map_tree_view/map_item_delegate.cpp
-    src/map_tree_view/map_tree_view.cpp
-    src/map_view/map_view.cpp
-    src/map_view/web_mercator.cpp
-    src/raster/raster_layer.cpp
-    src/ros/grids/grid_layer.cpp
-    src/ros/grids/grid_manager.cpp
-    src/ros/grids/grid_map.cpp
-    src/ros/grids/occupancy_grid.cpp
-    src/ros/layer.cpp
-    src/ros/markers/marker.cpp
-    src/ros/markers/marker_namespace.cpp
-    src/ros/markers/markers.cpp
-    src/ros/markers/markers_manager.cpp
-    src/ros/node_manager.cpp
-    src/ros/node_thread.cpp
-    src/tools/layer_manager.cpp
-    src/tools/map_tool.cpp
-    src/tools/tools_manager.cpp
-    src/wmts/capabilities.cpp
-    src/wmts/layer.cpp
-    src/wmts/tile_matrix_set.cpp
+set( CAMP2_SOURCES
+    src/camp2/background/background_manager.cpp
+    src/camp2/main/cached_file_loader.cpp
+    src/camp2/main/camp_main_window.cpp
+    src/camp2/main/main.cpp
+    src/camp2/map/map.cpp
+    src/camp2/map/map_item.cpp
+    src/camp2/map/map_item_mime_data.cpp
+    src/camp2/map/layer_list.cpp
+    src/camp2/map/layer.cpp
+    src/camp2/map_tiles/cached_tile_loader.cpp
+    src/camp2/map_tiles/map_tiles.cpp
+    src/camp2/map_tiles/tile.cpp
+    src/camp2/map_tiles/tile_address.cpp
+    src/camp2/map_tiles/tile_layout.cpp
+    src/camp2/map_tiles/osm.cpp
+    src/camp2/map_tree_view/map_item_delegate.cpp
+    src/camp2/map_tree_view/map_tree_view.cpp
+    src/camp2/map_view/map_view.cpp
+    src/camp2/map_view/web_mercator.cpp
+    src/camp2/raster/raster_layer.cpp
+    src/camp2/ros/grids/grid_layer.cpp
+    src/camp2/ros/grids/grid_manager.cpp
+    src/camp2/ros/grids/grid_map.cpp
+    src/camp2/ros/grids/occupancy_grid.cpp
+    src/camp2/ros/layer.cpp
+    src/camp2/ros/markers/marker.cpp
+    src/camp2/ros/markers/marker_namespace.cpp
+    src/camp2/ros/markers/markers.cpp
+    src/camp2/ros/markers/markers_manager.cpp
+    src/camp2/ros/node_manager.cpp
+    src/camp2/ros/node_thread.cpp
+    src/camp2/tools/layer_manager.cpp
+    src/camp2/tools/map_tool.cpp
+    src/camp2/tools/tools_manager.cpp
+    src/camp2/wmts/capabilities.cpp
+    src/camp2/wmts/layer.cpp
+    src/camp2/wmts/tile_matrix_set.cpp
 )
 
-
-
-
-add_executable(camp2 ${CAMP_SOURCES})
+add_executable(camp2 ${CAMP2_SOURCES})
 
 target_include_directories(camp2
     PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
 )
 
 ament_target_dependencies(camp2
