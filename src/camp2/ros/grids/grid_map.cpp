@@ -7,7 +7,11 @@
 #include <tf2/utils.h>
 #include "grid_layer.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 GridMap::GridMap(MapItem* parent, NodeManager* node_manager, QString topic):
@@ -124,4 +128,6 @@ void GridMap::updateGridLayer(const GridMapLayerData& data)
   layer->updateGridLayer(data);
 }
 
-} // namepsace camp_ros
+}  // namespace grids
+}  // namespace ros
+}  // namespace camp

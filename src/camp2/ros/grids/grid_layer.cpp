@@ -2,7 +2,11 @@
 #include "grid_map.h"
 #include "../../map_view/web_mercator.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 GridLayer::GridLayer(MapItem* parent, NodeManager* node_manager, QString layer_name):
@@ -39,5 +43,6 @@ void GridLayer::updateGridLayer(const GridMapLayerData& data)
   setStatus(status.str().c_str());
 }
 
-
-}
+} // namespace grids
+} // namespace ros
+} // namespace camp

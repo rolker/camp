@@ -6,7 +6,11 @@
 
 #include <QDebug>
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 GridManager::GridManager(NodeManager* parent):
@@ -56,4 +60,6 @@ void GridManager::updateTopics(const NodeManager::TopicMap &topics)
   }
 }
 
-} // namespace camp_ros
+} // namespace grids
+} // namespace ros
+} // namespace camp

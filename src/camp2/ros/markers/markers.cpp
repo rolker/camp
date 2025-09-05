@@ -4,7 +4,11 @@
 #include "../node_manager.h"
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 Markers::Markers(MapItem* parent, NodeManager* node_manager, QString topic, QString topic_type):
@@ -86,4 +90,6 @@ void Markers::updateMarker(const MarkerData& data)
   marker_namespace->updateMarker(data);
 }
 
-} // namespace camp_ros
+}  // namespace markers
+}  // namespace ros
+}  // namespace camp

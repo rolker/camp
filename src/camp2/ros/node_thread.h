@@ -5,7 +5,10 @@
 
 #include "ros_common.h"
 
-namespace camp_ros
+namespace camp
+{
+
+namespace ros
 {
 
 class NodeManager;
@@ -30,6 +33,8 @@ private:
   std::shared_ptr<tf2_ros::Buffer> buffer_;
 };
 
-} // namespace camp_ros
+} // namespace ros
+
+} // namespace camp
 
 #endif

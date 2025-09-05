@@ -8,6 +8,9 @@
 class QGraphicsScene;
 class QMenu;
 
+namespace camp
+{
+
 namespace map
 {
   class MapItem;
@@ -58,7 +61,7 @@ public:
 
   LayerList* topLevelLayers() const;
 signals:
-  void viewportChanged(MapView::Viewport viewport);
+  void viewportChanged(camp::MapView::Viewport viewport);
 
 private:
   QModelIndex index(const MapItem* map_item) const;
@@ -67,5 +70,6 @@ private:
 };
 
 } // namespace map
+} // namespace camp
 
 #endif

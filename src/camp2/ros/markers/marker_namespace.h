@@ -3,7 +3,11 @@
 
 #include "../layer.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 class Marker;
@@ -33,6 +37,8 @@ private:
 
 };
 
-}
+} // namespace markers
+} // namespace ros
+} // namespace camp
 
 #endif

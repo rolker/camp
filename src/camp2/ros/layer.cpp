@@ -7,7 +7,10 @@
 #include <QApplication>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-namespace camp_ros
+namespace camp
+{
+
+namespace ros
 {
 
 Layer::Layer(MapItem* parent, NodeManager* node_manager, const QString& object_name):
@@ -46,5 +49,6 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, cons
   // return {};
 }
 
+} // namespace ros
+} // namespace camp
 
-} // namespace camp_ros

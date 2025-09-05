@@ -21,7 +21,7 @@
        <enum>Qt::Horizontal</enum>
       </property>
       <widget class="map_tree_view::MapTreeView" name="mapTreeView"/>
-      <widget class="MapView" name="mapView">
+      <widget class="camp::MapView" name="mapView">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
          <horstretch>1</horstretch>
@@ -71,7 +71,7 @@
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>MapView</class>
+   <class>camp::MapView</class>
    <extends>QGraphicsView</extends>
    <header>map_view/map_view.h</header>
   </customwidget>
@@ -82,7 +82,7 @@
   </customwidget>
  </customwidgets>
  <resources>
-  <include location="../main.qrc"/>
+  <include location="main.qrc"/>
  </resources>
  <connections/>
 </ui>

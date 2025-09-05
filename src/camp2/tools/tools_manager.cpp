@@ -1,5 +1,7 @@
 #include "tools_manager.h"
 
+namespace camp
+{
 namespace tools
 {
 
@@ -9,3 +11,4 @@ ToolsManager::ToolsManager(map::MapItem* item):
 }
 
 } // namespace tools
+} // namespace camp

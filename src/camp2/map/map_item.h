@@ -4,7 +4,8 @@
 #include "item_types.h"
 
 class QMimeData;
-
+namespace camp
+{
 namespace map
 {
 
@@ -84,5 +85,6 @@ private:
 };
 
 } // namespace map
+} // namespace camp
 
 #endif

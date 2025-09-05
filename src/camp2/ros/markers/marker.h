@@ -4,7 +4,11 @@
 #include "../layer.h"
 #include "markers.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 class Marker: public Layer
@@ -37,6 +41,8 @@ private:
 
 };
 
-}
+}  // namespace markers
+}  // namespace ros
+}  // namespace camp
 
 #endif

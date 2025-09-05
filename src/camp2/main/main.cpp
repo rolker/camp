@@ -4,7 +4,7 @@
 
 int main(int argc, char *argv[])
 {
-  camp_ros::NodeManager::init(argc, argv);
+  camp::ros::NodeManager::init(argc, argv);
 
   QApplication a(argc, argv);
 

@@ -5,7 +5,11 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include <QtConcurrent>
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 struct OccupancyGridData
@@ -37,9 +41,11 @@ private:
   QFuture<void> process_future_;
 };
 
-}  // namespace camp_ros
+}  // namespace grids
+}  // namespace ros
+}  // namespace camp
 
 Q_DECLARE_METATYPE(nav_msgs::msg::OccupancyGrid)
-Q_DECLARE_METATYPE(camp_ros::OccupancyGridData)
+Q_DECLARE_METATYPE(camp::ros::grids::OccupancyGridData)
 
 #endif  // CAMP_ROS_GRIDS_OCCUPANCY_GRID_H

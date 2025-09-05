@@ -9,7 +9,10 @@
 
 #include <QDebug>
 
-const double MapView::min_zoom_scale_;
+namespace camp
+{
+
+  const double MapView::min_zoom_scale_;
 const double MapView::max_zoom_scale_;
 
 MapView::MapView(QWidget *parent) : QGraphicsView(parent)
@@ -100,3 +103,5 @@ void MapView::writeSettings()
   settings.endGroup();
 
 }
+
+}  // namespace camp

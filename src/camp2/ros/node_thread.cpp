@@ -2,7 +2,10 @@
 #include "tf2_ros/create_timer_ros.h"
 #include "node_manager.h"
 
-namespace camp_ros
+namespace camp
+{
+
+namespace ros
 {
 
 NodeThread::NodeThread()
@@ -36,6 +39,6 @@ void NodeThread::start()
   emit shuttingDown();
 }
 
+} // namespace ros
 
-
-} // namespace camp_ros
+} // namespace camp

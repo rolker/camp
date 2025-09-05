@@ -1,6 +1,8 @@
 #include "ros_object.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
 {
 
 ROSObject::ROSObject(QObject *parent)
@@ -9,6 +11,5 @@ ROSObject::ROSObject(QObject *parent)
 
 }
 
-
-
-} // namespace camp_ros
+} // namespace ros
+} // namespace camp

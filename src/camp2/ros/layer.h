@@ -5,7 +5,10 @@
 #include "rclcpp/rclcpp.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
-namespace camp_ros
+namespace camp
+{
+
+namespace ros
 {
 
 class NodeManager;
@@ -33,6 +36,7 @@ protected:
 
 };
 
-} // namespace map
+} // namespace ros
+} // namespace camp
 
 #endif

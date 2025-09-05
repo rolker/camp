@@ -4,6 +4,8 @@
 #include "../map/layer.h"
 #include <QFutureWatcher>
 
+namespace camp
+{
 namespace raster
 {
 
@@ -54,6 +56,7 @@ private slots:
 
 };
 
-} // namepsace raster
+} // namespace raster
+} // namespace camp
 
 #endif

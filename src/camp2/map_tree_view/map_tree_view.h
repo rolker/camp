@@ -3,6 +3,9 @@
 
 #include <QTreeView>
 
+namespace camp
+{
+
 namespace map
 {
   class Map;
@@ -24,5 +27,6 @@ private:
 };
 
 } // namespace map_tree_view
+} // namespace camp
 
 #endif

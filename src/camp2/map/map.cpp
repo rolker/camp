@@ -10,6 +10,8 @@
 
 #include <QDebug>
 
+namespace camp
+{
 namespace map
 {
 
@@ -26,7 +28,7 @@ Map::Map(QObject *parent):
   auto background_manager = new background::BackgroundManager(tools_manager);
   background_manager->createDefaultLayers();
 
-  auto ros_manager = new camp_ros::NodeManager(tools_manager);
+  auto ros_manager = new camp::ros::NodeManager(tools_manager);
 }
 
 
@@ -324,3 +326,4 @@ LayerList* Map::topLevelLayers() const
 }
 
 } // namespace map
+} // namespace camp

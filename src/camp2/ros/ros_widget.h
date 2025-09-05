@@ -6,7 +6,9 @@
 #include "ros_client.h"
 #include "geometry_msgs/msg/pose_stamped.hpp"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
 {
 
 class ROSWidget: public ROSClient<QWidget>
@@ -20,6 +22,7 @@ protected:
 
 };
 
+}
 }
 
 #endif

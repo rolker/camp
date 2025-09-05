@@ -1,7 +1,11 @@
 #include "marker_namespace.h"
 #include "marker.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 MarkerNamespace::MarkerNamespace(MapItem* parent, NodeManager* node_manager, QString marker_namespace):
@@ -39,4 +43,6 @@ std::map<uint32_t, Marker*> MarkerNamespace::markers() const
   return markers;
 }
 
-} // namespace camp_ros
+} // namespace markers
+} // namespace ros
+} // namespace camp

@@ -8,6 +8,9 @@
 
 #include <QDebug>
 
+namespace camp
+{
+
 namespace raster
 {
 
@@ -162,3 +165,5 @@ void RasterLayer::imageReady()
 }
 
 } // namespace raster
+
+} // namespace camp

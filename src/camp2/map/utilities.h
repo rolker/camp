@@ -4,8 +4,11 @@
 class QPainter;
 class QRectF;
 
+namespace camp
+{
 namespace map
 {
 } // namespace map
+} // namespace camp
 
 #endif

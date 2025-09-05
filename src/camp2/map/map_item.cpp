@@ -5,6 +5,8 @@
 
 #include <cassert>
 
+namespace camp
+{
 namespace map
 {
 
@@ -148,4 +150,5 @@ void MapItem::writeSettings()
 }
 
 
-} // namepsace map
+} // namespace map
+} // namespace camp

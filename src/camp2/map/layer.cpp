@@ -3,6 +3,8 @@
 #include <QGraphicsScene>
 #include <QSettings>
 
+namespace camp
+{
 namespace map
 {
 
@@ -54,3 +56,4 @@ void Layer::writeSettings()
 
 
 } // namespace map
+} // namespace camp

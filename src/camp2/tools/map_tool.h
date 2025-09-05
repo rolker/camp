@@ -3,6 +3,8 @@
 
 #include "../map/map_item.h"
 
+namespace camp
+{
 namespace tools
 {
 
@@ -14,5 +16,6 @@ public:
 };
 
 } // namespace tools
+} // namespace camp
 
 #endif

@@ -3,6 +3,9 @@
 
 #include "../tools/layer_manager.h"
 
+namespace camp
+{
+
 namespace tools
 {
   class ToolsManager;
@@ -39,6 +42,7 @@ private slots:
   void openRaster();
 };
 
-} // namespace base_layers
+} // namespace background
+} // namespace camp
 
 #endif

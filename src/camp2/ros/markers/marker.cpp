@@ -5,7 +5,11 @@
 #include "../../map_view/web_mercator.h"
 #include "../node_manager.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 Marker::Marker(MapItem* parent, NodeManager* node_manager, uint32_t id):
@@ -115,4 +119,6 @@ void Marker::checkExpired()
     }
 }
 
-} // namespace camp_ros
+}  // namespace markers
+}  // namespace ros
+}  // namespace camp

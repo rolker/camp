@@ -2,6 +2,8 @@
 #include "map_item_mime_data.h"
 #include "layer.h"
 
+namespace camp
+{
 namespace map
 {
 
@@ -30,4 +32,6 @@ bool LayerList::canDropMimeData(const QMimeData* data, Qt::DropAction action, in
   return false;
 }
 
-} // namepsace map
+} // namespace map
+} // namespace camp
+

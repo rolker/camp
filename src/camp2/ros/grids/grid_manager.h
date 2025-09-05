@@ -4,9 +4,14 @@
 #include "../../tools/layer_manager.h"
 #include "../node_manager.h"
 
-namespace camp_ros
+namespace camp
 {
 
+namespace ros
+{
+
+namespace grids
+{
 class GridManager: public tools::LayerManager
 {
   Q_OBJECT
@@ -21,6 +26,7 @@ private:
 
 };
 
-} // namespace camp_ros
-
+} // namespace grids
+} // namespace ros
+} // namespace camp
 #endif

@@ -33,6 +33,7 @@ local
 workspace/*
 *.kdev4
 doc/html
+docs_build
 
 # VSCode
 c_cpp_properties.json

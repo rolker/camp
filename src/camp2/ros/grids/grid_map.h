@@ -5,7 +5,11 @@
 #include "grid_map_msgs/msg/grid_map.hpp"
 #include <QtConcurrent>
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 struct GridMapLayerData
@@ -48,8 +52,10 @@ private:
 
 };
 
-} // namespace camp_ros
+} // namespace grids
+} // namespace ros
+} // namespace camp
 
-Q_DECLARE_METATYPE(camp_ros::GridMapLayerData);
+Q_DECLARE_METATYPE(camp::ros::grids::GridMapLayerData);
 
 #endif

@@ -4,7 +4,9 @@
 #include <QObject>
 #include "ros_client.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
 {
 
 class ROSObject: public ROSClient<QObject>
@@ -15,6 +17,7 @@ public:
 
 };
 
-}
+}  // namespace ros
+}  // namespace camp
 
 #endif

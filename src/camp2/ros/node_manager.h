@@ -5,12 +5,16 @@
 #include <QThread>
 #include "ros_common.h"
 
+
+namespace camp
+{
+
 namespace tools
 {
   class ToolsManager;
 }
 
-namespace camp_ros
+namespace ros
 {
 
 // Monitors status of the ROS core and starts/stop the ROS Node.
@@ -39,6 +43,7 @@ public:
   rclcpp::Node::SharedPtr node();
 
 
+  /// @brief Type definition for a map of topic names to a list of types.
   using TopicMap = std::map<std::string, std::vector<std::string>>;
 
 public slots:
@@ -67,6 +72,8 @@ private:
   QTimer* scan_timer_;
 };
 
-} // namespace camp_ros
+}  // namespace ros
+
+} // namespace camp
 
 #endif

@@ -3,6 +3,9 @@
 
 #include "map_tool.h"
 
+namespace camp
+{
+
 namespace map
 {
   class LayerList;
@@ -31,5 +34,6 @@ protected:
 };
 
 } // namespace tools
+} // namespace camp
 
 #endif

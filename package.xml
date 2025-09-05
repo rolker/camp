@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>camp</name>
-  <version>0.0.0</version>
+  <version>1.0.0</version>
   <description>The CCOM Autonomous Mission Planner package</description>
 
   <maintainer email="roland@ccom.unh.edu">Roland Arsenault</maintainer>

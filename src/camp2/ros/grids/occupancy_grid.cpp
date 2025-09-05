@@ -2,7 +2,11 @@
 #include "../../map_view/web_mercator.h"
 #include "../node_manager.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace grids
 {
 
 OccupancyGrid::OccupancyGrid(MapItem* parent, NodeManager* node_manager, QString topic)
@@ -97,4 +101,6 @@ void OccupancyGrid::updateOccupancyGrid(const OccupancyGridData &data)
   pixmap->setPos(position);
 }
 
-}  // namespace camp_ros
+}  // namespace grids
+}  // namespace ros
+}  // namespace camp

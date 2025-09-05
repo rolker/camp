@@ -6,13 +6,14 @@
 
 class QLabel;
 
-namespace map
-{
-  class Map;
-}
 
 namespace camp
 {
+
+  namespace map
+{
+  class Map;
+}
 
 class CachedFileLoader;
 

@@ -4,6 +4,8 @@
 #include <QContextMenuEvent>
 #include <QMenu>
 
+namespace camp
+{
 namespace map_tree_view
 {
 
@@ -34,3 +36,4 @@ void MapTreeView::contextMenuEvent(QContextMenuEvent* event)
 }
 
 } // namespace map_tree_view
+} // namespace camp

@@ -4,9 +4,14 @@
 #include "../../tools/layer_manager.h"
 #include "../node_manager.h"
 
-namespace camp_ros
+namespace camp
 {
-class MarkersManager: public tools::LayerManager
+namespace ros
+{
+namespace markers
+{
+
+  class MarkersManager: public tools::LayerManager
 {
   Q_OBJECT
 public:
@@ -20,6 +25,8 @@ private:
 
 };
 
-} // namespace camp_ros
+} // namespace markers
+} // namespace ros
+} // namespace camp
 
 #endif

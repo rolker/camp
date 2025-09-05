@@ -3,8 +3,13 @@
 
 #include "../layer.h"
 
-namespace camp_ros
+namespace camp
 {
+namespace ros
+{
+namespace grids
+{
+
 class GridMapLayerData;
 
 class GridLayer : public Layer
@@ -23,6 +28,8 @@ public slots:
 
 };
 
-} // namespace camp_ros
+} // namespace grids
+} // namespace ros
+} // namespace camp
 
 #endif // CAMP_ROS_GRIDS_GRID_LAYER_H

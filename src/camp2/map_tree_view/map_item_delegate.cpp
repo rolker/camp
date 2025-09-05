@@ -2,6 +2,9 @@
 #include <QDoubleSpinBox>
 #include "../map/map_item.h"
 
+namespace camp
+{
+
 namespace map_tree_view
 {
 
@@ -47,3 +50,5 @@ void MapItemDelegate::updateEditorGeometry(QWidget *editor, const QStyleOptionVi
 }
 
 } // namespace map_tree_view
+
+} // namespace camp

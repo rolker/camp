@@ -11,6 +11,8 @@
 #include <QFileDialog>
 #include "../wmts/capabilities.h"
 
+namespace camp
+{
 namespace background
 {
 
@@ -65,4 +67,5 @@ void BackgroundManager::openRaster()
 
 }
 
-} // namespace base_layers
+} // namespace background
+} // namespace camp

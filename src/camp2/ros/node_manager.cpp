@@ -8,7 +8,10 @@
 
 #include <QDebug>
 
-namespace camp_ros
+namespace camp
+{
+
+namespace ros
 {
 
 void NodeManager::init(int &argc, char ** argv)
@@ -50,8 +53,8 @@ void NodeManager::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::Sha
   node_ = node;
   transform_buffer_ = buffer;
 
-  GridManager* grid_manager = new GridManager(this);
-  MarkersManager* markers_manager = new MarkersManager(this);
+  grids::GridManager* grid_manager = new grids::GridManager(this);
+  markers::MarkersManager* markers_manager = new markers::MarkersManager(this);
 
   scan_timer_ = new QTimer(this);
   connect(scan_timer_, &QTimer::timeout, this, &NodeManager::scanForSources);
@@ -83,4 +86,6 @@ void NodeManager::scanForSources()
   }
 }
 
-} // namespace camp_ros
+} // namespace ros
+
+} // namespace camp

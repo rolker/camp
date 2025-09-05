@@ -3,6 +3,8 @@
 #include "../map/map.h"
 #include <QGraphicsScene>
 
+namespace camp
+{
 namespace tools
 {
 
@@ -17,4 +19,6 @@ map::LayerList* LayerManager::topLevelLayers()
   return parentMap()->topLevelLayers();
 }
 
-} // namespace map
+} // namespace tools
+} // namespace camp
+

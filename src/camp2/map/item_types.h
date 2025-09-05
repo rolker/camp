@@ -3,6 +3,8 @@
 
 #include <QGraphicsItem>
 
+namespace camp
+{
 namespace map
 {
 
@@ -41,5 +43,6 @@ enum ItemType
 };
 
 } // namespace map
+} // namespace camp
 
 #endif

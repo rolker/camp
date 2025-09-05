@@ -3,6 +3,8 @@
 
 #include <QMimeData>
 
+namespace camp
+{
 namespace map
 {
 
@@ -26,5 +28,6 @@ private:
 };
 
 } // namespace map
+} // namespace camp
 
 #endif

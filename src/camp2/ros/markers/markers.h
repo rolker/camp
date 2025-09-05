@@ -5,7 +5,11 @@
 #include <visualization_msgs/msg/marker_array.hpp>
 #include <QGeoCoordinate>
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 struct MarkerData
@@ -48,8 +52,10 @@ private:
 
 };
 
-} // namespace camp_ros
+}  // namespace markers
+}  // namespace ros
+} // namespace camp
 
-Q_DECLARE_METATYPE(camp_ros::MarkerData);
+Q_DECLARE_METATYPE(camp::ros::markers::MarkerData);
 
 #endif

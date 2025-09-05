@@ -4,16 +4,21 @@
 #include <QGraphicsView>
 #include <QGeoCoordinate>
 
+
+
+namespace camp
+{
+  
 namespace map
 {
   class Map;
 }
 
-// Widget for displaying a QGraphicsScene in a web mercator view.
-// Signals are sent to report the mouse positions in WGS84 coordinates
-// and to notify when the viewport changes.
-// Zoom is supported by scrolling the mouse including fine zoom when
-// the ctrl key is pressed.
+/// Widget for displaying a QGraphicsScene in a web mercator view.
+/// Signals are sent to report the mouse positions in WGS84 coordinates
+/// and to notify when the viewport changes.
+/// Zoom is supported by scrolling the mouse including fine zoom when
+/// the ctrl key is pressed.
 class MapView: public QGraphicsView
 {
   Q_OBJECT
@@ -22,16 +27,16 @@ public:
 
   void setMap(map::Map * map);
 
-  // Information about the viewable portion of the scene.
+  /// Information about the viewable portion of the scene.
   struct Viewport
   {
-    // Bounds of the viewport in web mercator map units
+    /// Bounds of the viewport in web mercator map units
     QRectF map_extents;
 
-    // Size of a map unit in diplay pixels
+    /// Size of a map unit in diplay pixels
     double pixels_per_map_unit;
 
-    // Approximate size in meters of a map unit
+    /// Approximate size in meters of a map unit
     double meters_per_map_unit;
   };
 
@@ -55,9 +60,11 @@ private:
 
   // Zooming in more than about 50 causes some overview tiles not in the view to suddenly
   // get paint calls, probably due to overflow in QTransform calculations. These paint
-  // calls tigger tiles to load and potentially download their image, which could easily
+  // calls trigger tiles to load and potentially download their image, which could easily
   // go beyond a tile server's usage limits.
   static constexpr double max_zoom_scale_ = 50; // 2 cm/pixel
 };
+
+}  // namespace camp
 
 #endif

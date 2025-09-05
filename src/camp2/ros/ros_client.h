@@ -3,7 +3,9 @@
 
 #include "ros_common.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
 {
 
 template<typename T>
@@ -34,6 +36,7 @@ protected:
 
 };
 
-}
+} // namespace ros
+} // namespace camp
 
 #endif

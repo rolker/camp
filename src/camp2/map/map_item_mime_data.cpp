@@ -1,6 +1,8 @@
 #include "map_item_mime_data.h"
 #include "map_item.h"
 
+namespace camp
+{
 namespace map
 {
 
@@ -48,3 +50,4 @@ bool MapItemMimeData::hasMapItem() const
 }
 
 } // namespace map
+} // namespace camp

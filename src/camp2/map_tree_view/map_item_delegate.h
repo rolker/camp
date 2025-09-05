@@ -3,6 +3,9 @@
 
 #include <QStyledItemDelegate>
 
+namespace camp
+{
+
 namespace map_tree_view
 {
 
@@ -18,5 +21,7 @@ public:
 };
 
 } // namespace map_tree_view
+
+} // namespace camp
 
 #endif

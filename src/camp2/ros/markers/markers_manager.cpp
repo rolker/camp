@@ -3,7 +3,11 @@
 #include "../../map/layer_list.h"
 #include "markers.h"
 
-namespace camp_ros
+namespace camp
+{
+namespace ros
+{
+namespace markers
 {
 
 MarkersManager::MarkersManager(NodeManager* parent):
@@ -38,5 +42,6 @@ void MarkersManager::updateTopics(const NodeManager::TopicMap &topics)
   }
 }
 
-
-} // namespace camp_ros
+} // namespace markers
+} // namespace ros
+} // namespace camp

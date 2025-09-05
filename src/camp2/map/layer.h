@@ -3,6 +3,8 @@
 
 #include "map_item.h"
 
+namespace camp
+{
 namespace map
 {
 
@@ -28,5 +30,6 @@ protected:
 };
 
 } // namespace map
+} // namespace camp
 
 #endif
