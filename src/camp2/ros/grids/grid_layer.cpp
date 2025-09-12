@@ -9,8 +9,8 @@ namespace ros
 namespace grids
 {
 
-GridLayer::GridLayer(MapItem* parent, NodeManager* node_manager, QString layer_name):
-  Layer(parent, node_manager, layer_name)
+GridLayer::GridLayer(MapItem* parent, Node* node, QString layer_name):
+  Layer(parent, node, layer_name)
 {
 }
 

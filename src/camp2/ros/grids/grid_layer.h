@@ -17,7 +17,7 @@ class GridLayer : public Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  GridLayer(MapItem* parent, NodeManager* node_manager, QString layer_name);
+  GridLayer(MapItem* parent, Node* node, QString layer_name);
 
   enum { Type =  map::GridLayerType };
 

@@ -17,11 +17,7 @@ MapItem::MapItem(MapItem* parent_item, const QString& object_name)
   assert(parent_item!=nullptr);
   setObjectName(object_name);
 
-  Map * parent_map = parent_item->parentMap();
-  if(parent_map)
-    parent_map->setMapItemParent(this, parent_item);
-  else
-    setParentItem(parent_item);
+  setParentMapItem(parent_item);
 
   connect(QApplication::instance(), &QCoreApplication::aboutToQuit, this, &MapItem::applicationQuitting);
 
@@ -43,6 +39,23 @@ void MapItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
 {
 }
 
+void MapItem::setParentMapItem(MapItem* parent_item)
+{
+  Map * existing_parent_map = parentMap();
+  Map * new_parent_map = nullptr;
+  if(parent_item)
+  {
+    new_parent_map = parent_item->parentMap();
+  }
+
+  if(existing_parent_map && existing_parent_map != new_parent_map)
+    existing_parent_map->setMapItemParent(this, nullptr);
+
+  if(new_parent_map && existing_parent_map != new_parent_map)
+    new_parent_map->setMapItemParent(this, parent_item);
+  else
+    QGraphicsItem::setParentItem(parent_item);
+}
 
 MapItem* MapItem::parentMapItem() const
 {
@@ -50,23 +63,30 @@ MapItem* MapItem::parentMapItem() const
 }
 
 
-QList<MapItem*> MapItem::childMapItems() const
+QList<MapItem*> MapItem::childMapItems(bool recursive) const
 {
   QList<MapItem*> map_items;
   for(auto item: childItems())
   {
     auto map_item = dynamic_cast<MapItem*>(item);
     if(map_item)
+    {
       map_items.append(map_item);
+      if(recursive)
+      {
+        auto child_map_items = map_item->childMapItems(true);
+        map_items.append(child_map_items);
+      }
+    }
   }
   return map_items;
 }
 
 
-QList<const MapItem*> MapItem::childConstMapItems() const
+QList<const MapItem*> MapItem::childConstMapItems(bool recursive) const
 {
   QList<const MapItem*> map_items;
-  for(auto item: this->childMapItems())
+  for(auto item: this->childMapItems(recursive))
     map_items.append(item);
   return map_items;
 }

@@ -1,6 +1,6 @@
 #include "layer.h"
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include "node_manager.h"
+#include "node.h"
 #include "project11/gz4d_geo.h"
 #include <tf2/utils.h>
 #include "../map_view/web_mercator.h"
@@ -13,11 +13,10 @@ namespace camp
 namespace ros
 {
 
-Layer::Layer(MapItem* parent, NodeManager* node_manager, const QString& object_name):
-  map::Layer(parent, object_name), node_manager_(node_manager)
+Layer::Layer(MapItem* parent, Node* node, const QString& object_name):
+  map::Layer(parent, object_name), node_(node)
 {
-  //connect(QApplication::instance(), &QCoreApplication::aboutToQuit, this, &Layer::unsubscribe);
-  //connect(node_manager, &NodeManager::shuttingDownRos, this, &Layer::unsubscribe);
+
 }
 
 
@@ -26,7 +25,7 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, cons
   geometry_msgs::msg::PoseStamped ps;
   ps.header = header;
   ps.pose = pose;
-  auto transform = node_manager_->transformBuffer()->lookupTransform("earth", ps.header.frame_id, tf2::TimePointZero);
+  auto transform = node_->transformBuffer()->lookupTransform("earth", ps.header.frame_id, tf2::TimePointZero);
 
   geometry_msgs::msg::PoseStamped ecef;
   tf2::doTransform(ps, ecef, transform);

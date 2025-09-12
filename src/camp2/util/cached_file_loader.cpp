@@ -1,5 +1,6 @@
 #include "cached_file_loader.h"
 
+#include <QApplication>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -8,10 +9,11 @@
 
 #include <QDebug>
 
+
 namespace camp
 {
 
-CachedFileLoader* CachedFileLoader::instance = nullptr;
+CachedFileLoader* CachedFileLoader::instance_ = nullptr;
 
 CachedFileLoader::CachedFileLoader(QObject* parent):
   QObject(parent)
@@ -21,20 +23,21 @@ CachedFileLoader::CachedFileLoader(QObject* parent):
   setCachePath(QDir::home().filePath(".CCOMAutonomousMissionPlanner/"));
 }
 
-CachedFileLoader* CachedFileLoader::get()
+CachedFileLoader::~CachedFileLoader()
 {
-  return instance;
+  instance_ = nullptr;
 }
 
-void CachedFileLoader::construct()
+CachedFileLoader* CachedFileLoader::instance()
 {
-  instance = new CachedFileLoader();
+  if(!instance_)
+    instance_ = new CachedFileLoader(QApplication::instance());
+  return instance_;
 }
 
-void CachedFileLoader::destruct()
+QDir CachedFileLoader::cachePath() const
 {
-  delete instance;
-  instance = nullptr;
+  return QDir(cache_path_);
 }
 
 void CachedFileLoader::setCachePath(QString cache_path)

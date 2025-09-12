@@ -3,7 +3,7 @@
 #include <QPainter>
 #include <QGraphicsScene>
 #include "../../map_view/web_mercator.h"
-#include "../node_manager.h"
+#include "../node.h"
 
 namespace camp
 {
@@ -12,8 +12,8 @@ namespace ros
 namespace markers
 {
 
-Marker::Marker(MapItem* parent, NodeManager* node_manager, uint32_t id):
-  Layer(parent, node_manager, QString::number(id)), id_(id)
+Marker::Marker(MapItem* parent, Node* node, uint32_t id):
+  Layer(parent, node, QString::number(id)), id_(id)
 {
   QTimer* timer = new QTimer(this);
   connect(timer, &QTimer::timeout, this, &Marker::checkExpired);
@@ -94,7 +94,7 @@ void Marker::updateMarker(const MarkerData& data)
         break;
       }
       default:
-        RCLCPP_WARN_STREAM(node_manager_->node()->get_logger(), "marker type not handled: " << data_.marker.type);
+        RCLCPP_WARN_STREAM(node_->node()->get_logger(), "marker type not handled: " << data_.marker.type);
     }
   }
   data_ = data;
@@ -107,7 +107,7 @@ uint32_t Marker::id() const
 
 void Marker::checkExpired()
 {
-  auto now = node_manager_->node()->get_clock()->now();
+  auto now = node_->node()->get_clock()->now();
   bool expired = rclcpp::Time(data_.marker.header.stamp).nanoseconds() != 0 && rclcpp::Duration(data_.marker.lifetime).nanoseconds() != 0 && rclcpp::Time(data_.marker.header.stamp) + rclcpp::Duration(data_.marker.lifetime) < now;
   expired |= data_.marker.action != 0; // consider deleted as expired
   if(expired)

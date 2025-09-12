@@ -1,6 +1,6 @@
 #include "occupancy_grid.h"
 #include "../../map_view/web_mercator.h"
-#include "../node_manager.h"
+#include "../node.h"
 
 namespace camp
 {
@@ -9,8 +9,8 @@ namespace ros
 namespace grids
 {
 
-OccupancyGrid::OccupancyGrid(MapItem* parent, NodeManager* node_manager, QString topic)
-  : Layer(parent, node_manager, topic)
+OccupancyGrid::OccupancyGrid(MapItem* parent, Node* node, QString topic)
+  : Layer(parent, node, topic)
 {
   qRegisterMetaType<OccupancyGridData>("OccupancyGridData");
   qRegisterMetaType<nav_msgs::msg::OccupancyGrid>("nav_msgs::msg::OccupancyGrid");
@@ -21,7 +21,7 @@ OccupancyGrid::OccupancyGrid(MapItem* parent, NodeManager* node_manager, QString
   qos.durability_best_available();
 
   // Initialize the subscription to the occupancy grid topic
-  subscription_ = node_manager->node()->create_subscription<nav_msgs::msg::OccupancyGrid>(
+  subscription_ = node->node()->create_subscription<nav_msgs::msg::OccupancyGrid>(
       topic.toStdString(), qos,
       std::bind(&OccupancyGrid::occupancyGridCallback, this, std::placeholders::_1));
 
@@ -48,7 +48,7 @@ void OccupancyGrid::processOccupancyGrid(const nav_msgs::msg::OccupancyGrid &gri
   }
   catch(const std::exception& e)
   {
-    RCLCPP_WARN_STREAM(node_manager_->node()->get_logger(), "Failed to transform occupancy grid origin: " << e.what());
+    RCLCPP_WARN_STREAM(node_->node()->get_logger(), "Failed to transform occupancy grid origin: " << e.what());
     return;
   }
   

@@ -8,7 +8,7 @@ namespace camp
 namespace map
 {
 
-// Layer used by map to contain top level layers.
+/// MapItem used by Map to contain top level layers.
 class LayerList: public MapItem
 {
 public:

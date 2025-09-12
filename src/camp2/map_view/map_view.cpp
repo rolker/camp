@@ -7,8 +7,6 @@
 #include "../map/map.h"
 #include <QSettings>
 
-#include <QDebug>
-
 namespace camp
 {
 

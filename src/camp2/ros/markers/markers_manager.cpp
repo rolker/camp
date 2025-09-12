@@ -1,7 +1,8 @@
 #include "markers_manager.h"
-#include "../node_manager.h"
+#include "../node.h"
 #include "../../map/layer_list.h"
 #include "markers.h"
+#include "../names_manager.h"
 
 namespace camp
 {
@@ -10,35 +11,39 @@ namespace ros
 namespace markers
 {
 
-MarkersManager::MarkersManager(NodeManager* parent):
+MarkersManager::MarkersManager(MapTool* parent):
   tools::LayerManager(parent, "Markers Manager")
 {
-  connect(parent, &NodeManager::topicsAvailable, this, &MarkersManager::updateTopics);
+  auto topics_manager = new TopicsManager(this, "Topics");
+  topics_manager->setTypeFilter({"visualization_msgs/msg/MarkerArray", "visualization_msgs/msg/Marker"});
+  connect(topics_manager, &TopicsManager::namesUpdated, this, &MarkersManager::updateTopics);
 }
 
-void MarkersManager::updateTopics(const NodeManager::TopicMap &topics)
+void MarkersManager::updateTopics()
 {
-  for(const auto& topic: topics)
+  auto topic_manager = firstChildOfType<TopicsManager>();
+  if(topic_manager)
   {
-    for(const auto& type: topic.second)
+    auto topics = topic_manager->namesAndTypes();
+    for(const auto& topic: topics)
     {
-      if(type == "visualization_msgs/msg/MarkerArray" || type == "visualization_msgs/msg/Marker")
-    {
-      if(!markers_[topic.first])
+      for(const auto& type: topic.second)
       {
-        auto layers = topLevelLayers();
-        if(layers)
+      if(type == "visualization_msgs/msg/MarkerArray" || type == "visualization_msgs/msg/Marker")
         {
-          auto node_manager = qgraphicsitem_cast<NodeManager*>(parentItem());
-          auto markers = new Markers(layers, node_manager, topic.first.c_str(), type.c_str());
-          markers_[topic.first] = true;
+          if(!markers_[topic.first])
+          {
+            auto layers = topLevelLayers();
+            if(layers)
+            {
+              auto node = parentOfType<Node>();
+              auto markers = new Markers(layers, node, topic.first.c_str(), type.c_str());
+              markers_[topic.first] = true;
+            }
+          }
         }
       }
     }
-
-    }
-  }
-  {
   }
 }
 

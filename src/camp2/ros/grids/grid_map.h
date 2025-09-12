@@ -29,7 +29,7 @@ class GridMap: public Layer
   Q_INTERFACES(QGraphicsItem)
 
 public:
-  GridMap(MapItem* parent, NodeManager* node_manager, QString topic);
+  GridMap(MapItem* parent, Node* node, QString topic);
 
   
 signals:

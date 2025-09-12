@@ -1,10 +1,13 @@
-#include "node_manager.h"
+#include "node.h"
 #include <rclcpp/rclcpp.hpp>
 #include <QTimer>
 #include "node_thread.h"
 #include "../tools/tools_manager.h"
 #include "grids/grid_manager.h"
 #include "markers/markers_manager.h"
+#include "names_manager.h"
+#include "graph_thread.h"
+
 
 #include <QDebug>
 
@@ -14,14 +17,14 @@ namespace camp
 namespace ros
 {
 
-void NodeManager::init(int &argc, char ** argv)
+void Node::init(int &argc, char ** argv)
 {
   rclcpp::init(argc, argv);
   qRegisterMetaType<rclcpp::Node::SharedPtr>();
   qRegisterMetaType<tf2_ros::Buffer::SharedPtr>();
 }
 
-NodeManager::NodeManager(tools::ToolsManager* tools_manager):
+Node::Node(tools::ToolsManager* tools_manager):
   tools::LayerManager(tools_manager, "ROS")
 {
   // static init method should be called before QApplication is created so ros::init
@@ -31,16 +34,15 @@ NodeManager::NodeManager(tools::ToolsManager* tools_manager):
   NodeThread* node = new NodeThread();
   node->moveToThread(&node_thread_);
   connect(&node_thread_, &QThread::finished, node, &QObject::deleteLater);
-  connect(this, &NodeManager::startNode, node, &NodeThread::start);
-  connect(node, &NodeThread::started, this, &NodeManager::nodeStarted);
-  connect(node, &NodeThread::shuttingDown, this, &NodeManager::nodeShuttingDown);
-
+  connect(this, &Node::startNode, node, &NodeThread::start);
+  connect(node, &NodeThread::started, this, &Node::nodeStarted);
+  connect(node, &NodeThread::shuttingDown, this, &Node::nodeShuttingDown);
 
   node_thread_.start();
   emit startNode();
 }
 
-NodeManager::~NodeManager()
+Node::~Node()
 {
   emit shuttingDownRos();
   rclcpp::shutdown();
@@ -48,42 +50,40 @@ NodeManager::~NodeManager()
   node_thread_.wait();
 }
 
-void NodeManager::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
+void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
 {
   node_ = node;
   transform_buffer_ = buffer;
+  graph_thread_ = new GraphThread(this);
 
-  grids::GridManager* grid_manager = new grids::GridManager(this);
-  markers::MarkersManager* markers_manager = new markers::MarkersManager(this);
+  new grids::GridManager(this);
+  new markers::MarkersManager(this);
 
-  scan_timer_ = new QTimer(this);
-  connect(scan_timer_, &QTimer::timeout, this, &NodeManager::scanForSources);
-  scan_timer_->start(1000);
+  //new NodesManager(this);
+  //new ServicesManager(this);
+  new TopicsManager(this);
+
+  graph_thread_->start();
 }
 
-void NodeManager::nodeShuttingDown()
+void Node::nodeShuttingDown()
 {
   qDebug() << "ROS node shutting down";
 }
 
-
-tf2_ros::Buffer::SharedPtr NodeManager::transformBuffer()
+tf2_ros::Buffer::SharedPtr Node::transformBuffer()
 {
   return transform_buffer_;
 }
 
-rclcpp::Node::SharedPtr NodeManager::node()
+rclcpp::Node::SharedPtr Node::node()
 {
   return node_;
 }
 
-void NodeManager::scanForSources()
+GraphThread* Node::graphThread() const
 {
-  if(node_)
-  {
-    auto topics = node_->get_topic_names_and_types();
-    emit topicsAvailable(topics);
-  }
+  return graph_thread_;
 }
 
 } // namespace ros

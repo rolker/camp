@@ -3,7 +3,7 @@
 #include "../tools/tools_manager.h"
 #include "layer_list.h"
 #include "../background/background_manager.h"
-#include "../ros/node_manager.h"
+#include "../ros/node.h"
 #include "map_item_mime_data.h"
 #include <QMenu>
 #include "layer.h"
@@ -28,7 +28,7 @@ Map::Map(QObject *parent):
   auto background_manager = new background::BackgroundManager(tools_manager);
   background_manager->createDefaultLayers();
 
-  auto ros_manager = new camp::ros::NodeManager(tools_manager);
+  new camp::ros::Node(tools_manager);
 }
 
 
@@ -83,7 +83,7 @@ QVariant Map::data(const QModelIndex & index, int role) const
         }
         break;
     }
-  //qDebug() << "Map::data " << index << " role: " << role << " map item: " << map_item << " data: " << data;
+
   return data;
 }
 
@@ -139,10 +139,7 @@ int Map::columnCount(const QModelIndex & parent) const
 
 QModelIndex Map::index(int row, int column, const QModelIndex& parent) const
 {
-  //qDebug() << "index: " << row << ", " << column << " of parent: " << parent.row() << ", " << parent.column() << " ptr: " << parent.internalPointer();
-
   MapItem* parent_map_item = reinterpret_cast<MapItem*>(parent.internalPointer());
-  //qDebug() << "  parent: " << parent_map_item;
   if(!parent_map_item)
     parent_map_item =top_level_items_;
 
@@ -150,7 +147,6 @@ QModelIndex Map::index(int row, int column, const QModelIndex& parent) const
   {
     if(row >= 0 && column == 0)
     {
-      //qDebug() << "  parent: " << parent_map_item << " type: " << parent_map_item->type();
       auto map_items = parent_map_item->childMapItems();
       if(row < map_items.size())
       {
@@ -158,7 +154,6 @@ QModelIndex Map::index(int row, int column, const QModelIndex& parent) const
         // want to show items which are drawn last at the top of the list.
         // For example, a ship track should be drawn over a background map so will be later in the list than the background map.
         int list_row = map_items.size()-1-row;
-        //qDebug() << "  return: " << dynamic_cast<MapItem*>( map_items[list_row]) << " type: " << map_items[list_row]->type();
         return createIndex(row, column, map_items[list_row]);
       }
     }
@@ -168,18 +163,21 @@ QModelIndex Map::index(int row, int column, const QModelIndex& parent) const
 
 QModelIndex Map::index(const MapItem* map_item) const
 {
-  //qDebug() << "Map::index " << map_item;
   if(map_item != nullptr && map_item != top_level_items_)
   {
-    auto parent_item = dynamic_cast<MapItem*>(map_item->parentItem());
-    //qDebug() << "  parent: " << parent_item;
+    auto parent_item = map_item->parentMapItem();
     if(parent_item)
     {
+      auto parent_index = index(parent_item);
+      if(!parent_index.isValid() && parent_item != top_level_items_)
+      {
+        // parent not in model
+        return QModelIndex();
+      }
       auto siblings = parent_item->childConstMapItems();
       // reverse list index, see index(int, int, const QModelIndex&) for details
       int list_row = siblings.size()-1-siblings.indexOf(map_item);
       auto ret = index(list_row, 0, index(parent_item));
-      //qDebug() << "Map::index " << map_item << " ret: " << ret;
       assert(map_item == ret.internalPointer());
       return ret;
     }
@@ -190,21 +188,17 @@ QModelIndex Map::index(const MapItem* map_item) const
 
 QModelIndex Map::parent(const QModelIndex & child) const
 {
-  //qDebug() << "parent of child: " << child.row() << ", " << child.column() << " ptr: " << child.internalPointer();
   MapItem* child_item = reinterpret_cast<MapItem*>(child.internalPointer());
   if(child_item)
   {
-    //qDebug() << "  child: " << child_item << " type: " << child_item->type();
     MapItem* parent_item = child_item->parentMapItem();
     assert(((void*)(parent_item) != this));
     if(parent_item)
     {
-      //qDebug() << "  parent: " << parent_item << " type: " << parent_item->type();
       auto grandparent_item = parent_item->parentMapItem();
       assert(((void*)(grandparent_item) != this));
       if(grandparent_item)
       {
-        //qDebug() << "  grandparent: " << grandparent_item << " type: " << grandparent_item->type();
         // Reverse row index number. See Map::index for details.
         auto parent_siblings = grandparent_item->childMapItems();
         int parent_row = parent_siblings.size()-1-parent_siblings.indexOf(parent_item);
@@ -260,29 +254,10 @@ bool Map::dropMimeData(const QMimeData * data, Qt::DropAction action, int row, i
       auto map_item_data = qobject_cast<const MapItemMimeData*>(data);
       if(map_item_data)
       {
-        auto layer = map_item_data->mapItem();
-        if(layer)
+        auto map_item = map_item_data->mapItem();
+        if(map_item)
         {
-          auto oldIndex = index(layer);
-
-          // if we are moving down in the same list, account for our old spot.
-          if(layer->parentMapItem() == parent_item && oldIndex.row() < row)
-            row -= 1;
-
-          emit layoutAboutToBeChanged();
-          layer->setParentItem(nullptr);
-          layer->setParentItem(parent_item);
-          if(row > 0)
-          {
-            auto siblings = parent_item->childMapItems();
-            auto stack_before_target = siblings.rbegin();
-            for(int i = 0; i < row && stack_before_target+1 != siblings.rend(); i++)
-              ++stack_before_target;
-            if(layer != *stack_before_target)
-              layer->stackBefore(*stack_before_target);
-          }
-          changePersistentIndex(oldIndex, index(layer));
-          emit layoutChanged();
+          setMapItemParent(map_item, parent_item, row);
           return true;
         }
       }
@@ -297,14 +272,50 @@ void Map::updateDisplay(const MapItem* map_item, const QVector<int> &roles)
 }
 
 
-void Map::setMapItemParent(MapItem* child_item, MapItem* parent_item)
+void Map::setMapItemParent(MapItem* child_item, MapItem* parent_item, int row)
 {
-  // \todo, check for existing parent and properly remove
+  if(!child_item)
+    return;
 
-  auto parent_index = index(parent_item);
-  beginInsertRows(parent_index, 0, 0);
-  child_item->setParentItem(parent_item);
-  endInsertRows()  ;
+  // Check if already in the model
+  auto existing_index = index(child_item);
+  if(existing_index.isValid())
+  {
+    auto old_parent_item = child_item->parentMapItem();
+    if(old_parent_item == parent_item)
+    {
+      if(existing_index.row() == row)
+        return; // no change
+      // if we are moving down in the same list, account for our old spot.
+      if(existing_index.row() < row)
+        row -= 1;
+    }
+
+    beginRemoveRows(existing_index.parent(), existing_index.row(), existing_index.row());
+    child_item->setParentItem(nullptr);
+    endRemoveRows();
+  }
+ 
+  if(parent_item)
+  {
+    auto parent_index = index(parent_item);
+    beginInsertRows(parent_index, row, row);
+    child_item->setParentItem(parent_item);
+    if(row > 0)
+    {
+      auto siblings = parent_item->childMapItems();
+      auto stack_before_target = siblings.rbegin();
+      for(int i = 0; i < row && stack_before_target+1 != siblings.rend(); i++)
+        ++stack_before_target;
+      if(child_item != *stack_before_target)
+        child_item->stackBefore(*stack_before_target);
+    }
+    endInsertRows();
+  }
+  else
+  {
+    child_item->setParentItem(nullptr);
+  }
 }
 
 void Map::contextMenuFor(QMenu* menu, const QModelIndex& index)
@@ -324,6 +335,7 @@ LayerList* Map::topLevelLayers() const
   }
   return nullptr;
 }
+
 
 } // namespace map
 } // namespace camp

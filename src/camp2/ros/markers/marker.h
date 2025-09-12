@@ -16,7 +16,7 @@ class Marker: public Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  Marker(MapItem* parent, NodeManager* node_manager, uint32_t id);
+  Marker(MapItem* parent, Node* node, uint32_t id);
 
   enum { Type =  map::MarkerType };
 

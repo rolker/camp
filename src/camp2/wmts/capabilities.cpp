@@ -1,7 +1,7 @@
 #include "capabilities.h"
 
 #include "layer.h"
-#include "main/cached_file_loader.h"
+#include "util/cached_file_loader.h"
 #include <QDomDocument>
 #include <QRegularExpression>
 
@@ -23,7 +23,7 @@ void Capabilities::setUrl(QString url)
 {
   CachedFileClient* client = new CachedFileClient(this);
   connect(client, &CachedFileClient::dataLoaded, this, &Capabilities::dataLoaded);
-  CachedFileLoader::get()->load(url, "wmts/"+label_+"/capabilities.xml", client);
+  CachedFileLoader::instance()->load(url, "wmts/"+label_+"/capabilities.xml", client);
 }
 
 void Capabilities::dataLoaded(QByteArray &data, CachedFileClient* client)

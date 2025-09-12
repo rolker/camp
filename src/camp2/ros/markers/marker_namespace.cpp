@@ -8,8 +8,8 @@ namespace ros
 namespace markers
 {
 
-MarkerNamespace::MarkerNamespace(MapItem* parent, NodeManager* node_manager, QString marker_namespace):
-  Layer(parent, node_manager, marker_namespace)
+MarkerNamespace::MarkerNamespace(MapItem* parent, Node* node, QString marker_namespace):
+  Layer(parent, node, marker_namespace)
 {
 }
 
@@ -25,7 +25,7 @@ void MarkerNamespace::updateMarker(const MarkerData& data)
 
   Marker* marker = nullptr;
   if(markers_map.find(data.marker.id) == markers_map.end())
-    marker = new Marker(this, node_manager_, data.marker.id);
+    marker = new Marker(this, node_, data.marker.id);
   else
     marker = markers_map[data.marker.id];
   marker->updateMarker(data);

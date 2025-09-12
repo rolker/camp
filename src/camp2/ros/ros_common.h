@@ -5,8 +5,20 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
+#include <QMap>
+#include <QStringList>
+
+namespace camp
+{
+namespace ros
+{
+
+}  // namespace ros
+
+}  // namespace camp
 
 Q_DECLARE_METATYPE(rclcpp::Node::SharedPtr)
 Q_DECLARE_METATYPE(tf2_ros::Buffer::SharedPtr)
+
 
 #endif

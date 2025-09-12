@@ -32,7 +32,7 @@ enum ItemType
   BackgroundManagerType,
   MapTilesType,
   RasterLayerType,
-  NodeManagerType,
+  RosNodeType,
   RosLayerType,
   MarkerNamespaceType,
   MarkerType,

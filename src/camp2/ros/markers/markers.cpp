@@ -1,7 +1,7 @@
 #include "markers.h"
 #include <tf2/utils.h>
 #include "marker_namespace.h"
-#include "../node_manager.h"
+#include "../node.h"
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
 namespace camp
@@ -11,8 +11,8 @@ namespace ros
 namespace markers
 {
 
-Markers::Markers(MapItem* parent, NodeManager* node_manager, QString topic, QString topic_type):
-  Layer(parent, node_manager, topic), topic_(topic.toStdString())
+Markers::Markers(MapItem* parent, Node* node, QString topic, QString topic_type):
+  Layer(parent, node, topic), topic_(topic.toStdString())
 {
   qRegisterMetaType<MarkerData>("MarkerData");
 
@@ -24,12 +24,12 @@ Markers::Markers(MapItem* parent, NodeManager* node_manager, QString topic, QStr
 
   if(topic_type == "visualization_msgs/msg/MarkerArray")
   {
-    marker_array_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::MarkerArray>(topic_, qos, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
+    marker_array_subscription_ = node->node()->create_subscription<visualization_msgs::msg::MarkerArray>(topic_, qos, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
     setStatus("[visualization_msgs/msg/MarkerArray]");
   }
   else if(topic_type == "visualization_msgs/msg/Marker")
   {
-    marker_subscription_ = node_manager->node()->create_subscription<visualization_msgs::msg::Marker>(topic_, qos, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
+    marker_subscription_ = node->node()->create_subscription<visualization_msgs::msg::Marker>(topic_, qos, std::bind(&Markers::markerCallback, this, std::placeholders::_1));
     setStatus("[visualization_msgs/msg/Marker]");
 
   }
@@ -66,7 +66,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &mar
     catch (tf2::TransformException &ex)
     {
       rclcpp::Clock clock;
-      RCLCPP_WARN_STREAM_THROTTLE(node_manager_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " what: " << ex.what());
+      RCLCPP_WARN_STREAM_THROTTLE(node_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " what: " << ex.what());
     }
   }
 }
@@ -86,7 +86,7 @@ void Markers::updateMarker(const MarkerData& data)
 {
   auto marker_namespace = markerNamespace(data.marker.ns.c_str());
   if(!marker_namespace)
-    marker_namespace = new MarkerNamespace(this, node_manager_, data.marker.ns.c_str());
+    marker_namespace = new MarkerNamespace(this, node_, data.marker.ns.c_str());
   marker_namespace->updateMarker(data);
 }
 

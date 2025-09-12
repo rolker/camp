@@ -180,24 +180,10 @@ install (TARGETS CCOMAutonomousMissionPlanner
 
 #rqt plugins
 
-#find_package(class_loader)
-
-
-
 set(rqt_helm_manager_SRCS
   src/camp/helm_manager/rqt_helm_manager.cpp
   src/camp/helm_manager/helm_manager.cpp
 )
-
-# set(rqt_helm_manager_HDRS
-#   helm_manager.h
-#   rqt_helm_manager.h
-# )
-
-# set(rqt_helm_manager_UIS
-#     src/helm_manager/helm_manager.ui
-#     src/helm_manager/rqt_helm_manager.ui
-# )
 
 add_library(rqt_helm_manager SHARED
   ${rqt_helm_manager_SRCS}
@@ -221,8 +207,6 @@ target_link_libraries(rqt_helm_manager
   Qt5::Widgets
 )
 
-#class_loader_hide_library_symbols(rqt_helm_manager)
-
 install(FILES
   plugins.xml
   DESTINATION share/${PROJECT_NAME}
@@ -245,8 +229,7 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 set( CAMP2_SOURCES
     src/camp2/background/background_manager.cpp
-    src/camp2/main/cached_file_loader.cpp
-    src/camp2/main/camp_main_window.cpp
+    src/camp2/main/main_window.cpp
     src/camp2/main/main.cpp
     src/camp2/map/map.cpp
     src/camp2/map/map_item.cpp
@@ -264,6 +247,7 @@ set( CAMP2_SOURCES
     src/camp2/map_view/map_view.cpp
     src/camp2/map_view/web_mercator.cpp
     src/camp2/raster/raster_layer.cpp
+    src/camp2/ros/graph_thread.cpp
     src/camp2/ros/grids/grid_layer.cpp
     src/camp2/ros/grids/grid_manager.cpp
     src/camp2/ros/grids/grid_map.cpp
@@ -273,11 +257,14 @@ set( CAMP2_SOURCES
     src/camp2/ros/markers/marker_namespace.cpp
     src/camp2/ros/markers/markers.cpp
     src/camp2/ros/markers/markers_manager.cpp
-    src/camp2/ros/node_manager.cpp
+    src/camp2/ros/name.cpp
+    src/camp2/ros/names_manager.cpp
+    src/camp2/ros/node.cpp
     src/camp2/ros/node_thread.cpp
     src/camp2/tools/layer_manager.cpp
     src/camp2/tools/map_tool.cpp
     src/camp2/tools/tools_manager.cpp
+    src/camp2/util/cached_file_loader.cpp
     src/camp2/wmts/capabilities.cpp
     src/camp2/wmts/layer.cpp
     src/camp2/wmts/tile_matrix_set.cpp

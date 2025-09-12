@@ -27,7 +27,7 @@ class Markers: public Layer
   Q_INTERFACES(QGraphicsItem)
 
 public:
-  Markers(MapItem* parent, NodeManager* node_manager, QString topic, QString topic_type);
+  Markers(MapItem* parent, Node* node, QString topic, QString topic_type);
 
 
 signals:

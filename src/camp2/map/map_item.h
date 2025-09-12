@@ -11,7 +11,12 @@ namespace map
 
 class Map;
 
-// Base class for map components.
+/// Base class for map components.
+/// MapItems are QGraphicsObjects so they can be displayed
+/// in a MapView and also implement the methods needed
+/// by Map for use in a MapTreeView.
+/// By inheriting from QGraphicsObject, MapItem is also 
+/// a QObject and can use signals and slots.
 class MapItem: public QGraphicsObject
 {
   Q_OBJECT
@@ -31,14 +36,77 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
+  /// Makes sure the Map is updated as needed.
+  virtual void setParentMapItem(MapItem* parent);
 
-  // Returns a pointer to the parent item if it is a MapItem.
-  // If the parent is not a MapItem or is null, return nullptr.
+  /// Returns a pointer to the parent item if it is a MapItem.
+  /// If the parent is not a MapItem or is null, return nullptr.
   MapItem* parentMapItem() const;
 
-  // Return the child items that are MapItems.
-  virtual QList<MapItem*> childMapItems() const;
-  QList<const MapItem*> childConstMapItems() const;
+  template<typename T>
+  T* parentOfType() const
+  {
+    auto item = parentMapItem();
+    while(item)
+    {
+      auto cast_item = qgraphicsitem_cast<T*>(item);
+      if(cast_item)
+        return cast_item;
+      item = item->parentMapItem();
+    }
+    return nullptr;
+  }
+
+  template<typename T>
+  T* firstChildOfType(bool recursive = false) const
+  {
+    for(auto item: childMapItems())
+    {
+      auto cast_item = qgraphicsitem_cast<T*>(item);
+      if(cast_item)
+        return cast_item;
+    }
+    if(recursive)
+    {
+      for(auto item: childMapItems())
+      {
+        auto descendant_item = item->firstChildOfType<T>(true);
+        if(descendant_item)
+          return descendant_item;
+      }
+    }
+    return nullptr;
+  }
+
+  /// Returns true if this item is an ancestor of the given item.
+  bool isAncestorOf(const MapItem* item) const
+  {
+    while(item)
+    {
+      if(item->parentMapItem() == this)
+        return true;
+      item = item->parentMapItem();
+    }
+    return false;
+  }
+
+  MapItem* commonAncestor(MapItem* other) const
+  {
+    if(other == nullptr)
+      return nullptr;
+    auto ancestor = parentMapItem();
+    while(ancestor)
+    {
+      if(ancestor->isAncestorOf(other))
+        return ancestor;
+      ancestor = ancestor->parentMapItem();
+    }
+    return nullptr;
+  }
+
+  /// Return the child items that are MapItems.
+  virtual QList<MapItem*> childMapItems(bool recursive = false) const;
+  QList<const MapItem*> childConstMapItems(bool recursive = false) const;
 
   static constexpr char MimeType[] = "application/camp.map_item.pointer";
 
@@ -75,7 +143,7 @@ private:
   MapItem(const QString& object_name);
 
 private slots:
-  // called once the MapItem and derived contructors are completed.
+  // called once the MapItem and derived constructors are completed.
   void itemConstructed();
   void applicationQuitting();
 

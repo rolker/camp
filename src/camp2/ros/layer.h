@@ -11,13 +11,13 @@ namespace camp
 namespace ros
 {
 
-class NodeManager;
+class Node;
 
 // Base class for ROS map layers.
 class Layer: public map::Layer
 {
 public:
-  Layer(MapItem* parent, NodeManager* node_manager, const QString& object_name);
+  Layer(MapItem* parent, Node* node, const QString& object_name);
 
   enum { Type = map::RosLayerType };
 
@@ -32,7 +32,7 @@ protected:
 
 
 protected:
-  NodeManager* node_manager_ = nullptr;
+  Node* node_ = nullptr;
 
 };
 

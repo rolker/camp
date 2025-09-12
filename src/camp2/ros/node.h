@@ -1,10 +1,9 @@
-#ifndef CAMP_ROS_NODE_MANAGER_H
-#define CAMP_ROS_NODE_MANAGER_H
+#ifndef CAMP_ROS_NODE_H
+#define CAMP_ROS_NODE_H
 
 #include "../tools/layer_manager.h"
 #include <QThread>
 #include "ros_common.h"
-
 
 namespace camp
 {
@@ -17,15 +16,18 @@ namespace tools
 namespace ros
 {
 
-// Monitors status of the ROS core and starts/stop the ROS Node.
-class NodeManager: public tools::LayerManager
+class GraphThread;
+
+/// Manages the ROS Node listing topics and services.
+/// Also manages the ROS node thread and provides a tf2 buffer.
+class Node: public tools::LayerManager
 {
   Q_OBJECT
 public:
-  NodeManager(tools::ToolsManager* tools_manager);
-  ~NodeManager();
+  Node(tools::ToolsManager* tools_manager);
+  ~Node();
 
-  enum { Type = map::NodeManagerType};
+  enum { Type = map::RosNodeType};
 
   int type() const override
   {
@@ -42,34 +44,24 @@ public:
   tf2_ros::Buffer::SharedPtr transformBuffer();
   rclcpp::Node::SharedPtr node();
 
+  GraphThread* graphThread() const;
 
-  /// @brief Type definition for a map of topic names to a list of types.
-  using TopicMap = std::map<std::string, std::vector<std::string>>;
+signals:
+  void startNode();
+
+  void shuttingDownRos();
 
 public slots:
   void nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer);
   void nodeShuttingDown();
 
-signals:
-  void startNode();
-
-  // Signal emitted with the current list of available topics.
-  // Topics are listed in a map of topic name as keys and type as values.
-  //void topicsAvailable(QMap<QString, QString> topics);
-  void topicsAvailable(TopicMap topics);
-
-  void shuttingDownRos();
-
-  private slots:
-  void scanForSources();
-
 private:
   QThread node_thread_;
+  GraphThread* graph_thread_ = nullptr;
 
   rclcpp::Node::SharedPtr node_;
   tf2_ros::Buffer::SharedPtr transform_buffer_;
 
-  QTimer* scan_timer_;
 };
 
 }  // namespace ros

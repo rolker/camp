@@ -4,13 +4,12 @@
 #include <QObject>
 #include <QDir>
 
+class QApplication;
 class QNetworkAccessManager;
 class QNetworkReply;
 
 namespace camp
 {
-
-class MainWindow;
 
 class CachedFileClient: public QObject
 {
@@ -21,14 +20,17 @@ signals:
   void dataLoaded(QByteArray &data, CachedFileClient* client);
 };
 
-// Loads file from a drive or
-// from the network via http.
-// can cache http files locally for performance.
+/// Loads file from a drive or
+/// from the network via http.
+/// Can cache http files locally for performance.
 class CachedFileLoader: public QObject
 {
   Q_OBJECT
 public:
-  static CachedFileLoader* get();
+  /// Return the singleton instance of the CachedFileLoader.
+  /// An instance will be created on first call if needed
+  /// with the QApplication instance as parent.
+  static CachedFileLoader* instance();
 
   QDir cachePath() const;
 
@@ -37,12 +39,15 @@ public slots:
   void load(QString url, QString cache_local_path, CachedFileClient* client);
 
 private:
-  friend class MainWindow;
+  // Make constructor/destructor private to enforce singleton pattern.
+  // Only allow construction/destruction via the static instance() method.
+  // The QApplication instance is a convenient parent to ensure proper
+  // destruction order.
+  friend class QApplication;
   CachedFileLoader(QObject* parent=nullptr);
-  static void construct();
-  static void destruct();
+  ~CachedFileLoader() override;
 
-  static CachedFileLoader* instance;
+  static CachedFileLoader* instance_;
 
   QNetworkAccessManager* network_access_manager_;
 

@@ -18,7 +18,7 @@ class MarkerNamespace: public Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  MarkerNamespace(MapItem* parent, NodeManager* node_manager, QString marker_namespace);
+  MarkerNamespace(MapItem* parent, Node* node, QString marker_namespace);
 
   enum { Type =  map::MarkerNamespaceType };
 

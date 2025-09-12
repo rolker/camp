@@ -2,7 +2,7 @@
 #include <grid_map_ros/grid_map_ros.hpp>
 #include "../../map_view/web_mercator.h"
 #include <geometry_msgs/msg/pose_stamped.hpp>
-#include "../node_manager.h"
+#include "../node.h"
 #include "project11/gz4d_geo.h"
 #include <tf2/utils.h>
 #include "grid_layer.h"
@@ -14,8 +14,8 @@ namespace ros
 namespace grids
 {
 
-GridMap::GridMap(MapItem* parent, NodeManager* node_manager, QString topic):
-  Layer(parent, node_manager, topic), topic_(topic.toStdString())
+GridMap::GridMap(MapItem* parent, Node* node, QString topic):
+  Layer(parent, node, topic), topic_(topic.toStdString())
 {
   qRegisterMetaType<GridMapLayerData>("GridMapLayerData");
 
@@ -24,7 +24,7 @@ GridMap::GridMap(MapItem* parent, NodeManager* node_manager, QString topic):
   rclcpp::QoS qos(1);
   qos.durability_best_available();
 
-  subscription_ = node_manager->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, qos, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
+  subscription_ = node->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, qos, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
   setStatus("[grid_map_msgs/msg/GridMap]");
 }
 
@@ -40,7 +40,7 @@ void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
 {
   grid_map::GridMap grid_map;
-  auto node = node_manager_->node();
+  auto node = node_->node();
   rclcpp::Clock clock;
   if(!grid_map::GridMapRosConverter::fromMessage(data, grid_map))
   {
@@ -123,7 +123,7 @@ void GridMap::updateGridLayer(const GridMapLayerData& data)
   GridLayer * layer = gridLayer(QString::fromStdString(data.layer_name));
   if(!layer)
   {
-    layer = new GridLayer(this, node_manager_, data.layer_name.c_str());
+    layer = new GridLayer(this, node_, data.layer_name.c_str());
   }
   layer->updateGridLayer(data);
 }

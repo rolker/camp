@@ -17,9 +17,9 @@ namespace map
   class TopLevelItem;
   class LayerList;
 
-// Implements a model to use with Model/View widgets
-// and provides a QGraphicsScene for viewing
-// in a QGraphicsView. 
+/// Implements a model to use with Model/View widgets
+/// and provides a QGraphicsScene for viewing
+/// in a QGraphicsView.
 class Map: public QAbstractItemModel
 {
   Q_OBJECT
@@ -46,17 +46,20 @@ public:
   bool canDropMimeData(const QMimeData* data, Qt::DropAction action, int row, int col, const QModelIndex& parent) const override;
   bool dropMimeData(const QMimeData * data, Qt::DropAction action, int row, int col, const QModelIndex& parent) override;
 
-  // Returns a pointer to the associated QGraphicsScene object
-  // or nullptr if it can't be found.
+  /// Returns a pointer to the associated QGraphicsScene object
+  /// or nullptr if it can't be found.
   QGraphicsScene* scene() const;
 
-  // Called by map items to indicate that data relevant to the tree view has changed.
+  /// Called by map items to indicate that data relevant to the tree view has changed.
   void updateDisplay(const MapItem* map_item, const QVector<int> &roles = QVector<int>());
 
-  // Notifies the view of the change then sets the child's parent.
-  void setMapItemParent(MapItem* child_item, MapItem* parent_item);
+  /// Notifies the view of the change then sets the child's parent.
+  /// Row specifies the position in the new parent's child list.
+  /// If row is 0, default, the item is added at the top of the list.
+  /// If row is -1, the item is added at the end of the list.
+  void setMapItemParent(MapItem* child_item, MapItem* parent_item, int row = 0);
 
-  // Sets context menu items for given index
+  /// Sets context menu items for given index
   void contextMenuFor(QMenu* menu, const QModelIndex& index);
 
   LayerList* topLevelLayers() const;

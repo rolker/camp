@@ -1,6 +1,6 @@
 #include "node_thread.h"
 #include "tf2_ros/create_timer_ros.h"
-#include "node_manager.h"
+#include "node.h"
 
 namespace camp
 {

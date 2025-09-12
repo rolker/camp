@@ -2,15 +2,14 @@
 #define TEST_MAP_VIEW_H
 
 #include <QMainWindow>
-#include "ui_camp_main_window.h"
+#include "ui_main_window.h"
 
 class QLabel;
-
 
 namespace camp
 {
 
-  namespace map
+namespace map
 {
   class Map;
 }

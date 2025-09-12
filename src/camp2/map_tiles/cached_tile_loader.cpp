@@ -5,8 +5,8 @@
 #include <QNetworkRequest>
 #include <QJsonObject>
 #include <QJsonDocument>
-#include "main/camp_main_window.h"
-#include "main/cached_file_loader.h"
+//#include "main/main_window.h"
+#include "util/cached_file_loader.h"
 
 #include <QDebug>
 
@@ -44,7 +44,7 @@ void CachedTileLoader::load(TileAddress address)
   address_variant.setValue(address);
   client->setProperty("address", address_variant);
 
-  CachedFileLoader::get()->load(url_str, file_path.filePath(), client);
+  CachedFileLoader::instance()->load(url_str, file_path.filePath(), client);
 }
 
 void CachedTileLoader::dataLoaded(QByteArray &data, CachedFileClient* client)

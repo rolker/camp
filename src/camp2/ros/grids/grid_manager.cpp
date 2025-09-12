@@ -1,8 +1,9 @@
 #include "grid_manager.h"
-#include "../node_manager.h"
+#include "../node.h"
 #include "grid_map.h"
 #include "occupancy_grid.h"
 #include "../../map/layer_list.h"
+#include "../names_manager.h"
 
 #include <QDebug>
 
@@ -13,18 +14,25 @@ namespace ros
 namespace grids
 {
 
-GridManager::GridManager(NodeManager* parent):
+GridManager::GridManager(MapTool* parent):
   tools::LayerManager(parent, "Grid Manager")
 {
-  connect(parent, &NodeManager::topicsAvailable, this, &GridManager::updateTopics);
+  auto topics_manager = new TopicsManager(this, "Topics");
+  topics_manager->setTypeFilter({"nav_msgs/msg/OccupancyGrid", "grid_map_msgs/msg/GridMap"});
+  connect(topics_manager, &TopicsManager::namesUpdated, this, &GridManager::updateTopics);
 }
 
-void GridManager::updateTopics(const NodeManager::TopicMap &topics)
+void GridManager::updateTopics()
 {
-  auto node_manager = qgraphicsitem_cast<NodeManager*>(parentItem());
-  auto node = node_manager->node();
+  auto topic_manager = firstChildOfType<TopicsManager>();
+  if(!topic_manager)
+    return;
+  auto topics = topic_manager->namesAndTypes();
+  auto node_item = parentOfType<Node>();
+  auto node = node_item->node();
   if(!node)
     return;
+
   for(const auto& topic: topics)
   {
     if(node->count_publishers(topic.first) == 0)
@@ -38,7 +46,7 @@ void GridManager::updateTopics(const NodeManager::TopicMap &topics)
           auto layers = topLevelLayers();
           if(layers)
           {
-            auto grid = new OccupancyGrid(layers, node_manager, topic.first.c_str());
+            auto grid = new OccupancyGrid(layers, node_item, topic.first.c_str());
             grids_[topic.first] = true;
           }
         }
@@ -50,7 +58,7 @@ void GridManager::updateTopics(const NodeManager::TopicMap &topics)
           auto layers = topLevelLayers();
           if(layers)
           {
-            auto grid = new GridMap(layers, node_manager, topic.first.c_str());
+            auto grid = new GridMap(layers, node_item, topic.first.c_str());
             grids_[topic.first] = true;
           }
 

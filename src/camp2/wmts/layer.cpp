@@ -1,7 +1,5 @@
 #include "layer.h"
 
-#include <QDebug>
-
 namespace camp
 {
 

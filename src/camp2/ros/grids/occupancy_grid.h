@@ -24,7 +24,7 @@ class OccupancyGrid: public Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  OccupancyGrid(MapItem* parent, NodeManager* node_manager, QString topic);
+  OccupancyGrid(MapItem* parent, Node* node, QString topic);
 
 signals:
   void occupancyGridUpdated(const OccupancyGridData &data);

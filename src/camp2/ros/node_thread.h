@@ -1,5 +1,5 @@
-#ifndef CAMP_ROS_NODE_H
-#define CAMP_ROS_NODE_H
+#ifndef CAMP_ROS_NODE_THREAD_H
+#define CAMP_ROS_NODE_THREAD_H
 
 #include <QObject>
 
@@ -10,8 +10,6 @@ namespace camp
 
 namespace ros
 {
-
-class NodeManager;
 
 class NodeThread: public QObject
 {
