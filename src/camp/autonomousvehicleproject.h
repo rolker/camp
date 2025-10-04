@@ -92,6 +92,8 @@ public:
     
     void import(QString const &fname);
 
+    bool importGeoJson(QString const &fname);
+
     void setCurrent(const QModelIndex &index);
     MissionItem *currentSelected() const;
     
@@ -103,8 +105,10 @@ public:
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
     QJsonDocument generateMissionTask(QModelIndex const &index);
+    QJsonDocument generateGeoJson(QModelIndex const &index);
 
     double speed() const;
+    double throttle() const;
 
 signals:
     void backgroundUpdated(BackgroundRaster *bg);
@@ -118,6 +122,7 @@ public slots:
 
     void exportHypack(QModelIndex const &index);
     void exportMissionPlan(QModelIndex const &index);
+    void exportGeoJson(QModelIndex const &index);
 
     void sendToROS(QModelIndex const &index);
     void appendMission(QModelIndex const &index);
@@ -133,6 +138,7 @@ public slots:
     void updateActivePlatform(Platform *platform);
 
     void setSpeed(double speed);
+    void setThrottle(double throttle);
 
     void updateAvoidanceAreas();
 
@@ -153,6 +159,7 @@ private:
     bool m_contextMode = false;
 
     double m_speed = 0.0;
+    double throttle_ = 0.4;
 
     void setCurrentBackground(BackgroundRaster *bgr);
     QString generateUniqueLabel(std::string const &prefix);

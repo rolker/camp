@@ -7,6 +7,7 @@
 #include "map_item_mime_data.h"
 #include <QMenu>
 #include "layer.h"
+#include <QApplication>
 
 #include <QDebug>
 
@@ -28,7 +29,8 @@ Map::Map(QObject *parent):
   auto background_manager = new background::BackgroundManager(tools_manager);
   background_manager->createDefaultLayers();
 
-  new camp::ros::Node(tools_manager);
+  auto ros_node = new camp::ros::Node(tools_manager);
+  connect(ros_node, &camp::ros::Node::shuttingDownRos, QCoreApplication::instance(), &QCoreApplication::quit);
 }
 
 

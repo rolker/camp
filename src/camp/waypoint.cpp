@@ -140,6 +140,61 @@ void Waypoint::read(const QJsonObject &json)
     m_internalPositionChangeFlag = false;
 }
 
+bool Waypoint::readGeoJson(const QJsonObject &json)
+{
+  if(json["type"] == "Feature")
+  {
+    readGeoJsonProperties(json);
+    if(json.contains("geometry") && json["geometry"].isObject())
+    {
+      const auto& geom = json["geometry"].toObject();
+      std::string geomType;
+      if(geom.contains("type") && geom["type"].isString())
+        geomType = geom["type"].toString().toStdString();
+      if(geomType == "Point")
+      {
+        if(geom.contains("coordinates") && geom["coordinates"].isArray())
+        {
+          const auto& coords = geom["coordinates"].toArray();
+          if(coords.size() >= 2)
+          {
+            double lon = coords[0].toDouble();
+            double lat = coords[1].toDouble();
+            double alt = 0.0;
+            if(coords.size() >= 3)
+              alt = coords[2].toDouble();
+            QGeoCoordinate position(lat, lon, alt);
+            m_internalPositionChangeFlag = true;
+            setLocation(position);
+            m_internalPositionChangeFlag = false;
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+void Waypoint::writeGeoJson(QJsonObject &json, QString name) const
+{
+  MissionItem::writeGeoJson(json, name);
+  QJsonObject geometry;
+  geometry["type"] = "Point";
+  QJsonArray coordinates;
+  writeToGeoJsonCoordinates(coordinates);
+  geometry["coordinates"] = coordinates;
+  json["geometry"] = geometry;
+}
+
+void Waypoint::writeToGeoJsonCoordinates(QJsonArray & json) const
+{
+  json.append(m_location.longitude());
+  json.append(m_location.latitude());
+  json.append(m_location.altitude());
+}
+
+
 void Waypoint::updateProjectedPoints()
 {
     m_internalPositionChangeFlag = true;

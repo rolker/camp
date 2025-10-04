@@ -79,7 +79,7 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
 
   if(!reprojected_dataset)
   {
-    qDebug("RasterLayer::loadFile error creating repojected dataset");
+    qDebug("RasterLayer::loadFile error creating reprojected dataset");
     return result;
   }
 

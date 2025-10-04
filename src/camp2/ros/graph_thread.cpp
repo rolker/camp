@@ -25,15 +25,22 @@ void GraphThread::emitSleep()
   }
 }
 
+bool GraphThread::keepRunning() const
+{
+  return rclcpp::ok() && !isInterruptionRequested();
+}
+
 void GraphThread::run()
 {
   graph_event_ = node_->get_graph_event();
-  while(rclcpp::ok() && !isInterruptionRequested())
+  while(keepRunning())
   {
     node_->wait_for_graph_change(graph_event_, std::chrono::milliseconds(100));
     if(graph_event_->check_and_clear())
     {
       // Graph has changed.
+      if(!keepRunning())
+        break;
       auto topics = node_->get_topic_names_and_types();
 
       for(const auto& topic: topics)
@@ -78,6 +85,8 @@ void GraphThread::run()
           ++it;
       }
 
+     if(!keepRunning())
+        break;
       auto services = node_->get_service_names_and_types();
       for(const auto& service: services)
       {
@@ -124,7 +133,11 @@ void GraphThread::run()
 
       for(auto& node: known_nodes_)
         node.second = false;
+
+      if(!keepRunning())
+        break;
       auto nodes = node_->get_node_names();
+
       for(const auto& node: nodes)
       {
         if(known_nodes_.find(node) == known_nodes_.end())

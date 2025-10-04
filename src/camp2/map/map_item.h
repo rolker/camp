@@ -36,12 +36,21 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
+  /// @brief Set the position and scale of the item in Web Mercator coordinates.
+  /// Scale is adjusted to account for distortion of Web Mercator at the given position.
+  /// @param position The new position of the item.
+  /// @param unit_size_in_meters The size of one map unit in meters.
+  /// Assumes parent item is not transformed relative to Web Mercator origin.
+  void setWebMercatorPositionAndScale(const QPointF& position, double unit_size_in_meters = 1.0);
+
   /// Makes sure the Map is updated as needed.
   virtual void setParentMapItem(MapItem* parent);
 
   /// Returns a pointer to the parent item if it is a MapItem.
   /// If the parent is not a MapItem or is null, return nullptr.
   MapItem* parentMapItem() const;
+
+  QString itemID() const;
 
   template<typename T>
   T* parentOfType() const
@@ -60,7 +69,8 @@ public:
   template<typename T>
   T* firstChildOfType(bool recursive = false) const
   {
-    for(auto item: childMapItems())
+    // consider all child items, not just MapItems
+    for(auto item: childItems())
     {
       auto cast_item = qgraphicsitem_cast<T*>(item);
       if(cast_item)
@@ -68,38 +78,13 @@ public:
     }
     if(recursive)
     {
+      // look through descendants map items
       for(auto item: childMapItems())
       {
         auto descendant_item = item->firstChildOfType<T>(true);
         if(descendant_item)
           return descendant_item;
       }
-    }
-    return nullptr;
-  }
-
-  /// Returns true if this item is an ancestor of the given item.
-  bool isAncestorOf(const MapItem* item) const
-  {
-    while(item)
-    {
-      if(item->parentMapItem() == this)
-        return true;
-      item = item->parentMapItem();
-    }
-    return false;
-  }
-
-  MapItem* commonAncestor(MapItem* other) const
-  {
-    if(other == nullptr)
-      return nullptr;
-    auto ancestor = parentMapItem();
-    while(ancestor)
-    {
-      if(ancestor->isAncestorOf(other))
-        return ancestor;
-      ancestor = ancestor->parentMapItem();
     }
     return nullptr;
   }
@@ -112,26 +97,30 @@ public:
 
   virtual bool canDropMimeData(const QMimeData* data, Qt::DropAction action, int row, int col) const;
 
-  // Sets the object name and notifies the model of the change.
+  /// Sets the object name and notifies the model of the change.
   void setObjectName(const QString& name);
 
-  // Returns the status text to be displayed in the tree view.
+  /// Returns the status text to be displayed in the tree view.
   const QString& status() const;
+
+  /// Called to display a context menu for another item.
+  virtual void contextMenuForItem(MapItem* item, QMenu* menu);
+
 
 public slots:
   void setOpacity(qreal opacity);
 
 protected:
-  // Allows item to modify Model/View flags.
+  /// Allows item to modify Model/View flags.
   virtual void updateFlags(Qt::ItemFlags& flags) const;
   
-  // Sets the status text to be displayed in tree view.
+  /// Sets the status text to be displayed in tree view.
   void setStatus(const QString& status);
 
-  // Returns the Map object this belongs to, or nullptr if not found.
+  /// Returns the Map object this belongs to, or nullptr if not found.
   Map * parentMap() const;
 
-  // called when a context menu is requested.
+  /// called when a context menu is requested.
   virtual void contextMenu(QMenu* menu);
 
   virtual void readSettings();
@@ -148,7 +137,7 @@ private slots:
   void applicationQuitting();
 
 private:
-  // Status to be displayed along object name in tree view.
+  /// Status to be displayed along object name in tree view.
   QString status_;
 };
 

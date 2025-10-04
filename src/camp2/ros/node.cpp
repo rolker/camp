@@ -3,6 +3,7 @@
 #include <QTimer>
 #include "node_thread.h"
 #include "../tools/tools_manager.h"
+#include "geometry/geometry_manager.h"
 #include "grids/grid_manager.h"
 #include "markers/markers_manager.h"
 #include "names_manager.h"
@@ -56,8 +57,9 @@ void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr 
   transform_buffer_ = buffer;
   graph_thread_ = new GraphThread(this);
 
-  new grids::GridManager(this);
   new markers::MarkersManager(this);
+  new grids::GridManager(this);
+  new geometry::GeometryManager(this);
 
   //new NodesManager(this);
   //new ServicesManager(this);
@@ -69,6 +71,8 @@ void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr 
 void Node::nodeShuttingDown()
 {
   qDebug() << "ROS node shutting down";
+  this->setParentMapItem(nullptr);
+  this->deleteLater();
 }
 
 tf2_ros::Buffer::SharedPtr Node::transformBuffer()

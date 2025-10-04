@@ -150,8 +150,25 @@ void AutonomousVehicleProject::openGeometry(const QString& fname, QString label)
     emit layoutChanged();
 }
 
+bool AutonomousVehicleProject::importGeoJson(const QString& fname)
+{
+    QFile infile(fname);
+    if(infile.open(QIODevice::ReadOnly|QIODevice::Text))
+    {
+        QByteArray loadData = infile.readAll();
+        QJsonDocument loadDoc(QJsonDocument::fromJson(loadData));
+        bool ret = m_root->readGeoJson(loadDoc.object());
+        emit layoutChanged();
+        qDebug() << "importGeoJson:" << ret;
+        return ret;
+    }
+    return false;
+}
 void AutonomousVehicleProject::import(const QString& fname)
 {
+    if(importGeoJson(fname))
+        return;
+
     // try Hypack L84 file
     QFile infile(fname);
     if(infile.open(QIODevice::ReadOnly|QIODevice::Text))
@@ -470,6 +487,20 @@ QJsonDocument AutonomousVehicleProject::generateMissionPlan(const QModelIndex& i
     return plan;
 }
 
+QJsonDocument AutonomousVehicleProject::generateGeoJson(const QModelIndex& index)
+{
+  MissionItem *item = itemFromIndex(index);
+  QJsonDocument doc;
+  QJsonObject topLevel;
+  topLevel["type"] = "FeatureCollection";
+  topLevel["name"] = item->objectName();
+  QJsonArray features;
+  item->writeToGeoJson(features);
+  topLevel["features"] = features;
+  doc.setObject(topLevel);
+  return doc;
+}
+
 void AutonomousVehicleProject::exportMissionPlan(const QModelIndex& index)
 {
     QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(QObject::parent()));
@@ -482,6 +513,20 @@ void AutonomousVehicleProject::exportMissionPlan(const QModelIndex& index)
             saveFile.write(plan.toJson());
         }
     }
+}
+
+void AutonomousVehicleProject::exportGeoJson(const QModelIndex& index)
+{
+  QString fname = QFileDialog::getSaveFileName(qobject_cast<QWidget*>(QObject::parent()));
+  if(fname.length() > 0)
+  {
+    QJsonDocument plan = generateGeoJson(index);
+    QFile saveFile(fname);
+    if(saveFile.open(QFile::WriteOnly))
+    {
+        saveFile.write(plan.toJson());
+    }
+  }
 }
 
 QJsonDocument AutonomousVehicleProject::generateMissionTask(const QModelIndex& index)
@@ -979,6 +1024,17 @@ double AutonomousVehicleProject::speed() const
 {
     return m_speed;
 }
+
+void AutonomousVehicleProject::setThrottle(double throttle)
+{
+    throttle_ = throttle;
+}
+
+double AutonomousVehicleProject::throttle() const
+{
+    return throttle_;
+}
+
 
 AutonomousVehicleProject::RowInserter::RowInserter(AutonomousVehicleProject& project, MissionItem* parent, int row):m_project(project)
 {

@@ -10,7 +10,7 @@
 namespace camp
 {
 
-  const double MapView::min_zoom_scale_;
+const double MapView::min_zoom_scale_;
 const double MapView::max_zoom_scale_;
 
 MapView::MapView(QWidget *parent) : QGraphicsView(parent)
@@ -84,10 +84,12 @@ void MapView::readSettings()
   QSettings settings;
 
   settings.beginGroup("MapView");
+  settings.beginGroup(objectName());
   qreal new_scale = settings.value("scale", min_zoom_scale_).toReal();
   auto scale_change = new_scale/transform().m11();
   scale(scale_change, scale_change);
   centerOn(settings.value("center").toPointF());
+  settings.endGroup();
   settings.endGroup();
 }
 
@@ -96,8 +98,10 @@ void MapView::writeSettings()
   QSettings settings;
 
   settings.beginGroup("MapView");
+  settings.beginGroup(objectName());
   settings.setValue("scale", transform().m11());
   settings.setValue("center", mapToScene(frameRect().center()));
+  settings.endGroup();
   settings.endGroup();
 
 }

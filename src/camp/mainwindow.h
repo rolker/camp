@@ -31,6 +31,7 @@ public:
 signals:
     void closing();
     void speedUpdated(double speed);
+    void throttleUpdated(double throttle);
 
 public slots:
     void open(QString const &fname);
@@ -82,6 +83,7 @@ private slots:
     void on_actionFollow_triggered();
 
     void on_speedLineEdit_editingFinished();
+    void on_throttleLineEdit_editingFinished();
     void on_priorityLineEdit_editingFinished();
     void on_taskDataLineEdit_editingFinished();
 

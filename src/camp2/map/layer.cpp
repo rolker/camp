@@ -30,7 +30,7 @@ void Layer::readSettings()
 
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(objectName());
+  settings.beginGroup(itemID());
 
   setOpacity(settings.value("opacity", 1.0).toReal());
   setVisible(settings.value("visible", true).toBool());
@@ -45,7 +45,7 @@ void Layer::writeSettings()
   
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(objectName());
+  settings.beginGroup(itemID());
 
   settings.setValue("opacity", opacity());
   settings.setValue("visible", isVisible());

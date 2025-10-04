@@ -124,6 +124,7 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
     MissionItem* i = project->itemFromIndex(index);
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
     emit speedUpdated(i->speed());
+    m_ui->throttleLineEdit->setText(QString::number(i->throttle()*100.0));
     m_ui->priorityLineEdit->setText(QString::number(i->priority()));
     m_ui->taskDataLineEdit->setText(QString(i->taskData().c_str()));
  }
@@ -139,6 +140,21 @@ void MainWindow::on_speedLineEdit_editingFinished()
     {
         emit speedUpdated(speed);
         project->setSpeed(speed);
+    }
+}
+
+void MainWindow::on_throttleLineEdit_editingFinished()
+{
+    auto item = project->currentSelected();
+    if(item) 
+      item->setThrottle(m_ui->throttleLineEdit->text().toDouble()/100.0);
+    bool ok;
+    auto throttle = m_ui->throttleLineEdit->text().toDouble(&ok);
+    if(ok)
+    {
+        throttle /= 100.0;
+        emit throttleUpdated(throttle);
+        project->setThrottle(throttle);
     }
 }
 
@@ -228,6 +244,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         
         QMenu *exportMenu = menu.addMenu("Export");
 
+        QAction *exportGeoJsonAction = exportMenu->addAction("Export GeoJSON");
+        connect(exportGeoJsonAction, &QAction::triggered, [=](){this->project->exportGeoJson(index);});
+        
         QAction *exportHypackAction = exportMenu->addAction("Export Hypack");
         connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
 

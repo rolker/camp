@@ -47,7 +47,7 @@ struct TileLayout
   // decomposed url template is made up of static parts
   // and keys for the changing parts (zoom, row, col)
   // Keys used are as specified in WMTS template specs.
-  // "TileMatrix" for zoom level, "TileRow" for tow and "TileCol"
+  // "TileMatrix" for zoom level, "TileRow" for row and "TileCol"
   // for column.
   std::vector<std::string> url_static_parts;
   std::vector<std::string> url_variable_keys;

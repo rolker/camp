@@ -19,6 +19,15 @@ class NamesManager: public tools::MapTool
 public:
   NamesManager(MapTool* parent, const QString& object_name);
 
+  enum { Type = map::RosNamesManagerType };
+
+  int type() const override
+  {
+    // Enable the use of qgraphicsitem_cast with this item.
+    return Type;
+  }
+
+
   /// Sets an optional filter to limit displayed names to those matching one of the types in the list.
   /// If empty, all names are shown.
   void setTypeFilter(const std::vector<std::string>& type_filter);

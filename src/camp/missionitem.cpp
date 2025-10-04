@@ -69,6 +69,8 @@ void MissionItem::write(QJsonObject& json) const
   json["label"] = objectName();
   if (m_speed > 0.0)
     json["speed"]=m_speed;
+    if(throttle_ > 0.0)
+        json["throttle"]=throttle_; 
   json["priority"] = m_priority;
 
   if (!task_data_.empty())
@@ -94,10 +96,73 @@ void MissionItem::read(const QJsonObject& json)
     setObjectName(label);
   m_speed = json["speed"].toDouble();
   m_priority = json["priority"].toInt();
+  if(json.contains("throttle"))
+      throttle_ = json["throttle"].toDouble();
+  else
+      throttle_ = -1.0; // default throttle
   auto task_data = json["task_data"].toString();
   if (task_data.size() > 0)
     task_data_ = task_data.toStdString();
   readChildren(json["children"].toArray());
+}
+
+bool MissionItem::readGeoJson(const QJsonObject& json)
+{
+  if(json["type"] == "FeatureCollection")
+  {
+    if(json.contains("features") && json["features"].isArray())
+    {
+      QJsonArray features = json["features"].toArray();
+
+      auto group = createMissionItem<Group>(json["name"].toString());
+      return group->readGeoJsonChildren(features);
+    }
+  }
+
+  return false;
+}
+
+
+void MissionItem::writeToGeoJson(QJsonArray& array) const
+{
+  QJsonObject feature;
+  writeGeoJson(feature);
+  array.append(feature);
+}
+
+void MissionItem::writeGeoJson(QJsonObject& json, QString name) const
+{
+  json["type"] = "Feature";
+  QJsonObject properties;
+  if(name.isEmpty())
+    properties["name"] = objectName();
+  else
+    properties["name"] = name;
+  if(throttle_ > 0.0)
+  {
+    properties["throttle"] = throttle_*100.0; // convert to percentage
+  }
+  else
+  {
+    if(m_speed > 0.0)
+      properties["speed"] = m_speed * 0.514444; // convert knots to m/s
+  }
+  json["properties"] = properties;
+}
+
+void MissionItem::readGeoJsonProperties(const QJsonObject& json)
+{
+  if(json.contains("properties") && json["properties"].isObject())
+  {
+    QJsonObject properties = json["properties"].toObject();
+    if(properties.contains("throttle"))
+        throttle_ = properties["throttle"].toDouble()/100.0; // convert percentage to 0.0 to 1.0
+    else
+        throttle_ = -1.0; // default throttle
+    if(properties.contains("speed"))
+      m_speed = properties["speed"].toDouble() / 0.514444; // convert m/s to knots
+  }
+
 }
 
 void MissionItem::readChildren(const QJsonArray& json, int row)
@@ -193,6 +258,17 @@ void MissionItem::setSpeed(double speed)
 {
     m_speed = speed;
     emit speedChanged();
+}
+
+double MissionItem::throttle() const
+{
+    return throttle_;
+}
+
+void MissionItem::setThrottle(double throttle)
+{
+    throttle_ = throttle;
+    emit throttleChanged();
 }
 
 int MissionItem::priority() const

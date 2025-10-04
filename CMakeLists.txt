@@ -247,6 +247,8 @@ set( CAMP2_SOURCES
     src/camp2/map_view/map_view.cpp
     src/camp2/map_view/web_mercator.cpp
     src/camp2/raster/raster_layer.cpp
+    src/camp2/ros/geometry/geometry_manager.cpp
+    src/camp2/ros/geometry/polygon.cpp
     src/camp2/ros/graph_thread.cpp
     src/camp2/ros/grids/grid_layer.cpp
     src/camp2/ros/grids/grid_manager.cpp

@@ -1,9 +1,11 @@
 #include "map_item.h"
 #include "map.h"
+#include "../map_view/web_mercator.h"
 #include <QApplication>
 #include <QTimer>
 
 #include <cassert>
+#include <QDebug>
 
 namespace camp
 {
@@ -37,6 +39,25 @@ QRectF MapItem::boundingRect() const
 
 void MapItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+}
+
+void MapItem::setWebMercatorPositionAndScale(const QPointF& position, double unit_size_in_meters)
+{
+  assert(unit_size_in_meters > 0.0);
+  auto map_distortion = web_mercator::metersPerUnit(position);
+  double scale = unit_size_in_meters/map_distortion;
+  setTransform(QTransform::fromScale(scale, scale));
+  setPos(position);
+}
+
+QString MapItem::itemID() const
+{
+  QString id;
+  auto parent = parentMapItem();
+  if(parent)
+    id = parent->itemID() + "/";
+  id += objectName();
+  return id;
 }
 
 void MapItem::setParentMapItem(MapItem* parent_item)
@@ -149,6 +170,11 @@ const QString& MapItem::status() const
 
 void MapItem::contextMenu(QMenu* menu)
 {
+}
+
+void MapItem::contextMenuForItem(MapItem* item, QMenu* menu)
+{
+  qDebug() << "MapItem::contextMenuForItem" << item << "is asking" << this << "for a context menu";
 }
 
 void MapItem::itemConstructed()

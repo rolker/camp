@@ -18,8 +18,9 @@ GridMap::GridMap(MapItem* parent, Node* node, QString topic):
   Layer(parent, node, topic), topic_(topic.toStdString())
 {
   qRegisterMetaType<GridMapLayerData>("GridMapLayerData");
+  qRegisterMetaType<GridMapData>("GridMapData");
 
-  connect(this, &GridMap::newLayerData, this, &GridMap::updateGridLayer);
+  connect(this, &GridMap::newGridData, this, &GridMap::updateGrid);
 
   rclcpp::QoS qos(1);
   qos.durability_best_available();
@@ -52,14 +53,25 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
     RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2.0, "Got GridMap message with no layers");
     return;
   }
+  GridMapData grid_data;
+  try
+  {
+    grid_data.center = transformToWebMercator(data.info.pose, data.header);
+  }
+  catch (tf2::TransformException &ex)
+  {
+    RCLCPP_WARN_STREAM(node->get_logger(), ex.what());
+    return;
+  }
+  grid_data.meters_per_pixel = data.info.resolution;
+
   for(const auto & layer: grid_map.getLayers())
   {
-    GridMapLayerData grid_data;
-    grid_data.layer_name = layer;
+    GridMapLayerData grid_layer_data;
+    grid_layer_data.layer_name = layer;
     auto size = grid_map.getSize();
-    grid_data.grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
-    grid_data.grid_image.fill(Qt::transparent);
-    grid_data.meters_per_pixel = data.info.resolution;
+    grid_layer_data.grid_image = QImage(size.x(), size.y(), QImage::Format_ARGB32);
+    grid_layer_data.grid_image.fill(Qt::transparent);
 
     double min_value = std::numeric_limits<double>::max();
     double max_value = std::numeric_limits<double>::lowest();
@@ -71,7 +83,7 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
       max_value = std::max(max_value, value);
     }
 
-    grid_data.range = std::make_pair(min_value, max_value);
+    grid_layer_data.range = std::make_pair(min_value, max_value);
 
     // If all values are identical, slightly adjust the range
     // This avoids division by zero and treats the value as a flag
@@ -90,20 +102,22 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
         {
           value = (value - min_value) / (max_value - min_value);
           uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
-          grid_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(ival, ival, ival, 255));
+          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(ival, ival, ival, 255));
         }
       }
     }
+    grid_data.layers.push_back(grid_layer_data);
+  }
+  emit newGridData(grid_data);
 
-    try
-    {
-      grid_data.center = transformToWebMercator(data.info.pose, data.header);
-      emit newLayerData(grid_data);
-    }
-    catch (tf2::TransformException &ex)
-    {
-      RCLCPP_WARN_STREAM(node->get_logger(), ex.what());
-    }
+}
+
+void GridMap::updateGrid(const GridMapData& data)
+{
+  setWebMercatorPositionAndScale(data.center, data.meters_per_pixel);
+  for(const auto& layer_data: data.layers)
+  {
+    updateGridLayer(layer_data);
   }
 }
 

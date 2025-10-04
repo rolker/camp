@@ -21,23 +21,45 @@
        <enum>Qt::Horizontal</enum>
       </property>
       <widget class="map_tree_view::MapTreeView" name="mapTreeView"/>
-      <widget class="camp::MapView" name="mapView">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
-         <horstretch>1</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="renderHints">
-        <set>QPainter::Antialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
-       </property>
-       <property name="dragMode">
-        <enum>QGraphicsView::ScrollHandDrag</enum>
-       </property>
-       <property name="transformationAnchor">
-        <enum>QGraphicsView::AnchorUnderMouse</enum>
-       </property>
-      </widget>
+      <widget class="QSplitter" name="mapSplitter">
+        <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+        </property>
+        <widget class="camp::MapView" name="mapView">
+        <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+          </sizepolicy>
+        </property>
+        <property name="renderHints">
+          <set>QPainter::Antialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
+        </property>
+        <property name="dragMode">
+          <enum>QGraphicsView::ScrollHandDrag</enum>
+        </property>
+        <property name="transformationAnchor">
+          <enum>QGraphicsView::AnchorUnderMouse</enum>
+        </property>
+        </widget>
+        <widget class="camp::MapView" name="mapView2">
+        <property name="sizePolicy">
+          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>1</horstretch>
+          <verstretch>0</verstretch>
+          </sizepolicy>
+        </property>
+        <property name="renderHints">
+          <set>QPainter::Antialiasing|QPainter::SmoothPixmapTransform|QPainter::TextAntialiasing</set>
+        </property>
+        <property name="dragMode">
+          <enum>QGraphicsView::ScrollHandDrag</enum>
+        </property>
+        <property name="transformationAnchor">
+          <enum>QGraphicsView::AnchorUnderMouse</enum>
+        </property>
+        </widget>
+        </widget>
      </widget>
     </item>
    </layout>

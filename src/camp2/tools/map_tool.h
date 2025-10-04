@@ -13,6 +13,15 @@ class MapTool: public map::MapItem
 public:
   MapTool(MapItem* parent, const QString& object_name);
 
+  enum { Type = map::MapToolType };
+
+  int type() const override
+  {
+    // Enable the use of qgraphicsitem_cast with this item.
+    return Type;
+  }
+
+
 };
 
 } // namespace tools

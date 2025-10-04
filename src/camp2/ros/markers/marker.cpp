@@ -5,6 +5,8 @@
 #include "../../map_view/web_mercator.h"
 #include "../node.h"
 
+#include <QDebug>
+
 namespace camp
 {
 namespace ros
@@ -30,11 +32,7 @@ void Marker::updateMarker(const MarkerData& data)
   }
   if(data.marker.action == visualization_msgs::msg::Marker::ADD)
   {
-    setPos(data.position);
-    auto map_distortion = web_mercator::metersPerUnit(data.position);
-    double scale = 1.0/map_distortion;
-    setTransform(QTransform::fromScale(scale, scale));
-
+    setWebMercatorPositionAndScale(data.position);
     setRotation(data.rotation*180.0/M_PI);
     QPen p;
     p.setColor(QColor::fromRgbF(data.marker.color.r, data.marker.color.g, data.marker.color.b, data.marker.color.a));

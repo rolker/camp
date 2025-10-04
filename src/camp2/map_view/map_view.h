@@ -33,7 +33,7 @@ public:
     /// Bounds of the viewport in web mercator map units
     QRectF map_extents;
 
-    /// Size of a map unit in diplay pixels
+    /// Size of a map unit in display pixels
     double pixels_per_map_unit;
 
     /// Approximate size in meters of a map unit

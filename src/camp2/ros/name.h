@@ -66,6 +66,10 @@ public:
   /// Search is recursive.
   std::vector<Name *> empty_namespaces() const;
 
+
+  void contextMenu(QMenu* menu) override;
+
+
 private:
   /// List of types associated with names representing a ROS entity.
   /// Names without a type are part of the namespace only.

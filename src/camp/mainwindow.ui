@@ -111,6 +111,23 @@
              </widget>
             </item>
             <item>
+             <widget class="QLabel" name="throttleLabel">
+              <property name="toolTip">
+               <string>Throttle</string>
+              </property>
+              <property name="text">
+               <string>Throttle</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLineEdit" name="throttleLineEdit">
+              <property name="toolTip">
+               <string>Throttle percentage</string>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QLabel" name="priorityLabel">
               <property name="text">
                <string>Priority</string>

@@ -37,7 +37,7 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, cons
   gz4d::GeoPointLatLongDegrees ll = ecef_point;
   return  web_mercator::geoToMap(QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude()));
 
-  // Don't do the try/catch here, let the caller handle the exception with somthing like the following...
+  // Don't do the try/catch here, let the caller handle the exception with something like the following...
   // try
   // {
   // }
@@ -46,6 +46,13 @@ QPointF Layer::transformToWebMercator(const geometry_msgs::msg::Pose &pose, cons
   //   ROS_WARN_STREAM_THROTTLE(2.0, "Unable to find transform to earth at lookup time: "<< header.stamp << " now: " << ros::Time::now() << " source frame: " << header.frame_id << " what: " << ex.what());
   // }
   // return {};
+}
+
+QPointF Layer::frameOriginInWebMercator(const std_msgs::msg::Header &header)
+{
+  geometry_msgs::msg::Pose origin;
+  origin.orientation.w = 1.0;
+  return transformToWebMercator(origin, header);
 }
 
 } // namespace ros

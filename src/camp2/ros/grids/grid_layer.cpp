@@ -30,11 +30,9 @@ void GridLayer::updateGridLayer(const GridMapLayerData& data)
   pm.convertFromImage(data.grid_image);
   pixmap->setPixmap(pm);
 
-  auto map_distortion = web_mercator::metersPerUnit(data.center);
-  double scale = data.meters_per_pixel/map_distortion;
 
-  pixmap->setTransform(QTransform::fromScale(scale, -scale));
-  QPointF position(data.center.x() - scale * data.grid_image.size().width()/2.0, data.center.y() + scale * data.grid_image.size().height()/2.0);
+  pixmap->setTransform(QTransform::fromScale(1.0, -1.0));
+  QPointF position(-data.grid_image.size().width()/2.0, data.grid_image.size().height()/2.0);
   pixmap->setPos(position);
 
   std::stringstream status;

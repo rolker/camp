@@ -1,5 +1,7 @@
 #include "name.h"
 #include <sstream>
+#include "names_manager.h"
+
 
 namespace camp
 {
@@ -228,8 +230,6 @@ std::vector<Name *> Name::entity_names() const
   return names;
 }
 
-
-
 std::vector<Name *> Name::empty_namespaces() const
 {
   std::vector<Name*> names;
@@ -245,6 +245,18 @@ std::vector<Name *> Name::empty_namespaces() const
     names.insert(names.end(), child_empty.begin(), child_empty.end());
   }
   return names;
+}
+
+void Name::contextMenu(QMenu* menu)
+{
+  auto manager = parentOfType<NamesManager>();
+  if(manager)
+  {
+    auto parent_of_manager = manager->parentMapItem();
+    if(parent_of_manager)
+      parent_of_manager->contextMenuForItem(this, menu);
+  }
+
 }
 
 } // namespace ros

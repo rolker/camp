@@ -30,6 +30,8 @@ public:
 protected:
   QPointF transformToWebMercator(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header);
 
+  QPointF frameOriginInWebMercator(const std_msgs::msg::Header &header);
+
 
 protected:
   Node* node_ = nullptr;

@@ -28,6 +28,10 @@ public:
 
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
+
+    void writeGeoJson(QJsonObject & json, int line_number) const;
+    void writeToGeoJson(QJsonArray & array) const override;
+
     void read(const QJsonObject &json) override;
     
     QGeoCoordinate const &startLocation() const;

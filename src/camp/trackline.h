@@ -29,6 +29,9 @@ public:
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json) override;
+    bool readGeoJson(const QJsonObject &json) override;
+ 
+    void writeGeoJson(QJsonObject & json, QString name = "") const override;
     
     int type() const override {return TrackLineType;}
     

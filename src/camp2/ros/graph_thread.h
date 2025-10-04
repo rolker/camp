@@ -27,6 +27,7 @@ signals:
 
 private:
   void run() override;
+  bool keepRunning() const;
 
   /// Sleeps briefly to allow other events to be processed.
   /// This is called after emitting a number of signals to avoid flooding the event loop.

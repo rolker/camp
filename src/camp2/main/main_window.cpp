@@ -26,6 +26,7 @@ MainWindow::MainWindow(QWidget *parent)
   new QAbstractItemModelTester(map_,QAbstractItemModelTester::FailureReportingMode::Fatal, this);
   
   ui_.mapView->setMap(map_);
+  ui_.mapView2->setMap(map_);
   ui_.mapTreeView->setMap(map_);
 
   readSettings();

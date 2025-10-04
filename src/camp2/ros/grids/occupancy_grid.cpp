@@ -93,12 +93,9 @@ void OccupancyGrid::updateOccupancyGrid(const OccupancyGridData &data)
   pm.convertFromImage(data.grid_image);
   pixmap->setPixmap(pm);
 
-  auto map_distortion = web_mercator::metersPerUnit(data.origin);
-  double scale = data.meters_per_pixel/map_distortion;
-
-  pixmap->setTransform(QTransform::fromScale(scale, -scale));
-  QPointF position(data.origin.x(), data.origin.y() + scale * data.grid_image.size().height());
-  pixmap->setPos(position);
+  setWebMercatorPositionAndScale(data.origin, data.meters_per_pixel);
+  pixmap->setTransform(QTransform::fromScale(1.0, -1.0));
+  pixmap->setPos(0.0, data.grid_image.size().height());
 }
 
 }  // namespace grids

@@ -180,6 +180,40 @@ void SurveyPattern::writeToMissionPlan(QJsonArray& navArray) const
     }    
 }
 
+void SurveyPattern::writeGeoJson(QJsonObject & json, int line_number) const
+{
+  auto name = objectName() + " line " + QString::number(line_number+1);
+  MissionItem::writeGeoJson(json, name);
+  auto line = getLines()[line_number];
+  QJsonObject geom;
+  geom["type"] = "LineString";
+  QJsonArray coords;
+  for(auto wp: line)
+  {
+    QJsonArray coords_wp;
+    coords_wp.append(wp.longitude());
+    coords_wp.append(wp.latitude());
+    auto altitude = wp.altitude();
+    if(!std::isnan(altitude))
+      coords_wp.append(altitude);
+    coords.append(coords_wp);
+  }
+  geom["coordinates"] = coords;
+  json["geometry"] = geom;
+}
+
+
+void SurveyPattern::writeToGeoJson(QJsonArray &array) const
+{
+  auto lines = getLines();
+  for(int i = 0; i < lines.size(); i++)
+  {
+    QJsonObject json;
+    writeGeoJson(json, i);
+    array.append(json);
+  }
+}
+
 void SurveyPattern::read(const QJsonObject &json)
 {
     MissionItem::read(json);

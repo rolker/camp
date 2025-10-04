@@ -19,6 +19,12 @@ public:
     virtual void read(const QJsonObject &json);
     virtual void readChildren(const QJsonArray &json, int row = -1);
     virtual bool canBeSentToRobot() const = 0;
+
+    virtual bool readGeoJson(const QJsonObject &json);
+    virtual void readGeoJsonProperties(const QJsonObject& json);
+
+    virtual void writeToGeoJson(QJsonArray &array) const;
+    virtual void writeGeoJson(QJsonObject &json, QString name = "") const;
     
     virtual QGraphicsItem *findParentGraphicsItem();
     
@@ -36,15 +42,27 @@ public:
         ret->setObjectName(name);
         auto project = autonomousVehicleProject();
         if(project)
+        {
             ret->setSpeed(project->speed());
+            ret->setThrottle(project->throttle());
+        }
         return ret;
     }
     
     virtual bool canAcceptChildType(std::string const &childType) const;
     virtual QList<QList<QGeoCoordinate> > getLines() const;
 
+    /// Returns speed in knots
     double speed() const;
+
+    /// Sets speed in knots
     void setSpeed(double speed);
+
+    /// Returns throttle value (0.0 to 1.0)
+    double throttle() const;
+
+    /// Sets throttle value (0.0 to 1.0)
+    void setThrottle(double throttle);
 
     int priority() const;
     void setPriority(int priority);
@@ -54,12 +72,14 @@ public:
 
 signals:
     void speedChanged();
+    void throttleChanged();
 
 public slots:
     virtual void updateProjectedPoints();
 
 protected:
     double m_speed = 0.0; //knots
+    double throttle_ = 0.4; // 0.0 to 1.0
 
     /// Task priority, higher number is lower
     /// priority

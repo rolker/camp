@@ -21,8 +21,14 @@ public:
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
     void writeNavToMissionPlan(QJsonArray & navArray) const;
+
+    void writeGeoJson(QJsonObject & json, QString name = "") const override;
+    void writeToGeoJsonCoordinates(QJsonArray & json) const;
+
     void read(const QJsonObject &json);
-    
+
+    bool readGeoJson(const QJsonObject &json) override;
+
     int type() const {return WaypointType;}
     
     QList<QList<QGeoCoordinate> > getLines() const override;

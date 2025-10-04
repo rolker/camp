@@ -10,8 +10,12 @@ class Group : public MissionItem
 public:
     Group(MissionItem *parent = 0, int row = -1);
     
+    bool readGeoJsonChildren(const QJsonArray &json);
+    
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
+
+    void writeToGeoJson(QJsonArray & json) const override;
     
     bool canAcceptChildType(const std::string & childType) const override;
     bool canBeSentToRobot() const override;

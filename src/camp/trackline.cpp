@@ -156,6 +156,66 @@ void TrackLine::read(const QJsonObject &json)
     MissionItem::read(json);
 }
 
+bool TrackLine::readGeoJson(const QJsonObject &json)
+{
+  if(json["type"] == "Feature")
+  {
+    readGeoJsonProperties(json);
+    if(json.contains("geometry") && json["geometry"].isObject())
+    {
+      const auto& geom = json["geometry"].toObject();
+      std::string geomType;
+      if(geom.contains("type") && geom["type"].isString())
+        geomType = geom["type"].toString().toStdString();
+      if(geomType == "LineString")
+      {
+        if(geom.contains("coordinates") && geom["coordinates"].isArray())
+        {
+          const auto& coords = geom["coordinates"].toArray();
+          for(const auto& c: coords)
+          {
+            if(c.isArray())
+            {
+              const auto& point = c.toArray();
+              if(point.size() >= 2)
+              {
+                double lon = point[0].toDouble();
+                double lat = point[1].toDouble();
+                double alt = 0.0;
+                if(point.size() >= 3)
+                  alt = point[2].toDouble();
+                QGeoCoordinate position(lat, lon, alt);
+                addWaypoint(position);
+              }
+            }
+          }
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+void TrackLine::writeGeoJson(QJsonObject & json, QString name) const
+{
+  MissionItem::writeGeoJson(json, name);
+  QJsonObject geometry;
+  geometry["type"] = "LineString";
+  QJsonArray coordinates;
+  for(auto wp: waypoints())
+  {
+    QJsonArray point;
+    point.append(wp->location().longitude());
+    point.append(wp->location().latitude());
+    point.append(wp->location().altitude());
+    coordinates.append(point);
+  }
+  geometry["coordinates"] = coordinates;
+  json["geometry"] = geometry;
+  json["type"] = "Feature";
+}
+
 void TrackLine::updateProjectedPoints()
 {
     for(auto wp: waypoints())

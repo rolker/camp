@@ -15,10 +15,15 @@ namespace grids
 struct GridMapLayerData
 {
   QImage grid_image;
-  QPointF center;
-  float meters_per_pixel = 1.0;
   std::string layer_name;
   std::pair<double, double> range;
+};
+
+struct GridMapData
+{
+  std::vector<GridMapLayerData> layers;
+  QPointF center;
+  float meters_per_pixel = 1.0;
 };
 
 class GridLayer;
@@ -33,7 +38,7 @@ public:
 
   
 signals:
-  void newLayerData(GridMapLayerData data);
+  void newGridData(GridMapData data);
 
 private:
   void gridMapCallback(const grid_map_msgs::msg::GridMap &data);
@@ -44,6 +49,7 @@ private:
   GridLayer * gridLayer(const QString & layer_name) const;
 
 private slots:
+  void updateGrid(const GridMapData& data);
   void updateGridLayer(const GridMapLayerData& data);
 
 private:
@@ -57,5 +63,6 @@ private:
 } // namespace camp
 
 Q_DECLARE_METATYPE(camp::ros::grids::GridMapLayerData);
+Q_DECLARE_METATYPE(camp::ros::grids::GridMapData);
 
 #endif

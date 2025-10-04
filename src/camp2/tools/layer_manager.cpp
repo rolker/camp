@@ -19,6 +19,7 @@ map::LayerList* LayerManager::topLevelLayers()
   return parentMap()->topLevelLayers();
 }
 
+
 } // namespace tools
 } // namespace camp
 

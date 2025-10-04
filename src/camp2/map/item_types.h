@@ -24,19 +24,22 @@ enum ItemType
   MapItemType = QGraphicsItem::UserType+1,
 
   // Descendants of map::MapItem
-  LayerType,
-  TopLevelItemType,
-  LayerListType,
-  ToolsManagerType,
-  LayerManagerType,
   BackgroundManagerType,
+  GridLayerType,
+  LayerListType,
+  LayerManagerType,
+  LayerType,
+  ToolsManagerType,
+  TopLevelItemType,
   MapTilesType,
+  MapToolType,
   RasterLayerType,
+  RosGeometryManagerType,
+  RosNamesManagerType,
   RosNodeType,
   RosLayerType,
   MarkerNamespaceType,
   MarkerType,
-  GridLayerType,
 
   // other QGraphicsItem descendants
   TileType,
