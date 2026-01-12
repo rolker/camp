@@ -181,6 +181,7 @@ void Platform::aboutToUpdateNav()
 void Platform::updateSog(double sog)
 {
   // 1852m per NM
+  // m/s to knots: * 1.94384
   m_sog = sog*1.9438;
   m_sog_history.append(m_sog);
   if(m_sog_history.length() > 200)
@@ -189,7 +190,7 @@ void Platform::updateSog(double sog)
   for(auto s: m_sog_history)
       sog_sum += s;
   m_sog_avg = sog_sum/m_sog_history.length();
-  QString sogLabel = "SOG: " + QString::number(m_sog,'f',1) + ", avg: " + QString::number(m_sog_avg,'f',1) + " (200 samples)";
+  QString sogLabel = "SOG: " + QString::number(m_sog,'f',1) + " Kts (" + QString::number(sog,'f',1) + " m/s), avg: " + QString::number(m_sog_avg,'f',1) + " Kts (" + QString::number(m_sog_avg/1.9438,'f',1) + " m/s) (200 samples)";
   m_ui->sogLineEdit->setText(sogLabel);
 }
 

@@ -91,15 +91,10 @@ void DetailsView::setCurrentWidget(QWidget *widget, bool canExecute)
         {
             currentWidget->show();
             updateGeometry();
-            m_executePushButton->setEnabled(canExecute);
-            m_appendPushButton->setEnabled(canExecute);
-        }
-        else
-        {
-            m_executePushButton->setEnabled(canExecute);
-            m_appendPushButton->setEnabled(canExecute);
         }
     }
+    m_executePushButton->setEnabled(canExecute);
+    m_appendPushButton->setEnabled(canExecute);
 }
 
 void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelIndex &previous)

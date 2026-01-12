@@ -1,10 +1,11 @@
 #include "group.h"
 
-#include<QJsonObject>
-#include<QJsonArray>
-#include"autonomousvehicleproject.h"
-#include"waypoint.h"
-#include"trackline.h"
+#include <QJsonObject>
+#include <QJsonArray>
+#include "autonomousvehicleproject.h"
+#include "waypoint.h"
+#include "trackline.h"
+#include "surveyarea.h"
 
 Group::Group(MissionItem* parent, int row):MissionItem(parent, row)
 {
@@ -46,6 +47,12 @@ bool Group::readGeoJsonChildren(const QJsonArray& json)
             auto tl = createMissionItem<TrackLine>(QString::fromStdString(name));
             if(tl)
               tl->readGeoJson(obj);
+          }
+          else if(geomType == "Polygon" || geomType == "MultiPolygon")
+          {
+            auto sa = createMissionItem<SurveyArea>(QString::fromStdString(name));
+            if(sa)
+              sa->readGeoJson(obj);
           }
         }
       }

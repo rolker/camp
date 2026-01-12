@@ -16,7 +16,8 @@ public:
     
     QRectF boundingRect() const;
     void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget);
-    QPainterPath shape() const;
+    QPainterPath basic_shape() const;
+    QPainterPath shape() const override;
     
     Waypoint * createWaypoint();
     Waypoint * addWaypoint(QGeoCoordinate const &location);
@@ -27,7 +28,8 @@ public:
     void write(QJsonObject &json) const override;
     void writeToMissionPlan(QJsonArray & navArray) const override;
     void read(const QJsonObject &json) override;
-    
+    bool readGeoJson(const QJsonObject &json) override;
+
     int type() const override {return SurveyAreaType;}
     
     bool canAcceptChildType(const std::string & childType) const override;

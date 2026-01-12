@@ -96,6 +96,32 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
         }
         break;
       }
+      case visualization_msgs::msg::Marker::LINE_LIST:
+      {
+        auto cosr = cos(-marker.rotation);
+        auto sinr = sin(-marker.rotation);
+        for(auto p1 = marker.marker.points.begin(); p1 != marker.marker.points.end(); ++p1)
+        {
+          auto p2 = p1;
+          p2++;
+          if(p2 == marker.marker.points.end())
+            break;
+          auto x1 = p1->x*cosr + p1->y*sinr;
+          auto y1 = p1->x*sinr - p1->y*cosr;
+          x1 /= pixel_size_;
+          y1 /= pixel_size_;
+          auto x2 = p2->x*cosr + p2->y*sinr;
+          auto y2 = p2->x*sinr - p2->y*cosr;
+          x2 /= pixel_size_;
+          y2 /= pixel_size_;
+          path.moveTo(marker.local_position.x()+x1,marker.local_position.y()+y1);
+          path.lineTo(marker.local_position.x()+x2, marker.local_position.y()+y2);
+          p1++;
+          if(p1 == marker.marker.points.end())
+            break;
+        }
+        break;
+      }
       case visualization_msgs::msg::Marker::TEXT_VIEW_FACING:
       {
         {

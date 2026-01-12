@@ -11,6 +11,8 @@
 SurveyArea::SurveyArea(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
 {
     setShowLabelFlag(true);
+    m_lockedColor = Qt::darkBlue;
+    m_unlockedColor = Qt::blue;
 }
 
 QRectF SurveyArea::boundingRect() const
@@ -22,16 +24,30 @@ void SurveyArea::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
 {
     painter->save();
 
+    bool selected = autonomousVehicleProject()->currentSelected() == this;
+
     QPen p;
-    p.setColor(Qt::blue);
     p.setCosmetic(true);
-    p.setWidth(2);
+
+    if (selected)
+    {
+        p.setColor(Qt::black);
+        p.setWidth(8);
+        painter->setPen(p);
+        painter->drawPath(basic_shape());
+    }
+
+    if(locked())
+        p.setColor(m_lockedColor);
+    else
+        p.setColor(m_unlockedColor);
+    p.setWidth(4);
     painter->setPen(p);
-    painter->drawPath(shape());   
+    painter->drawPath(basic_shape());   
     painter->restore();
 }
 
-QPainterPath SurveyArea::shape() const
+QPainterPath SurveyArea::basic_shape() const
 {
     auto children = waypoints();
     if (children.length() > 1)
@@ -43,19 +59,25 @@ QPainterPath SurveyArea::shape() const
         while(i != children.end())
         {
             ret.lineTo((*i)->pos());
+            ret.moveTo((*i)->pos());
             if (last == children.begin())
                 drawArrow(ret,(*last)->pos(),(*i)->pos());
             last = i;
             i++;
         }
         ret.lineTo(children.front()->pos());
-        QPainterPathStroker pps;
-        pps.setWidth(2);
-        return pps.createStroke(ret);
-
+        return ret;
     }
     return QGraphicsItem::shape();
 }
+
+QPainterPath SurveyArea::shape() const
+{
+    QPainterPathStroker pps;
+    pps.setWidth(4);
+    return pps.createStroke(basic_shape());
+}
+
 
 Waypoint * SurveyArea::createWaypoint()
 {
@@ -66,6 +88,7 @@ Waypoint * SurveyArea::createWaypoint()
     wp->setFlag(QGraphicsItem::ItemIsMovable);
     wp->setFlag(QGraphicsItem::ItemIsSelectable);
     wp->setFlag(QGraphicsItem::ItemSendsGeometryChanges);
+    wp->setFlag(QGraphicsItem::ItemSendsScenePositionChanges);
     return wp;
 }
 
@@ -122,6 +145,80 @@ void SurveyArea::read(const QJsonObject& json)
 {
     GeoGraphicsMissionItem::read(json);
 }
+
+bool SurveyArea::readGeoJson(const QJsonObject& json)
+{
+  if(json["type"] == "Feature")
+  {
+    readGeoJsonProperties(json);
+    if(json.contains("geometry") && json["geometry"].isObject())
+    {
+      const auto& geom = json["geometry"].toObject();
+      if(geom.contains("type") && geom["type"].isString())
+      {
+        auto geomType = geom["type"].toString();
+        if(geomType == "Polygon" || geomType == "MultiPolygon")
+        {
+            if(geom.contains("coordinates") && geom["coordinates"].isArray())
+            {
+                const auto& coords = geom["coordinates"].toArray();
+                if(geomType == "Polygon")
+                {
+                    if(coords.size() > 0 && coords[0].isArray())
+                    {
+                        const auto& outer = coords[0].toArray();
+                        for(const auto& p: outer)
+                        {
+                            if(p.isArray())
+                            {
+                                const auto& point = p.toArray();
+                                if(point.size() >= 2 && point[0].isDouble() && point[1].isDouble())
+                                {
+                                    double lon = point[0].toDouble();
+                                    double lat = point[1].toDouble();
+                                    addWaypoint(QGeoCoordinate(lat,lon));
+                                }
+                            }
+                        }
+                    }
+                }
+                else if(geomType == "MultiPolygon")
+                {
+                    for(const auto& poly: coords)
+                    {
+                        if(poly.isArray())
+                        {
+                            const auto& polyCoords = poly.toArray();
+                            if(polyCoords.size() > 0 && polyCoords[0].isArray())
+                            {
+                                const auto& outer = polyCoords[0].toArray();
+                                for(const auto& p: outer)
+                                {
+                                    if(p.isArray())
+                                    {
+                                        const auto& point = p.toArray();
+                                        if(point.size() >= 2 && point[0].isDouble() && point[1].isDouble())
+                                        {
+                                            double lon = point[0].toDouble();
+                                            double lat = point[1].toDouble();
+                                            addWaypoint(QGeoCoordinate(lat,lon));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break; // only read first polygon
+                    }
+                }
+                return true;
+            }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 
 void SurveyArea::updateProjectedPoints()
 {
