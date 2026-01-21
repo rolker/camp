@@ -18,7 +18,7 @@ find_package(nav_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
-find_package(marine_interfaces REQUIRED)
+
 #find_package(sound_play REQUIRED) pending port to ROS2
 find_package(qt_gui_cpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
@@ -155,7 +155,7 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     nav_msgs
     marine_autonomy
     marine_interfaces
-    marine_interfaces
+
     rclcpp
     # sound_play
     tf2
@@ -285,7 +285,7 @@ ament_target_dependencies(camp2
     marine_ais_msgs
     marine_autonomy
     marine_interfaces
-    marine_interfaces
+
     rclcpp
     tf2
     tf2_ros

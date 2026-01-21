@@ -33,7 +33,7 @@ graph TD
     end
 
     subgraph "ROS 2 System"
-        P11[Project11 Platforms] -.->|/project11/platforms| RN
+        MA[marine_autonomy] -.->|/marine_autonomy/platforms| RN
         Sensors[Sensor Data] -.->|/occupancy_grid| RN
     end
 ```
