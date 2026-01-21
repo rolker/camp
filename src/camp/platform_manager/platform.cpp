@@ -88,7 +88,7 @@ QPainterPath Platform::shape() const
   return ret;
 }
 
-void Platform::update(const project11_msgs::msg::Platform& platform)
+void Platform::update(const marine_interfaces::msg::Platform& platform)
 {
   if(objectName().toStdString() != platform.name)
   {

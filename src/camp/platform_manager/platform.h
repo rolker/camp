@@ -3,7 +3,7 @@
 
 #include "ros/ros_widget.h"
 #include "ship_track.h"
-#include "project11_msgs/msg/platform_list.hpp"
+#include "marine_interfaces/msg/platform_list.hpp"
 #include "nav_msgs/msg/path.hpp"
 
 namespace Ui
@@ -28,7 +28,7 @@ public:
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
   QPainterPath shape() const override;
 
-  void update(const project11_msgs::msg::Platform &platform);
+  void update(const marine_interfaces::msg::Platform &platform);
 
   MissionManager* missionManager() const;
   HelmManager* helmManager() const;

@@ -70,8 +70,8 @@ void HelmManager::updateRobotNamespace(QString robot_namespace)
   
 
 
-  heartbeat_subscription_ = node_->create_subscription<project11_msgs::msg::Heartbeat>(ns+"project11/heartbeat", 1, std::bind(&HelmManager::heartbeatCallback, this, std::placeholders::_1));
-  send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>(ns+"project11/send_command",1);
+  heartbeat_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>(ns+"marine_autonomy/heartbeat", 1, std::bind(&HelmManager::heartbeatCallback, this, std::placeholders::_1));
+  send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>(ns+"marine_autonomy/send_command",1);
 }
 
 void HelmManager::sendPilotingModeRequest(QString piloting_mode)
@@ -81,7 +81,7 @@ void HelmManager::sendPilotingModeRequest(QString piloting_mode)
   send_command_publisher_->publish(cmd); 
 }
 
-void HelmManager::heartbeatCallback(const project11_msgs::msg::Heartbeat& message)
+void HelmManager::heartbeatCallback(const marine_interfaces::msg::Heartbeat& message)
 {
   rclcpp::Time last_heartbeat_receive_time = node_->get_clock()->now();
   rclcpp::Time last_heartbeat_timestamp = message.header.stamp;

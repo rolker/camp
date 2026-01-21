@@ -2,7 +2,7 @@
 #define CAMP_AIS_MANAGER_H
 
 #include "ros/ros_widget.h"
-#include "project11_msgs/msg/contact.hpp"
+#include "marine_interfaces/msg/contact.hpp"
 #include "marine_ais_msgs/msg/ais_contact.hpp"
 #include "ais_contact.h"
 
@@ -35,7 +35,7 @@ private slots:
   void addAisReport(AISReport *report);
 
 private:
-  void contactCallback(const project11_msgs::msg::Contact& message);
+  void contactCallback(const marine_interfaces::msg::Contact& message);
   void aisContactCallback(const marine_ais_msgs::msg::AISContact& message);
 
   Ui::AISManager* m_ui;

@@ -3,7 +3,7 @@
 
 #include <QWidget>
 #include "rclcpp/rclcpp.hpp"
-#include "project11_msgs/msg/heartbeat.hpp"
+#include "marine_interfaces/msg/heartbeat.hpp"
 #include "std_msgs/msg/string.hpp"
 
 namespace Ui
@@ -42,13 +42,13 @@ private slots:
   void watchdogUpdate();
 
 private:
-  void heartbeatCallback(const project11_msgs::msg::Heartbeat& message);
+  void heartbeatCallback(const marine_interfaces::msg::Heartbeat& message);
 
   Ui::HelmManager* ui;
 
   rclcpp::Node::SharedPtr node_;
 
-  rclcpp::Subscription<project11_msgs::msg::Heartbeat>::SharedPtr heartbeat_subscription_;
+  rclcpp::Subscription<marine_interfaces::msg::Heartbeat>::SharedPtr heartbeat_subscription_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr send_command_publisher_;
 
   rclcpp::Time last_heartbeat_timestamp_;

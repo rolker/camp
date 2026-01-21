@@ -16,7 +16,7 @@ void SoundPlay::onNodeUpdated()
 {
   if(node_)
   {
-    sound_client_ = std::make_shared<sound_play::SoundClient>(node_, "project11/robotsound");
+    sound_client_ = std::make_shared<sound_play::SoundClient>(node_, "marine_autonomy/robotsound");
   }
   else
   {

@@ -3,9 +3,9 @@
 
 #include "ros/ros_widget.h"
 #include <QGeoCoordinate>
-#include "project11_msgs/msg/platform_list.hpp"
+#include "marine_interfaces/msg/platform_list.hpp"
 
-Q_DECLARE_METATYPE(project11_msgs::msg::Platform);
+Q_DECLARE_METATYPE(marine_interfaces::msg::Platform);
 
 namespace Ui
 {
@@ -33,14 +33,14 @@ public slots:
   void platformPosition(Platform * platform, QGeoCoordinate position);
   
 private slots:
-  void updatePlatform(project11_msgs::msg::Platform platform);
+  void updatePlatform(marine_interfaces::msg::Platform platform);
   void on_tabWidget_currentChanged(int index);
 
 private:
-  void platformListCallback(const project11_msgs::msg::PlatformList &message);
+  void platformListCallback(const marine_interfaces::msg::PlatformList &message);
 
   Ui::PlatformManager* m_ui;
-  rclcpp::Subscription<project11_msgs::msg::PlatformList>::SharedPtr platform_list_subscription_;
+  rclcpp::Subscription<marine_interfaces::msg::PlatformList>::SharedPtr platform_list_subscription_;
 
   std::map<std::string, Platform*> m_platforms;
 

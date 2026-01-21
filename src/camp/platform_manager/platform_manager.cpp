@@ -19,18 +19,18 @@ PlatformManager::~PlatformManager()
 
 void PlatformManager::onNodeUpdated()
 {
-  platform_list_subscription_ = node_->create_subscription<project11_msgs::msg::PlatformList>("/project11/platforms", 5, std::bind(&PlatformManager::platformListCallback, this, std::placeholders::_1));
+  platform_list_subscription_ = node_->create_subscription<marine_interfaces::msg::PlatformList>("/marine_autonomy/platforms", 5, std::bind(&PlatformManager::platformListCallback, this, std::placeholders::_1));
 }
 
-void PlatformManager::platformListCallback(const project11_msgs::msg::PlatformList &message)
+void PlatformManager::platformListCallback(const marine_interfaces::msg::PlatformList &message)
 {
   for(const auto& platform: message.platforms)
   {
-    QMetaObject::invokeMethod(this, "updatePlatform", Qt::QueuedConnection, Q_ARG(project11_msgs::msg::Platform, platform));
+    QMetaObject::invokeMethod(this, "updatePlatform", Qt::QueuedConnection, Q_ARG(marine_interfaces::msg::Platform, platform));
   }
 }
 
-void PlatformManager::updatePlatform(project11_msgs::msg::Platform platform)
+void PlatformManager::updatePlatform(marine_interfaces::msg::Platform platform)
 {
   if(m_platforms.find(platform.name) == m_platforms.end())
   {

@@ -3,7 +3,7 @@
 
 #include "ros/ros_object.h"
 #include "geographicsitem.h"
-#include "project11_msgs/msg/nav_source.hpp"
+#include "marine_interfaces/msg/nav_source.hpp"
 #include "locationposition.h"
 #include "sensor_msgs/msg/nav_sat_fix.hpp"
 #include "sensor_msgs/msg/imu.hpp"
@@ -18,7 +18,7 @@ class NavSource: public camp_ros::ROSObject, public GeoGraphicsItem
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  NavSource(const project11_msgs::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem = nullptr);
+  NavSource(const marine_interfaces::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem = nullptr);
 
   int type() const override {return NavSourceType;}
 
