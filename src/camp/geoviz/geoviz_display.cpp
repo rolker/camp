@@ -10,7 +10,7 @@ GeovizDisplay::GeovizDisplay(QWidget* parent, QGraphicsItem *parentItem):QWidget
 void GeovizDisplay::updateRobotNamespace(QString robotNamespace)
 {
   ros::NodeHandle nh;
-  m_display_subscriber = nh.subscribe("/"+robotNamespace.toStdString()+"/project11/display", 10, &GeovizDisplay::geoVizDisplayCallback, this);
+  m_display_subscriber = nh.subscribe("/"+robotNamespace.toStdString()+"/marine_autonomy/display", 10, &GeovizDisplay::geoVizDisplayCallback, this);
 }
 
 QRectF GeovizDisplay::boundingRect() const

@@ -18,13 +18,13 @@ void MissionManager::updateRobotNamespace(QString robot_namespace)
 {
   if(node_)
   {
-    mission_status_subscription_ = node_->create_subscription<project11_msgs::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/project11/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
-    send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/project11/send_command",1);
+    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine_autonomy/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
+    send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/marine_autonomy/send_command",1);
 
     rclcpp::QoS qos(1);
     qos.transient_local();
 
-    send_avoidance_costmap_publisher_ = node_->create_publisher<project11_nav_msgs::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/project11/avoidance_map", qos);
+    send_avoidance_costmap_publisher_ = node_->create_publisher<marine_interfaces::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/marine_autonomy/avoidance_map", qos);
   }
 }
 
@@ -79,7 +79,7 @@ void MissionManager::on_cancelOverridePushButton_clicked(bool checked)
   sendCancelOverride();
 }
 
-void MissionManager::missionStatusCallback(const project11_msgs::msg::Heartbeat& message)
+void MissionManager::missionStatusCallback(const marine_interfaces::msg::Heartbeat& message)
 {
   QString status_string;
   for(auto kv: message.values)
@@ -191,7 +191,7 @@ void MissionManager::sendCommand(const QString& command)
     send_command_publisher_->publish(cmd);
 }
 
-void MissionManager::sendAvoidanceAreas(project11_nav_msgs::msg::GeoOccupancyVectorMap& map)
+void MissionManager::sendAvoidanceAreas(marine_interfaces::msg::GeoOccupancyVectorMap& map)
 {
   if(node_)
   {

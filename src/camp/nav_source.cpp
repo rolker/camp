@@ -5,7 +5,7 @@
 #include <QTimer>
 #include <QDebug>
 
-NavSource::NavSource(const project11_msgs::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem): camp_ros::ROSObject(parent), GeoGraphicsItem(parentItem)
+NavSource::NavSource(const marine_interfaces::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem): camp_ros::ROSObject(parent), GeoGraphicsItem(parentItem)
 {
   setColor(color_);
   pending_position_topic_ = source.position_topic;

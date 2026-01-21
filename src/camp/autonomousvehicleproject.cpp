@@ -560,7 +560,7 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 
 void AutonomousVehicleProject::updateAvoidanceAreas()
 {
-    project11_nav_msgs::msg::GeoOccupancyVectorMap avoidance_map;
+    marine_interfaces::msg::GeoOccupancyVectorMap avoidance_map;
     avoidance_map.header.frame_id = "wgs84";
     avoidance_map.bounds.min_pt.altitude = std::nan("");
     bool first_waypoint = true;
@@ -571,7 +571,7 @@ void AutonomousVehicleProject::updateAvoidanceAreas()
         if(avoid_area)
         {
             auto waypoints = avoid_area->childMissionItems();
-            project11_nav_msgs::msg::GeoOccupancyPolygon polygon;
+            marine_interfaces::msg::GeoOccupancyPolygon polygon;
             polygon.occupancy_probability = 100;
             for(auto item: waypoints)
             {
