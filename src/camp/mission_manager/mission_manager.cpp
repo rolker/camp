@@ -18,13 +18,13 @@ void MissionManager::updateRobotNamespace(QString robot_namespace)
 {
   if(node_)
   {
-    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine_autonomy/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
-    send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/marine_autonomy/send_command",1);
+    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
+    send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/marine/send_command",1);
 
     rclcpp::QoS qos(1);
     qos.transient_local();
 
-    send_avoidance_costmap_publisher_ = node_->create_publisher<marine_interfaces::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/marine_autonomy/avoidance_map", qos);
+    send_avoidance_costmap_publisher_ = node_->create_publisher<marine_interfaces::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/marine/avoidance_map", qos);
   }
 }
 
