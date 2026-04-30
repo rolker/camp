@@ -63,8 +63,9 @@ multiple inheritance.
 
 If a message has a header with a `frame_id`, its bridge wraps a `MessageFilter`
 keyed on the target frame. By the time the converter runs, the transform is
-already in the buffer; lookups inside the converter use `tf2::TimePointZero`
-and **no timeout**. No callback ever blocks waiting on TF.
+already in the buffer; lookups inside the converter pass the message stamp
+(or `tf2::TimePointZero` when the latest transform is genuinely intended) and
+use **no timeout**. No callback ever blocks waiting on TF.
 
 `ROSWidget::getGeoCoordinate()` and its `Grid::getGeoCoordinate()` clone are
 deleted **once all consumers are ported**. While ports are in flight (this PR
