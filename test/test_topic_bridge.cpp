@@ -124,7 +124,6 @@ protected:
   std::thread executor_thread;
   rclcpp::CallbackGroup::SharedPtr default_cbg;
   Qt::HANDLE qt_thread_handle = nullptr;
-  std::atomic<unsigned> node_counter{0};
 
   void SetUp() override
   {
@@ -449,6 +448,80 @@ TEST_F(TopicBridgeTest, multipleBridgesOnSameNodeDoNotInterfere)
   }));
   EXPECT_EQ(r1.int_payloads.front(), 1);
   EXPECT_EQ(r2.int_payloads.front(), 20);
+}
+
+// ---------------------------------------------------------------------------
+// Callback-group isolation
+// ---------------------------------------------------------------------------
+
+TEST_F(TopicBridgeTest, sceneCallbackDoesNotStarveRealtimeCallback)
+{
+  // Two MutuallyExclusive callback groups can run in parallel only if the
+  // executor has at least two worker threads. On a degenerate single-core
+  // machine this test would deadlock; skip there.
+  if (executor->get_number_of_threads() < 2)
+  {
+    GTEST_SKIP() << "MultiThreadedExecutor has fewer than 2 threads; "
+                 << "callback-group isolation cannot be observed.";
+  }
+
+  auto realtime_cbg = node->create_callback_group(
+    rclcpp::CallbackGroupType::MutuallyExclusive);
+  auto scene_cbg = node->create_callback_group(
+    rclcpp::CallbackGroupType::MutuallyExclusive);
+
+  TestReceiver realtime_receiver;
+  TestReceiver scene_receiver;
+
+  std::atomic<bool> scene_in_callback{false};
+  std::atomic<bool> release_scene{false};
+
+  // Scene bridge: converter blocks until released, simulating a slow payload
+  // conversion that would otherwise starve the realtime group on a shared
+  // executor.
+  camp_ros::PlainTopicBridge<std_msgs::msg::Int32, int> scene_bridge(
+    node, "/iso_scene", rclcpp::QoS(10), scene_cbg,
+    [&](const std_msgs::msg::Int32 & m) -> std::optional<int>
+    {
+      scene_in_callback.store(true);
+      while (!release_scene.load()) std::this_thread::sleep_for(5ms);
+      return m.data;
+    },
+    &scene_receiver,
+    [&scene_receiver](int v) { scene_receiver.onInt(v); });
+
+  // Realtime bridge: fast converter.
+  camp_ros::PlainTopicBridge<std_msgs::msg::Int32, int> realtime_bridge(
+    node, "/iso_rt", rclcpp::QoS(10), realtime_cbg,
+    [](const std_msgs::msg::Int32 & m) -> std::optional<int> { return m.data; },
+    &realtime_receiver,
+    [&realtime_receiver](int v) { realtime_receiver.onInt(v); });
+
+  auto scene_pub = node->create_publisher<std_msgs::msg::Int32>("/iso_scene", 10);
+  auto rt_pub = node->create_publisher<std_msgs::msg::Int32>("/iso_rt", 10);
+  waitForUntil(500, [&]() {
+    return scene_pub->get_subscription_count() >= 1 &&
+           rt_pub->get_subscription_count() >= 1;
+  });
+
+  // Block the scene group's worker.
+  std_msgs::msg::Int32 sm; sm.data = 1; scene_pub->publish(sm);
+  ASSERT_TRUE(waitForUntil(2000, [&]() { return scene_in_callback.load(); }))
+    << "scene callback never started — cannot test isolation";
+
+  // While scene is blocked, the realtime callback must still fire.
+  std_msgs::msg::Int32 rm; rm.data = 99; rt_pub->publish(rm);
+  QSignalSpy spy(&realtime_receiver, &TestReceiver::gotOne);
+  ASSERT_TRUE(spy.wait(2000))
+    << "realtime callback was starved by a blocked scene callback";
+  EXPECT_EQ(realtime_receiver.int_payloads.front(), 99);
+  EXPECT_EQ(scene_receiver.int_payloads.size(), 0u)
+    << "scene receiver fired despite its converter still blocking";
+
+  // Cleanup: release the scene callback so the bridge's subscription can
+  // shut down cleanly when it goes out of scope.
+  release_scene.store(true);
+  pumpEventsFor(200);
 }
 
 // ---------------------------------------------------------------------------
