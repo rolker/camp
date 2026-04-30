@@ -132,8 +132,13 @@ public:
 private:
   rclcpp::Node::SharedPtr node_;
   std::string topic_;
-  message_filters::Subscriber<MsgT> subscriber_;
+  // dispatcher_ owns the MessageFilter that subscriber_ feeds via
+  // connectInput(). Declare dispatcher_ before subscriber_ so that on
+  // destruction subscriber_ is torn down (and stops feeding the filter)
+  // before the filter itself is destroyed. Otherwise an in-flight ROS
+  // callback can call MessageFilter::add() on freed memory.
   std::unique_ptr<TfDispatcher<MsgT, PayloadT>> dispatcher_;
+  message_filters::Subscriber<MsgT> subscriber_;
 };
 
 } // namespace camp_ros

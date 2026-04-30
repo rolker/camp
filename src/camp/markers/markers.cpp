@@ -165,6 +165,10 @@ void Markers::setTopic(std::string topic, std::string type)
   if (!node_) return;
 
   // Tear down any prior wiring (allows re-binding to a new topic at runtime).
+  // Unsubscribe the message_filters subscriber FIRST so it stops feeding the
+  // dispatcher's MessageFilter before we destroy that filter; otherwise an
+  // in-flight ROS callback can call MessageFilter::add() on freed memory.
+  marker_subscription_.unsubscribe();
   marker_array_subscription_.reset();
   marker_dispatcher_.reset();
 
