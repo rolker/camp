@@ -238,7 +238,11 @@ void Markers::onMarkerPayload(std::shared_ptr<MarkerData> data)
       {
         QTimer::singleShot(
           static_cast<int>((rclcpp::Duration(data->marker.lifetime).seconds() + 1.0) * 1000),
-          this, [this]() { this->purgeExpiredMarkers(); });
+          this, [this]() {
+            prepareGeometryChange();
+            this->purgeExpiredMarkers();
+            GeoGraphicsItem::update();
+          });
       }
       break;
     case visualization_msgs::msg::Marker::DELETE:

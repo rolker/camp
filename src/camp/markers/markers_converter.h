@@ -5,8 +5,9 @@
 //
 // The converter runs on the ROS executor thread inside a TfDispatcher. The
 // dispatcher's MessageFilter has already verified that the marker's frame is
-// transformable to "earth", so the buffer lookup uses TimePointZero with no
-// timeout. Errors here are buffer-edge races and we drop the marker.
+// transformable to "earth" at the message stamp, so the buffer lookup uses
+// the message stamp with no timeout. Errors here are buffer-edge races and
+// we drop the marker.
 
 #include <memory>
 #include <optional>
