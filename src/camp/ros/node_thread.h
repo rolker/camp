@@ -9,12 +9,14 @@ namespace camp_ros
 {
 
 class NodeManager;
+class RosContext;
 
 class NodeThread: public QObject
 {
   Q_OBJECT
 public:
   NodeThread();
+  ~NodeThread() override;
 
 public slots:
   // Starts the ROS node.
@@ -28,6 +30,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   std::unique_ptr<tf2_ros::TransformListener> transform_listener_;
   std::shared_ptr<tf2_ros::Buffer> buffer_;
+  std::unique_ptr<RosContext> context_;
 };
 
 } // namespace camp_ros
