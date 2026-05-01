@@ -27,7 +27,11 @@ namespace camp_ros
 /// it is dispatched to the receiver via Qt::QueuedConnection.
 ///
 /// Lifetime contract: the receiver QObject must outlive this bridge. In
-/// practice, hold the bridge as a member of the receiver.
+/// practice, hold the bridge as a member of the receiver. The `QPointer`
+/// test inside the dispatch lambda is a defensive courtesy only — `QPointer`
+/// is not thread-safe, so the actual safety guarantee comes from the
+/// ownership rule plus `Qt::QueuedConnection` (events queued to a destroyed
+/// receiver are dropped by Qt's event system).
 template<typename MsgT, typename PayloadT>
 class PlainTopicBridge
 {
@@ -90,6 +94,11 @@ private:
 /// are released only when the target frame is reachable; the converter runs
 /// on the executor thread with a TF buffer guaranteed-available, and the
 /// payload is dispatched to the receiver via Qt::QueuedConnection.
+///
+/// Lifetime contract: see PlainTopicBridge above (and the underlying
+/// TfDispatcher) — the receiver QObject must outlive this bridge, and the
+/// `QPointer` test in the dispatch path is courtesy, not the actual safety
+/// guarantee.
 template<typename MsgT, typename PayloadT>
 class TfTopicBridge
 {

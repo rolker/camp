@@ -34,7 +34,11 @@ namespace camp_ros
 /// add(). For the common "subscribe + gate" case, see TopicBridge.
 ///
 /// Lifetime contract: the receiver QObject must outlive this dispatcher.
-/// In practice, hold the dispatcher as a member of the receiver.
+/// In practice, hold the dispatcher as a member of the receiver. The
+/// `QPointer` test inside the dispatch lambda is a defensive courtesy only —
+/// `QPointer` is not thread-safe, so the actual safety guarantee comes from
+/// the ownership rule plus `Qt::QueuedConnection` (events queued to a
+/// destroyed receiver are dropped by Qt's event system).
 template<typename MsgT, typename PayloadT>
 class TfDispatcher
 {
