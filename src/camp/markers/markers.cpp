@@ -164,14 +164,6 @@ void Markers::setTopic(std::string topic, std::string type)
 {
   if (!node_) return;
 
-  // Tear down any prior wiring (allows re-binding to a new topic at runtime).
-  // Unsubscribe the message_filters subscriber FIRST so it stops feeding the
-  // dispatcher's MessageFilter before we destroy that filter; otherwise an
-  // in-flight ROS callback can call MessageFilter::add() on freed memory.
-  marker_subscription_.unsubscribe();
-  marker_array_subscription_.reset();
-  marker_dispatcher_.reset();
-
   // Pick the scene callback group if RosContext is available so a slow
   // marker conversion can't starve realtime callbacks. Falls back to the
   // node's default group when RosContext hasn't been set (e.g. in tests
@@ -180,14 +172,27 @@ void Markers::setTopic(std::string topic, std::string type)
   auto * ctx = camp_ros::RosContext::instance();
   if (ctx) cbg = ctx->group(camp_ros::RosContext::Group::Scene);
 
-  // Build the dispatcher (target frame "earth", buffer 50 messages, drop
-  // after 1 s without TF — preserves prior behavior).
-  marker_dispatcher_ = std::make_unique<
-    camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>>(
-      node_, transform_buffer_, "earth", 50, std::chrono::seconds(1),
-      makeMarkerConverter(node_),
-      this,
-      [this](std::shared_ptr<MarkerData> data) { this->onMarkerPayload(std::move(data)); });
+  {
+    // Hold the lock across the entire teardown + rebuild: this is the
+    // window where onMarkerArrayMessage (executor thread) could see a
+    // null or half-built marker_dispatcher_. Tear down the subscriber
+    // first so it stops feeding the filter, then reset the dispatcher,
+    // then construct the replacement before releasing the lock.
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
+
+    marker_subscription_.unsubscribe();
+    marker_array_subscription_.reset();
+    marker_dispatcher_.reset();
+
+    // Build the dispatcher (target frame "earth", buffer 50 messages, drop
+    // after 1 s without TF — preserves prior behavior).
+    marker_dispatcher_ = std::make_unique<
+      camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>>(
+        node_, transform_buffer_, "earth", 50, std::chrono::seconds(1),
+        makeMarkerConverter(node_),
+        this,
+        [this](std::shared_ptr<MarkerData> data) { this->onMarkerPayload(std::move(data)); });
+  }
 
   if (type == "visualization_msgs/msg/MarkerArray")
   {
@@ -203,6 +208,7 @@ void Markers::setTopic(std::string topic, std::string type)
     rclcpp::SubscriptionOptions options;
     if (cbg) options.callback_group = cbg;
     marker_subscription_.subscribe(node_, topic, rclcpp::QoS(1).get_rmw_qos_profile(), options);
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
     marker_dispatcher_->connectInput(marker_subscription_);
   }
 
@@ -216,6 +222,9 @@ void Markers::setPixelSize(double s)
 
 void Markers::onMarkerArrayMessage(const visualization_msgs::msg::MarkerArray & data)
 {
+  // Runs on the ROS executor thread; setTopic on the Qt thread can replace
+  // marker_dispatcher_ underneath us, so guard against the race.
+  std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
   if (!marker_dispatcher_) return;
   for (const auto & marker : data.markers)
   {
@@ -253,7 +262,9 @@ void Markers::onMarkerPayload(std::shared_ptr<MarkerData> data)
       }
       break;
     case visualization_msgs::msg::Marker::DELETEALL:
-      current_markers_[data->marker.ns].clear();
+      // visualization_msgs/Marker DELETEALL clears every marker across every
+      // namespace; the message's own ns is ignored.
+      current_markers_.clear();
       break;
     default:
       if (node_)

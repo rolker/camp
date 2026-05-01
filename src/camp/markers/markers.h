@@ -1,9 +1,12 @@
 #ifndef MARKERS_H
 #define MARKERS_H
 
+#include <mutex>
+
+#include <message_filters/subscriber.hpp>
+
 #include "ros/ros_widget.h"
 #include "ros/tf_dispatcher.h"
-#include "ros/topic_bridge.h"
 #include "geographicsitem.h"
 #include "markers/markers_converter.h"
 #include "ui_markers.h"
@@ -49,6 +52,11 @@ private:
   // TF-gated dispatcher shared by both topic types: each Marker is fed in,
   // gated on TF to "earth", converted to MarkerData on the executor thread,
   // and dispatched to onMarkerPayload on the Qt main thread.
+  //
+  // The dispatcher is mutated by setTopic (Qt thread) and read/dereferenced
+  // by onMarkerArrayMessage (executor thread). Guard both accesses with the
+  // mutex below; the executor's per-callback hold is brief in practice.
+  std::mutex marker_dispatcher_mutex_;
   std::unique_ptr<camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>> marker_dispatcher_;
   message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subscription_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
