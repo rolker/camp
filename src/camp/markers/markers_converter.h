@@ -53,11 +53,11 @@ convertMarker(const visualization_msgs::msg::Marker & m,
               const rclcpp::Time & now,
               rclcpp::Logger logger)
 {
-  auto payload = std::make_shared<MarkerPayload>();
-  payload->marker = m;
-
   if (m.action == visualization_msgs::msg::Marker::ADD)
   {
+    // Run all drop checks BEFORE allocating MarkerPayload — the converter
+    // runs on the executor thread and unnecessary heap traffic per dropped
+    // marker adds up under high-rate sources.
     if (rclcpp::Duration(m.lifetime).nanoseconds() != 0 &&
         rclcpp::Time(m.header.stamp) + rclcpp::Duration(m.lifetime) < now)
     {
@@ -74,6 +74,7 @@ convertMarker(const visualization_msgs::msg::Marker & m,
       return std::nullopt;
     }
 
+    geometry_msgs::msg::PoseStamped ecef;
     try
     {
       geometry_msgs::msg::PoseStamped ps;
@@ -81,15 +82,7 @@ convertMarker(const visualization_msgs::msg::Marker & m,
       ps.pose = m.pose;
       // Timeout 0: don't wait. The dispatcher's MessageFilter has already
       // verified the transform is reachable at the message stamp.
-      auto ecef = buffer.transform(ps, "earth", tf2::durationFromSec(0.0));
-
-      gz4d::GeoPointECEF ecef_point;
-      ecef_point[0] = ecef.pose.position.x;
-      ecef_point[1] = ecef.pose.position.y;
-      ecef_point[2] = ecef.pose.position.z;
-      gz4d::GeoPointLatLongDegrees ll = ecef_point;
-      payload->position = QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
-      payload->rotation = tf2::getYaw(m.pose.orientation);
+      ecef = buffer.transform(ps, "earth", tf2::durationFromSec(0.0));
     }
     catch (const tf2::TransformException & ex)
     {
@@ -99,7 +92,25 @@ convertMarker(const visualization_msgs::msg::Marker & m,
         << " (" << m.header.frame_id << " -> earth): " << ex.what());
       return std::nullopt;
     }
+
+    // Marker is being kept — allocate and populate.
+    auto payload = std::make_shared<MarkerPayload>();
+    payload->marker = m;
+
+    gz4d::GeoPointECEF ecef_point;
+    ecef_point[0] = ecef.pose.position.x;
+    ecef_point[1] = ecef.pose.position.y;
+    ecef_point[2] = ecef.pose.position.z;
+    gz4d::GeoPointLatLongDegrees ll = ecef_point;
+    payload->position = QGeoCoordinate(ll.latitude(), ll.longitude(), ll.altitude());
+    payload->rotation = tf2::getYaw(m.pose.orientation);
+    return payload;
   }
+
+  // DELETE / DELETEALL: no drop conditions, no TF lookup; allocate a
+  // payload carrying the action so the receiver can act on it.
+  auto payload = std::make_shared<MarkerPayload>();
+  payload->marker = m;
   return payload;
 }
 
