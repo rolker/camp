@@ -171,7 +171,8 @@ TEST_F(TopicBridgeTest, plainBridgeReceivesPublishedMessage)
   // Publisher uses the same node + executor as the bridge. Wait briefly for
   // the subscription to come up before publishing.
   auto pub = node->create_publisher<std_msgs::msg::Int32>("/test_int", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   std_msgs::msg::Int32 msg;
   msg.data = 42;
@@ -193,7 +194,8 @@ TEST_F(TopicBridgeTest, plainBridgeDispatchesOnQtThreadNotExecutorThread)
     [&receiver](int v) { receiver.onInt(v); });
 
   auto pub = node->create_publisher<std_msgs::msg::Int32>("/test_int_thread", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   std_msgs::msg::Int32 msg;
   msg.data = 1;
@@ -219,7 +221,8 @@ TEST_F(TopicBridgeTest, plainBridgeConverterReturningNulloptDropsMessage)
     [&receiver](int v) { receiver.onInt(v); });
 
   auto pub = node->create_publisher<std_msgs::msg::Int32>("/test_int_drop", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   std_msgs::msg::Int32 dropped;
   dropped.data = -7;
@@ -280,7 +283,8 @@ TEST_F(TopicBridgeTest, tfBridgeWithdrawsDispatchUntilTfArrives)
 
   auto pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
     "/test_pt_late", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   // Publish before TF is available.
   geometry_msgs::msg::PointStamped m;
@@ -322,7 +326,8 @@ TEST_F(TopicBridgeTest, tfBridgeDispatchesImmediatelyWhenTfPresent)
 
   auto pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
     "/test_pt_early", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   geometry_msgs::msg::PointStamped m;
   m.header.frame_id = "base_link";
@@ -350,7 +355,8 @@ TEST_F(TopicBridgeTest, tfBridgeDropsMessageWhenTfNeverArrives)
 
   auto pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
     "/test_pt_drop", 10);
-  waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
   geometry_msgs::msg::PointStamped m;
   m.header.frame_id = "no_such_frame";
@@ -381,7 +387,8 @@ TEST_F(TopicBridgeTest, tfBridgeRecoversAfterTopicStopsAndResumes)
   {
     auto pub = node->create_publisher<geometry_msgs::msg::PointStamped>(
       "/test_pt_resume", 10);
-    waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; });
+    ASSERT_TRUE(waitForUntil(500, [&]() { return pub->get_subscription_count() >= 1; }))
+    << "publisher never matched the bridge's subscriber";
 
     geometry_msgs::msg::PointStamped m;
     m.header.frame_id = "base_link";
@@ -403,7 +410,8 @@ TEST_F(TopicBridgeTest, tfBridgeRecoversAfterTopicStopsAndResumes)
   // Resume: a fresh publisher.
   auto pub2 = node->create_publisher<geometry_msgs::msg::PointStamped>(
     "/test_pt_resume", 10);
-  waitForUntil(500, [&]() { return pub2->get_subscription_count() >= 1; });
+  ASSERT_TRUE(waitForUntil(500, [&]() { return pub2->get_subscription_count() >= 1; }))
+    << "fresh publisher never matched the bridge's subscriber after resume";
 
   geometry_msgs::msg::PointStamped m2;
   m2.header.frame_id = "base_link";
@@ -436,9 +444,9 @@ TEST_F(TopicBridgeTest, multipleBridgesOnSameNodeDoNotInterfere)
 
   auto pa = node->create_publisher<std_msgs::msg::Int32>("/multi_a", 10);
   auto pb = node->create_publisher<std_msgs::msg::Int32>("/multi_b", 10);
-  waitForUntil(500, [&]() {
+  ASSERT_TRUE(waitForUntil(500, [&]() {
     return pa->get_subscription_count() >= 1 && pb->get_subscription_count() >= 1;
-  });
+  })) << "publishers /multi_a and /multi_b never matched their subscribers";
 
   std_msgs::msg::Int32 ma; ma.data = 1; pa->publish(ma);
   std_msgs::msg::Int32 mb; mb.data = 2; pb->publish(mb);
@@ -499,10 +507,10 @@ TEST_F(TopicBridgeTest, sceneCallbackDoesNotStarveRealtimeCallback)
 
   auto scene_pub = node->create_publisher<std_msgs::msg::Int32>("/iso_scene", 10);
   auto rt_pub = node->create_publisher<std_msgs::msg::Int32>("/iso_rt", 10);
-  waitForUntil(500, [&]() {
+  ASSERT_TRUE(waitForUntil(500, [&]() {
     return scene_pub->get_subscription_count() >= 1 &&
            rt_pub->get_subscription_count() >= 1;
-  });
+  })) << "publishers /iso_scene and /iso_rt never matched their subscribers";
 
   // Block the scene group's worker.
   std_msgs::msg::Int32 sm; sm.data = 1; scene_pub->publish(sm);

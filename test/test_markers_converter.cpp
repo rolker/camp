@@ -85,7 +85,9 @@ TEST_F(MarkersConverterTest, addMarkerWithValidTfProducesPayload)
   ASSERT_TRUE(out.has_value());
   EXPECT_EQ((*out)->marker.ns, "ns_a");
   EXPECT_EQ((*out)->marker.id, 1);
-  // earth-frame identity at the origin is roughly the geo origin (lat=0, lon=0).
+  // surfaceTransform places base_link at the WGS-84 surface (≈ lat=0, lon=0);
+  // we use it instead of an identity translation to dodge the singular ECEF
+  // (0, 0, 0) point that converts to NaN lat/lon.
   EXPECT_TRUE((*out)->position.isValid());
 }
 
