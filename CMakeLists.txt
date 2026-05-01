@@ -35,11 +35,13 @@ if(CMAKE_VERSION VERSION_LESS "3.7.0")
     set(CMAKE_INCLUDE_CURRENT_DIR ON)
 endif()
 
-find_package(Qt5 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
+find_package(Qt5 5.15 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
 
 if (Qt5Widgets_FOUND)
-    if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)
-        message(FATAL_ERROR "Minimum supported Qt5 version is 5.6!")
+    if (Qt5Widgets_VERSION VERSION_LESS 5.15.0)
+        message(FATAL_ERROR "Minimum supported Qt5 version is 5.15 "
+            "(camp_ros bridges use the Qt 5.10+ functor overload of "
+            "QMetaObject::invokeMethod; ROS 2 Jazzy ships Qt 5.15).")
     endif()
 else()
     message(SEND_ERROR "The Qt5Widgets library could not be found!")
