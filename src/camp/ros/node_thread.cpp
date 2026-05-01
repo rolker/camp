@@ -33,8 +33,8 @@ void NodeThread::start()
   // Construct RosContext (creates the realtime/scene callback groups on the
   // node) before adding the node to the executor, so the executor sees the
   // groups during add_node.
-  context_ = std::make_unique<RosContext>(node_, buffer_);
-  RosContext::setInstance(context_.get());
+  context_ = std::make_shared<RosContext>(node_, buffer_);
+  RosContext::setInstance(context_);
 
   rclcpp::executors::MultiThreadedExecutor executor;
   executor.add_node(node_);

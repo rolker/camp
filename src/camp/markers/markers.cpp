@@ -169,7 +169,7 @@ void Markers::setTopic(std::string topic, std::string type)
   // node's default group when RosContext hasn't been set (e.g. in tests
   // that don't bring up a full NodeThread).
   rclcpp::CallbackGroup::SharedPtr cbg;
-  auto * ctx = camp_ros::RosContext::instance();
+  auto ctx = camp_ros::RosContext::instance();
   if (ctx) cbg = ctx->group(camp_ros::RosContext::Group::Scene);
 
   {

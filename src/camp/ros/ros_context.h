@@ -12,10 +12,11 @@ namespace camp_ros
 /// groups. Created once by `NodeThread` during startup and torn down on
 /// shutdown. Replaces manual fan-out of node/buffer through Qt parent chains.
 ///
-/// `instance()` returns a raw pointer guarded by an internal mutex; the
-/// access itself is thread-safe between `setInstance(...)` and
-/// `clearInstance()`. The pointer must NOT be cached across that window —
-/// use it within a single short scope and re-fetch on the next call.
+/// `instance()` returns a `shared_ptr` guarded by an internal mutex. Holding
+/// the returned `shared_ptr` keeps the underlying `RosContext` alive even
+/// across a concurrent `clearInstance()`, so dereferences are safe for the
+/// scope of the local. The shared_ptr is empty until `setInstance(...)` has
+/// been called and after `clearInstance()` has run with no other holders.
 class RosContext
 {
 public:
@@ -40,9 +41,11 @@ public:
   tf2_ros::Buffer::SharedPtr buffer() const { return buffer_; }
   rclcpp::CallbackGroup::SharedPtr group(Group g) const;
 
-  /// Returns nullptr until `setInstance(...)` has been called.
-  static RosContext* instance();
-  static void setInstance(RosContext* ctx);
+  /// Returns an empty `shared_ptr` until `setInstance(...)` has been called.
+  /// The returned `shared_ptr` keeps the instance alive for its own scope,
+  /// even if `clearInstance()` runs concurrently on another thread.
+  static std::shared_ptr<RosContext> instance();
+  static void setInstance(std::shared_ptr<RosContext> ctx);
   static void clearInstance();
 
 private:

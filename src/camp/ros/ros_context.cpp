@@ -7,7 +7,7 @@ namespace camp_ros
 namespace
 {
 std::mutex g_instance_mutex;
-RosContext* g_instance = nullptr;
+std::shared_ptr<RosContext> g_instance;
 } // namespace
 
 RosContext::RosContext(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
@@ -32,22 +32,22 @@ rclcpp::CallbackGroup::SharedPtr RosContext::group(Group g) const
   return nullptr;
 }
 
-RosContext* RosContext::instance()
+std::shared_ptr<RosContext> RosContext::instance()
 {
   std::lock_guard<std::mutex> lock(g_instance_mutex);
   return g_instance;
 }
 
-void RosContext::setInstance(RosContext* ctx)
+void RosContext::setInstance(std::shared_ptr<RosContext> ctx)
 {
   std::lock_guard<std::mutex> lock(g_instance_mutex);
-  g_instance = ctx;
+  g_instance = std::move(ctx);
 }
 
 void RosContext::clearInstance()
 {
   std::lock_guard<std::mutex> lock(g_instance_mutex);
-  g_instance = nullptr;
+  g_instance.reset();
 }
 
 } // namespace camp_ros

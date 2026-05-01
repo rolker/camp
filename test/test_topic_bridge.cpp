@@ -574,12 +574,12 @@ TEST(RosContextTest, singletonRoundTrip)
 
   EXPECT_EQ(camp_ros::RosContext::instance(), nullptr);
 
-  camp_ros::RosContext ctx(node, buffer);
-  camp_ros::RosContext::setInstance(&ctx);
-  EXPECT_EQ(camp_ros::RosContext::instance(), &ctx);
+  auto ctx = std::make_shared<camp_ros::RosContext>(node, buffer);
+  camp_ros::RosContext::setInstance(ctx);
+  EXPECT_EQ(camp_ros::RosContext::instance().get(), ctx.get());
 
-  auto realtime = ctx.group(camp_ros::RosContext::Group::Realtime);
-  auto scene = ctx.group(camp_ros::RosContext::Group::Scene);
+  auto realtime = ctx->group(camp_ros::RosContext::Group::Realtime);
+  auto scene = ctx->group(camp_ros::RosContext::Group::Scene);
   ASSERT_NE(realtime, nullptr);
   ASSERT_NE(scene, nullptr);
   EXPECT_NE(realtime.get(), scene.get())
@@ -587,6 +587,35 @@ TEST(RosContextTest, singletonRoundTrip)
 
   camp_ros::RosContext::clearInstance();
   EXPECT_EQ(camp_ros::RosContext::instance(), nullptr);
+}
+
+TEST(RosContextTest, sharedPtrSurvivesConcurrentClearInstance)
+{
+  // The whole point of returning shared_ptr (vs. raw pointer) is that a
+  // caller's local copy keeps the RosContext alive across a concurrent
+  // clearInstance. Pin that contract down explicitly: clearInstance must
+  // not destroy the object while a caller still holds the shared_ptr.
+  auto node = rclcpp::Node::make_shared("camp_ros_context_concurrent_test");
+  auto buffer = std::make_shared<tf2_ros::Buffer>(node->get_clock());
+
+  auto ctx = std::make_shared<camp_ros::RosContext>(node, buffer);
+  camp_ros::RosContext::setInstance(ctx);
+
+  auto consumer_view = camp_ros::RosContext::instance();
+  ASSERT_NE(consumer_view, nullptr);
+
+  // Drop the original ref AND clear the global slot. With raw-pointer
+  // semantics this would have destroyed the object; with shared_ptr the
+  // consumer's view keeps it alive.
+  ctx.reset();
+  camp_ros::RosContext::clearInstance();
+  EXPECT_EQ(camp_ros::RosContext::instance(), nullptr);
+
+  // consumer_view is still safe to dereference.
+  auto realtime = consumer_view->group(camp_ros::RosContext::Group::Realtime);
+  ASSERT_NE(realtime, nullptr);
+
+  consumer_view.reset();  // last ref; destruction happens here.
 }
 
 // ---------------------------------------------------------------------------
