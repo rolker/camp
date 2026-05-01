@@ -12,8 +12,10 @@ namespace camp_ros
 /// groups. Created once by `NodeThread` during startup and torn down on
 /// shutdown. Replaces manual fan-out of node/buffer through Qt parent chains.
 ///
-/// Thread-safe to read after `setInstance(...)` has been called and before
-/// `clearInstance()`.
+/// `instance()` returns a raw pointer guarded by an internal mutex; the
+/// access itself is thread-safe between `setInstance(...)` and
+/// `clearInstance()`. The pointer must NOT be cached across that window —
+/// use it within a single short scope and re-fetch on the next call.
 class RosContext
 {
 public:
