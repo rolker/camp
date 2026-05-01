@@ -27,6 +27,8 @@ public:
   void setPixelSize(double s);
 
   using MarkerData = camp_markers::MarkerPayload;
+  using DispatcherT = camp_ros::TfDispatcher<
+    visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>;
 
 public slots:
   void setTopic(std::string topic, std::string type);
@@ -53,11 +55,13 @@ private:
   // gated on TF to "earth", converted to MarkerData on the executor thread,
   // and dispatched to onMarkerPayload on the Qt main thread.
   //
-  // The dispatcher is mutated by setTopic (Qt thread) and read/dereferenced
-  // by onMarkerArrayMessage (executor thread). Guard both accesses with the
-  // mutex below; the executor's per-callback hold is brief in practice.
+  // shared_ptr (not unique_ptr) so the executor thread can snapshot it
+  // under the mutex, release the lock, and iterate a MarkerArray without
+  // blocking setTopic on the Qt thread for the whole batch. The mutex
+  // protects the *pointer slot* only; once a thread has its own copy of
+  // the shared_ptr, the dispatcher is kept alive by that ref while in use.
   std::mutex marker_dispatcher_mutex_;
-  std::unique_ptr<camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>> marker_dispatcher_;
+  std::shared_ptr<camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>> marker_dispatcher_;
   message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subscription_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 

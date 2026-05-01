@@ -186,7 +186,7 @@ void Markers::setTopic(std::string topic, std::string type)
 
     // Build the dispatcher (target frame "earth", buffer 50 messages, drop
     // after 1 s without TF — preserves prior behavior).
-    marker_dispatcher_ = std::make_unique<
+    marker_dispatcher_ = std::make_shared<
       camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>>(
         node_, transform_buffer_, "earth", 50, std::chrono::seconds(1),
         makeMarkerConverter(node_),
@@ -222,13 +222,21 @@ void Markers::setPixelSize(double s)
 
 void Markers::onMarkerArrayMessage(const visualization_msgs::msg::MarkerArray & data)
 {
-  // Runs on the ROS executor thread; setTopic on the Qt thread can replace
-  // marker_dispatcher_ underneath us, so guard against the race.
-  std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
-  if (!marker_dispatcher_) return;
+  // Runs on the ROS executor thread. setTopic on the Qt thread can replace
+  // marker_dispatcher_ underneath us. Snapshot the shared_ptr under the
+  // mutex, then release the lock before iterating: the local copy keeps
+  // the dispatcher alive for the duration of this callback even if
+  // setTopic swaps it concurrently, and setTopic isn't blocked waiting
+  // for a long MarkerArray to drain.
+  std::shared_ptr<DispatcherT> dispatcher;
+  {
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
+    dispatcher = marker_dispatcher_;
+  }
+  if (!dispatcher) return;
   for (const auto & marker : data.markers)
   {
-    marker_dispatcher_->add(marker);
+    dispatcher->add(marker);
   }
 }
 

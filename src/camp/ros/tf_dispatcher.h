@@ -101,9 +101,6 @@ public:
   template<typename FilterT>
   void connectInput(FilterT & upstream) { filter_->connectInput(upstream); }
 
-  /// Underlying tf2_ros::MessageFilter. Exposed for advanced use.
-  std::shared_ptr<tf2_ros::MessageFilter<MsgT>> filter() const { return filter_; }
-
 private:
   rclcpp::Node::SharedPtr node_;
   tf2_ros::Buffer::SharedPtr buffer_;
