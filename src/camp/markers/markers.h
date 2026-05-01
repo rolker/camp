@@ -1,12 +1,16 @@
 #ifndef MARKERS_H
 #define MARKERS_H
 
+#include <mutex>
+
+#include <message_filters/subscriber.hpp>
+
 #include "ros/ros_widget.h"
+#include "ros/tf_dispatcher.h"
 #include "geographicsitem.h"
-#include "message_filters/subscriber.hpp"
-#include "message_filters/simple_filter.hpp"
-#include "tf2_ros/message_filter.h"
+#include "markers/markers_converter.h"
 #include "ui_markers.h"
+#include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/marker_array.hpp"
 
 
@@ -22,44 +26,47 @@ public:
 
   void setPixelSize(double s);
 
-signals:
-  void newMarkersMadeAvailable();
+  using MarkerData = camp_markers::MarkerPayload;
+  using DispatcherT = camp_ros::TfDispatcher<
+    visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>;
 
 public slots:
   void setTopic(std::string topic, std::string type);
   void visibilityChanged();
   void updateBackground(BackgroundRaster * bg);
-  void newMarkersAvailable();
 
 private:
-  void markerArrayCallback(const visualization_msgs::msg::MarkerArray &data);
-  void markerCallback(const visualization_msgs::msg::Marker &data);
-  void addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers);
+  // Receiver slot for the TF dispatcher. Runs on the Qt main thread.
+  void onMarkerPayload(std::shared_ptr<MarkerData> data);
 
+  // Marker-array subscription path: feeds the dispatcher with each marker.
+  // Runs on the ROS executor thread.
+  void onMarkerArrayMessage(const visualization_msgs::msg::MarkerArray & data);
 
-  struct MarkerData
-  {
-    visualization_msgs::msg::Marker marker;
-    QGeoCoordinate position;
-    QPointF local_position;
-    double rotation;
-  };
+  void purgeExpiredMarkers();
 
   QPainterPath markerPath(const MarkerData& marker, BackgroundRaster* bg) const;
 
   Ui::Markers ui_;
 
-  std::map<std::string, std::map<int32_t, std::shared_ptr<MarkerData> > > current_markers_;
-  std::vector<std::shared_ptr<MarkerData> > new_markers_;
-  std::mutex new_markers_mutex_;
+  std::map<std::string, std::map<int32_t, std::shared_ptr<MarkerData>>> current_markers_;
 
+  // TF-gated dispatcher shared by both topic types: each Marker is fed in,
+  // gated on TF to "earth", converted to MarkerData on the executor thread,
+  // and dispatched to onMarkerPayload on the Qt main thread.
+  //
+  // shared_ptr (not unique_ptr) so the executor thread can snapshot it
+  // under the mutex, release the lock, and iterate a MarkerArray without
+  // blocking setTopic on the Qt thread for the whole batch. The mutex
+  // protects the *pointer slot* only; once a thread has its own copy of
+  // the shared_ptr, the dispatcher is kept alive by that ref while in use.
+  std::mutex marker_dispatcher_mutex_;
+  std::shared_ptr<camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>> marker_dispatcher_;
   message_filters::Subscriber<visualization_msgs::msg::Marker> marker_subscription_;
-  std::shared_ptr<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>> marker_tf2_filter_;
   rclcpp::Subscription<visualization_msgs::msg::MarkerArray>::SharedPtr marker_array_subscription_;
 
   double pixel_size_ = 1.0;
   bool is_visible_ = false;
-
 };
 
 #endif

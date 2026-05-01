@@ -35,11 +35,13 @@ if(CMAKE_VERSION VERSION_LESS "3.7.0")
     set(CMAKE_INCLUDE_CURRENT_DIR ON)
 endif()
 
-find_package(Qt5 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
+find_package(Qt5 5.15 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
 
 if (Qt5Widgets_FOUND)
-    if (Qt5Widgets_VERSION VERSION_LESS 5.6.0)
-        message(FATAL_ERROR "Minimum supported Qt5 version is 5.6!")
+    if (Qt5Widgets_VERSION VERSION_LESS 5.15.0)
+        message(FATAL_ERROR "Minimum supported Qt5 version is 5.15 "
+            "(camp_ros bridges use the Qt 5.10+ functor overload of "
+            "QMetaObject::invokeMethod; ROS 2 Jazzy ships Qt 5.15).")
     endif()
 else()
     message(SEND_ERROR "The Qt5Widgets library could not be found!")
@@ -79,6 +81,7 @@ set(SOURCES
     src/camp/platform_manager/platform_manager.cpp
     src/camp/projectview.cpp
     src/camp/ros/node_thread.cpp
+    src/camp/ros/ros_context.cpp
     src/camp/ros/ros_object.cpp
     src/camp/ros/ros_widget.cpp
     src/camp/searchpattern.cpp
@@ -314,6 +317,62 @@ install (DIRECTORY launch
 
 install (DIRECTORY workspace
     DESTINATION share/${PROJECT_NAME})
+
+
+# ----------------------------------------------------------------------------
+# Tests
+# ----------------------------------------------------------------------------
+# Tests for the camp_ros bridge templates and the ports built on them.
+# See docs/decisions/0001-topicbridge-and-executor-contract.md for the
+# threading/TF contract these tests pin down.
+if(BUILD_TESTING)
+  find_package(ament_cmake_gtest REQUIRED)
+  find_package(visualization_msgs REQUIRED)
+  find_package(std_msgs REQUIRED)
+
+  # TopicBridge / TfDispatcher / RosContext
+  ament_add_gtest(test_topic_bridge
+    test/test_topic_bridge.cpp
+    src/camp/ros/ros_context.cpp
+  )
+  target_include_directories(test_topic_bridge PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  ament_target_dependencies(test_topic_bridge
+    rclcpp
+    tf2_ros
+    tf2_geometry_msgs
+    message_filters
+    std_msgs
+    geometry_msgs
+    visualization_msgs
+  )
+  target_link_libraries(test_topic_bridge
+    Qt5::Core
+    Qt5::Test
+  )
+
+  # Marker converter unit tests
+  ament_add_gtest(test_markers_converter
+    test/test_markers_converter.cpp
+  )
+  target_include_directories(test_markers_converter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  ament_target_dependencies(test_markers_converter
+    rclcpp
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
+    geometry_msgs
+    visualization_msgs
+    marine_autonomy
+  )
+  target_link_libraries(test_markers_converter
+    Qt5::Core
+    Qt5::Positioning
+  )
+endif()
 
 
 ament_package(

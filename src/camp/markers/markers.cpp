@@ -1,21 +1,41 @@
 #include "markers.h"
+
+#include <chrono>
+#include <utility>
+
 #include <QPainter>
-#include <tf2_ros/transform_listener.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
-#include <tf2/utils.h>
-#include "marine_autonomy/gz4d_geo.h"
-#include <QDebug>
-#include <geometry_msgs/msg/pose_stamped.hpp>
-#include "backgroundraster.h"
-#include <grid_map_ros/grid_map_ros.hpp>
 #include <QTimer>
+
+#include <tf2/utils.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+
+#include "marine_autonomy/gz4d_geo.h"
+#include "backgroundraster.h"
+#include "markers/markers_converter.h"
+#include "ros/ros_context.h"
+
+namespace
+{
+
+// Wrap convertMarker() to capture the node so the converter can read clock+logger.
+camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<Markers::MarkerData>>::Converter
+makeMarkerConverter(rclcpp::Node::SharedPtr node)
+{
+  return [node](const visualization_msgs::msg::Marker & m, tf2_ros::Buffer & buffer)
+    -> std::optional<std::shared_ptr<Markers::MarkerData>>
+  {
+    return camp_markers::convertMarker(m, buffer, node->get_clock()->now(), node->get_logger());
+  };
+}
+
+}  // namespace
 
 Markers::Markers(QWidget* parent, QGraphicsItem *parentItem):
   camp_ros::ROSWidget(parent),
   GeoGraphicsItem(parentItem)
 {
   ui_.setupUi(this);
-  connect(this, &Markers::newMarkersMadeAvailable, this, &Markers::newMarkersAvailable, Qt::QueuedConnection);
   connect(ui_.displayCheckBox, &QCheckBox::stateChanged, this, &Markers::visibilityChanged);
   ui_.displayCheckBox->setChecked(true);
 }
@@ -38,6 +58,8 @@ QRectF Markers::boundingRect() const
 
 void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
+  (void)option;
+  (void)widget;
   BackgroundRaster* bg = findParentBackgroundRaster();
   if(!current_markers_.empty() && is_visible_)
     for(auto ns: current_markers_)
@@ -49,8 +71,6 @@ void Markers::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, Q
         if(m.second->marker.type == visualization_msgs::msg::Marker::LINE_STRIP)
         {
           p.setWidthF(m.second->marker.scale.x/pixel_size_);
-          // p.setWidth(0);
-          // p.setCosmetic(true);
         }
         if(m.second->marker.type == visualization_msgs::msg::Marker::TEXT_VIEW_FACING)
           p.setCosmetic(true);
@@ -124,19 +144,17 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
       }
       case visualization_msgs::msg::Marker::TEXT_VIEW_FACING:
       {
-        {
-          QFont font;
-          int font_size = std::max(5, int(marker.marker.scale.z*bg->scaledPixelSize()*10));
-          font.setPixelSize(font_size);
-          QFontMetrics metrics(font);
-          auto bounds = metrics.boundingRect(marker.marker.text.c_str());
-          path.addText(QPointF(marker.local_position.x()-bounds.width()*pixel_size_/2.0, marker.local_position.y()+bounds.height()*pixel_size_/2.0), font, marker.marker.text.c_str());
-
-        }
+        QFont font;
+        int font_size = std::max(5, int(marker.marker.scale.z*bg->scaledPixelSize()*10));
+        font.setPixelSize(font_size);
+        QFontMetrics metrics(font);
+        auto bounds = metrics.boundingRect(marker.marker.text.c_str());
+        path.addText(QPointF(marker.local_position.x()-bounds.width()*pixel_size_/2.0, marker.local_position.y()+bounds.height()*pixel_size_/2.0), font, marker.marker.text.c_str());
         break;
       }
       default:
-        RCLCPP_WARN_STREAM(node_->get_logger(), "marker type not handles: " << marker.marker.type);
+        if (node_)
+          RCLCPP_WARN_STREAM(node_->get_logger(), "marker type not handled: " << marker.marker.type);
     }
   }
   return path;
@@ -144,25 +162,57 @@ QPainterPath Markers::markerPath(const MarkerData& marker, BackgroundRaster* bg)
 
 void Markers::setTopic(std::string topic, std::string type)
 {
-  if(node_)
-  {
-    std::chrono::duration<int> buffer_timeout(1);
-    if(type == "visualization_msgs/msg/MarkerArray")
-    {
-      marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(*transform_buffer_, "earth", 50, node_, buffer_timeout);
-      marker_tf2_filter_->registerCallback(&Markers::markerCallback, this);
-      marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(topic, 1, std::bind(&Markers::markerArrayCallback, this, std::placeholders::_1));
-    }
-    if(type == "visualization_msgs/msg/Marker")
-    {
-      marker_subscription_.subscribe(node_, topic);
-      marker_tf2_filter_ = std::make_shared<tf2_ros::MessageFilter<visualization_msgs::msg::Marker>>(marker_subscription_, *transform_buffer_, "earth", 50, node_, buffer_timeout);
-      marker_tf2_filter_->registerCallback(&Markers::markerCallback, this);
-    }
+  if (!node_) return;
 
-    ui_.topicLabel->setText(topic.c_str());
+  // Pick the scene callback group if RosContext is available so a slow
+  // marker conversion can't starve realtime callbacks. Falls back to the
+  // node's default group when RosContext hasn't been set (e.g. in tests
+  // that don't bring up a full NodeThread).
+  rclcpp::CallbackGroup::SharedPtr cbg;
+  auto ctx = camp_ros::RosContext::instance();
+  if (ctx) cbg = ctx->group(camp_ros::RosContext::Group::Scene);
+
+  {
+    // Hold the lock across the entire teardown + rebuild: this is the
+    // window where onMarkerArrayMessage (executor thread) could see a
+    // null or half-built marker_dispatcher_. Tear down the subscriber
+    // first so it stops feeding the filter, then reset the dispatcher,
+    // then construct the replacement before releasing the lock.
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
+
+    marker_subscription_.unsubscribe();
+    marker_array_subscription_.reset();
+    marker_dispatcher_.reset();
+
+    // Build the dispatcher (target frame "earth", buffer 50 messages, drop
+    // after 1 s without TF — preserves prior behavior).
+    marker_dispatcher_ = std::make_shared<
+      camp_ros::TfDispatcher<visualization_msgs::msg::Marker, std::shared_ptr<MarkerData>>>(
+        node_, transform_buffer_, "earth", 50, std::chrono::seconds(1),
+        makeMarkerConverter(node_),
+        this,
+        [this](std::shared_ptr<MarkerData> data) { this->onMarkerPayload(std::move(data)); });
   }
 
+  if (type == "visualization_msgs/msg/MarkerArray")
+  {
+    rclcpp::SubscriptionOptions options;
+    if (cbg) options.callback_group = cbg;
+    marker_array_subscription_ = node_->create_subscription<visualization_msgs::msg::MarkerArray>(
+      topic, 1,
+      [this](const visualization_msgs::msg::MarkerArray & data) { this->onMarkerArrayMessage(data); },
+      options);
+  }
+  else if (type == "visualization_msgs/msg/Marker")
+  {
+    rclcpp::SubscriptionOptions options;
+    if (cbg) options.callback_group = cbg;
+    marker_subscription_.subscribe(node_, topic, rclcpp::QoS(1).get_rmw_qos_profile(), options);
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
+    marker_dispatcher_->connectInput(marker_subscription_);
+  }
+
+  ui_.topicLabel->setText(topic.c_str());
 }
 
 void Markers::setPixelSize(double s)
@@ -170,114 +220,94 @@ void Markers::setPixelSize(double s)
   pixel_size_ = s;
 }
 
-void Markers::markerArrayCallback(const visualization_msgs::msg::MarkerArray &data)
+void Markers::onMarkerArrayMessage(const visualization_msgs::msg::MarkerArray & data)
 {
-  for(const auto &marker: data.markers)
+  // Runs on the ROS executor thread. setTopic on the Qt thread can replace
+  // marker_dispatcher_ underneath us. Snapshot the shared_ptr under the
+  // mutex, then release the lock before iterating: the local copy keeps
+  // the dispatcher alive for the duration of this callback even if
+  // setTopic swaps it concurrently, and setTopic isn't blocked waiting
+  // for a long MarkerArray to drain.
+  std::shared_ptr<DispatcherT> dispatcher;
   {
-    auto marker_ptr = std::make_shared<visualization_msgs::msg::Marker>(marker);
-    marker_tf2_filter_->add(marker_ptr);
+    std::lock_guard<std::mutex> lock(marker_dispatcher_mutex_);
+    dispatcher = marker_dispatcher_;
+  }
+  if (!dispatcher) return;
+  for (const auto & marker : data.markers)
+  {
+    dispatcher->add(marker);
   }
 }
 
-void Markers::markerCallback(const visualization_msgs::msg::Marker &data)
+void Markers::onMarkerPayload(std::shared_ptr<MarkerData> data)
 {
-  std::vector<visualization_msgs::msg::Marker> markers;
-  markers.push_back(data);
-  addMarkers(markers);
-}
-
-void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers)
-{
-  for(auto m: markers)
-  {
-    auto marker_data = std::make_shared<MarkerData>();
-    marker_data->marker = m;
-    try
-    {
-      if(m.action == visualization_msgs::msg::Marker::ADD)
-      {
-        auto now = node_->get_clock()->now();
-        if(rclcpp::Duration(m.lifetime).nanoseconds() != 0 && rclcpp::Time(m.header.stamp)+rclcpp::Duration(m.lifetime) < now)
-        {
-          rclcpp::Clock clock;
-          RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), clock, 5000, "Expired marker: "<< m.ns << " id: " << m.id);
-          continue;
-        }
-        if(m.header.frame_id.empty())
-        {
-          rclcpp::Clock clock;
-          RCLCPP_DEBUG_STREAM_THROTTLE(node_->get_logger(), clock, 1000, "Missing frame_id in marker: "<< m.ns << " id: " << m.id);
-          continue;;
-        }
-        marker_data->position = getGeoCoordinate(m.pose, m.header);
-        marker_data->rotation = tf2::getYaw(m.pose.orientation);
-      }
-      std::lock_guard<std::mutex> lock(new_markers_mutex_);
-      new_markers_.push_back(marker_data);
-    }
-    catch (tf2::TransformException &ex)
-    {
-      rclcpp::Clock clock;
-      RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 1000, "Unable to find transform to earth for marker: " << m.ns << " id: " << m.id << " what: " << ex.what());
-    }
-  }
-  emit newMarkersMadeAvailable();
-}
-
-
-
-void Markers::newMarkersAvailable()
-{
+  if (!data) return;
   prepareGeometryChange();
 
-  std::vector<std::shared_ptr<MarkerData> > new_markers;
+  auto * bg = findParentBackgroundRaster();
+  switch (data->marker.action)
   {
-    std::lock_guard<std::mutex> lock(new_markers_mutex_);
-    new_markers = new_markers_;
-    new_markers_.clear();
+    case visualization_msgs::msg::Marker::ADD:
+      if (bg) data->local_position = geoToPixel(data->position, bg);
+      current_markers_[data->marker.ns][data->marker.id] = data;
+      if (rclcpp::Duration(data->marker.lifetime).seconds() != 0)
+      {
+        QTimer::singleShot(
+          static_cast<int>((rclcpp::Duration(data->marker.lifetime).seconds() + 1.0) * 1000),
+          this, [this]() {
+            prepareGeometryChange();
+            this->purgeExpiredMarkers();
+            GeoGraphicsItem::update();
+          });
+      }
+      break;
+    case visualization_msgs::msg::Marker::DELETE:
+      {
+        auto ns_it = current_markers_.find(data->marker.ns);
+        if (ns_it != current_markers_.end())
+          ns_it->second.erase(data->marker.id);
+      }
+      break;
+    case visualization_msgs::msg::Marker::DELETEALL:
+      // visualization_msgs/Marker DELETEALL clears every marker across every
+      // namespace; the message's own ns is ignored.
+      current_markers_.clear();
+      break;
+    default:
+      if (node_)
+        RCLCPP_WARN_STREAM(node_->get_logger(),
+          "Unknown marker action: " << static_cast<int>(data->marker.action));
   }
 
-  auto bg = findParentBackgroundRaster();
-  for(auto marker: new_markers)
-  {
-    switch(marker->marker.action)
-    {
-      case visualization_msgs::msg::Marker::ADD:
-        if(bg)
-          marker->local_position = geoToPixel(marker->position, bg);
-        //ROS_INFO_STREAM(marker->marker.ns << ": " << marker->marker.id << " local pos: " << marker->local_position.x() << ", " << marker->local_position.y());
-        current_markers_[marker->marker.ns][marker->marker.id] = marker;
-        if(rclcpp::Duration(marker->marker.lifetime).seconds() != 0)
-          QTimer::singleShot((rclcpp::Duration(marker->marker.lifetime).seconds()+1.0)*1000, this, &Markers::newMarkersAvailable);
-        break;
-      case visualization_msgs::msg::Marker::DELETE:
-        current_markers_[marker->marker.ns][marker->marker.id].reset();
-        break;
-      case visualization_msgs::msg::Marker::DELETEALL:
-        current_markers_[marker->marker.ns].clear();
-        break;
-      default:
-        RCLCPP_WARN_STREAM(node_->get_logger(), "Unknown marker action: " << marker->marker.action);
-    }
-  }
+  purgeExpiredMarkers();
+  GeoGraphicsItem::update();
+}
 
+void Markers::purgeExpiredMarkers()
+{
+  if (!node_) return;
   auto now = node_->get_clock()->now();
-
-  for(auto& ns: current_markers_)
+  for (auto & ns : current_markers_)
   {
     std::vector<int32_t> expired;
-    for(auto m: ns.second)
-      if(rclcpp::Time(m.second->marker.header.stamp).seconds() != 0.0 && rclcpp::Duration(m.second->marker.lifetime).seconds() != 0 && rclcpp::Time(m.second->marker.header.stamp) + rclcpp::Duration(m.second->marker.lifetime) < now)
-        expired.push_back(m.first);
-    for(auto e: expired)
+    for (auto & m : ns.second)
     {
-      RCLCPP_DEBUG_STREAM(node_->get_logger(), "Purging " << ns.first << ": " << e);
-      ns.second.erase(e);
-
+      if (!m.second) continue;
+      if (rclcpp::Time(m.second->marker.header.stamp).seconds() != 0.0 &&
+          rclcpp::Duration(m.second->marker.lifetime).seconds() != 0 &&
+          rclcpp::Time(m.second->marker.header.stamp) +
+              rclcpp::Duration(m.second->marker.lifetime) < now)
+      {
+        expired.push_back(m.first);
+      }
+    }
+    for (auto id : expired)
+    {
+      RCLCPP_DEBUG_STREAM(node_->get_logger(), "Purging " << ns.first << ": " << id);
+      ns.second.erase(id);
     }
   }
-
-  GeoGraphicsItem::update();
 }
 
 void Markers::visibilityChanged()
