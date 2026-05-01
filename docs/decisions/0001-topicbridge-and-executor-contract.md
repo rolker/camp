@@ -56,8 +56,12 @@ exposes the same TF-gated dispatch pipeline without owning a subscription —
 callers feed it messages by hand.
 
 Bridges are **owned by the consuming Qt class as a member**, not inherited.
-The class hierarchy stops mixing ROS concerns and Qt scene concerns through
-multiple inheritance.
+The class hierarchy is being migrated away from mixing ROS concerns and Qt
+scene concerns through multiple inheritance; each port moves the consumer
+toward composition until the old `ROSWidget` / `GeoGraphicsItem` pattern
+disappears entirely. (The `Markers` exemplar in this PR still inherits both
+bases — that wider hierarchy cleanup is part of the migration plan below,
+not this PR.)
 
 ### 2. TF policy is expressed through `MessageFilter`, not through timeouts.
 
@@ -111,11 +115,14 @@ construction; the default for TF-gated bridges is **scene**.
 ### Supporting change: `RosContext`
 
 Replaces the manual `nodeStarted(node, buffer)` propagation through Qt parent
-chains. `RosContext` is a small process-singleton (set once during startup by
-`ROSLink`) that exposes the node, the TF buffer, and the named callback
-groups. Bridges discover their dependencies on construction; the
-`ROSClient::onNodeUpdated()` plumbing can be retired once all consumers have
-moved off it.
+chains. `RosContext` is a small process-singleton whose lifetime is owned by
+the ROS node thread: it is set during `camp_ros::NodeThread::start()`
+(immediately before the executor begins spinning) and cleared when the
+executor returns at shutdown. `ROSLink` only spawns the `NodeThread`; it
+does not own the singleton. `RosContext` exposes the node, the TF buffer,
+and the named callback groups. Bridges discover their dependencies on
+construction; the `ROSClient::onNodeUpdated()` plumbing can be retired once
+all consumers have moved off it.
 
 ## Consequences
 
