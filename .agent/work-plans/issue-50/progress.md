@@ -24,7 +24,7 @@ issue: 50
   workspace publisher's RELIABLE default; both ends avoid the
   BEST_AVAILABLE keyexpr bug). Updated via `gh api PATCH` —
   `gh pr edit --body-file` was the silent classic-Projects no-op
-  (see `reference_gh_pr_edit_workaround.md`).
+  on this repo.
 - [ ] **Deferred** (file as follow-up issue if it turns out load-bearing):
   basic NavSource subscription-binding test. Author already
   acknowledged tests aren't load-bearing for this mechanical
@@ -33,3 +33,16 @@ issue: 50
   `ros2 topic info <bridged_nav_topic> --verbose` should now show
   CAMP as a subscriber. If not, the keyexpr-bug hypothesis was wrong
   and the QoS choice needs to be re-evaluated.
+
+## External Review
+**Status**: complete
+**When**: 2026-05-18 19:55
+**By**: Claude Code Agent (Claude Opus 4.7 (1M context))
+
+**PR**: #51 — Copilot review against HEAD `1cb5413`, 1 valid + 0 false positives.
+**CI**: all 4 checks pass (Cleanup artifacts / Upload results / Agent / Prepare).
+
+### Actions
+- [x] **Fix:** Remove dead-link reference to private agent-memory file
+  (`reference_gh_pr_edit_workaround.md`) from progress.md. Inline the
+  workaround context instead.
