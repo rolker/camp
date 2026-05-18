@@ -37,17 +37,17 @@ void NavSource::trySubscribe()
           RCLCPP_INFO_STREAM(node_->get_logger(), "   type: " << topic_type);
           if(topic_type == "sensor_msgs/msg/NavSatFix")
           {
-            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
+            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
           else if(topic_type == "geographic_msgs/msg/GeoPointStamped")
           {
-            geo_point_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPointStamped>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::geoPointCallback, this, std::placeholders::_1));
+            geo_point_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPointStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPointCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
           else if(topic_type == "geographic_msgs/msg/GeoPoseStamped")
           {
-            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
+            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
             pending_position_topic_.clear();
           }
         }
@@ -59,12 +59,12 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "sensor_msgs/msg/Imu")
           {
-            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
+            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
             pending_orientation_topic_.clear();
           }
           if(topic_type == "geometry_msgs/msg/QuaternionStamped")
           {
-            quaternion_subscription_ = node_->create_subscription<geometry_msgs::msg::QuaternionStamped>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::quaternionCallback, this, std::placeholders::_1));
+            quaternion_subscription_ = node_->create_subscription<geometry_msgs::msg::QuaternionStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::quaternionCallback, this, std::placeholders::_1));
             pending_orientation_topic_.clear();
           }
         }
@@ -76,12 +76,12 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "geometry_msgs/msg/TwistWithCovarianceStamped")
           {
-            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
+            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
             pending_velocity_topic_.clear();
           }
           if(topic_type == "geometry_msgs/msg/TwistStamped")
           {
-            velocity_twist_stamped_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(name, rclcpp::SensorDataQoS().reliability_best_available(), std::bind(&NavSource::velocityTwistStampedCallback, this, std::placeholders::_1));
+            velocity_twist_stamped_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityTwistStampedCallback, this, std::placeholders::_1));
             pending_velocity_topic_.clear();
           }
         }
