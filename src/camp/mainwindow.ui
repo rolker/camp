@@ -227,6 +227,7 @@
     <addaction name="actionShowTail"/>
     <addaction name="actionGridManager"/>
     <addaction name="actionMarkersManager"/>
+    <addaction name="actionCollisionMonitorManager"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionSay_something"/>
     <addaction name="actionFollow"/>
@@ -417,6 +418,11 @@
   <action name="actionMarkersManager">
    <property name="text">
     <string>Markers Manager</string>
+   </property>
+  </action>
+  <action name="actionCollisionMonitorManager">
+   <property name="text">
+    <string>Collision Monitor Manager</string>
    </property>
   </action>
   <action name="actionAvoid">

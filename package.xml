@@ -20,6 +20,7 @@
 
   <depend>message_filters</depend>
   <depend>nav_msgs</depend>
+  <depend>nav2_msgs</depend>
   <depend>pluginlib</depend>
   <depend>marine_autonomy</depend>
   <depend>marine_interfaces</depend>

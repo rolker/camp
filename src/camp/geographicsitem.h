@@ -32,6 +32,7 @@ public:
         SearchPatternType,
         GridType,
         AvoidAreaType,
+        CollisionMonitorType,
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

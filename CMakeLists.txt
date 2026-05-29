@@ -15,6 +15,7 @@ find_package(marine_ais_msgs REQUIRED)
 find_package(marine_sensor_msgs REQUIRED)
 find_package(message_filters REQUIRED)
 find_package(nav_msgs REQUIRED)
+find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
@@ -73,6 +74,8 @@ set(SOURCES
     src/camp/mainwindow.cpp
     src/camp/markers/markers.cpp
     src/camp/markers/markers_manager.cpp
+    src/camp/collision_monitor/collision_monitor.cpp
+    src/camp/collision_monitor/collision_monitor_manager.cpp
     src/camp/missionitem.cpp
     src/camp/mission_manager/mission_manager.cpp
     src/camp/orbit.cpp
@@ -130,6 +133,8 @@ set (UIS
     src/camp/mainwindow.ui
     src/camp/markers/markers.ui
     src/camp/markers/markers_manager.ui
+    src/camp/collision_monitor/collision_monitor.ui
+    src/camp/collision_monitor/collision_monitor_manager.ui
     src/camp/waypointdetails.ui
     src/camp/grids/grid.ui
     src/camp/grids/grid_manager.ui
@@ -156,6 +161,7 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     message_filters
     marine_ais_msgs
     nav_msgs
+    nav2_msgs
     marine_autonomy
     marine_interfaces
 
@@ -369,6 +375,26 @@ if(BUILD_TESTING)
     marine_autonomy
   )
   target_link_libraries(test_markers_converter
+    Qt5::Core
+    Qt5::Positioning
+  )
+
+  # Collision-monitor polygon converter unit tests
+  ament_add_gtest(test_collision_monitor_converter
+    test/test_collision_monitor_converter.cpp
+  )
+  target_include_directories(test_collision_monitor_converter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  ament_target_dependencies(test_collision_monitor_converter
+    rclcpp
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
+    geometry_msgs
+    marine_autonomy
+  )
+  target_link_libraries(test_collision_monitor_converter
     Qt5::Core
     Qt5::Positioning
   )
