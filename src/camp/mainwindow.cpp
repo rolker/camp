@@ -96,6 +96,7 @@ MainWindow::~MainWindow()
     delete m_ais_manager;
     //delete m_radar_manager;
     delete m_grid_manager;
+    delete m_markers_manager;
     delete m_collision_monitor_manager;
 }
 

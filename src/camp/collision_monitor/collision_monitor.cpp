@@ -61,7 +61,10 @@ void CollisionMonitor::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
 QPainterPath CollisionMonitor::polygonPath(BackgroundRaster* bg) const
 {
   QPainterPath path;
-  if(bg && points_.size() >= 2)
+  // A closed, fillable polygon needs at least 3 vertices; fewer would
+  // closeSubpath() into a degenerate line. Collision-monitor zones are always
+  // >=3 (4 in practice), so this is a defensive guard.
+  if(bg && points_.size() >= 3)
   {
     bool first = true;
     for(const auto& gc: points_)
