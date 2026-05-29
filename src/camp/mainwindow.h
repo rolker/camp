@@ -15,6 +15,7 @@ class RadarManager;
 // class SpeechAlerts;
 class GridManager;
 class MarkersManager;
+class CollisionMonitorManager;
 
 class AutonomousVehicleProject;
 
@@ -78,6 +79,7 @@ private slots:
     void on_actionAISManager_triggered();
     void on_actionGridManager_triggered();
     void on_actionMarkersManager_triggered();
+    void on_actionCollisionMonitorManager_triggered();
     void on_actionRadarManager_triggered();
     //void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
@@ -95,6 +97,7 @@ private:
     //RadarManager* m_radar_manager = nullptr;
     GridManager* m_grid_manager = nullptr;
     MarkersManager* m_markers_manager = nullptr;
+    CollisionMonitorManager* m_collision_monitor_manager = nullptr;
     // SoundPlay* m_sound_play;
     // SpeechAlerts* m_speech_alerts;
 

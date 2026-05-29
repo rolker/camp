@@ -24,6 +24,7 @@
 #include "platform_manager/platform.h"
 #include "grids/grid_manager.h"
 #include "markers/markers_manager.h"
+#include "collision_monitor/collision_monitor_manager.h"
 
 #include <QDebug>
 
@@ -73,6 +74,11 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
     connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
 
+    m_collision_monitor_manager = new CollisionMonitorManager();
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
+    connect(this, &MainWindow::closing, m_collision_monitor_manager, &QWidget::close);
+
     // m_sound_play = new SoundPlay();
     // connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
 
@@ -90,6 +96,8 @@ MainWindow::~MainWindow()
     delete m_ais_manager;
     //delete m_radar_manager;
     delete m_grid_manager;
+    delete m_markers_manager;
+    delete m_collision_monitor_manager;
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
@@ -594,6 +602,11 @@ void MainWindow::on_actionGridManager_triggered()
 void MainWindow::on_actionMarkersManager_triggered()
 {
     m_markers_manager->show();
+}
+
+void MainWindow::on_actionCollisionMonitorManager_triggered()
+{
+    m_collision_monitor_manager->show();
 }
 
 // void MainWindow::on_actionSay_something_triggered()
