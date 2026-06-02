@@ -10,9 +10,6 @@ class MainWindow;
 }
 
 class AISManager;
-class RadarManager;
-// class SoundPlay;
-// class SpeechAlerts;
 class GridManager;
 class MarkersManager;
 class CollisionMonitorManager;
@@ -73,15 +70,11 @@ private slots:
 
     void on_treeView_customContextMenuRequested(const QPoint &pos);
 
-    void on_actionRadar_triggered();
-    void on_actionRadarColor_triggered();
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
     void on_actionGridManager_triggered();
     void on_actionMarkersManager_triggered();
     void on_actionCollisionMonitorManager_triggered();
-    void on_actionRadarManager_triggered();
-    //void on_actionSay_something_triggered();
     void on_actionFollow_triggered();
 
     void on_speedLineEdit_editingFinished();
@@ -94,12 +87,9 @@ private:
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager = nullptr;
-    //RadarManager* m_radar_manager = nullptr;
     GridManager* m_grid_manager = nullptr;
     MarkersManager* m_markers_manager = nullptr;
     CollisionMonitorManager* m_collision_monitor_manager = nullptr;
-    // SoundPlay* m_sound_play;
-    // SpeechAlerts* m_speech_alerts;
 
     void exportHypack() const;
     void exportMissionPlan() const;

@@ -18,9 +18,6 @@
 #include "searchpattern.h"
 
 #include "ais/ais_manager.h"
-//#include "radar/radar_manager.h"
-// #include "sound_play/sound_play_widget.h"
-// #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
 #include "grids/grid_manager.h"
 #include "markers/markers_manager.h"
@@ -79,13 +76,6 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
     connect(this, &MainWindow::closing, m_collision_monitor_manager, &QWidget::close);
 
-    // m_sound_play = new SoundPlay();
-    // connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
-
-    // m_speech_alerts = new SpeechAlerts(this);
-    // connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
-    //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
-
     m_ui->rosLink->connectROS();
 
 }
@@ -94,7 +84,6 @@ MainWindow::~MainWindow()
 {
     delete m_ui;
     delete m_ais_manager;
-    //delete m_radar_manager;
     delete m_grid_manager;
     delete m_markers_manager;
     delete m_collision_monitor_manager;
@@ -552,12 +541,6 @@ void MainWindow::on_actionAvoidFromContext_triggered()
 }
 
 
-void MainWindow::on_actionRadar_triggered()
-{
-    qDebug() << "radar: " << m_ui->actionRadar->isChecked();
-    emit project->showRadar(m_ui->actionRadar->isChecked());
-}
-
 void MainWindow::on_actionFollow_triggered()
 {
     //emit project->followRobot(m_ui->actionFollow->isChecked());
@@ -567,11 +550,6 @@ void MainWindow::activePlatformPosition(QGeoCoordinate position)
 {
     if(m_ui->actionFollow->isChecked())
       m_ui->projectView->centerMap(position);
-}
-
-void MainWindow::on_actionRadarColor_triggered()
-{
-    emit project->selectRadarColor();
 }
 
 void MainWindow::on_actionShowTail_triggered()
@@ -589,11 +567,6 @@ void MainWindow::on_actionAISManager_triggered()
     m_ais_manager->show();
 }
 
-void MainWindow::on_actionRadarManager_triggered()
-{
-    //m_radar_manager->show();
-}
-
 void MainWindow::on_actionGridManager_triggered()
 {
     m_grid_manager->show();
@@ -608,8 +581,3 @@ void MainWindow::on_actionCollisionMonitorManager_triggered()
 {
     m_collision_monitor_manager->show();
 }
-
-// void MainWindow::on_actionSay_something_triggered()
-// {
-//     m_sound_play->show();
-// }

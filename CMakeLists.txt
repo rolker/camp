@@ -20,7 +20,6 @@ find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
 
-#find_package(sound_play REQUIRED) pending port to ROS2
 find_package(qt_gui_cpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
 find_package(rqt_gui_cpp REQUIRED)
@@ -88,8 +87,6 @@ set(SOURCES
     src/camp/ros/ros_object.cpp
     src/camp/ros/ros_widget.cpp
     src/camp/searchpattern.cpp
-    # src/camp/sound_play/sound_play_widget.cpp
-    # src/camp/sound_play/speech_alerts.cpp
     src/camp/surveypattern.cpp
     src/camp/surveypatterndetails.cpp
     src/camp/trackline.cpp
@@ -116,17 +113,12 @@ set(SOURCES
     src/camp/nav_source.cpp
 )
 
-# src/radar/radar_display.cpp
-# src/radar/radar_manager.cpp
-
 set ( RESOURCES
     src/camp/main.qrc
 )
 
 set (UIS
     src/camp/behaviordetails.ui
-    src/camp/sonar_manager/sonar_manager.ui
-    # src/camp/sound_play/sound_play_widget.ui
     src/camp/platform_manager/platform.ui
     src/camp/platform_manager/platform_manager.ui
     src/camp/orbitdetails.ui
@@ -166,7 +158,6 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     marine_interfaces
 
     rclcpp
-    # sound_play
     tf2
     tf2_geometry_msgs
     tf2_ros
