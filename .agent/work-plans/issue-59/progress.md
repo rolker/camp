@@ -14,8 +14,8 @@ issue: 59
 **Phases**: 6 stacked PRs (PR1 sweep, PR2 substrate import, PR3 scene swap + UI split, PR4 mission items, PR5 ROS overlays + manager retirement, PR6 cleanup)
 
 ### Open questions
-- [ ] Confirm radar/costmap feeds `grids/grid.cpp` as `OccupancyGrid` vs `grid_map` (verify vs deployed launch before PR5)
-- [ ] Where is `BackgroundRaster::getDepth()` consumed? Web-Mercator tiles carry no depth band — need replacement source or retained depth raster
-- [ ] QSettings migration: per-background → per-`itemID()` — accept one-time reset or migrate keys?
-- [ ] Worth an ADR in `camp` for the Web-Mercator scene + two-model (layers vs mission) split?
-- [ ] `MeasuringTool`/`Orbit` rendering at scale under a global projection (currently scale via `bgr->mapScale()`)
+- [x] Radar message type → **N/A: this boat has no radar.** Grids path stays general-purpose; ROS 1 RadarSector still deleted (PR1). Not a deployment gate.
+- [x] `getDepth()` consumers → **Preserve depth as a first-class layer type.** Multiple depth layers allowed, toggled in tree; `getDepthRaster()` → `getDepth(geo)` query over enabled depth layers in tree order (overlap resolved by order). A\*/survey/cursor depth kept (PR3/PR4).
+- [x] QSettings migration → **One-time reset**, no migration code.
+- [x] ADR? → **Yes — start an ADR system in `camp`** (`docs/decisions/` + architecture ADR), lands with PR3.
+- [x] `MeasuringTool`/`Orbit` scale → **Preserve behavior**; port `bgr->mapScale()` to `MapView` viewport scale, distances stay geodesic. Implementation detail.
