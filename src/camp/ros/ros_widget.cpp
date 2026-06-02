@@ -13,10 +13,41 @@ ROSWidget::ROSWidget(QWidget *parent)
 
 QGeoCoordinate ROSWidget::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header)
 {
+    if(header.frame_id.empty())
+      return {};
+
     geometry_msgs::msg::PoseStamped ps;
     ps.header = header;
     ps.pose = pose;
-    auto ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
+
+    geometry_msgs::msg::PoseStamped ecef;
+    try
+    {
+      ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
+    }
+    catch (const tf2::TransformException &)
+    {
+      // A stale-stamped pose - e.g. a nav_msgs/Path overlay whose poses
+      // carry old planning stamps arriving over the bridge - throws
+      // (typically ExtrapolationException) and, left uncaught, aborts the
+      // whole application. The map->earth transform is quasi-static, so
+      // retry against the latest available transform (stamp 0 == latest)
+      // rather than the pose's own stale stamp.
+      try
+      {
+        ps.header.stamp.sec = 0;
+        ps.header.stamp.nanosec = 0;
+        ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
+      }
+      catch (const tf2::TransformException &ex)
+      {
+        rclcpp::Clock clock;
+        RCLCPP_WARN_STREAM_THROTTLE(node_->get_logger(), clock, 2000,
+          "ROSWidget: unable to transform pose to earth: " << ex.what()
+          << " source frame: " << header.frame_id);
+        return {};
+      }
+    }
 
     gz4d::GeoPointECEF ecef_point;
     ecef_point[0] = ecef.pose.position.x;
