@@ -30,9 +30,12 @@ issue: 59
 **Verdict**: changes-requested
 
 ### Findings
-- [ ] (must-fix) PR3 won't build: retiring `backgroundraster`/`georeferenced` before overlays migrate breaks `GeoGraphicsItem::geoToPixel` callers — move retirement to PR6 or add a `geoToPixel`→`geoToMap` shim — `plan.md` PR3 / Approach
-- [ ] (must-fix) PR2 mischaracterizes camp2: it's already a 2nd executable target (`CMakeLists.txt:237+`, own `main.cpp`) — reframe as share-modules-into-camp-target + retire standalone camp2 exe; add main/.qrc/target reconciliation — `plan.md` PR2
-- [ ] (suggestion) Split PR3 into 3a scene/chart+shim+ADR, 3b tabbed UI, 3c depth-layer — `plan.md` PR3
-- [ ] (suggestion) A* migration understated: pixel-grid iteration → multi-layer `getDepth(geo)` needs a defined planning grid — `plan.md` PR4
-- [ ] (suggestion) Pin concrete tests (web_mercator round-trip, depth-order resolution) to PRs; camp has gtest `test/` — `plan.md` Files/Principles
+- [x] (must-fix) PR3 build-break → **addressed**: revised plan adds a `geoToPixel`→`geoToMap` shim in PR3a and parity-gates retirement of `backgroundraster`/`georeferenced` to PR6 (delete only when replacement ≥ parity)
+- [x] (must-fix) PR2 camp2 framing → **superseded by shared-lib decision**: camp2 is NOT retired; PR2 now extracts `libcamp_map` and relinks the camp2 exe (self-verifying), camp links it in PR3a
+- [x] (suggestion) Split PR3 → **done**: PR3a scene/chart+shim+ADR, PR3b tabbed UI, PR3c depth-layer
+- [x] (suggestion) A* understated → **noted in plan PR4**: pixel-grid → multi-layer `getDepth(geo)` needs a defined planning grid (possibly its own sub-PR)
+- [x] (suggestion) Pin tests → **done**: Testing table added (web_mercator round-trip PR2, depth-order resolution PR3c, marker-action parity PR5); manual for Qt/UI
 - [ ] (note) review-issue not run on #59 (optional)
+
+### Plan revision (post-review, 2026-06-01)
+Discussion added two corrections: (a) **don't assume retiring camp2** → end-state is a shared `libcamp_map` both binaries link; (b) **parity audit before any replacement** → committed parity matrices (Phase 0) + a load-bearing rule: never delete a camp original until its replacement is verified ≥ parity (audit is bidirectional — keep camp2's `CUBE`, preserve camp's `DELETEALL`). Tests added where practicable. Plan reframed as "adopt the framework, preserve the functionality" with three buckets (true-replacements / camp-only carryover / camp2-only additions).
