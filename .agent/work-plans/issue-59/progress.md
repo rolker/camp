@@ -89,3 +89,19 @@ Committed `docs/parity/` (README + raster.md + markers.md + grids.md). Built by 
 **Result:** `libcamp_map` (pure Qt/GDAL core, 24 src) + `libcamp_map_ros` (ros/ layers, 16 src, links camp_map + rclcpp/tf2). camp2 exe = main/ only, links camp_map_ros. **Verified:** build green (both libs + both exes); `ldd libcamp_map.so` shows **zero ROS libs** ✓; `libcamp_map_ros.so` links libcamp_map + rclcpp/tf2 ✓. Dropped unused Qt5::Test from libs (kept on camp2 exe — QAbstractItemModelTester) + unused `<QApplication>` in map.cpp. `map/utilities.{h,cpp}` are empty stubs, never built — left as-is. Commit `49dc283`. Runtime (GUI) not verified headless; wiring preserved.
 
 **Lesson:** dependency-boundary verification must follow transitive includes through intermediate headers + check cross-namespace *instantiations* (`new other::Type`), not just grep direct system includes.
+
+## Local Review (Pre-Push) — PR2
+**Status**: complete
+**When**: 2026-06-02 22:30 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved
+
+**Branch**: feature/issue-59 at `49dc283` (PR2 code commit)
+**Mode**: pre-push
+**Depth**: Standard (reason: build-system + cross-cutting C++ change, despite small line count)
+**Must-fix**: 0 | **Suggestions**: 0
+
+Two independent adversarial readers (fresh-context Claude subagent + Copilot CLI) both returned clean on the inversion + split. Confirmed: Node ownership is via the QGraphicsItem **scene-tree** (Node→LayerManager→MapTool→MapItem→QGraphicsObject; `setParentItem`), so the `auto ros_node` local going out of scope in MainWindow doesn't destroy it — identical owner chain to before (scene ← Map ← MainWindow); no leak/dangle/double-free. Discovery unchanged: ros layers find the node via `parentOfType<Node>()` walking up from children created inside `Node::nodeStarted()`, independent of who constructs the Node. Shutdown equivalent (`qApp` ≡ `QCoreApplication::instance()`; idempotent quit). CMake: source union byte-identical to old 42-entry list; ament emits plain `target_link_libraries` (no keyword-mix); AUTOMOC/UIC/RCC global → per-target; rpath via ament env hook. `map_tiles.ui` unused (dead in old build too, no regression).
+
+### Findings
+- [ ] No issues found. LGTM.
