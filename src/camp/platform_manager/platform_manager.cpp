@@ -2,6 +2,7 @@
 #include "ui_platform_manager.h"
 #include "platform.h"
 #include "backgroundraster.h"
+#include "ros/ros_context.h"
 
 PlatformManager::PlatformManager(QWidget* parent):
   camp_ros::ROSWidget(parent),
@@ -19,7 +20,10 @@ PlatformManager::~PlatformManager()
 
 void PlatformManager::onNodeUpdated()
 {
-  platform_list_subscription_ = node_->create_subscription<marine_interfaces::msg::PlatformList>("/marine/platforms", 5, std::bind(&PlatformManager::platformListCallback, this, std::placeholders::_1));
+  rclcpp::SubscriptionOptions sub_options;
+  if (auto ctx = camp_ros::RosContext::instance())
+    sub_options.callback_group = ctx->nextDedicatedGroup();
+  platform_list_subscription_ = node_->create_subscription<marine_interfaces::msg::PlatformList>("/marine/platforms", 5, std::bind(&PlatformManager::platformListCallback, this, std::placeholders::_1), sub_options);
 }
 
 void PlatformManager::platformListCallback(const marine_interfaces::msg::PlatformList &message)

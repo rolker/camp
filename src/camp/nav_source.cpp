@@ -4,6 +4,7 @@
 #include <QPainter>
 #include <QTimer>
 #include <QDebug>
+#include "ros/ros_context.h"
 
 NavSource::NavSource(const marine_interfaces::msg::NavSource& source, QObject* parent, QGraphicsItem *parentItem): camp_ros::ROSObject(parent), GeoGraphicsItem(parentItem)
 {
@@ -20,6 +21,9 @@ void NavSource::trySubscribe()
 {
   if(node_)
   {
+    rclcpp::SubscriptionOptions realtime_options;
+    if (auto ctx = camp_ros::RosContext::instance())
+      realtime_options.callback_group = ctx->group(camp_ros::RosContext::Group::Realtime);
     RCLCPP_INFO_STREAM(node_->get_logger(), "NavSource::trySubscribe");
     RCLCPP_INFO_STREAM(node_->get_logger(), "pending_position_topic_: " << pending_position_topic_);
     RCLCPP_INFO_STREAM(node_->get_logger(), "pending_orientation_topic_: " << pending_orientation_topic_);
@@ -37,17 +41,17 @@ void NavSource::trySubscribe()
           RCLCPP_INFO_STREAM(node_->get_logger(), "   type: " << topic_type);
           if(topic_type == "sensor_msgs/msg/NavSatFix")
           {
-            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1));
+            position_subscription_ = node_->create_subscription<sensor_msgs::msg::NavSatFix>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::positionCallback, this, std::placeholders::_1), realtime_options);
             pending_position_topic_.clear();
           }
           else if(topic_type == "geographic_msgs/msg/GeoPointStamped")
           {
-            geo_point_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPointStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPointCallback, this, std::placeholders::_1));
+            geo_point_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPointStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPointCallback, this, std::placeholders::_1), realtime_options);
             pending_position_topic_.clear();
           }
           else if(topic_type == "geographic_msgs/msg/GeoPoseStamped")
           {
-            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1));
+            geo_pose_subscription_ = node_->create_subscription<geographic_msgs::msg::GeoPoseStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::geoPoseCallback, this, std::placeholders::_1), realtime_options);
             pending_position_topic_.clear();
           }
         }
@@ -59,12 +63,12 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "sensor_msgs/msg/Imu")
           {
-            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1));
+            orientation_subscription_ = node_->create_subscription<sensor_msgs::msg::Imu>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::orientationCallback, this, std::placeholders::_1), realtime_options);
             pending_orientation_topic_.clear();
           }
           if(topic_type == "geometry_msgs/msg/QuaternionStamped")
           {
-            quaternion_subscription_ = node_->create_subscription<geometry_msgs::msg::QuaternionStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::quaternionCallback, this, std::placeholders::_1));
+            quaternion_subscription_ = node_->create_subscription<geometry_msgs::msg::QuaternionStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::quaternionCallback, this, std::placeholders::_1), realtime_options);
             pending_orientation_topic_.clear();
           }
         }
@@ -76,12 +80,12 @@ void NavSource::trySubscribe()
         {
           if(topic_type == "geometry_msgs/msg/TwistWithCovarianceStamped")
           {
-            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityCallback, this, std::placeholders::_1));
+            velocity_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityCallback, this, std::placeholders::_1), realtime_options);
             pending_velocity_topic_.clear();
           }
           if(topic_type == "geometry_msgs/msg/TwistStamped")
           {
-            velocity_twist_stamped_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityTwistStampedCallback, this, std::placeholders::_1));
+            velocity_twist_stamped_subscription_ = node_->create_subscription<geometry_msgs::msg::TwistStamped>(name, rclcpp::SensorDataQoS().reliable(), std::bind(&NavSource::velocityTwistStampedCallback, this, std::placeholders::_1), realtime_options);
             pending_velocity_topic_.clear();
           }
         }

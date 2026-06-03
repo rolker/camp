@@ -8,6 +8,7 @@
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include "backgroundraster.h"
 #include <grid_map_ros/grid_map_ros.hpp>
+#include "ros/ros_context.h"
 
 Grid::Grid(QWidget* parent, QGraphicsItem *parentItem)
   :camp_ros::ROSWidget(parent),
@@ -162,6 +163,10 @@ QGeoCoordinate Grid::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, cons
     geometry_msgs::msg::PoseStamped grid_corner;
     grid_corner.header = header;
     grid_corner.pose = pose;
+    // Wait briefly for the transform so momentary TF lag doesn't blank the
+    // grid. Safe to block here: the grid runs on its own dedicated callback
+    // group (see visibilityChanged), so this wait delays only the grid's
+    // thread, never the overlays or realtime telemetry.
     auto ecef = transform_buffer_->transform(grid_corner, "earth", tf2::durationFromSec(0.5));
 
     gz4d::GeoPointECEF ecef_point;
@@ -206,10 +211,16 @@ void Grid::visibilityChanged()
   is_visible_ = ui_.displayCheckBox->isChecked();
   if(is_visible_ && node_)
   {
+    // Dedicated callback group: the grid callback builds a full QImage and
+    // (in getGeoCoordinate) does a TF transform, so it must not share a thread
+    // with the light overlays or it starves them.
+    rclcpp::SubscriptionOptions sub_options;
+    if (auto ctx = camp_ros::RosContext::instance())
+      sub_options.callback_group = ctx->nextDedicatedGroup();
     if(type_ == "nav_msgs/msg/OccupancyGrid")
-      occupancy_grid_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(topic_, 1, std::bind(&Grid::occupancyGridCallback, this, std::placeholders::_1));
+      occupancy_grid_subscription_ = node_->create_subscription<nav_msgs::msg::OccupancyGrid>(topic_, 1, std::bind(&Grid::occupancyGridCallback, this, std::placeholders::_1), sub_options);
     if(type_ == "grid_map_msgs/msg/GridMap")
-      grid_map_subscription_ = node_->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 1, std::bind(&Grid::gridMapCallback, this, std::placeholders::_1));
+      grid_map_subscription_ = node_->create_subscription<grid_map_msgs::msg::GridMap>(topic_, 1, std::bind(&Grid::gridMapCallback, this, std::placeholders::_1), sub_options);
   }
   else
   {
