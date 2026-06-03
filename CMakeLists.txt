@@ -225,12 +225,17 @@ pluginlib_export_plugin_description_file(rqt_gui "plugins.xml")
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 
-# camp2
+# ============================================================================
+# libcamp_map — shared map substrate, pure Qt/GDAL (ROS-free)   [#59 PR2]
+# ============================================================================
+# camp2's self-contained map core: layer model, Web-Mercator scene, OSM/WMTS
+# tiles, reprojected rasters, tree view, interaction tools. The ROS node is
+# attached by the application layer (MainWindow) via Map::toolsManager(), so
+# this library has no ROS dependency. Linked by the camp2 executable below and,
+# from PR3a, by CCOMAutonomousMissionPlanner.
 
-set( CAMP2_SOURCES
+set(CAMP_MAP_SOURCES
     src/camp2/background/background_manager.cpp
-    src/camp2/main/main_window.cpp
-    src/camp2/main/main.cpp
     src/camp2/map/map.cpp
     src/camp2/map/map_item.cpp
     src/camp2/map/map_item_mime_data.cpp
@@ -247,6 +252,49 @@ set( CAMP2_SOURCES
     src/camp2/map_view/map_view.cpp
     src/camp2/map_view/web_mercator.cpp
     src/camp2/raster/raster_layer.cpp
+    src/camp2/tools/layer_manager.cpp
+    src/camp2/tools/map_tool.cpp
+    src/camp2/tools/tools_manager.cpp
+    src/camp2/util/cached_file_loader.cpp
+    src/camp2/wmts/capabilities.cpp
+    src/camp2/wmts/layer.cpp
+    src/camp2/wmts/tile_matrix_set.cpp
+)
+
+add_library(camp_map SHARED ${CAMP_MAP_SOURCES})
+
+# src/camp2 on the include path is PUBLIC so it propagates to camp_map_ros and
+# the executables (header includes are rooted at src/camp2, e.g. "map/map.h").
+target_include_directories(camp_map PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+)
+
+target_link_libraries(camp_map
+    PUBLIC
+        Qt5::Core
+        Qt5::Widgets
+        Qt5::Concurrent
+        Qt5::Network
+        Qt5::Xml
+        Qt5::Positioning
+    PRIVATE
+        ${GDAL_LIBRARY}
+)
+
+install(TARGETS camp_map
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+# ============================================================================
+# libcamp_map_ros — ROS-dependent map layers; links libcamp_map   [#59 PR2]
+# ============================================================================
+# The camp2 ROS layer set (geometry, grids, markers) + node/name plumbing.
+# Boundary verified one-directional after inverting Map's node creation: the
+# src/camp2 core has zero ROS includes; only this layer depends on
+# rclcpp/tf2/messages.
+
+set(CAMP_MAP_ROS_SOURCES
     src/camp2/ros/geometry/geometry_manager.cpp
     src/camp2/ros/geometry/polygon.cpp
     src/camp2/ros/graph_thread.cpp
@@ -263,45 +311,62 @@ set( CAMP2_SOURCES
     src/camp2/ros/names_manager.cpp
     src/camp2/ros/node.cpp
     src/camp2/ros/node_thread.cpp
-    src/camp2/tools/layer_manager.cpp
-    src/camp2/tools/map_tool.cpp
-    src/camp2/tools/tools_manager.cpp
-    src/camp2/util/cached_file_loader.cpp
-    src/camp2/wmts/capabilities.cpp
-    src/camp2/wmts/layer.cpp
-    src/camp2/wmts/tile_matrix_set.cpp
 )
 
-add_executable(camp2 ${CAMP2_SOURCES})
+add_library(camp_map_ros SHARED ${CAMP_MAP_ROS_SOURCES})
 
-target_include_directories(camp2
-    PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
-)
+# Plain signature (no PUBLIC keyword): ament_target_dependencies below uses the
+# plain target_link_libraries form, and CMake forbids mixing the two on one
+# target. The plain form still links camp_map transitively, so camp_map's
+# PUBLIC Qt + include-dir usage requirements propagate downstream.
+target_link_libraries(camp_map_ros camp_map)
 
-ament_target_dependencies(camp2
+ament_target_dependencies(camp_map_ros
     geometry_msgs
     grid_map_ros
     marine_ais_msgs
     marine_autonomy
     marine_interfaces
-
     rclcpp
     tf2
     tf2_ros
     tf2_geometry_msgs
 )
 
-target_link_libraries(camp2
-    ${QT_LIBRARIES}
-    ${GDAL_LIBRARY}
-    Qt5::Core
-    Qt5::Widgets
-    Qt5::Concurrent
-    Qt5::Network
-    Qt5::Test
-    Qt5::Xml
-    Qt5::Positioning
+install(TARGETS camp_map_ros
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+# ============================================================================
+# camp2 executable — app shell only; links the shared libraries   [#59 PR2]
+# ============================================================================
+
+add_executable(camp2
+    src/camp2/main/main.cpp
+    src/camp2/main/main_window.cpp
+)
+
+target_include_directories(camp2 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+)
+
+# Qt5::Test supplies QAbstractItemModelTester, used by main_window.cpp.
+target_link_libraries(camp2 camp_map_ros Qt5::Test)
+
+# camp_map_ros transitively brings camp_map + Qt. The ROS package deps are
+# repeated here so main.cpp/main_window.cpp (which include ros/node.h directly)
+# always resolve ROS headers, independent of ament's interface-propagation.
+ament_target_dependencies(camp2
+    geometry_msgs
+    grid_map_ros
+    marine_ais_msgs
+    marine_autonomy
+    marine_interfaces
+    rclcpp
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
 )
 
 install (TARGETS camp2

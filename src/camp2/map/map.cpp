@@ -3,11 +3,9 @@
 #include "../tools/tools_manager.h"
 #include "layer_list.h"
 #include "../background/background_manager.h"
-#include "../ros/node.h"
 #include "map_item_mime_data.h"
 #include <QMenu>
 #include "layer.h"
-#include <QApplication>
 
 #include <QDebug>
 
@@ -25,12 +23,17 @@ Map::Map(QObject *parent):
 
   new LayerList(top_level_items_);
 
-  auto tools_manager = new tools::ToolsManager(top_level_items_);
-  auto background_manager = new background::BackgroundManager(tools_manager);
+  tools_manager_ = new tools::ToolsManager(top_level_items_);
+  auto background_manager = new background::BackgroundManager(tools_manager_);
   background_manager->createDefaultLayers();
 
-  auto ros_node = new camp::ros::Node(tools_manager);
-  connect(ros_node, &camp::ros::Node::shuttingDownRos, QCoreApplication::instance(), &QCoreApplication::quit);
+  // The ROS node is attached by the application layer (see MainWindow) via
+  // toolsManager(), so the map core has no ROS dependency.
+}
+
+tools::ToolsManager* Map::toolsManager() const
+{
+  return tools_manager_;
 }
 
 

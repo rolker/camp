@@ -11,6 +11,11 @@ class QMenu;
 namespace camp
 {
 
+namespace tools
+{
+  class ToolsManager;
+}
+
 namespace map
 {
   class MapItem;
@@ -63,6 +68,11 @@ public:
   void contextMenuFor(QMenu* menu, const QModelIndex& index);
 
   LayerList* topLevelLayers() const;
+
+  /// Returns the ToolsManager this map owns. The ROS node and interaction
+  /// tools are parented to it; the app layer attaches the ROS node here so
+  /// the map core stays ROS-free.
+  tools::ToolsManager* toolsManager() const;
 signals:
   void viewportChanged(camp::MapView::Viewport viewport);
 
@@ -70,6 +80,7 @@ private:
   QModelIndex index(const MapItem* map_item) const;
 
   MapItem* top_level_items_;
+  tools::ToolsManager* tools_manager_ = nullptr;
 };
 
 } // namespace map
