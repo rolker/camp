@@ -62,3 +62,17 @@ Static analysis: no findings (zero added lines). Two independent adversarial rea
 
 ### Findings
 - [ ] No issues found. LGTM.
+
+## Phase 0 — parity audit (doc)
+**Status**: complete
+**When**: 2026-06-02 20:40 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Committed `docs/parity/` (README + raster.md + markers.md + grids.md). Built by reading actual camp + camp2 source (3 parallel analysts), every feature claim cited `file:line`. Confirmed the three buckets vs `CMakeLists.txt`: true-replacements (raster/markers/grids), camp-only carryover (AIS/collision/platform/nav_source/mission-items/vector/measuring/orbit — camp2/ros has only geometry/grids/markers), camp2-only additions (OSM/WMTS/tree/geometry/tools).
+
+**Retirement blockers found (gate PR5/PR3c):**
+- raster: depth band + `getDepth(geo)` is camp-only → PR3c. Color tables/mipmap/compositing = parity (verbatim copy). camp2 adds async load + metersPerUnit + opacity.
+- markers: camp2 adds CUBE (keep), BUT `DELETEALL` is a **camp2 regression** (clears one ns, not all — spec violation); DELETE **leaks** empty Marker/MarkerNamespace objects; camp-only: empty-frame drop, already-expired ingest drop, text scaling, TF-buffering.
+- grids: OccupancyGrid colormap = **byte-for-byte parity**. GridMap **"speed" semantic colormap + fixed /3.0 range is camp-only** (camp2 = auto-range grayscale) → bag-replay verify. Suspected camp2 bug: warn throttle `2` vs `2000` ms. Verify OccGrid centering + lazy-subscribe.
+
+**Open decisions surfaced to user (resolve in PR5):** keep GridMap "speed" coloring? marker fill-alpha (camp half vs camp2 full)?
