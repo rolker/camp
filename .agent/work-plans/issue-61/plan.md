@@ -83,6 +83,12 @@ redirects imagery to the separate rqt windows. Also confirmed: Execute sends
 `replace_task` (works); the Mission→**Update** menu sends `update_task`, which is
 live in CAMP but a no-op downstream (#50) — documented as "use Execute."
 
+Annunciator + imagery coverage **moved out** of this manual to the BizzyBoat
+operator manual (Roland's scope call — CAMP is not where they're viewed); §2 keeps
+only a brief pointer. Added a CAMP-window example screenshot
+(`docs/images/camp_window_2026-06-01.png`, cropped from the 2026-06-01 operator
+capture; terminals excluded; Roland approved the content for this PUBLIC repo).
+
 ---
 **Authored-By**: `Claude Code Agent`
 **Model**: `Claude Opus 4.8 (1M context)`

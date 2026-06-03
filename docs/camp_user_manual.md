@@ -10,13 +10,11 @@ send/control missions.
 > them to the boat, watch the boat's position and status, and issue overrides.
 >
 > **What CAMP is not.** CAMP is not a camera/sonar viewer and not the autonomy
-> stack itself. Live imagery (camera / segmentation) is shown in **separate windows
-> (rqt)**, not in CAMP. The diagnostic **annunciators** also run as separate
-> processes at the operator station — they are not CAMP panels. For *how the
-> autonomy stack works*, see the **marine-autonomy framework guide**
-> (`unh_marine_autonomy`, `docs/how_the_stack_works.md`); for the **boat side** of
-> operations, see the **BizzyBoat operator manual**
-> (`unh_echoboats_project11`, `docs/bizzyboat_operator_manual.md`).
+> stack itself. The **camera/segmentation imagery** and the diagnostic
+> **annunciators** are *separate windows* at the operator station — they are
+> covered in the **BizzyBoat operator manual** (*The operator station displays*),
+> not here. For *how the autonomy stack works*, see the **marine-autonomy framework
+> guide** (`unh_marine_autonomy`, `docs/how_the_stack_works.md`).
 
 ---
 
@@ -56,6 +54,10 @@ When the link and boat are healthy, the BizzyBoat tab appears on its own.
 CAMP is a **chart (map) view** with overlays, plus a **per-boat tab** on the side
 for that boat's status and controls.
 
+![The CAMP window: platform tab with heartbeat/status (left), mission tree and
+item details with the Execute button (lower left), and the chart with the survey
+line, costmap, and distance/cross-track readout (right).](images/camp_window_2026-06-01.png)
+
 ### The map
 
 - The center/right is the **chart view** — the nautical chart (13283) with the boat
@@ -82,9 +84,8 @@ Each boat gets a tab containing:
 - **Collision Monitor** — draws the boat's reflex/collision-zone polygons on the map.
 - **Markers** and **AIS** — generic marker overlays and AIS contacts.
 
-> **Not in CAMP:** camera, sonar, and segmentation imagery (use the separate rqt
-> image windows), and the boat/operator **annunciators** (separate processes). Don't
-> look for these as CAMP panels.
+> **Not in CAMP:** camera/sonar/segmentation imagery and the annunciators — those
+> are separate operator-station windows, covered in the BizzyBoat operator manual.
 
 ---
 
