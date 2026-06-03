@@ -1,8 +1,7 @@
 # CAMP User Manual
 
-A guide for **student operators** running the operator station during Summer Hydro:
-how to start CAMP, connect to the boat, read the display, plan a survey, and
-send/control missions.
+A guide for **operators** running CAMP: how to start it, connect to a boat, read the
+display, plan a survey, and send/control missions.
 
 > **What CAMP is.** CAMP is the **CCOM Autonomous Mission Planner** (the deployed
 > `CCOMAutonomousMissionPlanner` binary). It is the **map and mission-planning
@@ -12,8 +11,8 @@ send/control missions.
 > **What CAMP is not.** CAMP is not a camera/sonar viewer and not the autonomy
 > stack itself. The **camera/segmentation imagery** and the diagnostic
 > **annunciators** are *separate windows* at the operator station — they are
-> covered in the **BizzyBoat operator manual** (*The operator station displays*),
-> not here. For *how the autonomy stack works*, see the **marine-autonomy framework
+> covered in the boat's operator manual (*The operator station displays*), not
+> here. For *how the autonomy stack works*, see the **marine-autonomy framework
 > guide** (`unh_marine_autonomy`, `docs/how_the_stack_works.md`).
 
 ---
@@ -26,12 +25,11 @@ Start CAMP from the operator station:
 ros2 launch camp camp_launch.py
 ```
 
-- CAMP **auto-loads chart 13283** as the background (the `background_chart` launch
-  argument defaults to it). To use a different chart, pass
+- CAMP **auto-loads a default background chart** (the `background_chart` launch
+  argument; currently NOAA chart 13283). To use a different chart, pass
   `background_chart:=<path-to-.KAP>`.
-- In normal Summer Hydro operation CAMP comes up as part of the operator launcher
-  (see the BizzyBoat operator manual, *Starting the stack*) — you don't usually run
-  it by hand.
+- CAMP is typically started as part of the operator launcher (see the boat's
+  operator manual, *Starting the stack*), so you don't usually run it by hand.
 
 ### Connecting to the boat ("why isn't the boat showing up?")
 
@@ -39,13 +37,13 @@ The boat **advertises itself** to the operator station. When CAMP hears a platfo
 on the `/marine/platforms` topic, it **automatically creates a tab for that boat**
 (and draws it on the map). You don't connect manually.
 
-So if **BizzyBoat doesn't appear**, nothing is reaching CAMP on `/marine/platforms`.
+So if **the boat doesn't appear**, nothing is reaching CAMP on `/marine/platforms`.
 Check, in order:
 
-1. The **comms link** to the boat is up (see the operator manual, *Comms & range*).
-2. The **boat's stack is actually running** on gabby (it publishes the platform).
+1. The **comms link** to the boat is up (see the boat's operator manual, *Comms & range*).
+2. The **boat's stack is actually running** (it publishes the platform).
 
-When the link and boat are healthy, the BizzyBoat tab appears on its own.
+When the link and boat are healthy, the boat's tab appears on its own.
 
 ---
 
@@ -54,9 +52,10 @@ When the link and boat are healthy, the BizzyBoat tab appears on its own.
 CAMP is a **chart (map) view** with overlays, plus a **per-boat tab** on the side
 for that boat's status and controls.
 
-![The CAMP window: platform tab with heartbeat/status (left), mission tree and
-item details with the Execute button (lower left), and the chart with the survey
-line, costmap, and distance/cross-track readout (right).](images/camp_window_2026-06-01.png)
+![The CAMP window during a survey: platform tab with heartbeat/status and mission
+tree + item details (left); on the chart (right), the planned survey-pattern
+tracklines, the live navigation costmap with detected obstacles/targets (red, with
+inflation), depth soundings, and the distance/cross-track readout.](images/camp_window_2026-06-02.png)
 
 ### The map
 
@@ -85,7 +84,7 @@ Each boat gets a tab containing:
 - **Markers** and **AIS** — generic marker overlays and AIS contacts.
 
 > **Not in CAMP:** camera/sonar/segmentation imagery and the annunciators — those
-> are separate operator-station windows, covered in the BizzyBoat operator manual.
+> are separate operator-station windows, covered in the boat's operator manual.
 
 ---
 
@@ -188,9 +187,9 @@ Use **Cancel Override** (above) to drop the override and resume the planned miss
 
 ## See also
 
-- **BizzyBoat operator manual** (`unh_echoboats_project11`,
-  `docs/bizzyboat_operator_manual.md`) — the boat side: bring-up, readiness,
-  driving, shutdown.
+- **The boat's operator manual** — the boat side: bring-up, readiness, driving,
+  shutdown, and the operator-station displays (cameras, annunciators). For BizzyBoat:
+  `unh_echoboats_project11`, `docs/bizzyboat_operator_manual.md`.
 - **Marine-autonomy framework guide** (`unh_marine_autonomy`,
   `docs/how_the_stack_works.md`) — how the autonomy stack works; the place to build
   understanding when behavior is surprising.

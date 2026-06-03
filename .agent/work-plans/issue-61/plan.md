@@ -89,6 +89,14 @@ only a brief pointer. Added a CAMP-window example screenshot
 (`docs/images/camp_window_2026-06-01.png`, cropped from the 2026-06-01 operator
 capture; terminals excluded; Roland approved the content for this PUBLIC repo).
 
+**Genericized 2026-06-02 (Roland):** removed Summer-Hydro / student framing so the
+manual doesn't go stale; CAMP is platform-neutral — refs are "the boat" / "the
+boat's operator manual" with BizzyBoat only as the explicit *See also* example.
+Swapped the screenshot to a **June-2 mid-survey frame** (`camp_window_2026-06-02.png`,
+UTC 18:18 / 14:18 EDT) showing the **working windowed costmap with detected
+obstacles/targets** + survey-pattern tracklines (costmap confirmed at CAMP from
+13:09 EDT per the salmon deployment log; #56/PR#61 costmap-over-bridge fix).
+
 ---
 **Authored-By**: `Claude Code Agent`
 **Model**: `Claude Opus 4.8 (1M context)`
