@@ -52,10 +52,12 @@ When the link and boat are healthy, the boat's tab appears on its own.
 CAMP is a **chart (map) view** with overlays, plus a **per-boat tab** on the side
 for that boat's status and controls.
 
-![The CAMP window during a survey: platform tab with heartbeat/status and mission
-tree + item details (left); on the chart (right), the planned survey-pattern
-tracklines, the live navigation costmap with detected obstacles/targets (red, with
-inflation), depth soundings, and the distance/cross-track readout.](images/camp_window_2026-06-02.png)
+![The CAMP window during a survey: the platform tab (left) with the mission tree and
+item details; the heartbeat/status panel is **yellow here — the color change flags a
+transient heartbeat/comms warning** to the operator. On the chart (right): the
+planned survey-pattern tracklines, the **pier as a charted obstacle** (magenta on the
+navigation costmap), a **camera-derived obstacle** marked between the pier and the
+survey area, depth soundings, and the distance/cross-track readout.](images/camp_window_2026-06-02.png)
 
 ### The map
 
@@ -69,8 +71,10 @@ Each boat gets a tab containing:
 
 - **Heartbeat panel** — the boat sends a **heartbeat**; this panel shows
   **"Last HB"** and **latency**, and is colored **green / yellow / red** by how long
-  since the last heartbeat. Green = healthy link and the command is being applied.
-  (Thresholds are adjustable via the panel's config button.)
+  since the last heartbeat. Green = healthy link and the command is being applied;
+  yellow/red warn of a growing gap (a comms hiccup) — the screenshot above catches
+  the panel in its **yellow** warning state. (Thresholds are adjustable via the
+  panel's config button.)
 - **Mission status** — key/value fields from the boat's mission manager (what task
   it's on, etc.).
 - The **Standby / Autonomous** control buttons (see [§5](#5-sending--controlling-missions)).
