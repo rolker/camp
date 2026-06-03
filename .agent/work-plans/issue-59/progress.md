@@ -76,3 +76,16 @@ Committed `docs/parity/` (README + raster.md + markers.md + grids.md). Built by 
 - grids: OccupancyGrid colormap = **byte-for-byte parity**. GridMap **"speed" semantic colormap + fixed /3.0 range is camp-only** (camp2 = auto-range grayscale) → bag-replay verify. Suspected camp2 bug: warn throttle `2` vs `2000` ms. Verify OccGrid centering + lazy-subscribe.
 
 **Open decisions RESOLVED (2026-06-02):** (1) GridMap "speed" colormap — situational, **dropped** → adopt camp2 grayscale auto-range; reusable selectable-colormap facility (`camp::map::ColorMap`, also depth-shading consumer) split out to **[#63](https://github.com/rolker/camp/issues/63)**, out of #59 scope. (2) Marker fill-alpha — **make it a config option** (not hardcoded); default at PR5. Parity docs updated accordingly.
+
+## PR2 — extract libcamp_map / libcamp_map_ros
+**Status**: complete
+**When**: 2026-06-02 22:15 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Lib-boundary decision was SPLIT** (plan Open Questions). Implementing it exposed a flaw in the earlier "core is ROS-free / one-directional" verification: that scan only caught direct `#include <rclcpp>` and **missed** `Map::Map()` constructing a `camp::ros::Node` (`map/map.cpp:32`) — `ros::Node` lives in the ros layer → **core↔ros circular dependency**, so a pure file-move split can't link. Surfaced to Roland; he chose **B: split + invert Node creation**.
+
+**Inversion (breaks the cycle):** `Map` no longer creates the `ros::Node`; it stores its `ToolsManager` and exposes `Map::toolsManager()`. The app layer (`MainWindow`) now attaches the node there — same parent (tools_manager), same item-tree discovery, same timing. Core is now genuinely ROS-free.
+
+**Result:** `libcamp_map` (pure Qt/GDAL core, 24 src) + `libcamp_map_ros` (ros/ layers, 16 src, links camp_map + rclcpp/tf2). camp2 exe = main/ only, links camp_map_ros. **Verified:** build green (both libs + both exes); `ldd libcamp_map.so` shows **zero ROS libs** ✓; `libcamp_map_ros.so` links libcamp_map + rclcpp/tf2 ✓. Dropped unused Qt5::Test from libs (kept on camp2 exe — QAbstractItemModelTester) + unused `<QApplication>` in map.cpp. `map/utilities.{h,cpp}` are empty stubs, never built — left as-is. Commit `49dc283`. Runtime (GUI) not verified headless; wiring preserved.
+
+**Lesson:** dependency-boundary verification must follow transitive includes through intermediate headers + check cross-namespace *instantiations* (`new other::Type`), not just grep direct system includes.
