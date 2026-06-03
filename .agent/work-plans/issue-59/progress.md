@@ -39,3 +39,26 @@ issue: 59
 
 ### Plan revision (post-review, 2026-06-01)
 Discussion added two corrections: (a) **don't assume retiring camp2** → end-state is a shared `libcamp_map` both binaries link; (b) **parity audit before any replacement** → committed parity matrices (Phase 0) + a load-bearing rule: never delete a camp original until its replacement is verified ≥ parity (audit is bidirectional — keep camp2's `CUBE`, preserve camp's `DELETEALL`). Tests added where practicable. Plan reframed as "adopt the framework, preserve the functionality" with three buckets (true-replacements / camp-only carryover / camp2-only additions).
+
+## PR1 implemented — dead-code sweep
+**Status**: complete
+**When**: 2026-06-02 20:18 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Branch merged up to `origin/jazzy` first (picked up `b5c40d3` ros_widget stale-stamp guard). PR1 = Scope A dead-code sweep, **1597 deletions, 0 additions, no behavior change**. Deleted `radar/`, `geoviz/`, `sonar_manager/`, `sound_play/`, `scaledview.{h,cpp}`; removed radar's orphaned menu actions/slots/`showRadar`+`selectRadarColor` signals (decided: full removal, the consuming connections were already commented out so they were invisible no-ops); removed the inert `actionSay_something` menu item (sound_play remnant); removed `RadarDisplayType`/`GeovizDisplayType` enum entries; cleaned `CMakeLists.txt`. `./ui_ws/build.sh camp` green (both binaries link). Commit `3a70f62`.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-02 20:22 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved
+
+**Branch**: feature/issue-59 at `3a70f62`
+**Mode**: pre-push
+**Depth**: Standard (reason: 1597 lines changed, but deletions-only / no new logic)
+**Must-fix**: 0 | **Suggestions**: 0
+
+Static analysis: no findings (zero added lines). Two independent adversarial readers (fresh-context Claude subagent + Copilot CLI) both returned clean. Highest-risk item — removing two middle entries from the `GeoGraphicsItem::type()` enum renumbers later values — verified SAFE: project save/load is JSON keyed by string type names (`missionitem.cpp` read/write), `type()` overrides return symbolic names, no integer-literal comparisons / `QDataStream` / `QSettings` persist the enum. `mainwindow.ui` action defs + addaction insertions removed consistently (no dangling refs).
+
+### Findings
+- [ ] No issues found. LGTM.
