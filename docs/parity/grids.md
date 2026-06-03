@@ -27,8 +27,8 @@ Opacity/visibility/status are base-class concerns.
 |---|---|---|---|---|
 | Both grid types | one `Grid`, dispatch by string (`grid.cpp:209-212`) | `OccupancyGrid` + `GridMap` classes | differs | keep camp2 split |
 | **OccupancyGrid colormap** (0–100 + unknown) | unknown=grey128a; 100=magenta; 99=cyan; else red↔blue ramp, a=`value+100` (`grid.cpp:73-80`) | identical, byte-for-byte (`occupancy_grid.cpp:65-72`) | **parity ✓** | none — already ported verbatim |
-| **GridMap colormap** | `"speed"` layer: <0=red; else green ramp `value/3` (`grid.cpp:124-134`); other layers: green-on-alpha (`grid.cpp:140-141`) | generic grayscale from normalized value; NaN→transparent (`grid_map.cpp:101-105`) | differs (**camp-only speed ramp**) | **decide (see Open Q)**; if wanted, port speed special-case as per-layer colormap |
-| GridMap value range | **fixed** (speed `/3.0`; others `[0,1]`) (`grid.cpp:132,140`) | **auto** per-layer min/max scan (`grid_map.cpp:76-104`) | camp2-only (keep) | keep auto; add optional fixed override for speed |
+| **GridMap colormap** | `"speed"` layer: <0=red; else green ramp `value/3` (`grid.cpp:124-134`); other layers: green-on-alpha (`grid.cpp:140-141`) | generic grayscale from normalized value; NaN→transparent (`grid_map.cpp:101-105`) | differs (**camp-only speed ramp**) | **DECIDED 2026-06-02: drop speed special-case → adopt camp2 grayscale default.** Speed ramp was situational, not worth preserving. Selectable named colormaps deferred to a reusable facility, [#63](https://github.com/rolker/camp/issues/63) |
+| GridMap value range | **fixed** (speed `/3.0`; others `[0,1]`) (`grid.cpp:132,140`) | **auto** per-layer min/max scan (`grid_map.cpp:76-104`) | camp2-only (keep) | keep auto; optional fixed/configurable range lands with the colormap facility ([#63](https://github.com/rolker/camp/issues/63)) |
 | OccupancyGrid value range | fixed 0–100 (`grid.cpp:80`) | same (`occupancy_grid.cpp:72`) | parity | none |
 | Transparency / alpha | graded per type (`grid.cpp:74-141`) | OccGrid identical; GridMap opaque + NaN-transparent (`grid_map.cpp:74,101`) | differs | OccGrid parity; GridMap resolve with colormap; keep NaN-transparency |
 | Layer-level opacity | none | `MapItem::setOpacity` (`map_item.h:111`) | camp2-only (keep) | inherit |
@@ -44,16 +44,15 @@ Opacity/visibility/status are base-class concerns.
 
 ## Open questions (flag for manual bag-replay verification)
 
-- **GridMap colormap parity is NOT achieved.** camp gives `"speed"` layers a
-  semantic green ramp + negative-speed red flag at fixed `/3.0` scale
-  (`grid.cpp:124-134`); camp2 renders every layer as auto-ranged grayscale.
-  **Decide: is speed-specific coloring still wanted?** If yes, port it (per-layer
-  colormap registry). Verify against a real `grid_map` "speed" bag — this is the
-  item the plan explicitly flagged for bag-replay.
-- **Fixed vs auto range for speed.** camp's `/3.0` implies a known ~0–3 m/s
-  domain; camp2 auto-range rescales per-frame, changing apparent brightness for
-  the same speed. If parity matters, ported speed colormap needs the fixed scale
-  (or configurable max), not auto-range.
+- ~~**GridMap colormap parity.**~~ **RESOLVED 2026-06-02:** the camp `"speed"`
+  ramp was situational (origin not recalled) and is **deliberately dropped** —
+  camp2's grayscale auto-range becomes the grid_map default. A reusable
+  selectable-colormap facility (`camp::map::ColorMap`: grayscale + a few generic
+  ramps, value+range→QColor, per-layer selector, also a depth-shading consumer)
+  is tracked separately in [#63](https://github.com/rolker/camp/issues/63), out
+  of #59 scope. No bag-replay colormap gate remains for the port.
+- ~~**Fixed vs auto range for speed.**~~ Moot — grayscale auto-range is the
+  accepted default; configurable/fixed range lands with [#63](https://github.com/rolker/camp/issues/63).
 - **OccupancyGrid centering equivalence.** camp shifts the *geo center* by half
   the extent (`grid.cpp:85-86`); camp2 transforms raw `info.origin` and shifts
   the *pixmap* by `+height` then Y-flips (`occupancy_grid.cpp:96-98`). Should be

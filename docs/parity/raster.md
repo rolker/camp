@@ -33,7 +33,7 @@ status/tree display come from the `map::Layer`/`MapItem` base.
 | **Depth band (Float32) extraction** | `backgroundraster.cpp:31-68` (`GDT_Float32`, `m_depth_data`, min/max, depth shading) | none | **camp-only (port)** | PR3c: detect Float32 band, retain depth array + bounds |
 | **Depth query `getDepth()`** | `backgroundraster.cpp:229-240`, `.h:36-37`; consumed by `astar.cpp:109-232`, `surveyarea.cpp:329`, `trackline.cpp:256`, `projectview.cpp:220-224` | none | **camp-only (port)** | PR3c: `getDepth(QGeoCoordinate)` over enabled depth layers, top wins |
 | `depthValid()` predicate | `backgroundraster.cpp:134-137` | none | **camp-only (port)** | PR3c with depth port |
-| Depth color shading (land green / depth red-ramp) | `backgroundraster.cpp:48-62` | none | camp-only (port) | PR3c: carry into depth render path |
+| Depth color shading (land green / depth red-ramp) | `backgroundraster.cpp:48-62` | none | camp-only (port) | PR3c: carry into depth render path. Hardcoded ramp is a candidate to migrate onto the reusable colormap facility ([#63](https://github.com/rolker/camp/issues/63)) |
 | Color table / palette apply | `backgroundraster.cpp:73,85-92` | `raster_layer.cpp:103,112-119` | parity ✓ | none |
 | Grayscale / per-band interp | `backgroundraster.cpp:95-108` | `raster_layer.cpp:122-135` | parity | none |
 | Mipmap pyramid | `backgroundraster.cpp:119-123` | `raster_layer.cpp:145-149` | parity | none |

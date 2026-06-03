@@ -46,7 +46,7 @@ the child list via `qgraphicsitem_cast`. Positioning is Web Mercator
 | Already-expired drop at ingest | `markers_converter.h:61-68` | none | camp-only (port) | add pre-drop in `addMarkers` |
 | Empty frame_id drop | `markers_converter.h:69-75` | none | camp-only (port) | add explicit guard |
 | Namespace+id keying | nested `std::map` (`markers.h:52`) | scene-graph tree (`markers.cpp:74-83`, `marker_namespace.cpp:26-44`) | differs | keep camp2 tree |
-| Color (RGBA) | pen a=a, brush a=a/2 (half-alpha fill) (`markers.cpp:70,79`) | pen+brush full a=a (`marker.cpp:38-42`) | differs (UX) | **surface to user**: keep half-alpha fill? |
+| Color (RGBA) | pen a=a, brush a=a/2 (half-alpha fill) (`markers.cpp:70,79`) | pen+brush full a=a (`marker.cpp:38-42`) | differs (UX) | **DECIDED 2026-06-02: make fill alpha a config option** (don't hardcode either). Wire a fill-opacity setting during the markers migration; pick the default at PR5 |
 | Pose / yaw | `markers_converter.h:106` + path rotate | `markers.cpp:62` + `setRotation` (`marker.cpp:36`) | parity | keep camp2 |
 | Frame / TF handling | TF→earth, MessageFilter-gated, buffers 50 / 1 s drop (`markers.cpp:191`, `markers_converter.h:77-105`) | `transformToWebMercator` (`markers.cpp:61`); drops immediately on transform failure (`markers.cpp:66-70`) | differs | consider porting TF-buffering to avoid dropping markers arriving before TF |
 | Visibility toggle | `displayCheckBox` (`markers.ui:18`, `markers.cpp:313-318`) | via `Layer` base | differs | verify `Layer` provides equivalent |
@@ -79,6 +79,8 @@ the child list via `qgraphicsitem_cast`. Positioning is Web Mercator
   (`markers.cpp:69`) but call is `transformToWebMercator`; confirm internal path.
 - **Text legibility at chart scale:** camp2 text has no font sizing
   (`marker.cpp:88-93`); camp sizes by `scale.z`. Verify legibility.
-- **Fill alpha intent (UX):** camp half-alpha fill vs camp2 full — user decision.
+- ~~**Fill alpha intent (UX).**~~ **RESOLVED 2026-06-02:** make fill alpha a
+  config option rather than hardcoding camp's half or camp2's full; default
+  chosen at PR5 markers migration.
 - **markers_manager.\*** (retiring): not read; confirm no unique behavior beyond
   topic discovery before deleting.

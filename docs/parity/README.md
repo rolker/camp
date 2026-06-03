@@ -64,12 +64,16 @@ substrate (PR4/PR5):
 |---|---|---|
 | raster | **NOT yet ≥ parity** | depth band + `getDepth(geo)` query (camp-only, → PR3c); confirm scale-accessor consumers |
 | markers | **NOT yet ≥ parity** | `DELETEALL` all-namespace fan-out (camp2 regression); DELETE object cleanup (camp2 leak); empty-frame + already-expired ingest drops; text scaling |
-| grids | **NOT yet ≥ parity** | GridMap "speed" colormap + fixed range (camp-only, bag-replay verify); lazy-subscribe; confirm OccGrid centering; camp2 warn-throttle unit bug |
+| grids | **NOT yet ≥ parity** | lazy-subscribe; confirm OccGrid centering; camp2 warn-throttle unit bug. (GridMap "speed" colormap **dropped** — see decisions) |
 | OccupancyGrid colormap | **parity ✓** | none — byte-for-byte identical |
 
-**Open decisions surfaced for the user** (recorded per pair, resolved in PR5):
-GridMap "speed" semantic coloring (keep or drop?), marker fill-alpha (camp
-half vs camp2 full). See the per-pair "Open questions" sections.
+**Open decisions — RESOLVED 2026-06-02:**
+- **GridMap colormap:** drop camp's situational "speed" ramp → adopt camp2
+  grayscale auto-range. A reusable selectable-colormap facility
+  (`camp::map::ColorMap`, also a depth-shading consumer) is tracked out of #59
+  scope in [#63](https://github.com/rolker/camp/issues/63).
+- **Marker fill-alpha:** make it a config option (not hardcoded); default
+  chosen at PR5.
 
 ## Caveat
 
