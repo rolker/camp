@@ -4,6 +4,13 @@ Planning software for autonomous surface and underwater vehicles.
 
 This was initially a stand-alone offline application for planning missions. A ROS based monitoring component got added and this is now a ROS package part of Project11.
 
+## Documentation
+
+- **[CAMP user manual](docs/camp_user_manual.md)** — student operator guide: start
+  CAMP, connect to the boat, read the display, plan a survey, send/control missions.
+- [Software architecture](docs/architecture_design.md) — design notes and the
+  TopicBridge/executor contract.
+
 ## Building documentation
 
 In the project root directory, run:

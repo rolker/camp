@@ -64,10 +64,24 @@ with Roland 2026-06-01.
 
 ## Open items / notes
 
-- Decide doc location/format (e.g., `docs/camp_user_manual.md`) and link from the
-  camp README.
-- Verify the override/send UI flow against the actual CAMP widgets before writing
-  §5 (read the relevant `src/camp/` UI code; don't document from memory).
+- ~~Decide doc location/format and link from the camp README~~ **DONE** —
+  `docs/camp_user_manual.md`; added a new **Documentation** section to README
+  (first README→docs link in this repo) listing the manual + architecture doc.
+- ~~Verify the override/send UI flow against the actual CAMP widgets before
+  writing §5~~ **DONE** — verified against `src/camp/`: Execute →
+  `sendMissionPlan` → `replace_task` (`mission_manager.cpp:99`); map right-click
+  overrides **"Hover Here"/"Goto Here"/"Idle in place"** (`projectview.cpp:347+`);
+  helm **"Standby"/"Autonomous"** buttons (`helm_manager.cpp`).
+
+### Implementation note — outline §3 corrected against source
+The agreed outline listed "camera/sonar/segmentation views" under *Reading the
+display*. **Source check shows these are NOT in CAMP**: no image/video widget is
+built (grep for `Image`/`CompressedImage`/`setPixmap` in `src/camp` = zero); the
+sonar panel is dead ROS1 code excluded from the build; annunciators run as
+separate processes, not CAMP panels. The manual now states this explicitly and
+redirects imagery to the separate rqt windows. Also confirmed: Execute sends
+`replace_task` (works); the Mission→**Update** menu sends `update_task`, which is
+live in CAMP but a no-op downstream (#50) — documented as "use Execute."
 
 ---
 **Authored-By**: `Claude Code Agent`
