@@ -44,8 +44,9 @@ audit is **bidirectional**: keep camp2's improvements too (e.g. marker `CUBE`).
 - **End-state: shared map library.** Extract camp2's map substrate into `libcamp_map`
   (namespaced `camp::map::`) that **both** `CCOMAutonomousMissionPlanner` and the `camp2`
   executable link. **camp2 is NOT retired** — it stays a working sandbox. No code
-  duplication. Lib boundary for the ROS-dependent layers (single lib vs sibling
-  `libcamp_map_ros`) is a PR2 detail.
+  duplication. Lib boundary **decided (2026-06-02): split** into `libcamp_map`
+  (pure Qt/GDAL core) + `libcamp_map_ros` (ROS layers, PUBLIC-links the core) —
+  see Open Questions for rationale.
 - **Parity audit is committed** as a living doc (`docs/parity/` or `.agents/`) — a
   reviewable, durable matrix per replacement pair, not just inline analysis.
 - **Testing where practicable.** Add unit tests for pure logic / data paths (camp has
@@ -168,7 +169,16 @@ Each PR builds and runs on its own; PR1, Phase 0, and PR2 are low-risk and land 
 
 ## Open Questions
 
-- [ ] Lib boundary: single `libcamp_map` vs splitting ROS-dependent layers into `libcamp_map_ros` — settle in PR2.
+- [x] Lib boundary: **DECIDED 2026-06-02 — split.** Two libraries: `libcamp_map`
+  (pure Qt/GDAL map core — `map`, `map_view`, `map_tiles`, `wmts`,
+  `map_tree_view`, `background`, `raster`, `util`) and `libcamp_map_ros`
+  (ROS-dependent layers — `ros/`), where `libcamp_map_ros` PUBLIC-links
+  `libcamp_map`. Verified the boundary is real and one-directional: the core has
+  **0** ROS includes; `ros/` depends on the core, not vice versa. Rationale:
+  enforces the layering at compile time, lets the pure-logic gtests
+  (`web_mercator` round-trip, depth-order) link Qt/GDAL only (no rclcpp/tf2),
+  and keeps the core reusable in a non-ROS context. Cost is modest extra CMake
+  (two targets/installs/export sets).
 
 ## Estimated Scope
 
