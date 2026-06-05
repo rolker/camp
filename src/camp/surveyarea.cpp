@@ -4,6 +4,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include "backgroundraster.h"
+#include "autonomousvehicleproject.h"
 #include "trackline.h"
 #include <QDebug>
 
@@ -246,10 +247,10 @@ void SurveyArea::generateAdaptiveTrackLines()
     double tanHalfSwath = tan((swathAngle/2.0)*M_PI/180.0);
 
     auto wps = waypoints();
-    
-    BackgroundRaster *depthRaster = autonomousVehicleProject()->getDepthRaster();
-    
-    if(wps.size() > 2 && depthRaster)
+
+    AutonomousVehicleProject *project = autonomousVehicleProject();
+
+    if(wps.size() > 2 && project->hasDepth())
     {
 
         BPolygon area_poly;
@@ -287,7 +288,7 @@ void SurveyArea::generateAdaptiveTrackLines()
         
         while(true)
         {
-            std::vector<QGeoCoordinate> nextTrackLine = generateNextLine(guidePath, *depthRaster, tanHalfSwath, side, area_poly, stepSize, generated_lines);
+            std::vector<QGeoCoordinate> nextTrackLine = generateNextLine(guidePath, project, tanHalfSwath, side, area_poly, stepSize, generated_lines);
             if(nextTrackLine.empty())
                 break;
             
@@ -302,7 +303,7 @@ void SurveyArea::generateAdaptiveTrackLines()
             
             // generate a new guide path based on the previous line
             // order will need to be reversed
-            std::vector<QGeoCoordinate> newGuidePath = generateNextLine(nextTrackLine, *depthRaster, tanHalfSwath, side, area_poly, stepSize, generated_lines);
+            std::vector<QGeoCoordinate> newGuidePath = generateNextLine(nextTrackLine, project, tanHalfSwath, side, area_poly, stepSize, generated_lines);
             if(newGuidePath.empty())
                 break;
 
@@ -321,12 +322,12 @@ void SurveyArea::generateAdaptiveTrackLines()
     updateETE();
 }
 
-std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines)
+std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordinate> const &guidePath, AutonomousVehicleProject *project, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines)
 {
     std::vector<QGeoCoordinate> ret;
     for(int i = 0; i < guidePath.size(); i++)
     {
-        double depth = depthRaster.getDepth(guidePath[i]);
+        double depth = project->getDepth(guidePath[i]);
         // TODO: Improve the following to not assume constant depth across swath.
         double swath_half_width = depth*tanHalfSwath;
         

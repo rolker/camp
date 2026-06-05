@@ -364,7 +364,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
-            if(project->getBackgroundRaster() && project->getDepthRaster())
+            if(project->hasDepth())
             {
                 QAction *planPathAction = menu.addAction("Plan path");
                 connect(planPathAction, &QAction::triggered, tl, &TrackLine::planPath);
@@ -404,7 +404,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
         if(sa)
         {
-            if(project->getBackgroundRaster() && project->getDepthRaster())
+            if(project->hasDepth())
             {
                 QAction *generateAdaptiveTrackLinesAction = menu.addAction("Generate Adaptive Track Lines");
                 connect(generateAdaptiveTrackLinesAction, &QAction::triggered, sa, &SurveyArea::generateAdaptiveTrackLines);

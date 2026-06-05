@@ -8,6 +8,9 @@
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
 #include "astar.h"
+#include "map_view/web_mercator.h"
+#include <algorithm>
+#include <cmath>
 
 TrackLine::TrackLine(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
 {
@@ -251,26 +254,60 @@ bool TrackLine::canBeSentToRobot() const
 
 void TrackLine::planPath()
 {
+    // [#59 PR3c] A* plans on a self-defined square grid in Web-Mercator metres
+    // (fixed cell count), independent of any raster's pixel grid. Depth per cell
+    // comes from AutonomousVehicleProject::getDepth(geo); cells with no coverage
+    // are obstacles (unknown = unsafe). See ADR-0002.
     auto wps = waypoints();
-    
-    BackgroundRaster *depthRaster = autonomousVehicleProject()->getDepthRaster();
+    AutonomousVehicleProject* avp = autonomousVehicleProject();
+    if(wps.size() < 2 || !avp->hasDepth())
+        return;
+
+    const int N = 256;                  // fixed grid cell count per axis
+    const double marginFraction = 0.5;  // expand the start->goal bbox by this fraction per side
 
     std::vector<QGeoCoordinate> newWaypoints;
-    
-    for (int i = 0; i <  wps.size()-1; i++)
+
+    for (int i = 0; i < wps.size()-1; i++)
     {
-        auto start = depthRaster->geoToPixel(wps[i]->location());
-        auto finish = depthRaster->geoToPixel(wps[i+1]->location());
-        qDebug() << "start: " << start << " finish: " << finish;
+        const QPointF startWM = web_mercator::geoToMap(wps[i]->location());
+        const QPointF finishWM = web_mercator::geoToMap(wps[i+1]->location());
+
+        // Square planning box centred on the segment, expanded by the margin.
+        const double cx = (startWM.x() + finishWM.x())/2.0;
+        const double cy = (startWM.y() + finishWM.y())/2.0;
+        double extent = std::max(std::abs(finishWM.x()-startWM.x()), std::abs(finishWM.y()-startWM.y()));
+        if(extent <= 0.0)
+            extent = 1.0;
+        const double half = extent/2.0 + extent*marginFraction;
+        const double originX = cx - half;
+        const double originY = cy - half;
+        const double cellSize = (2.0*half) / N;
+
+        // Pre-sample depth at each cell centre (geo query, scene-independent).
         astar::Context c;
-        c.start.x = start.x();
-        c.start.y = start.y();
-        c.finish.x = finish.x();
-        c.finish.y = finish.y();
-        c.map = depthRaster;
+        c.gridSize = N;
+        c.depthGrid.resize(static_cast<size_t>(N)*N);
+        for(int gy = 0; gy < N; gy++)
+            for(int gx = 0; gx < N; gx++)
+            {
+                const QPointF centre(originX + (gx+0.5)*cellSize, originY + (gy+0.5)*cellSize);
+                const float d = avp->getDepth(web_mercator::mapToGeo(centre));
+                c.depthGrid[static_cast<size_t>(gy)*N + gx] = std::isnan(d) ? astar::Context::unknownDepth : d;
+            }
+
+        auto toCell = [&](const QPointF& p)
+        {
+            const int gx = std::clamp(int((p.x()-originX)/cellSize), 0, N-1);
+            const int gy = std::clamp(int((p.y()-originY)/cellSize), 0, N-1);
+            return astar::Position(gx, gy);
+        };
+        c.start = toCell(startWM);
+        c.finish = toCell(finishWM);
         c.maxDepth = 15.0;
         c.minDepth = 3.0;
         c.shipDraft = 1.0;
+
         astar::AStar as;
         auto result = as.search(c);
         if(result.empty())
@@ -279,12 +316,15 @@ void TrackLine::planPath()
             newWaypoints.push_back(wps[i+1]->location());
         }
         else
-            for(auto p: result)
-                newWaypoints.push_back(depthRaster->pixelToGeo(QPointF(p.x,p.y)));
+            for(const auto& p: result)
+            {
+                const QPointF centre(originX + (p.x+0.5)*cellSize, originY + (p.y+0.5)*cellSize);
+                newWaypoints.push_back(web_mercator::mapToGeo(centre));
+            }
     }
     for(auto wp: wps)
         removeWaypoint(wp);
 
-    for(auto nwp: newWaypoints)
+    for(const auto& nwp: newWaypoints)
         addWaypoint(nwp);
 }

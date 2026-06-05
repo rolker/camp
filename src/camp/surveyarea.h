@@ -49,7 +49,7 @@ private:
     typedef boost::geometry::model::polygon<BPoint> BPolygon;
     typedef boost::geometry::model::multi_linestring<BLineString> BMultiLineString;
 
-    std::vector<QGeoCoordinate> generateNextLine(std::vector<QGeoCoordinate> const &guidePath, BackgroundRaster const &depthRaster, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines);
+    std::vector<QGeoCoordinate> generateNextLine(std::vector<QGeoCoordinate> const &guidePath, AutonomousVehicleProject *project, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines);
 };
 
 #endif

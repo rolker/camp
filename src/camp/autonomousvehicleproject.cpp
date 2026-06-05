@@ -38,6 +38,7 @@
 
 #include <iostream>
 #include <sstream>
+#include <cmath>
 
 AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentDepthRaster(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
 {
@@ -254,6 +255,25 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
 BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
 {
     return m_currentDepthRaster;
+}
+
+float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
+{
+    // [#59 PR3c] Walk the depth providers in order, first valid (non-NaN) wins.
+    // One provider today (the chart's depth band); the loop generalises to
+    // multiple depth layers in PR3c-ii.
+    if(m_currentDepthRaster && m_currentDepthRaster->depthValid())
+    {
+        float d = m_currentDepthRaster->getDepth(location);
+        if(!std::isnan(d))
+            return d;
+    }
+    return std::nanf("");
+}
+
+bool AutonomousVehicleProject::hasDepth() const
+{
+    return m_currentDepthRaster && m_currentDepthRaster->depthValid();
 }
 
 Behavior * AutonomousVehicleProject::createBehavior()

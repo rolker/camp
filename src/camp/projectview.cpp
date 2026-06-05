@@ -18,6 +18,7 @@
 #include "map_view/web_mercator.h"
 #include <QPolygonF>
 #include <QAbstractSlider>
+#include <cmath>
 #include <QScrollBar>
 #include "roslink.h"
 #include "platform_manager/platform.h"
@@ -215,7 +216,6 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
 
     QPointF transformedMouse = mapToScene(event->pos());
     BackgroundRaster *bg =  m_project->getBackgroundRaster();
-    BackgroundRaster *dr =  m_project->getDepthRaster();
     if(bg)
     {
         // [#59 PR3a] Scene is Web Mercator; the mouse position in scene units is
@@ -225,8 +225,9 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
         QGeoCoordinate llMouse = web_mercator::mapToGeo(transformedMouse);
         posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees) + " (" + llMouse.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
 
-        if(dr)
-            posText += " Depth: " +QString::number(dr->getDepth(llMouse));
+        const float depth = m_project->getDepth(llMouse);
+        if(!std::isnan(depth))
+            posText += " Depth: " +QString::number(depth);
         
         if(pendingSurveyPattern)
         {

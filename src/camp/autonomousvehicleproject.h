@@ -44,6 +44,12 @@ public:
     BackgroundRaster* openBackground(QString const &fname, QString label = "");
     BackgroundRaster * getBackgroundRaster() const;
     BackgroundRaster * getDepthRaster() const;
+
+    // [#59 PR3c] Depth query over the depth-provider list (first valid wins),
+    // independent of the scene projection. Returns NaN where no provider has
+    // data. hasDepth() gates depth-aware planning. See ADR-0002.
+    float getDepth(QGeoCoordinate const &location) const;
+    bool hasDepth() const;
     MissionItem *potentialParentItemFor(std::string const &childType);
 
     Waypoint *addWaypoint(QGeoCoordinate position);
