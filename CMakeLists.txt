@@ -174,6 +174,12 @@ target_link_libraries(CCOMAutonomousMissionPlanner
 
 target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} yaml-cpp)
 
+# [#59 PR3a] Deployed camp adopts the shared map framework. camp_map_ros links
+# camp_map transitively and propagates the src/camp2 PUBLIC include path, so the
+# Web-Mercator scene (camp::map::Map), web_mercator helpers, and raster::RasterLayer
+# resolve from headers rooted at src/camp2 (e.g. "map/map.h"). See ADR-0002.
+target_link_libraries(CCOMAutonomousMissionPlanner camp_map_ros)
+
 install (TARGETS CCOMAutonomousMissionPlanner
     DESTINATION lib/${PROJECT_NAME})
 

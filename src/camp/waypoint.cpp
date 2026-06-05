@@ -2,6 +2,7 @@
 #include <QPainter>
 #include "autonomousvehicleproject.h"
 #include "backgroundraster.h"
+#include "map_view/web_mercator.h"
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
@@ -64,10 +65,10 @@ QPainterPath Waypoint::shape() const
 
 void Waypoint::updateLocation()
 {
-    AutonomousVehicleProject *avp = autonomousVehicleProject();
-    BackgroundRaster *bgr = avp->getBackgroundRaster();
-    QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
-    m_location = bgr->unproject(projectedPosition);
+    // [#59 PR3a] Scene is Web Mercator; recover geo directly from the scene
+    // position rather than the (depth-only) background raster's pixel space.
+    // See ADR-0002.
+    m_location = web_mercator::mapToGeo(scenePos());
     setLabel(m_location.toString());
 }
 

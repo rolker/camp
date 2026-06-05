@@ -2,6 +2,7 @@
 #include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 #include "missionitem.h"
+#include "map_view/web_mercator.h"
 #include <QGraphicsSimpleTextItem>
 #include <QFont>
 #include <QBrush>
@@ -33,17 +34,16 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehic
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
 {
-    if(bg)
-    {
-        QPointF ret = bg->geoToPixel(point);
-        QGraphicsItem *pi = parentItem();
-        if(pi)
-        {
-            return ret - pi->scenePos();
-        }
-        return ret;
-    }
-    return QPointF();
+    // [#59 PR3a] The scene is Web Mercator (ADR-0002). Position comes from
+    // web_mercator::geoToMap, independent of the (now depth-only) background
+    // raster, so the bg argument is ignored. The parent-offset subtraction is
+    // coordinate-agnostic, so nested items still resolve to parent-local coords.
+    Q_UNUSED(bg);
+    QPointF ret = web_mercator::geoToMap(point);
+    QGraphicsItem *pi = parentItem();
+    if(pi)
+        return ret - pi->scenePos();
+    return ret;
 }
 
 void GeoGraphicsItem::prepareGeometryChange()

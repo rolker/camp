@@ -25,6 +25,8 @@ class Behavior;
 class Platform;
 class AvoidArea;
 
+namespace camp { namespace map { class Map; } }
+
 class AutonomousVehicleProject : public QAbstractItemModel
 {
     Q_OBJECT
@@ -33,6 +35,11 @@ public:
     ~AutonomousVehicleProject();
 
     QGraphicsScene *scene() const;
+
+    // [#59 PR3a] The Web-Mercator scene is owned by camp::map::Map (ADR-0002);
+    // map() exposes the layer model so chart rasters can be added as layers.
+    camp::map::Map *map() const;
+
     BackgroundRaster* openBackground(QString const &fname, QString label = "");
     BackgroundRaster * getBackgroundRaster() const;
     BackgroundRaster * getDepthRaster() const;
@@ -142,7 +149,8 @@ public slots:
 
 
 private:
-    QGraphicsScene* m_scene;
+    camp::map::Map* m_map;
+    QGraphicsScene* m_scene;        // owned by m_map; cached for internal use
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     BackgroundRaster* m_currentDepthRaster;

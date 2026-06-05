@@ -3,6 +3,7 @@
 #include <QStandardItemModel>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsItem>
 #include <QFileDialog>
 #include <QTextStream>
 #include <QJsonDocument>
@@ -31,6 +32,10 @@
 #include "platform_manager/platform.h"
 #include "mission_manager/mission_manager.h"
 
+#include "map/map.h"
+#include "map/layer_list.h"
+#include "raster/raster_layer.h"
+
 #include <iostream>
 #include <sstream>
 
@@ -38,7 +43,13 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
 {
     GDALAllRegister();
 
-    m_scene = new QGraphicsScene(this);
+    // [#59 PR3a] The Web-Mercator scene is owned by camp::map::Map (ADR-0002).
+    // Overlays position via web_mercator::geoToMap through the geoToPixel shim;
+    // the background raster stays in the scene as a non-painting origin anchor
+    // (see setCurrentBackground) so existing overlay parenting still resolves.
+    m_map = new camp::map::Map(this);
+    m_scene = m_map->scene();
+
     m_root = new Group();
     m_root->setParent(this);
     m_root->setObjectName("root");
@@ -57,6 +68,11 @@ AutonomousVehicleProject::~AutonomousVehicleProject()
 QGraphicsScene *AutonomousVehicleProject::scene() const
 {
     return m_scene;
+}
+
+camp::map::Map *AutonomousVehicleProject::map() const
+{
+    return m_map;
 }
 
 QString const &AutonomousVehicleProject::filename() const
@@ -119,6 +135,11 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
         else
             bgr->setObjectName(label);
         setCurrentBackground(bgr);
+        // [#59 PR3a] Display the chart via the shared reprojecting RasterLayer
+        // (exact GDAL warp to EPSG:3857). The BackgroundRaster above is retained
+        // headless as the depth oracle (getDepth) until depth becomes a first-
+        // class layer in PR3c; it is no longer painted in the scene. See ADR-0002.
+        new camp::raster::RasterLayer(m_map->topLevelLayers(), fname);
         endInsertRows();
         emit layoutChanged();
         return bgr;
@@ -659,6 +680,8 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     if(bgr)
     {
         m_scene->removeItem(bgr);
+        // [#59 PR3a] The display RasterLayer added in openBackground is managed
+        // via the layer model and is removed there in the PR3b layer-tree work.
         if(m_currentBackground == bgr)
             setCurrentBackground(nullptr);
             //m_currentBackground = nullptr;
@@ -719,6 +742,14 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
     if(bgr)
     {
         bgr->updateMapScale(m_map_scale);
+        // [#59 PR3a] The chart image is drawn by the reprojected RasterLayer; the
+        // background raster stays in the scene only as a non-painting origin
+        // anchor — overlays parent to it and convert via the geoToPixel shim — and
+        // as the depth/georeference oracle. ItemHasNoContents suppresses its
+        // pixel-space chart; the raised Z keeps overlays above the base layers.
+        // See ADR-0002.
+        bgr->setFlag(QGraphicsItem::ItemHasNoContents, true);
+        bgr->setZValue(1.0);
         m_scene->addItem(bgr);
         if(bgr->depthValid())
             m_currentDepthRaster = bgr;

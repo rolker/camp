@@ -15,6 +15,7 @@
 #include <QDebug>
 #include <QMenu>
 #include "measuringtool.h"
+#include "map_view/web_mercator.h"
 #include <QAbstractSlider>
 #include <QScrollBar>
 #include "roslink.h"
@@ -58,7 +59,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         case MouseMode::addWaypoint:
             if(bg)
             {
-                m_project->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                m_project->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
             }
             setPanMode();
             break;
@@ -67,13 +68,13 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    currentTrackLine = m_project->addTrackLine(bg->pixelToGeo(mapToScene(event->pos())));
-                    pendingTrackLineWaypoint = currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                    currentTrackLine = m_project->addTrackLine(web_mercator::mapToGeo(mapToScene(event->pos())));
+                    pendingTrackLineWaypoint = currentTrackLine->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
                 }
             }
             else
             {
-                pendingTrackLineWaypoint = currentTrackLine->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingTrackLineWaypoint = currentTrackLine->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
 
             }
             break;
@@ -82,7 +83,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    pendingSurveyPattern = m_project->addSurveyPattern(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingSurveyPattern = m_project->addSurveyPattern(web_mercator::mapToGeo(mapToScene(event->pos())));
                     //QModelIndex i = m_project-> indexFromItem(pendingSurveyPattern);
                     //emit  currentChanged(i);
                 }
@@ -95,7 +96,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 }
                 else
                 {
-                    pendingSurveyPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingSurveyPattern->setSpacingLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
                 }
             }
             break;
@@ -104,13 +105,13 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    pendingSurveyArea = m_project->addSurveyArea(bg->pixelToGeo(mapToScene(event->pos())));
-                    pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingSurveyArea = m_project->addSurveyArea(web_mercator::mapToGeo(mapToScene(event->pos())));
+                    pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
                 }
             }
             else
             {
-                pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingSurveyAreaWaypoint = pendingSurveyArea->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
             }
             break;
         case MouseMode::addAvoidArea:
@@ -118,13 +119,13 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    pendingAvoidArea = m_project->addAvoidArea(bg->pixelToGeo(mapToScene(event->pos())));
-                    pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingAvoidArea = m_project->addAvoidArea(web_mercator::mapToGeo(mapToScene(event->pos())));
+                    pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(web_mercator::mapToGeo(mapToScene(event->pos())));
                 }
             }
             else
             {
-                pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingAvoidAreaWaypoint = pendingAvoidArea->addPoint(web_mercator::mapToGeo(mapToScene(event->pos())));
             }
             break;
         case MouseMode::addSearchPattern:
@@ -132,7 +133,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(bg)
                 {
-                    pendingSearchPattern = m_project->addSearchPattern(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingSearchPattern = m_project->addSearchPattern(web_mercator::mapToGeo(mapToScene(event->pos())));
                     //QModelIndex i = m_project-> indexFromItem(pendingSurveyPattern);
                     //emit  currentChanged(i);
                 }
@@ -145,7 +146,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 }
                 else
                 {
-                    pendingSearchPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                    pendingSearchPattern->setSpacingLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
                 }
             }
             break;
@@ -190,8 +191,8 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         if(bg && !measuringTool)
         {
             measuringTool = new MeasuringTool(bg);
-            measuringTool->setStart(bg->pixelToGeo(mapToScene(event->pos())));
-            measuringTool->setFinish(bg->pixelToGeo(mapToScene(event->pos())));
+            measuringTool->setStart(web_mercator::mapToGeo(mapToScene(event->pos())));
+            measuringTool->setFinish(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         break;
     default:
@@ -209,47 +210,41 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
     BackgroundRaster *dr =  m_project->getDepthRaster();
     if(bg)
     {
-        QPointF projectedMouse = bg->pixelToProjectedPoint(transformedMouse);
-        posText += " Projected mouse: "+QString::number(projectedMouse.x(),'f')+","+QString::number(projectedMouse.y(),'f');
-        QGeoCoordinate llMouse = bg->unproject(projectedMouse);
+        // [#59 PR3a] Scene is Web Mercator; the mouse position in scene units is
+        // Web-Mercator metres. Recover WGS84 directly and query depth by geo
+        // (the background raster keeps its georeferencing as a depth oracle).
+        posText += " WebMercator: "+QString::number(transformedMouse.x(),'f')+","+QString::number(transformedMouse.y(),'f');
+        QGeoCoordinate llMouse = web_mercator::mapToGeo(transformedMouse);
         posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees) + " (" + llMouse.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
-        
+
         if(dr)
-        {
-            if(dr == bg)
-                posText += " Depth: " +QString::number(dr->getDepth(transformedMouse.x(),transformedMouse.y()));
-            else 
-            {
-                auto p = dr->geoToPixel(llMouse);
-                posText += " Depth: " +QString::number(dr->getDepth(p.x(),p.y()));
-            }
-        }
+            posText += " Depth: " +QString::number(dr->getDepth(llMouse));
         
         if(pendingSurveyPattern)
         {
             if(pendingSurveyPattern->hasSpacingLocation())
-                pendingSurveyPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingSurveyPattern->setSpacingLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
             else
-                pendingSurveyPattern->setEndLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingSurveyPattern->setEndLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         if(pendingTrackLineWaypoint)
         {
-            pendingTrackLineWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
+            pendingTrackLineWaypoint->setLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         if(pendingSurveyAreaWaypoint)
         {
-            pendingSurveyAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
+            pendingSurveyAreaWaypoint->setLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         if(pendingAvoidAreaWaypoint)
         {
-            pendingAvoidAreaWaypoint->setLocation(bg->pixelToGeo(mapToScene(event->pos())));
+            pendingAvoidAreaWaypoint->setLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         if(pendingSearchPattern)
         {
             if(pendingSearchPattern->hasSpacingLocation())
-                pendingSearchPattern->setSpacingLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingSearchPattern->setSpacingLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
             else
-                pendingSearchPattern->setEndLocation(bg->pixelToGeo(mapToScene(event->pos())));
+                pendingSearchPattern->setEndLocation(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
         if(measuringTool)
             measuringTool->setFinish(llMouse);
@@ -349,7 +344,7 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
     BackgroundRaster *bg = m_project->getBackgroundRaster();
     if(bg)
     {
-        m_contextMenuLocation = bg->pixelToGeo(bg->mapFromParent(mapToScene(event->pos())));
+        m_contextMenuLocation = web_mercator::mapToGeo(mapToScene(event->pos()));
         qDebug() << m_contextMenuLocation;
         QMenu menu(this);
 
@@ -432,7 +427,7 @@ void ProjectView::beforeUpdateBackground()
     {
         QRect view = frameRect();
         QPointF center = mapToScene(view.center());
-        m_savedCenter = bg->pixelToGeo(center);
+        m_savedCenter = web_mercator::mapToGeo(center);
     }
     else
     {
@@ -445,23 +440,21 @@ void ProjectView::beforeUpdateBackground()
 
 void ProjectView::updateBackground(BackgroundRaster* bg)
 {
-    auto bgRect = bg->boundingRect();
-    setSceneRect(bgRect.marginsAdded(QMarginsF(bgRect.width()*.75,bgRect.height()*.75,bgRect.width()*.75,bgRect.height()*.75)));
-    if(m_savedCenter.isValid())
-    {
-        QPointF center = bg->geoToPixel(m_savedCenter);
-        centerOn(center);
-    }
+    // [#59 PR3a] The chart is displayed by the reprojected RasterLayer; recenter
+    // the view in Web-Mercator scene space. Restore the saved geo center across a
+    // chart swap, otherwise center on the new chart's centre. The scene rect is
+    // left to the scene's items bounding rect (world-covering base layers).
+    // See ADR-0002.
+    QGeoCoordinate centerGeo = m_savedCenter;
+    if(!centerGeo.isValid() && bg)
+        centerGeo = bg->pixelToGeo(bg->boundingRect().center());
+    if(centerGeo.isValid())
+        centerOn(web_mercator::geoToMap(centerGeo));
 }
 
 void ProjectView::centerMap(QGeoCoordinate location)
 {
-    BackgroundRaster *bg =  m_project->getBackgroundRaster();
-    if(bg)
-    {
-        QPointF center = bg->geoToPixel(location);
-        centerOn(center);    
-    }  
+    centerOn(web_mercator::geoToMap(location));
 }
 
 void ProjectView::sendViewport()
