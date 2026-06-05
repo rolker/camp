@@ -142,14 +142,15 @@ double  AStar::extendedPathAverageDepth(Context const &c, Position const& positi
                 //  is an obstacle, the path is not valid
                 int floor_x = int(floor(x));
                 int ceil_x = int(ceil(x));
+                int cell_y = int(floor(y));   // explicit: cell of a fractional coord (floor, not truncate-toward-zero)
 
                 // If either cell is an obstacle, the path is not valid
-                if ( c.depthAt(floor_x,y) < c.minDepth || c.depthAt(ceil_x,y) < c.minDepth)
+                if ( c.depthAt(floor_x,cell_y) < c.minDepth || c.depthAt(ceil_x,cell_y) < c.minDepth)
                 {
                     return 0.0; // Path is invalid
                 }
 
-                cummulative_cost += c.depthAt(round(x),round(y));
+                cummulative_cost += c.depthAt(int(round(x)),int(round(y)));
             }
         }
         else
@@ -171,12 +172,13 @@ double  AStar::extendedPathAverageDepth(Context const &c, Position const& positi
                 //  is an obstacle, the path is not valid
                 int floor_y = int(floor(y));
                 int ceil_y = int(ceil(y));
-                if ( c.depthAt(x,floor_y) < c.minDepth || c.depthAt(x,ceil_y) < c.minDepth)
+                int cell_x = int(floor(x));   // explicit: cell of a fractional coord (floor, not truncate-toward-zero)
+                if ( c.depthAt(cell_x,floor_y) < c.minDepth || c.depthAt(cell_x,ceil_y) < c.minDepth)
                 {
                     return 0.0; // Path is invalid
                 }
 
-                cummulative_cost += c.depthAt(round(x),round(y));
+                cummulative_cost += c.depthAt(int(round(x)),int(round(y)));
             }
         }
         // The depth cost for traversing to the proposed cell, is the mean depth

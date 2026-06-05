@@ -261,7 +261,8 @@ void TrackLine::planPath()
     // are obstacles (unknown = unsafe). See ADR-0002.
     auto wps = waypoints();
     AutonomousVehicleProject* avp = autonomousVehicleProject();
-    if(wps.size() < 2 || !avp->hasDepth())
+    // avp can be null for an item not yet attached to a project (construction/load).
+    if(!avp || wps.size() < 2 || !avp->hasDepth())
         return;
 
     const int N = 256;                  // fixed grid cell count per axis
