@@ -202,3 +202,12 @@ Claude adversarial: grid/bbox/centring math, fill↔read index consistency (y*N+
 
 ### PR3c-i — runtime verified (2026-06-05)
 Tested with the real NH GRANIT Lake Massabesic bathy (`ccomjhc_project11/projects/2026-Lake_Massabesic/data/massabesic_bathy.tif`, depth m positive-down 0–16.8, EPSG:26919), displayed via a local imagery+depth VRT (`~/data/test_charts/massabesic_chart.vrt`). **Roland confirmed:** depth-shaded chart renders correctly georeferenced/oriented on the Web-Mercator scene over OSM tiles; **adaptive track lines** tighten in shallows / widen in deep water (getDepth(geo) swath scaling); **A* "Plan path"** on a trackline works (self-defined grid, unknown=obstacle). Depth pipeline + A* grid redesign validated end-to-end. (Adaptive density high = pre-existing swath params, not a correctness issue.)
+
+## PR5 step 1 — grids+markers via camp2 ros overlays (unified node)
+**Status**: complete (build + runtime-verified; pushed)
+**When**: 2026-06-05
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Commit `9b4bcfc`. Replaced camp's flipped, BackgroundRaster-parented grids/markers with camp2's scene-correct ros overlays. **camp::ros::Node adopt constructor** (tools_manager, node, buffer): uses camp's existing rclcpp node+buffer instead of spawning its own thread (Roland's "unify on camp's node" call), defers manager creation via QTimer::singleShot(0, this, ...) (safe — `this` receiver guard), and the dtor skips rclcpp::shutdown()/thread-teardown when owns_thread_ is false (node belongs to host). Skips camp2's GeometryManager (create_geometry_manager_=false) since camp keeps its own collision-zone PolygonStamped renderer (avoids double-draw). MainWindow attaches the Node to project->map()->toolsManager() on first rosConnected (m_map_ros_started guard). Retired camp's GridManager+MarkersManager (creation/members/menu actions/slots). camp2 standalone path unchanged. **Roland verified in sim: grids/markers render right-side-up in the Layers tab; flip regression fixed.**
+
+Remaining PR5: re-home camp-only overlays (AIS, platform/ship_track, collision_monitor, nav_source) onto Map layers off the BackgroundRaster anchor; retire AISManager/CollisionMonitorManager windows; then retire BackgroundRaster + remove geoToPixel shim (PR6). Deferred: camp Grid/Markers class files now dead (delete in cleanup); camp2 geometry for non-collision polygons (re-enable with a collision-name exclusion if wanted).
