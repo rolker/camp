@@ -6,6 +6,11 @@
 #include "grid_map_msgs/msg/grid_map.hpp"
 #include <QtConcurrent>
 #include <QMutex>
+#include <QImage>
+#include <QPointF>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace camp
 {

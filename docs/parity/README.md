@@ -69,9 +69,11 @@ substrate (PR4/PR5):
 
 **Open decisions — RESOLVED 2026-06-02:**
 - **GridMap colormap:** drop camp's situational "speed" ramp → adopt camp2
-  grayscale auto-range. A reusable selectable-colormap facility
-  (`camp::map::ColorMap`, also a depth-shading consumer) is tracked out of #59
-  scope in [#63](https://github.com/rolker/camp/issues/63).
+  grayscale auto-range. The reusable selectable-colormap facility
+  (`camp::map::ColorMap`) originally scoped to
+  [#63](https://github.com/rolker/camp/issues/63) is now **implemented in this
+  PR** and consumed by both `grid_map` and the raster depth-shading layer
+  (selectable per layer, persisted).
 - **Marker fill-alpha:** make it a config option (not hardcoded); default
   chosen at PR5.
 

@@ -326,7 +326,8 @@ void SurveyArea::generateAdaptiveTrackLines()
 std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordinate> const &guidePath, AutonomousVehicleProject *project, double tanHalfSwath, int side, BPolygon const &area_poly, double stepSize, BMultiLineString const & previousLines)
 {
     std::vector<QGeoCoordinate> ret;
-    for(int i = 0; i < guidePath.size(); i++)
+    const int point_count = static_cast<int>(guidePath.size());
+    for(int i = 0; i < point_count; i++)
     {
         double depth = project->getDepth(guidePath[i]);
         // [#59 PR3c] Skip guide points with no depth coverage rather than
@@ -337,7 +338,7 @@ std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordin
         double swath_half_width = depth*tanHalfSwath;
         
         // Find the  heading between previous point and next point. Use current point if at either end.
-        double heading = guidePath[std::max<int>(0,i-1)].azimuthTo(guidePath[std::min<int>(guidePath.size()-1,i+1)]);
+        double heading = guidePath[std::max<int>(0,i-1)].azimuthTo(guidePath[std::min<int>(point_count-1,i+1)]);
         
         QGeoCoordinate candidate_point = guidePath[i].atDistanceAndAzimuth(swath_half_width,heading+(90*side));
         

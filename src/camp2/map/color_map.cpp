@@ -1,5 +1,6 @@
 #include "color_map.h"
 
+#include <algorithm>   // std::min / std::max in colorNormalized()
 #include <array>
 #include <cmath>
 #include <vector>
