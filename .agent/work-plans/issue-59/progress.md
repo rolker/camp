@@ -254,3 +254,32 @@ Deferred (not regressions; tracked work): projectview BackgroundRaster gating (#
 ### Resolution follow-up (2026-06-05 10:49 -04:00)
 - projectview BackgroundRaster gating (#9-15) → **done now**, not deferred: `1bcde46` removes the chart-load guard from mission-item creation, mouse-move readout, and the boat-command context menu (all use web_mercator::mapToGeo, chart-independent). Kept the genuinely chart-dependent view-center/extent-fit and the middle-button MeasuringTool coupling. **Needs a runtime check over an OSM/WMTS-only background before merge** (GUI path, not unit-covered).
 - Still deferred to BackgroundRaster retirement (PR6): chart double-load (#7); MeasuringTool's bg dependency; full BackgroundRaster + geoToPixel-shim removal; overlay re-homing (AIS/platform/collision_monitor/nav_source); AISManager/CollisionMonitorManager window retirement; dead camp Grid/Markers .h/.ui/manager file deletion; .agents/README.
+
+## BackgroundRaster Retirement — increment plan (PR6)
+**Started**: 2026-06-05 11:19 -04:00 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Investigation (30-file BackgroundRaster surface): coordinate conversion is
+**already** Web-Mercator (geoToPixel ignores its bg arg via Q_UNUSED), so the
+math doesn't block. Three structural blockers remain, plus persistence/metadata.
+Ordered, independently-buildable increments — each GUI/safety-affecting step
+has a runtime-verification gate:
+
+1. **Depth → standalone DepthRaster** ✅ done (`this commit`). Decouples the
+   depth oracle from BackgroundRaster's graphics identity. **Verify in sim**
+   (cursor depth + shoal avoidance over a real depth chart) before field use.
+2. **Overlay anchoring** → introduce a persistent scene-origin anchor (or
+   scene-direct parenting) replacing `setParentItem(bg)` in the 4 overlay
+   families (GeoGraphicsMissionItem, AISContact, Platform, CollisionMonitor) and
+   the updatingBackground/backgroundUpdated reparenting signals. Coordinate-
+   neutral (proven) but GUI-affecting: verify hit-detection, z-order, labels.
+3. **Scale helpers** → replace bg->mapScale()/scaledPixelSize()/pixelSize()
+   (arrow + ship-outline scaling) with a Web-Mercator scene scale. Verify
+   arrow/ship-outline sizing.
+4. **MeasuringTool** → reparent to the anchor; obtain the project via a stored
+   pointer instead of dynamic_cast<BackgroundRaster*>(parent()).
+5. **Metadata + persistence + deletion** → move filename/projection display off
+   BackgroundRaster; handle its MissionItem write/read (project-file compat —
+   verify load of existing .json projects); then delete backgroundraster.{h,cpp}
+   (+ its now-redundant depth/image load), backgrounddetails, the geoToPixel(bg)
+   overload, findParentBackgroundRaster, georeferenced if unused. Also fixes the
+   triage #7 chart double-load.
