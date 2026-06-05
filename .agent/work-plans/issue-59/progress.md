@@ -135,3 +135,6 @@ Commit `362157c` (6 files, +107/-68). Deployed camp's scene is now the `camp::ma
 **Known follow-ups:** arrow/label scale magnitudes under metres; `BackgroundRaster` still builds display pixmaps it no longer paints (slim in PR3c); RasterLayer not removed on chart delete (PR3b layer-tree); spurious anchor boundingRect at origin (cosmetic).
 
 **Next:** PR3a-ii folded into PR3a-i (RasterLayer display already here). Remaining PR3a sequence → PR3b (tabbed Layers/Mission UI) → PR3c (depth-as-layer, retire BackgroundRaster).
+
+### PR3a-i — visual verification + Y-flip fix (2026-06-04)
+Roland ran the local build (chart 13283). **Bug found + fixed:** chart + overlays rendered upside down — Web Mercator is Y-up, QGraphicsView is Y-down; `camp::MapView` compensates with a negative-Y scale, `ProjectView` was missing it. Fix (commit `754ffb1`): `scale(1,-1)` in the ProjectView ctor + `fitInView` the chart extent on load (both preserve the flip; uniform zooms keep the sign). Overlay labels use `ItemIgnoresTransformations` → stay upright; mouse↔geo unaffected. **Roland confirmed: chart renders north-up.** Substrate swap visually verified. Still to do: arrow/label scale cosmetic (pixel-tuned `mapScale`), then `/review-code` + push.
