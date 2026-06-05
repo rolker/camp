@@ -33,6 +33,13 @@ ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
 
     connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &ProjectView::sendViewport);
     connect(verticalScrollBar(), &QAbstractSlider::valueChanged, this , &ProjectView::sendViewport);
+
+    // [#59 PR3a] Web Mercator uses Y-increasing-north, but a QGraphicsView is
+    // Y-increasing-down. Flip the Y axis so north renders up (matches the sign
+    // convention in camp::MapView). Subsequent uniform zooms preserve the sign,
+    // and fitInView() multiplies the current transform so the flip survives.
+    // See ADR-0002.
+    scale(1.0, -1.0);
 }
 
 void ProjectView::wheelEvent(QWheelEvent *event)
@@ -440,16 +447,20 @@ void ProjectView::beforeUpdateBackground()
 
 void ProjectView::updateBackground(BackgroundRaster* bg)
 {
-    // [#59 PR3a] The chart is displayed by the reprojected RasterLayer; recenter
-    // the view in Web-Mercator scene space. Restore the saved geo center across a
-    // chart swap, otherwise center on the new chart's centre. The scene rect is
-    // left to the scene's items bounding rect (world-covering base layers).
-    // See ADR-0002.
-    QGeoCoordinate centerGeo = m_savedCenter;
-    if(!centerGeo.isValid() && bg)
-        centerGeo = bg->pixelToGeo(bg->boundingRect().center());
-    if(centerGeo.isValid())
-        centerOn(web_mercator::geoToMap(centerGeo));
+    // [#59 PR3a] The chart is displayed by the reprojected RasterLayer; fit the
+    // view to the chart's extent in Web-Mercator scene space. fitInView multiplies
+    // the current transform, so the constructor's Y-flip (north up) is preserved.
+    // Across a chart swap, recenter on the saved geo position instead. See ADR-0002.
+    if(!bg)
+        return;
+    QRectF px = bg->boundingRect();
+    QPointF a = web_mercator::geoToMap(bg->pixelToGeo(px.topLeft()));
+    QPointF b = web_mercator::geoToMap(bg->pixelToGeo(px.bottomRight()));
+    QRectF chartBox = QRectF(a, b).normalized();
+    if(m_savedCenter.isValid())
+        centerOn(web_mercator::geoToMap(m_savedCenter));
+    else if(!chartBox.isEmpty())
+        fitInView(chartBox, Qt::KeepAspectRatio);
 }
 
 void ProjectView::centerMap(QGeoCoordinate location)
