@@ -48,10 +48,16 @@ public:
 
   /// Returns one of a fixed pool of dedicated MutuallyExclusive callback
   /// groups, handed out round-robin. Use for heavy or potentially-blocking
-  /// display streams (e.g. costmap/grid, path) so each runs on its own thread
-  /// and can't starve the shared Scene/Realtime groups or each other. The pool
-  /// is created at construction (before the node joins the executor), so the
-  /// groups are guaranteed visible to the MultiThreadedExecutor.
+  /// display streams (e.g. costmap/grid, path) so a slow callback runs in its
+  /// own group and can run concurrently with the shared Scene/Realtime groups,
+  /// rather than serializing behind them.
+  ///
+  /// Caveat: this isolates *groups*, not threads. The MultiThreadedExecutor has
+  /// a fixed thread pool, so concurrency is bounded by the thread count, and the
+  /// round-robin reuse means that once more streams take groups than the pool
+  /// size, two streams share a group and serialize again. Size the pool for the
+  /// number of heavy streams. The pool is created at construction (before the
+  /// node joins the executor), so the groups are visible to the executor.
   rclcpp::CallbackGroup::SharedPtr nextDedicatedGroup();
 
   /// Returns an empty `shared_ptr` until `setInstance(...)` has been called.
