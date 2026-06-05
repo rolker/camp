@@ -105,3 +105,14 @@ Two independent adversarial readers (fresh-context Claude subagent + Copilot CLI
 
 ### Findings
 - [ ] No issues found. LGTM.
+
+## PR3a — architecture ADR (Web-Mercator scene + layer model)
+**Status**: in progress (ADR landed; scene code pending)
+**When**: 2026-06-04
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+First PR3a commit (`ae06045`): `docs/decisions/0002-web-mercator-scene-and-layer-model.md`. Bootstraps the architecture ADR ahead of the scene-swap code, recording the already-made decisions (Web-Mercator scene owned by `Map`; two-model Layer/Mission split tabbed in one dock; depth-as-first-class-layer with `getDepth(geo)` order resolution gating BackgroundRaster retirement at PR3c; split shared lib `libcamp_map`/`libcamp_map_ros`, camp2 kept as sandbox).
+
+**Design crux pinned by the ADR (verified against source):** the `geoToPixel` shim is a one-function swap in `geographicsitem.cpp` — replace `bg->geoToPixel(point)` with `web_mercator::geoToMap(point)`, *keeping* the parent-offset subtraction (`ret - parentItem()->scenePos()`, `geographicsitem.cpp:42`), which is coordinate-system-agnostic. The real PR3a work is therefore **reparenting overlay items** out of `BackgroundRaster` and into `Map`'s scene/layers, plus relinking camp to `camp_map_ros` and swapping scene ownership (`AutonomousVehicleProject::m_scene` → `Map::scene()`). Nothing deleted in PR3a; old paths run through the shim until parity-gated retirement.
+
+**Paused for Roland's review of the ADR/approach before writing the scene-swap code** (foundational, 24-file blast radius).
