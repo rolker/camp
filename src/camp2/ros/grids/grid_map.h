@@ -5,6 +5,7 @@
 #include "../../map/color_map.h"
 #include "grid_map_msgs/msg/grid_map.hpp"
 #include <QtConcurrent>
+#include <QMutex>
 
 namespace camp
 {
@@ -36,6 +37,7 @@ class GridMap: public Layer
 
 public:
   GridMap(MapItem* parent, Node* node, QString topic);
+  ~GridMap() override;   // joins the in-flight render worker before teardown
 
   /// [camp#63] Select the colour ramp for this layer; persists and re-renders
   /// the last received grid.
@@ -51,9 +53,23 @@ signals:
 
 private:
   void gridMapCallback(const grid_map_msgs::msg::GridMap &data);
-  void processGridMap(const grid_map_msgs::msg::GridMap &data);
 
-  QFuture<void> process_future_;
+  // Worker body (runs on a QtConcurrent thread). Takes its inputs by value so
+  // it never touches mutex_-guarded state: the message and colormap are
+  // snapshotted under the lock at launch.
+  void processGridMap(grid_map_msgs::msg::GridMap data, map::ColorMap colormap);
+  // Renders `data` with `colormap` into `out`; returns false (no emit) when the
+  // message can't be converted, has no layers, or has no earth transform.
+  bool renderToData(const grid_map_msgs::msg::GridMap &data, const map::ColorMap &colormap,
+                    GridMapData &out);
+
+  // Render-scheduling helpers. *Locked variants assume mutex_ is held. Only one
+  // worker runs at a time; a request that arrives mid-render sets render_pending_
+  // and is coalesced into a single follow-up render when the worker finishes —
+  // so a colormap change (or newer message) during a render is never lost.
+  void requestRenderLocked();
+  void startRenderLocked();
+  void onProcessFinished();   // worker thread, on each render's completion
 
   GridLayer * gridLayer(const QString & layer_name) const;
 
@@ -64,6 +80,15 @@ private slots:
 private:
   rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr subscription_;
   std::string topic_;
+
+  // Guards every member below — they are touched from the ROS callback thread
+  // (gridMapCallback), the UI thread (setColormap / readSettings), and the
+  // QtConcurrent worker (onProcessFinished).
+  QMutex mutex_;
+  QFuture<void> process_future_;
+  bool rendering_ = false;       // a worker is active
+  bool render_pending_ = false;  // a request arrived while rendering_; render once more
+  bool shutdown_ = false;        // set by the dtor so the worker stops relaunching
 
   // [camp#63] Colour ramp applied to the normalised grid values. Default
   // grayscale (the camp2 post-#59 default); selectable per layer.
