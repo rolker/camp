@@ -23,6 +23,9 @@
 #include "markers/markers_manager.h"
 #include "collision_monitor/collision_monitor_manager.h"
 
+#include "map_tree_view/map_tree_view.h"
+#include <QTabWidget>
+
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -41,6 +44,28 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,m_ui->detailsView,&DetailsView::onCurrentItemChanged);
 
     connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,this,&MainWindow::setCurrent);
+
+    // [#59 PR3b] Two-model split (ADR-0002): tab the existing mission tree
+    // alongside a Web-Mercator layer tree (camp::map::Map) in the left panel.
+    // The mission tree edits the plan; the layer tree manages backgrounds,
+    // OSM/WMTS tiles, and chart raster layers (inline visibility checkboxes +
+    // opacity delegate). detailsView follows the active tab (mission selection
+    // on the Mission tab; cleared on the Layers tab — layer detail widgets are
+    // future work). Built in code to avoid reworking the .ui splitter layout.
+    auto treeTabs = new QTabWidget(this);
+    const int treeSlot = m_ui->missionElementsSplitter->indexOf(m_ui->treeView);
+    auto mapTreeView = new camp::map_tree_view::MapTreeView(treeTabs);
+    mapTreeView->setMap(project->map());
+    treeTabs->addTab(m_ui->treeView, "Mission");   // reparents treeView out of the splitter
+    treeTabs->addTab(mapTreeView, "Layers");
+    m_ui->missionElementsSplitter->insertWidget(treeSlot, treeTabs);
+    connect(treeTabs, &QTabWidget::currentChanged, this, [this, treeTabs](int)
+    {
+        if(treeTabs->currentWidget() == m_ui->treeView)
+            m_ui->detailsView->onCurrentItemChanged(m_ui->treeView->currentIndex(), QModelIndex());
+        else
+            m_ui->detailsView->onCurrentItemChanged(QModelIndex(), QModelIndex());  // clear for layer tab
+    });
 
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->projectView, &ProjectView::updateBackground);
     connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, m_ui->projectView, &ProjectView::beforeUpdateBackground);
