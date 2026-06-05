@@ -19,10 +19,10 @@
 
 #include "ais/ais_manager.h"
 #include "platform_manager/platform.h"
-#include "grids/grid_manager.h"
-#include "markers/markers_manager.h"
 #include "collision_monitor/collision_monitor_manager.h"
 
+#include "map/map.h"
+#include "ros/node.h"          // camp2's camp::ros::Node (src/camp2/ros/node.h)
 #include "map_tree_view/map_tree_view.h"
 #include <QTabWidget>
 
@@ -86,15 +86,19 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
     connect(this, &MainWindow::closing, m_ais_manager, &QWidget::close);
 
-    m_grid_manager = new GridManager();
-    connect(m_ui->rosLink, &ROSLink::rosConnected, m_grid_manager, &GridManager::nodeStarted);
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_grid_manager, &GridManager::updateBackground);
-    connect(this, &MainWindow::closing, m_grid_manager, &QWidget::close);
-
-    m_markers_manager = new MarkersManager();
-    connect(m_ui->rosLink, &ROSLink::rosConnected, m_markers_manager, &MarkersManager::nodeStarted);
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
-    connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
+    // [#59 PR5] Grids and markers are now provided by camp2's scene-correct
+    // ros overlays, hosted on camp's existing ROS node (no second node). When
+    // ROSLink connects, attach a camp::ros::Node to the Map's ToolsManager; it
+    // auto-discovers grid/marker/geometry topics and creates layers in the
+    // Layers tab. Replaces camp's GridManager/MarkersManager (retired).
+    connect(m_ui->rosLink, &ROSLink::rosConnected, this,
+        [this](rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
+        {
+            if(m_map_ros_started)
+                return;
+            m_map_ros_started = true;
+            new camp::ros::Node(project->map()->toolsManager(), node, buffer);
+        });
 
     m_collision_monitor_manager = new CollisionMonitorManager();
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
@@ -109,8 +113,6 @@ MainWindow::~MainWindow()
 {
     delete m_ui;
     delete m_ais_manager;
-    delete m_grid_manager;
-    delete m_markers_manager;
     delete m_collision_monitor_manager;
 }
 
@@ -590,16 +592,6 @@ void MainWindow::onROSConnected(bool connected)
 void MainWindow::on_actionAISManager_triggered()
 {
     m_ais_manager->show();
-}
-
-void MainWindow::on_actionGridManager_triggered()
-{
-    m_grid_manager->show();
-}
-
-void MainWindow::on_actionMarkersManager_triggered()
-{
-    m_markers_manager->show();
 }
 
 void MainWindow::on_actionCollisionMonitorManager_triggered()

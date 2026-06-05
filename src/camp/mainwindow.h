@@ -10,8 +10,6 @@ class MainWindow;
 }
 
 class AISManager;
-class GridManager;
-class MarkersManager;
 class CollisionMonitorManager;
 
 class AutonomousVehicleProject;
@@ -72,8 +70,6 @@ private slots:
 
     void on_actionShowTail_triggered();
     void on_actionAISManager_triggered();
-    void on_actionGridManager_triggered();
-    void on_actionMarkersManager_triggered();
     void on_actionCollisionMonitorManager_triggered();
     void on_actionFollow_triggered();
 
@@ -87,9 +83,11 @@ private:
     AutonomousVehicleProject *project;
     QString m_workspace_path;
     AISManager* m_ais_manager = nullptr;
-    GridManager* m_grid_manager = nullptr;
-    MarkersManager* m_markers_manager = nullptr;
     CollisionMonitorManager* m_collision_monitor_manager = nullptr;
+
+    // [#59 PR5] Guard so camp2's ros::Node (grids/markers/geometry) is attached
+    // to the Map's ToolsManager only once, on the first ROS connect.
+    bool m_map_ros_started = false;
 
     void exportHypack() const;
     void exportMissionPlan() const;

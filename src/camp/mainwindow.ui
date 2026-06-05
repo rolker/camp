@@ -225,8 +225,6 @@
      <string>Setti&amp;ngs</string>
     </property>
     <addaction name="actionShowTail"/>
-    <addaction name="actionGridManager"/>
-    <addaction name="actionMarkersManager"/>
     <addaction name="actionCollisionMonitorManager"/>
     <addaction name="actionAISManager"/>
     <addaction name="actionFollow"/>
@@ -381,16 +379,6 @@
   <action name="actionOrbit">
    <property name="text">
     <string>Orbit</string>
-   </property>
-  </action>
-  <action name="actionGridManager">
-   <property name="text">
-    <string>Grid Manager</string>
-   </property>
-  </action>
-  <action name="actionMarkersManager">
-   <property name="text">
-    <string>Markers Manager</string>
    </property>
   </action>
   <action name="actionCollisionMonitorManager">

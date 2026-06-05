@@ -43,12 +43,28 @@ Node::Node(tools::ToolsManager* tools_manager):
   emit startNode();
 }
 
+Node::Node(tools::ToolsManager* tools_manager, rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer):
+  tools::LayerManager(tools_manager, "ROS"),
+  owns_thread_(false),
+  create_geometry_manager_(false)   // host (camp) renders PolygonStamped itself
+{
+  // Adopt an externally-owned node/buffer; no thread is spawned. Defer manager
+  // creation to the event loop so it runs after this MapItem is fully built
+  // (mirrors the deferred nodeStarted of the threaded constructor).
+  QTimer::singleShot(0, this, [this, node, buffer]() { nodeStarted(node, buffer); });
+}
+
 Node::~Node()
 {
   emit shuttingDownRos();
-  rclcpp::shutdown();
-  node_thread_.quit();
-  node_thread_.wait();
+  if(owns_thread_)
+  {
+    // Only the node we spawned do we shut down; an adopted node belongs to its
+    // owner and may still be in use elsewhere.
+    rclcpp::shutdown();
+    node_thread_.quit();
+    node_thread_.wait();
+  }
 }
 
 void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
@@ -59,7 +75,8 @@ void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr 
 
   new markers::MarkersManager(this);
   new grids::GridManager(this);
-  new geometry::GeometryManager(this);
+  if(create_geometry_manager_)
+    new geometry::GeometryManager(this);
 
   //new NodesManager(this);
   //new ServicesManager(this);
