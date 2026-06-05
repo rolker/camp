@@ -2,6 +2,7 @@
 #define CAMP_ROS_GRIDS_GRID_MAP_H
 
 #include "../layer.h"
+#include "../../map/color_map.h"
 #include "grid_map_msgs/msg/grid_map.hpp"
 #include <QtConcurrent>
 
@@ -53,8 +54,12 @@ private slots:
   void updateGridLayer(const GridMapLayerData& data);
 
 private:
-  rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr subscription_;  
+  rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr subscription_;
   std::string topic_;
+
+  // [camp#63] Colour ramp applied to the normalised grid values. Default
+  // grayscale (the camp2 post-#59 default); selectable per layer.
+  map::ColorMap colormap_;
 
 };
 

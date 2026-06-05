@@ -100,9 +100,11 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
         double value = grid_map.at(layer, *iterator);
         if(!std::isnan(value))
         {
+          // [camp#63] Normalised value -> colour via the selectable ramp
+          // (colorNormalized clamps to [0,1]); default grayscale reproduces the
+          // prior output.
           value = (value - min_value) / (max_value - min_value);
-          uint8_t ival = std::min(1.0,std::max(0.0, value))*255;
-          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), QColor(ival, ival, ival, 255));
+          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), colormap_.colorNormalized(value));
         }
       }
     }
