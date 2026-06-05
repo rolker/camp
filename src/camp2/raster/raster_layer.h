@@ -24,10 +24,18 @@ public:
     return Type;
   }
 
-  
+
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
+  /// [camp#63] Select the colour ramp for a scalar (single-band Float32) raster;
+  /// persists and re-renders. No effect on RGB rasters.
+  void setColormap(map::ColorMap::Type type);
+
+protected:
+  void contextMenu(QMenu* menu) override;
+  void readSettings() override;
+  void writeSettings() override;
 
 private:
   // Store lower resolutions in an image pyramid
@@ -41,6 +49,7 @@ private:
     double world_y;
     double scale_x;
     double scale_y;
+    bool is_scalar = false;   // single-band Float32 (depth) -> ColorMap-shaded
   };
 
   QFutureWatcher<LoadResult> future_watcher_;
@@ -52,6 +61,8 @@ private:
   // [camp#63/#59 PR3c] Colour ramp for single-band scalar (e.g. depth) rasters,
   // which would otherwise render as near-black via the UInt32 RGB path.
   map::ColorMap colormap_{map::ColorMap::Viridis};
+  QString filename_;        // kept so a colormap change can re-render
+  bool is_scalar_ = false;  // set once loaded; gates the colormap menu
 
   LoadResult loadAndReprojectFile(const QString& filename);
 

@@ -7,6 +7,10 @@
 #include <QtConcurrent>
 #include <cmath>
 #include <limits>
+#include <QMenu>
+#include <QAction>
+#include <QSettings>
+#include <QFileInfo>
 
 #include <QDebug>
 
@@ -17,7 +21,8 @@ namespace raster
 {
 
 RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
-  map::Layer(parentItem, QFileInfo(filename).fileName())
+  map::Layer(parentItem, QFileInfo(filename).fileName()),
+  filename_(filename)
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
@@ -104,6 +109,7 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
   if(reprojected_dataset->GetRasterCount() == 1 &&
      first_band->GetRasterDataType() == GDT_Float32)
   {
+    result.is_scalar = true;
     // [camp#63/#59 PR3c] Single-band scalar field (e.g. a depth raster): shade
     // through the ColorMap over the data range instead of the UInt32 RGB path
     // (which renders Float32 values as near-black). NoData / NaN -> transparent.
@@ -200,6 +206,7 @@ void RasterLayer::imageReady()
   auto result = future_watcher_.result();
   prepareGeometryChange();
 
+  is_scalar_ = result.is_scalar;
   mipmaps_ = result.mipmaps;
 
   setTransform(QTransform::fromScale(result.scale_x, result.scale_y), true);
@@ -207,6 +214,62 @@ void RasterLayer::imageReady()
  
   update(boundingRect());
   setStatus("");
+}
+
+void RasterLayer::setColormap(map::ColorMap::Type type)
+{
+  if(type == colormap_.type())
+    return;
+  colormap_.setType(type);
+  writeSettings();
+  if(!filename_.isEmpty())     // re-warp + re-shade with the new ramp
+    loadFile(filename_);
+}
+
+void RasterLayer::contextMenu(QMenu* menu)
+{
+  map::Layer::contextMenu(menu);
+  if(!is_scalar_)              // colormap only applies to scalar (depth) rasters
+    return;
+  QMenu* colormap_menu = menu->addMenu("Colormap");
+  for(auto type : map::ColorMap::allTypes())
+  {
+    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    action->setCheckable(true);
+    action->setChecked(type == colormap_.type());
+    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+  }
+}
+
+void RasterLayer::readSettings()
+{
+  map::Layer::readSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  const map::ColorMap::Type type = map::ColorMap::typeFromName(
+    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+  settings.endGroup();
+  settings.endGroup();
+  // Apply the persisted ramp (re-render if it differs from the default used by
+  // the initial load); don't re-persist here.
+  if(type != colormap_.type())
+  {
+    colormap_.setType(type);
+    if(!filename_.isEmpty())
+      loadFile(filename_);
+  }
+}
+
+void RasterLayer::writeSettings()
+{
+  map::Layer::writeSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.endGroup();
+  settings.endGroup();
 }
 
 } // namespace raster
