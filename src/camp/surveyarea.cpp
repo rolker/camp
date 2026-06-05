@@ -7,6 +7,7 @@
 #include "autonomousvehicleproject.h"
 #include "trackline.h"
 #include <QDebug>
+#include <cmath>
 
 
 SurveyArea::SurveyArea(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
@@ -328,6 +329,10 @@ std::vector<QGeoCoordinate> SurveyArea::generateNextLine(std::vector<QGeoCoordin
     for(int i = 0; i < guidePath.size(); i++)
     {
         double depth = project->getDepth(guidePath[i]);
+        // [#59 PR3c] Skip guide points with no depth coverage rather than
+        // propagating NaN into the swath width (and a garbage candidate point).
+        if(std::isnan(depth))
+            continue;
         // TODO: Improve the following to not assume constant depth across swath.
         double swath_half_width = depth*tanHalfSwath;
         

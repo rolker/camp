@@ -267,6 +267,7 @@ void TrackLine::planPath()
     const double marginFraction = 0.5;  // expand the start->goal bbox by this fraction per side
 
     std::vector<QGeoCoordinate> newWaypoints;
+    newWaypoints.push_back(wps[0]->location());  // exact first endpoint (never cell-snapped)
 
     for (int i = 0; i < wps.size()-1; i++)
     {
@@ -310,17 +311,19 @@ void TrackLine::planPath()
 
         astar::AStar as;
         auto result = as.search(c);
-        if(result.empty())
+        // Emit only the A* INTERIOR cells; the exact segment endpoints are kept
+        // (wps[i+1] below, and wps[0] before the loop). This avoids cell-snap
+        // drift at the endpoints and keeps segment joins continuous (the shared
+        // waypoint is the same exact coordinate in both segments, not quantized
+        // into two different grids). On failure result is empty -> a straight
+        // segment to the exact endpoint.
+        for(size_t k = 1; k + 1 < result.size(); k++)
         {
-            newWaypoints.push_back(wps[i]->location());
-            newWaypoints.push_back(wps[i+1]->location());
+            const auto& p = result[k];
+            const QPointF centre(originX + (p.x+0.5)*cellSize, originY + (p.y+0.5)*cellSize);
+            newWaypoints.push_back(web_mercator::mapToGeo(centre));
         }
-        else
-            for(const auto& p: result)
-            {
-                const QPointF centre(originX + (p.x+0.5)*cellSize, originY + (p.y+0.5)*cellSize);
-                newWaypoints.push_back(web_mercator::mapToGeo(centre));
-            }
+        newWaypoints.push_back(wps[i+1]->location());  // exact segment end (= next segment's exact start)
     }
     for(auto wp: wps)
         removeWaypoint(wp);
