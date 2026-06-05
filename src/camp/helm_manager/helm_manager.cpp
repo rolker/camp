@@ -5,6 +5,7 @@
 #include <QPalette>
 #include <QTimer>
 #include "std_msgs/msg/string.hpp"
+#include "ros/ros_context.h"
 
 HelmManager::HelmManager(QWidget* parent):
   QWidget(parent),
@@ -70,7 +71,10 @@ void HelmManager::updateRobotNamespace(QString robot_namespace)
   
 
 
-  heartbeat_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>(ns+"marine/heartbeat", 1, std::bind(&HelmManager::heartbeatCallback, this, std::placeholders::_1));
+  rclcpp::SubscriptionOptions realtime_options;
+  if (auto ctx = camp_ros::RosContext::instance())
+    realtime_options.callback_group = ctx->group(camp_ros::RosContext::Group::Realtime);
+  heartbeat_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>(ns+"marine/heartbeat", 1, std::bind(&HelmManager::heartbeatCallback, this, std::placeholders::_1), realtime_options);
   send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>(ns+"marine/send_command",1);
 }
 
