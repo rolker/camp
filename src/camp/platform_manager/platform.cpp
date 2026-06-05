@@ -3,6 +3,7 @@
 #include <QPainter>
 #include "nav_source.h"
 #include "backgroundraster.h"
+#include "ros/ros_context.h"
 
 #include <QDebug>
 
@@ -234,7 +235,12 @@ void Platform::subscribeToPathTopic()
 {
   if(!path_topic_.empty() && node_ && !path_subscription_)
   {
-    path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(path_topic_, 10, std::bind(&Platform::pathCallback, this, std::placeholders::_1));
+    // Dedicated callback group: the planned path churns under the avoider, so
+    // keep it off the shared overlay thread.
+    rclcpp::SubscriptionOptions sub_options;
+    if (auto ctx = camp_ros::RosContext::instance())
+      sub_options.callback_group = ctx->nextDedicatedGroup();
+    path_subscription_ = node_->create_subscription<nav_msgs::msg::Path>(path_topic_, 10, std::bind(&Platform::pathCallback, this, std::placeholders::_1), sub_options);
   }
 }
 

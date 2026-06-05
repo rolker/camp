@@ -181,6 +181,7 @@ install (TARGETS CCOMAutonomousMissionPlanner
 set(rqt_helm_manager_SRCS
   src/camp/helm_manager/rqt_helm_manager.cpp
   src/camp/helm_manager/helm_manager.cpp
+  src/camp/ros/ros_context.cpp
 )
 
 add_library(rqt_helm_manager SHARED
@@ -197,6 +198,7 @@ ament_target_dependencies(rqt_helm_manager
   marine_interfaces
   rqt_gui_cpp
   rclcpp
+  tf2_ros
 )
 
 target_link_libraries(rqt_helm_manager

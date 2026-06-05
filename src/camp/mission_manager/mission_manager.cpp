@@ -2,6 +2,7 @@
 #include "ui_mission_manager.h"
 #include <QMenu>
 #include <QGeoCoordinate>
+#include "ros/ros_context.h"
 
 MissionManager::MissionManager(QWidget *parent)
   :camp_ros::ROSWidget(parent), m_ui(new Ui::MissionManager)
@@ -18,7 +19,10 @@ void MissionManager::updateRobotNamespace(QString robot_namespace)
 {
   if(node_)
   {
-    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1));
+    rclcpp::SubscriptionOptions realtime_options;
+    if (auto ctx = camp_ros::RosContext::instance())
+      realtime_options.callback_group = ctx->group(camp_ros::RosContext::Group::Realtime);
+    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1), realtime_options);
     send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/marine/send_command",1);
 
     rclcpp::QoS qos(1);

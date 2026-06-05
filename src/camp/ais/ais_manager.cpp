@@ -2,6 +2,7 @@
 #include "ui_ais_manager.h"
 #include <QTimer>
 #include "backgroundraster.h"
+#include "ros/ros_context.h"
 
 AISManager::AISManager(QWidget* parent):
   camp_ros::ROSWidget(parent),
@@ -39,7 +40,10 @@ void AISManager::scanForSources()
           if (topic_type == "marine_ais_msgs/msg/AISContact")
           {
             RCLCPP_INFO_STREAM(node_->get_logger(), "Subscribing to ais topic: " << name);
-            m_sources[name] = node_->create_subscription<marine_ais_msgs::msg::AISContact>(name, 10, std::bind(&AISManager::aisContactCallback, this, std::placeholders::_1));
+            rclcpp::SubscriptionOptions sub_options;
+            if (auto ctx = camp_ros::RosContext::instance())
+              sub_options.callback_group = ctx->nextDedicatedGroup();
+            m_sources[name] = node_->create_subscription<marine_ais_msgs::msg::AISContact>(name, 10, std::bind(&AISManager::aisContactCallback, this, std::placeholders::_1), sub_options);
             m_ui->sourcesListWidget->addItem(name.c_str());
             break;
           }
