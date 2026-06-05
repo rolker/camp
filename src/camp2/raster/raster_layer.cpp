@@ -66,6 +66,22 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 
 void RasterLayer::loadFile(const QString& filename)
 {
+  // Abort and join any in-flight load before starting a new one (e.g. a rapid
+  // colormap change). setFuture() only tracks the latest future, so a replaced
+  // job would otherwise become untracked: it would keep running, race the new
+  // job on shared state, and — if the layer is destroyed first — outlive `this`
+  // (use-after-free), since the dtor only waits on the watched future.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+  abort_flag_mutex_.lock();
+  abort_flag_ = false;   // re-arm for the new job
+  abort_flag_mutex_.unlock();
+
   setStatus("(loading...)");
   future_watcher_.setFuture(QtConcurrent::run(this, &RasterLayer::loadAndReprojectFile, filename));
 }
@@ -128,6 +144,14 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
         min_value = std::min(min_value, double(v));
         max_value = std::max(max_value, double(v));
       }
+      // A constant-valued raster (all valid samples equal) would otherwise hit
+      // ColorMap::color()'s degenerate max<=min guard and render fully
+      // transparent — the raster would vanish. Widen the range so the single
+      // value maps to the top of the ramp (matches grid_map's handling). If
+      // there were no valid samples at all, min/max stay crossed and pixels
+      // correctly stay transparent.
+      if(min_value == max_value)
+        min_value -= 1.0;
       const map::ColorMap cm = colormap_;
       for(int j = 0; j < height; ++j)
       {
@@ -204,6 +228,11 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
 void RasterLayer::imageReady()
 {
   auto result = future_watcher_.result();
+  if(result.mipmaps.empty())   // failed load (null/unreprojectable dataset);
+  {                            // don't apply the zero-filled transform/pos
+    setStatus("(load failed)");
+    return;
+  }
   prepareGeometryChange();
 
   is_scalar_ = result.is_scalar;
