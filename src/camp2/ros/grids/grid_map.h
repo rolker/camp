@@ -37,7 +37,15 @@ class GridMap: public Layer
 public:
   GridMap(MapItem* parent, Node* node, QString topic);
 
-  
+  /// [camp#63] Select the colour ramp for this layer; persists and re-renders
+  /// the last received grid.
+  void setColormap(map::ColorMap::Type type);
+
+protected:
+  void contextMenu(QMenu* menu) override;
+  void readSettings() override;
+  void writeSettings() override;
+
 signals:
   void newGridData(GridMapData data);
 
@@ -60,6 +68,11 @@ private:
   // [camp#63] Colour ramp applied to the normalised grid values. Default
   // grayscale (the camp2 post-#59 default); selectable per layer.
   map::ColorMap colormap_;
+
+  // Last received message, cached so a colormap change can re-render without
+  // waiting for the next publish (live costmaps would also pick it up).
+  grid_map_msgs::msg::GridMap last_msg_;
+  bool has_last_msg_ = false;
 
 };
 

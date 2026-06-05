@@ -6,6 +6,9 @@
 #include "marine_autonomy/gz4d_geo.h"
 #include <tf2/utils.h>
 #include "grid_layer.h"
+#include <QMenu>
+#include <QAction>
+#include <QSettings>
 
 namespace camp
 {
@@ -32,6 +35,8 @@ GridMap::GridMap(MapItem* parent, Node* node, QString topic):
 
 void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 {
+  last_msg_ = data;       // [camp#63] keep the latest for colormap re-render
+  has_last_msg_ = true;
   if(!process_future_.isRunning())
   {
     process_future_ = QtConcurrent::run(this, &GridMap::processGridMap, data);
@@ -64,6 +69,10 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
     return;
   }
   grid_data.meters_per_pixel = data.info.resolution;
+
+  // [camp#63] Snapshot the ramp once so this worker uses a consistent colormap
+  // even if the UI thread changes it mid-render.
+  const map::ColorMap cm = colormap_;
 
   for(const auto & layer: grid_map.getLayers())
   {
@@ -104,7 +113,7 @@ void GridMap::processGridMap(const grid_map_msgs::msg::GridMap &data)
           // (colorNormalized clamps to [0,1]); default grayscale reproduces the
           // prior output.
           value = (value - min_value) / (max_value - min_value);
-          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), colormap_.colorNormalized(value));
+          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), cm.colorNormalized(value));
         }
       }
     }
@@ -142,6 +151,52 @@ void GridMap::updateGridLayer(const GridMapLayerData& data)
     layer = new GridLayer(this, node_, data.layer_name.c_str());
   }
   layer->updateGridLayer(data);
+}
+
+void GridMap::setColormap(map::ColorMap::Type type)
+{
+  if(type == colormap_.type())
+    return;
+  colormap_.setType(type);
+  writeSettings();
+  if(has_last_msg_)               // re-render the cached grid with the new ramp
+    gridMapCallback(last_msg_);
+}
+
+void GridMap::contextMenu(QMenu* menu)
+{
+  Layer::contextMenu(menu);
+  QMenu* colormap_menu = menu->addMenu("Colormap");
+  for(auto type : map::ColorMap::allTypes())
+  {
+    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    action->setCheckable(true);
+    action->setChecked(type == colormap_.type());
+    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+  }
+}
+
+void GridMap::readSettings()
+{
+  Layer::readSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  colormap_.setType(map::ColorMap::typeFromName(
+    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString()));
+  settings.endGroup();
+  settings.endGroup();
+}
+
+void GridMap::writeSettings()
+{
+  Layer::writeSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.endGroup();
+  settings.endGroup();
 }
 
 }  // namespace grids
