@@ -312,6 +312,7 @@ set(CAMP_MAP_ROS_SOURCES
     src/camp2/ros/names_manager.cpp
     src/camp2/ros/node.cpp
     src/camp2/ros/node_thread.cpp
+    src/camp2/ros/transform_cache.cpp
 )
 
 add_library(camp_map_ros SHARED ${CAMP_MAP_ROS_SOURCES})
@@ -443,6 +444,21 @@ if(BUILD_TESTING)
   target_link_libraries(test_collision_monitor_converter
     Qt5::Core
     Qt5::Positioning
+  )
+
+  # earth<-frame transform cache / staleness decision (#59 — TF-gap flicker fix)
+  ament_add_gtest(test_transform_cache
+    test/test_transform_cache.cpp
+    src/camp2/ros/transform_cache.cpp
+  )
+  target_include_directories(test_transform_cache PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  ament_target_dependencies(test_transform_cache
+    rclcpp
+    tf2
+    tf2_ros
+    geometry_msgs
   )
 endif()
 
