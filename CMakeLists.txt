@@ -67,12 +67,8 @@ set(SOURCES
     src/camp/detailsview.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
-    src/camp/grids/grid.cpp
-    src/camp/grids/grid_manager.cpp
     src/camp/main.cpp
     src/camp/mainwindow.cpp
-    src/camp/markers/markers.cpp
-    src/camp/markers/markers_manager.cpp
     src/camp/collision_monitor/collision_monitor.cpp
     src/camp/collision_monitor/collision_monitor_manager.cpp
     src/camp/missionitem.cpp
@@ -123,13 +119,9 @@ set (UIS
     src/camp/platform_manager/platform_manager.ui
     src/camp/orbitdetails.ui
     src/camp/mainwindow.ui
-    src/camp/markers/markers.ui
-    src/camp/markers/markers_manager.ui
     src/camp/collision_monitor/collision_monitor.ui
     src/camp/collision_monitor/collision_monitor_manager.ui
     src/camp/waypointdetails.ui
-    src/camp/grids/grid.ui
-    src/camp/grids/grid_manager.ui
     src/camp/helm_manager/helm_manager_config.ui
     src/camp/helm_manager/helm_manager.ui
     src/camp/backgrounddetails.ui
@@ -421,26 +413,6 @@ if(BUILD_TESTING)
     Qt5::Test
   )
 
-  # Marker converter unit tests
-  ament_add_gtest(test_markers_converter
-    test/test_markers_converter.cpp
-  )
-  target_include_directories(test_markers_converter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
-  )
-  ament_target_dependencies(test_markers_converter
-    rclcpp
-    tf2
-    tf2_ros
-    tf2_geometry_msgs
-    geometry_msgs
-    visualization_msgs
-    marine_autonomy
-  )
-  target_link_libraries(test_markers_converter
-    Qt5::Core
-    Qt5::Positioning
-  )
 
   # ColorMap facility unit tests (camp#63)
   ament_add_gtest(test_color_map
