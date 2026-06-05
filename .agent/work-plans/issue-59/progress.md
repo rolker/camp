@@ -250,3 +250,7 @@ Triaged findings fixed on `feature/issue-59` (build + 35-test suite green):
 - color_map `<algorithm>`, grid_map.h self-contained, surveyarea signed/unsigned, parity-README ColorMap note → `63a6abf`
 
 Deferred (not regressions; tracked work): projectview BackgroundRaster gating (#9-15) and chart double-load (#7) → resolved by the planned BackgroundRaster retirement (PR6). astar depthGrid sizing (#6) → primary bounds check already present; optional. False positives unchanged.
+
+### Resolution follow-up (2026-06-05 10:49 -04:00)
+- projectview BackgroundRaster gating (#9-15) → **done now**, not deferred: `1bcde46` removes the chart-load guard from mission-item creation, mouse-move readout, and the boat-command context menu (all use web_mercator::mapToGeo, chart-independent). Kept the genuinely chart-dependent view-center/extent-fit and the middle-button MeasuringTool coupling. **Needs a runtime check over an OSM/WMTS-only background before merge** (GUI path, not unit-covered).
+- Still deferred to BackgroundRaster retirement (PR6): chart double-load (#7); MeasuringTool's bg dependency; full BackgroundRaster + geoToPixel-shim removal; overlay re-homing (AIS/platform/collision_monitor/nav_source); AISManager/CollisionMonitorManager window retirement; dead camp Grid/Markers .h/.ui/manager file deletion; .agents/README.
