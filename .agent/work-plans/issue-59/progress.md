@@ -166,3 +166,12 @@ Adversarial verdict: no crash-class or coordinate-correctness bug on the normal 
 - [x] (suggestion) `topLevelLayers()` nullable, deref'd in RasterLayer ctor — `autonomousvehicleproject.cpp`. FIXED `e6f7647` (null guard).
 - [x] (suggestion, Copilot) fitInView used only 2 corners → wrong for rotated/sheared charts — `projectview.cpp:updateBackground`. FIXED `e6f7647` (4-corner bounding box).
 - [ ] (suggestion, noted) over-broad link `camp_map_ros` vs `camp_map` — left as-is: the exe is already a full ROS node (ament deps unchanged) and PR5 adopts camp2 ros overlays, so the breadth is forward-looking, not added weight. Dropped `setSceneRect` (pan-margin/centerOn-clamp behaviour change) — mitigated by world-spanning OSM base layers giving a large itemsBoundingRect; revisit with PR3b viewport work.
+
+## PR3b — tabbed Mission/Layers dock
+**Status**: complete (build + visually verified; pushed)
+**When**: 2026-06-05
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Commit `da3c376`. Left panel's single mission treeView → QTabWidget: **Mission** tab (existing treeView / AutonomousVehicleProject, edits the plan) + **Layers** tab (camp::map_tree_view::MapTreeView bound to project->map() — backgrounds, OSM/OpenSeaMap/NOAA-WMTS tiles, chart RasterLayers, inline visibility checkboxes + opacity delegate). Built in code (reparent treeView into the tab widget at its splitter slot) — no .ui surgery. detailsView follows active tab (mission selection on Mission; cleared on Layers; layer detail widgets = future). The Layers tab gives user management of the stacked chart layers from PR3a-i (visibility toggle), closing the multi-chart review note. **Roland visually verified: tabs + layer checkboxes work.**
+
+**Deferred (documented):** background still shows as a mission-tree node — removal entangled with project save/load persistence; lands with PR3c depth-as-layer / persistence migration.
