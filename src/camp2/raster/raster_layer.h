@@ -2,6 +2,7 @@
 #define RASTER_RASTER_LAYER_H
 
 #include "../map/layer.h"
+#include "../map/color_map.h"
 #include <QFutureWatcher>
 
 namespace camp
@@ -47,6 +48,10 @@ private:
   // Used to indicate the load thread should abort
   bool abort_flag_ = false;
   QMutex abort_flag_mutex_;
+
+  // [camp#63/#59 PR3c] Colour ramp for single-band scalar (e.g. depth) rasters,
+  // which would otherwise render as near-black via the UInt32 RGB path.
+  map::ColorMap colormap_{map::ColorMap::Viridis};
 
   LoadResult loadAndReprojectFile(const QString& filename);
 

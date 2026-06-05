@@ -5,6 +5,8 @@
 #include <QPainter>
 #include <QStyleOptionGraphicsItem>
 #include <QtConcurrent>
+#include <cmath>
+#include <limits>
 
 #include <QDebug>
 
@@ -98,6 +100,49 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
   QImage image(width, height, QImage::Format_ARGB32);
   image.fill(Qt::black);
 
+  auto first_band = reprojected_dataset->GetRasterBand(1);
+  if(reprojected_dataset->GetRasterCount() == 1 &&
+     first_band->GetRasterDataType() == GDT_Float32)
+  {
+    // [camp#63/#59 PR3c] Single-band scalar field (e.g. a depth raster): shade
+    // through the ColorMap over the data range instead of the UInt32 RGB path
+    // (which renders Float32 values as near-black). NoData / NaN -> transparent.
+    image.fill(Qt::transparent);
+    int has_nodata = 0;
+    const double nodata = first_band->GetNoDataValue(&has_nodata);
+    std::vector<float> values(static_cast<size_t>(width) * height);
+    if(first_band->RasterIO(GF_Read, 0, 0, width, height, values.data(), width, height, GDT_Float32, 0, 0) == CE_None)
+    {
+      double min_value = std::numeric_limits<double>::max();
+      double max_value = std::numeric_limits<double>::lowest();
+      for(float v : values)
+      {
+        if(std::isnan(v) || (has_nodata && v == nodata))
+          continue;
+        min_value = std::min(min_value, double(v));
+        max_value = std::max(max_value, double(v));
+      }
+      const map::ColorMap cm = colormap_;
+      for(int j = 0; j < height; ++j)
+      {
+        uchar* scanline = image.scanLine(j);
+        for(int i = 0; i < width; ++i)
+        {
+          const float v = values[static_cast<size_t>(j) * width + i];
+          const QColor c = (std::isnan(v) || (has_nodata && v == nodata))
+                             ? QColor(0, 0, 0, 0) : cm.color(v, min_value, max_value);
+          scanline[i*4+0] = c.blue();
+          scanline[i*4+1] = c.green();
+          scanline[i*4+2] = c.red();
+          scanline[i*4+3] = c.alpha();
+        }
+        QMutexLocker lock(&abort_flag_mutex_);
+        if(abort_flag_)
+          return {};
+      }
+    }
+  }
+  else
   for(auto&& band: reprojected_dataset->GetBands())
   {
     auto color_table = band->GetColorTable();
