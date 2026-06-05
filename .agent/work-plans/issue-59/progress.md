@@ -116,3 +116,22 @@ First PR3a commit (`ae06045`): `docs/decisions/0002-web-mercator-scene-and-layer
 **Design crux pinned by the ADR (verified against source):** the `geoToPixel` shim is a one-function swap in `geographicsitem.cpp` — replace `bg->geoToPixel(point)` with `web_mercator::geoToMap(point)`, *keeping* the parent-offset subtraction (`ret - parentItem()->scenePos()`, `geographicsitem.cpp:42`), which is coordinate-system-agnostic. The real PR3a work is therefore **reparenting overlay items** out of `BackgroundRaster` and into `Map`'s scene/layers, plus relinking camp to `camp_map_ros` and swapping scene ownership (`AutonomousVehicleProject::m_scene` → `Map::scene()`). Nothing deleted in PR3a; old paths run through the shim until parity-gated retirement.
 
 **Paused for Roland's review of the ADR/approach before writing the scene-swap code** (foundational, 24-file blast radius).
+
+## PR3a-i — adopt Web-Mercator scene (substrate swap)
+**Status**: complete (build-verified; runtime/visual pending)
+**When**: 2026-06-04
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Commit `362157c` (6 files, +107/-68). Deployed camp's scene is now the `camp::map::Map` Web-Mercator scene. Substrate swap only — no overlays migrated, nothing deleted.
+
+**Key design pivot during implementation (vs the ADR's first sketch):** rather than introduce a new overlay-root item and rewire `findParentGraphicsItem` / `updateBackground` / all six live ROS overlays, **`BackgroundRaster` stays in the scene as a non-painting origin anchor** (`ItemHasNoContents` + raised Z). It keeps its georeferencing + depth band (depth oracle) and remains the QGraphicsItem every overlay already parents to — so the entire existing overlay + `findParentBackgroundRaster` machinery is untouched. Mission items, AIS, platform, grid, collision-monitor, nav_source, markers, and the measuring tool all keep working with zero per-overlay edits. The chart *image* is drawn by a reprojected `raster::RasterLayer` (exact GDAL warp to EPSG:3857) added in `openBackground`; the anchor at the origin makes the `geoToPixel` shim (`web_mercator::geoToMap(point) - parent.scenePos()`) reduce to absolute Web-Mercator.
+
+**Chart placement question (Roland, 2026-06-04):** confirmed we must reproject (option B) — a georeferenced non-Web-Mercator raster cannot sit correctly on a Web-Mercator scene via a corner-fit; `RasterLayer` does the real GDAL warp. `BackgroundRaster` (no reprojection, has depth) coexists as depth-only until PR3c.
+
+**Touched:** CMake (link `camp_map_ros`); `autonomousvehicleproject.{h,cpp}` (own `Map`, scene from Map, RasterLayer display, anchor demotion); `geographicsitem.cpp` (shim→`geoToMap`); `projectview.cpp` (mouse↔geo→`web_mercator`); `waypoint.cpp` (drag readout→`mapToGeo`).
+
+**Verification:** `./ui_ws/build.sh camp` green (both binaries + libs; only pre-existing unused-param/sign-compare warnings). **Runtime/visual not yet checked** — needs a display + a chart to confirm chart/overlay alignment, arrow/label scaling (keys off `mapScale()`, pixel-tuned — expected follow-up), and that the OSM/WMTS base layers from `Map`'s `BackgroundManager` render.
+
+**Known follow-ups:** arrow/label scale magnitudes under metres; `BackgroundRaster` still builds display pixmaps it no longer paints (slim in PR3c); RasterLayer not removed on chart delete (PR3b layer-tree); spurious anchor boundingRect at origin (cosmetic).
+
+**Next:** PR3a-ii folded into PR3a-i (RasterLayer display already here). Remaining PR3a sequence → PR3b (tabbed Layers/Mission UI) → PR3c (depth-as-layer, retire BackgroundRaster).
