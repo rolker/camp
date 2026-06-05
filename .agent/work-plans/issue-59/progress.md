@@ -241,3 +241,12 @@ Remaining PR5: re-home camp-only overlays (AIS, platform/ship_track, collision_m
 ### False positives
 - (Copilot ×2) "camp_map / camp_map_ros not added to ament `export_`, so downstream can't link them" — intentional: these are camp-internal split libs consumed only by the CCOMAutonomousMissionPlanner executable; only the pluginlib plugin (rqt_helm_manager) needs export. Installing to lib/ is for the executable's runtime linkage. No downstream ament package links these, so "downstream can't link" cannot occur. (If one is ever added, add them to the export set then.) — `CMakeLists.txt:285,338`
 - (Copilot) "projectview Y-flip inverts overlays (markers.cpp:104-112, grids/grid)" — ADDRESSED: the referenced legacy camp Grid/Markers are retired by PR5; the camp2 replacements render right-side-up and Roland sim-verified the flip regression is fixed (see Local Review (Pre-Push) PR3c-i, commit 9b4bcfc) — `src/camp/projectview.cpp:44`
+
+### Resolution (2026-06-05 10:28 -04:00)
+Triaged findings fixed on `feature/issue-59` (build + 35-test suite green):
+- grid_map data race + dropped colormap re-render → `e1ab49c` (mutex + rendering_/render_pending_ coalescing + teardown join)
+- raster_layer UAF + failed-load guard + constant-raster widen → `8be1824`
+- astar grid-cell conversions + trackline null-project guard → `bf457d3`
+- color_map `<algorithm>`, grid_map.h self-contained, surveyarea signed/unsigned, parity-README ColorMap note → `63a6abf`
+
+Deferred (not regressions; tracked work): projectview BackgroundRaster gating (#9-15) and chart double-load (#7) → resolved by the planned BackgroundRaster retirement (PR6). astar depthGrid sizing (#6) → primary bounds check already present; optional. False positives unchanged.
