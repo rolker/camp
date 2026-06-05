@@ -9,6 +9,7 @@
 #include "backgroundraster.h"
 #include "astar.h"
 #include "map_view/web_mercator.h"
+#include <QMessageBox>
 #include <algorithm>
 #include <cmath>
 
@@ -268,6 +269,7 @@ void TrackLine::planPath()
 
     std::vector<QGeoCoordinate> newWaypoints;
     newWaypoints.push_back(wps[0]->location());  // exact first endpoint (never cell-snapped)
+    int failedSegments = 0;
 
     for (int i = 0; i < wps.size()-1; i++)
     {
@@ -311,6 +313,8 @@ void TrackLine::planPath()
 
         astar::AStar as;
         auto result = as.search(c);
+        if(result.empty())
+            ++failedSegments;
         // Emit only the A* INTERIOR cells; the exact segment endpoints are kept
         // (wps[i+1] below, and wps[0] before the loop). This avoids cell-snap
         // drift at the endpoints and keeps segment joins continuous (the shared
@@ -330,4 +334,14 @@ void TrackLine::planPath()
 
     for(const auto& nwp: newWaypoints)
         addWaypoint(nwp);
+
+    // [#59 PR3c] A* failure falls back to a straight segment, which can cross the
+    // unknown/too-shallow water the planner meant to avoid. Warn the operator so a
+    // silent unsafe leg isn't mistaken for a planned one.
+    if(failedSegments > 0)
+        QMessageBox::warning(nullptr, tr("Plan path"),
+            tr("%1 of %2 segment(s) could not be planned around obstacles or "
+               "unsurveyed water; a straight line was used for those segments. "
+               "Review the route before sending it to the boat.")
+            .arg(failedSegments).arg(int(wps.size()-1)));
 }
