@@ -14,6 +14,7 @@
 #include <QDebug>
 
 #include "backgroundraster.h"
+#include "depth_raster.h"
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
@@ -40,7 +41,7 @@
 #include <sstream>
 #include <cmath>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentDepthRaster(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
 {
     GDALAllRegister();
 
@@ -64,6 +65,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
 
 AutonomousVehicleProject::~AutonomousVehicleProject()
 {
+    delete m_depthRaster;
 }
 
 QGraphicsScene *AutonomousVehicleProject::scene() const
@@ -147,6 +149,15 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
         {
             delete m_currentRasterLayer;
             m_currentRasterLayer = new camp::raster::RasterLayer(layers, fname);
+        }
+        // [#59 PR6] Load the depth band into the standalone provider, decoupled
+        // from the BackgroundRaster. Kept null for charts with no depth band.
+        delete m_depthRaster;
+        m_depthRaster = new DepthRaster(fname);
+        if(!m_depthRaster->depthValid())
+        {
+            delete m_depthRaster;
+            m_depthRaster = nullptr;
         }
         endInsertRows();
         emit layoutChanged();
@@ -252,19 +263,14 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
     return m_currentBackground;
 }
 
-BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
-{
-    return m_currentDepthRaster;
-}
-
 float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
 {
-    // [#59 PR3c] Walk the depth providers in order, first valid (non-NaN) wins.
-    // One provider today (the chart's depth band); the loop generalises to
-    // multiple depth layers in PR3c-ii.
-    if(m_currentDepthRaster && m_currentDepthRaster->depthValid())
+    // [#59 PR6] Depth comes from the standalone DepthRaster provider (decoupled
+    // from the BackgroundRaster's graphics identity). One provider today; this
+    // generalises to a depth-layer list in PR3c-ii.
+    if(m_depthRaster && m_depthRaster->depthValid())
     {
-        float d = m_currentDepthRaster->getDepth(location);
+        float d = m_depthRaster->getDepth(location);
         if(!std::isnan(d))
             return d;
     }
@@ -273,7 +279,7 @@ float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
 
 bool AutonomousVehicleProject::hasDepth() const
 {
-    return m_currentDepthRaster && m_currentDepthRaster->depthValid();
+    return m_depthRaster && m_depthRaster->depthValid();
 }
 
 Behavior * AutonomousVehicleProject::createBehavior()
@@ -714,10 +720,10 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
         {
             delete m_currentRasterLayer;
             m_currentRasterLayer = nullptr;
+            delete m_depthRaster;       // [#59 PR6] depth shares the chart lifecycle
+            m_depthRaster = nullptr;
             setCurrentBackground(nullptr);
         }
-        if(m_currentDepthRaster == bgr)
-            m_currentDepthRaster = nullptr;
     }
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
@@ -782,8 +788,8 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
         bgr->setFlag(QGraphicsItem::ItemHasNoContents, true);
         bgr->setZValue(1.0);
         m_scene->addItem(bgr);
-        if(bgr->depthValid())
-            m_currentDepthRaster = bgr;
+        // [#59 PR6] Depth no longer rides on the BackgroundRaster; the depth
+        // provider is created from the chart file in openBackground().
     }
     emit updatingBackground(bgr);
     emit backgroundUpdated(bgr);

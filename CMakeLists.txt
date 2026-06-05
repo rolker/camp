@@ -64,6 +64,7 @@ set(SOURCES
     src/camp/avoid_area.cpp
     src/camp/backgrounddetails.cpp
     src/camp/backgroundraster.cpp
+    src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
@@ -459,6 +460,21 @@ if(BUILD_TESTING)
     tf2
     tf2_ros
     geometry_msgs
+  )
+
+  # DepthRaster safe-degradation (#59 PR6 — depth extracted from BackgroundRaster)
+  ament_add_gtest(test_depth_raster
+    test/test_depth_raster.cpp
+    src/camp/depth_raster.cpp
+    src/camp/georeferenced.cpp
+  )
+  target_include_directories(test_depth_raster PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  target_link_libraries(test_depth_raster
+    Qt5::Core
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
   )
 endif()
 

@@ -12,6 +12,7 @@ class QLabel;
 class QStatusBar;
 class MissionItem;
 class BackgroundRaster;
+class DepthRaster;
 class Waypoint;
 class TrackLine;
 class SurveyPattern;
@@ -43,7 +44,6 @@ public:
 
     BackgroundRaster* openBackground(QString const &fname, QString label = "");
     BackgroundRaster * getBackgroundRaster() const;
-    BackgroundRaster * getDepthRaster() const;
 
     // [#59 PR3c] Depth query over the depth-provider list (first valid wins),
     // independent of the scene projection. Returns NaN where no provider has
@@ -161,7 +161,9 @@ private:
     camp::raster::RasterLayer* m_currentRasterLayer = nullptr;  // chart display layer for m_currentBackground
     QString m_filename;
     BackgroundRaster* m_currentBackground;
-    BackgroundRaster* m_currentDepthRaster;
+    // [#59 PR6] Depth provider, decoupled from the BackgroundRaster's graphics
+    // identity. Owned here and torn down alongside the chart's RasterLayer.
+    DepthRaster* m_depthRaster = nullptr;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
