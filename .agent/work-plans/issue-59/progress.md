@@ -175,3 +175,27 @@ Adversarial verdict: no crash-class or coordinate-correctness bug on the normal 
 Commit `da3c376`. Left panel's single mission treeView → QTabWidget: **Mission** tab (existing treeView / AutonomousVehicleProject, edits the plan) + **Layers** tab (camp::map_tree_view::MapTreeView bound to project->map() — backgrounds, OSM/OpenSeaMap/NOAA-WMTS tiles, chart RasterLayers, inline visibility checkboxes + opacity delegate). Built in code (reparent treeView into the tab widget at its splitter slot) — no .ui surgery. detailsView follows active tab (mission selection on Mission; cleared on Layers; layer detail widgets = future). The Layers tab gives user management of the stacked chart layers from PR3a-i (visibility toggle), closing the multi-chart review note. **Roland visually verified: tabs + layer checkboxes work.**
 
 **Deferred (documented):** background still shows as a mission-tree node — removal entangled with project save/load persistence; lands with PR3c depth-as-layer / persistence migration.
+
+## PR3c-i — depth via getDepth(geo); A* self-defined planning grid
+**Status**: complete (build + logic/review-verified; runtime needs a depth raster)
+**When**: 2026-06-05
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Commits `09aab4a` (core) + `6ae55ef` (review fixes). Decoupled depth + A* from BackgroundRaster's pixel grid — the precondition for retiring it. `AutonomousVehicleProject::getDepth(geo)` walks a depth-provider list (first valid wins, NaN if none) + `hasDepth()` gates planning. **A* redesigned (Roland's call) to a self-defined square grid in Web-Mercator metres, fixed N=256/axis sized from the planning area** (not a raster) → bounded compute. `astar::Context` drops BackgroundRaster*, carries gridSize + pre-sampled depthGrid; **unknown depth = obstacle** (Roland) via a sub-minDepth sentinel. planPath builds the grid per segment (bbox(start,goal)+0.5 margin), pre-samples depth per cell, runs A*, keeps exact endpoints. surveyarea/cursor/menu-gating all on getDepth(geo)/hasDepth().
+
+## Local Review (Pre-Push) — PR3c-i
+**Status**: complete
+**When**: 2026-06-05
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved (findings addressed)
+**Branch**: feature/issue-59 at `6ae55ef`
+**Mode**: pre-push | **Depth**: Standard (A* algorithm + coordinate redesign)
+**Must-fix**: 0 | **Suggestions**: 4 (2 fixed, 2 noted)
+
+Claude adversarial: grid/bbox/centring math, fill↔read index consistency (y*N+x), unknown=obstacle sentinel, and A* termination (start/finish obstacle → empty → straight fallback, no loop/crash) all verified CORRECT; no must-fix.
+
+### Findings
+- [x] (suggestion, Copilot) endpoint drift + segment-join mismatch — A* success used cell-center approximations for whole path; now interior cells only + exact endpoints — `trackline.cpp`. FIXED `6ae55ef`.
+- [x] (suggestion, Claude) NaN depth → NaN swath/garbage point in adaptive lines — guard added — `surveyarea.cpp`. FIXED `6ae55ef`.
+- [ ] (suggestion, Copilot — DESIGN, for Roland) A*-failure straight-line fallback can route a direct line through unknown/shallow water, partly undoing the unknown=obstacle safety. Old behaviour too, but now more reachable. Options: warn the user on fallback / leave the segment unplanned. Roland's call.
+- [ ] (suggestion, Claude) perf: N*N (65536) per-cell OGR transforms per segment; batch into one Transform() call if planning feels slow on long multi-segment lines.
