@@ -26,6 +26,7 @@ class Platform;
 class AvoidArea;
 
 namespace camp { namespace map { class Map; } }
+namespace camp { namespace raster { class RasterLayer; } }
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -151,6 +152,7 @@ public slots:
 private:
     camp::map::Map* m_map;
     QGraphicsScene* m_scene;        // owned by m_map; cached for internal use
+    camp::raster::RasterLayer* m_currentRasterLayer = nullptr;  // chart display layer for m_currentBackground
     QString m_filename;
     BackgroundRaster* m_currentBackground;
     BackgroundRaster* m_currentDepthRaster;

@@ -16,6 +16,7 @@
 #include <QMenu>
 #include "measuringtool.h"
 #include "map_view/web_mercator.h"
+#include <QPolygonF>
 #include <QAbstractSlider>
 #include <QScrollBar>
 #include "roslink.h"
@@ -453,10 +454,14 @@ void ProjectView::updateBackground(BackgroundRaster* bg)
     // Across a chart swap, recenter on the saved geo position instead. See ADR-0002.
     if(!bg)
         return;
+    // Use all four corners: a georeferenced chart with rotation/shear in its
+    // affine transform won't have its Web-Mercator extent at just topLeft/
+    // bottomRight, so a 2-corner box could under-fit.
     QRectF px = bg->boundingRect();
-    QPointF a = web_mercator::geoToMap(bg->pixelToGeo(px.topLeft()));
-    QPointF b = web_mercator::geoToMap(bg->pixelToGeo(px.bottomRight()));
-    QRectF chartBox = QRectF(a, b).normalized();
+    QPolygonF corners;
+    for(const QPointF& c : {px.topLeft(), px.topRight(), px.bottomRight(), px.bottomLeft()})
+        corners << web_mercator::geoToMap(bg->pixelToGeo(c));
+    QRectF chartBox = corners.boundingRect();
     if(m_savedCenter.isValid())
         centerOn(web_mercator::geoToMap(m_savedCenter));
     else if(!chartBox.isEmpty())

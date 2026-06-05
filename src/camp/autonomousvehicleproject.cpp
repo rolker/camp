@@ -139,7 +139,14 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
         // (exact GDAL warp to EPSG:3857). The BackgroundRaster above is retained
         // headless as the depth oracle (getDepth) until depth becomes a first-
         // class layer in PR3c; it is no longer painted in the scene. See ADR-0002.
-        new camp::raster::RasterLayer(m_map->topLevelLayers(), fname);
+        // Single displayed chart for now (matches pre-PR3a behaviour): replace the
+        // previous display layer. Managing multiple chart layers is PR3b (layer
+        // tree). Deleting the old RasterLayer aborts/joins its async load safely.
+        if(auto layers = m_map->topLevelLayers())
+        {
+            delete m_currentRasterLayer;
+            m_currentRasterLayer = new camp::raster::RasterLayer(layers, fname);
+        }
         endInsertRows();
         emit layoutChanged();
         return bgr;
@@ -680,11 +687,15 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     if(bgr)
     {
         m_scene->removeItem(bgr);
-        // [#59 PR3a] The display RasterLayer added in openBackground is managed
-        // via the layer model and is removed there in the PR3b layer-tree work.
+        // [#59 PR3a] Tear down the matching chart display layer (its dtor aborts
+        // and joins the async load). Tied to the displayed background here; the
+        // PR3b layer tree generalises this to per-layer management.
         if(m_currentBackground == bgr)
+        {
+            delete m_currentRasterLayer;
+            m_currentRasterLayer = nullptr;
             setCurrentBackground(nullptr);
-            //m_currentBackground = nullptr;
+        }
         if(m_currentDepthRaster == bgr)
             m_currentDepthRaster = nullptr;
     }
