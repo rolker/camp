@@ -211,3 +211,33 @@ Tested with the real NH GRANIT Lake Massabesic bathy (`ccomjhc_project11/project
 Commit `9b4bcfc`. Replaced camp's flipped, BackgroundRaster-parented grids/markers with camp2's scene-correct ros overlays. **camp::ros::Node adopt constructor** (tools_manager, node, buffer): uses camp's existing rclcpp node+buffer instead of spawning its own thread (Roland's "unify on camp's node" call), defers manager creation via QTimer::singleShot(0, this, ...) (safe — `this` receiver guard), and the dtor skips rclcpp::shutdown()/thread-teardown when owns_thread_ is false (node belongs to host). Skips camp2's GeometryManager (create_geometry_manager_=false) since camp keeps its own collision-zone PolygonStamped renderer (avoids double-draw). MainWindow attaches the Node to project->map()->toolsManager() on first rosConnected (m_map_ros_started guard). Retired camp's GridManager+MarkersManager (creation/members/menu actions/slots). camp2 standalone path unchanged. **Roland verified in sim: grids/markers render right-side-up in the Layers tab; flip regression fixed.**
 
 Remaining PR5: re-home camp-only overlays (AIS, platform/ship_track, collision_monitor, nav_source) onto Map layers off the BackgroundRaster anchor; retire AISManager/CollisionMonitorManager windows; then retire BackgroundRaster + remove geoToPixel shim (PR6). Deferred: camp Grid/Markers class files now dead (delete in cleanup); camp2 geometry for non-collision polygons (re-enable with a collision-name exclusion if wanted).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-06-05 09:54 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**PR**: #60 at `f32ceb4`
+**Sources**: Copilot — 6 review rounds, 33 inline comments (all against earlier stack commits; none at head); local timeline (Local Review (Pre-Push) PR1/PR2/PR3a-i/PR3c-i)
+**Cross-source confirmations**: 0 true cross-source (all GitHub findings are Copilot); several themes repeated across ≥2 Copilot rounds (noted inline)
+**CI**: none configured on repo (the lone "check" is the Copilot reviewer job)
+
+### Findings
+- [ ] (high, Copilot ×6) grid_map: `colormap_`/`last_msg_`/`has_last_msg_`/`process_future_` read+written across ROS-callback, UI (setColormap/contextMenu) and QtConcurrent-worker threads with no synchronization — data race / UB / sporadic crashes — `src/camp2/ros/grids/grid_map.{h,cpp}`
+- [ ] (high, Copilot ×3) grid_map: colormap re-render dropped — `setColormap()`→`gridMapCallback(last_msg_)` no-ops while `process_future_.isRunning()`, and no follow-up render is scheduled when the worker finishes, so a ramp change mid-render is silently lost — `src/camp2/ros/grids/grid_map.cpp:40,162`
+- [ ] (med-high, Copilot) raster_layer: `setColormap()`→`loadFile()` reassigns the watched future without aborting/joining the prior QtConcurrent job; the dtor only joins the *current* future, so an orphaned load can outlive the layer → potential use-after-free (and a concurrent `colormap_` read/write race) — `src/camp2/raster/raster_layer.cpp:219-227,33-38`
+- [ ] (med, Copilot) raster_layer: `imageReady()` applies transform/pos from `LoadResult{}` on an aborted/failed load (zero-filled scale/pos), collapsing the item to zero-scale at origin and clearing status — guard `result.mipmaps.empty()` — `src/camp2/raster/raster_layer.cpp:204-217`
+- [ ] (med, Copilot ×2) raster_layer: constant-value scalar raster (`min_value==max_value`) → `ColorMap::color()` returns transparent for every pixel (`!(max>min)`), raster disappears; grid_map already widens the range (grid_map.cpp:100-103), raster_layer does not — `src/camp2/raster/raster_layer.cpp:130-139`, `src/camp2/map/color_map.cpp:96`
+- [ ] (med, Copilot ×2) astar: `depthAt(int,int)` called with a `double` coordinate (truncates toward zero, not floor) and only one axis gets floor/ceil neighbour obstacle checks — inconsistent obstacle test on the planner grid — `src/camp/astar.cpp:147,174`
+- [ ] (low-med, Copilot) trackline: `planPath()` dereferences `autonomousVehicleProject()` (`avp->hasDepth()`) without a null check — crash on not-yet-attached items — `src/camp/trackline.cpp:264`
+- [ ] (low, Copilot ×2) color_map.cpp uses `std::min`/`std::max` with no `#include <algorithm>` (transitive only) — `src/camp2/map/color_map.cpp`
+- [ ] (low, Copilot) grid_map.h uses QImage/std::vector/std::string/std::pair without including their headers (transitive only) — `src/camp2/ros/grids/grid_map.h`
+- [ ] (low, Copilot) surveyarea: `int` loop over `guidePath.size()` (size_t) — signed/unsigned — `src/camp/surveyarea.cpp:332`
+- [ ] (low, Copilot) parity README still says ColorMap is tracked out-of-#59-scope in #63, but this PR implements `camp::map::ColorMap` — doc drift — `docs/parity/README.md:74`
+- [ ] (deferred→PR6, Copilot ×7) projectview: mission-item creation + mouseMove gated on `getBackgroundRaster()` non-null though geo conversion is now web_mercator — blocks OSM/WMTS-only operation; resolved by the planned BackgroundRaster retirement — `src/camp/projectview.cpp:72-220`
+- [ ] (deferred→PR6, Copilot) chart loaded twice (BackgroundRaster RGBA+mipmaps oracle + RasterLayer display) — transitional cost; goes away with BackgroundRaster retirement — `src/camp/autonomousvehicleproject.cpp:150`
+- [ ] (optional, Copilot) astar `Context::depthAt` — primary (x,y) bounds check already present (astar.h:85, returns unknownDepth); residual `depthGrid.size()` vs `gridSize` consistency is low-risk defensive — `src/camp/astar.h:88`
+
+### False positives
+- (Copilot ×2) "camp_map / camp_map_ros not added to ament `export_`, so downstream can't link them" — intentional: these are camp-internal split libs consumed only by the CCOMAutonomousMissionPlanner executable; only the pluginlib plugin (rqt_helm_manager) needs export. Installing to lib/ is for the executable's runtime linkage. No downstream ament package links these, so "downstream can't link" cannot occur. (If one is ever added, add them to the export set then.) — `CMakeLists.txt:285,338`
+- (Copilot) "projectview Y-flip inverts overlays (markers.cpp:104-112, grids/grid)" — ADDRESSED: the referenced legacy camp Grid/Markers are retired by PR5; the camp2 replacements render right-side-up and Roland sim-verified the flip regression is fixed (see Local Review (Pre-Push) PR3c-i, commit 9b4bcfc) — `src/camp/projectview.cpp:44`
