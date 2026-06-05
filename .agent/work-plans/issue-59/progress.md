@@ -146,3 +146,23 @@ Roland tested in the simulator (survey pattern + live boat track on chart 13283)
 - AIS / collision-monitor are fine (per-point geoToPixel).
 
 **Decision (Roland, 2026-06-04): DEFER to PR5, documented — do not patch.** `markers` and `grids` are the Bucket-A "true replacement" overlays already slated for wholesale swap to camp2's `ros/markers` + `ros/grids`, which are written for the flipped Web-Mercator scene. Patching camp's soon-to-be-deleted versions (flip **and** units) is throwaway work; the substrate swap (the PR3a-i deliverable) is proven correct by every other overlay. **Consequence:** camp's marker-path + costmap overlays render flipped on-branch between PR3a-i and PR5. Noted in `docs/parity/markers.md` + `grids.md`.
+
+## Local Review (Pre-Push) — PR3a-i
+**Status**: complete
+**When**: 2026-06-04
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved (findings addressed)
+
+**Branch**: feature/issue-59 at `e6f7647`
+**Mode**: pre-push
+**Depth**: Standard (reason: cross-cutting C++ substrate change; PR1/PR2 in-diff already reviewed/approved, specialists focused on the PR3a-i delta f2960b7..HEAD)
+**Specialists**: Claude adversarial (fresh subagent) + Copilot adversarial (cross-model) on the delta; governance/plan-drift by lead. Static: build green + pre-commit ran each commit.
+**Must-fix**: 0 | **Suggestions**: 4 (3 addressed, 1 noted)
+
+Adversarial verdict: no crash-class or coordinate-correctness bug on the normal single-chart path; scene ownership (no double-free — scene parented to Map, AVP dtor empty), construction order, Y-flip/fitInView interaction, nested-item shim, RasterLayer↔overlay frame agreement, depth oracle, and null guards all verified correct. **Both reviewers independently flagged the RasterLayer lifecycle (cross-confirmed) as the top issue.**
+
+### Findings
+- [x] (suggestion, cross-confirmed) RasterLayer lifecycle unmanaged — open-2nd-chart stacks both; delete orphans layer — `autonomousvehicleproject.cpp:openBackground/deleteItem`. FIXED `e6f7647` (track m_currentRasterLayer; replace on open, tear down on delete).
+- [x] (suggestion) `topLevelLayers()` nullable, deref'd in RasterLayer ctor — `autonomousvehicleproject.cpp`. FIXED `e6f7647` (null guard).
+- [x] (suggestion, Copilot) fitInView used only 2 corners → wrong for rotated/sheared charts — `projectview.cpp:updateBackground`. FIXED `e6f7647` (4-corner bounding box).
+- [ ] (suggestion, noted) over-broad link `camp_map_ros` vs `camp_map` — left as-is: the exe is already a full ROS node (ament deps unchanged) and PR5 adopts camp2 ros overlays, so the breadth is forward-looking, not added weight. Dropped `setSceneRect` (pan-margin/centerOn-clamp behaviour change) — mitigated by world-spanning OSM base layers giving a large itemsBoundingRect; revisit with PR3b viewport work.
