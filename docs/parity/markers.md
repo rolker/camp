@@ -84,3 +84,17 @@ the child list via `qgraphicsitem_cast`. Positioning is Web Mercator
   chosen at PR5 markers migration.
 - **markers_manager.\*** (retiring): not read; confirm no unique behavior beyond
   topic discovery before deleting.
+
+## PR3a-i orientation/units note (Web-Mercator scene)
+
+After PR3a-i the scene is Web Mercator and `ProjectView` flips the Y axis (north up).
+camp's `Markers::markerPath` builds LINE_STRIP/LINE_LIST/SPHERE/TEXT geometry as
+**local offsets** added to the anchor, with a baked-in Y reflection
+(`y = x·sinr - y·cosr`, `markers.cpp:108-109,130,134`) and a `pixel_size_`
+(chart metres-per-pixel) unit scaling — both correct for the old chart-pixel scene,
+both wrong on the flipped Web-Mercator scene. Net effect on-branch: **marker paths
+render vertically flipped and mis-scaled.** This is **not** patched in camp (Bucket A
+retire-and-replace): camp2's `ros/markers` is written for the Web-Mercator scene and
+supersedes this code in PR5. Retirement of `markers.*` therefore also resolves the
+flip/units — verify the replacement renders LINE_STRIP/markers correctly oriented and
+scaled as part of the PR5 parity gate.

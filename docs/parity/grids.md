@@ -69,3 +69,12 @@ Opacity/visibility/status are base-class concerns.
 
 > `grid_manager.*` (retiring) not read; confirm it holds nothing beyond topic
 > discovery/instantiation before deleting (PR5).
+
+## PR3a-i orientation note (Web-Mercator scene)
+
+After PR3a-i the scene is Web Mercator with a Y-flipped view (north up). camp's
+`Grid::paint` `drawImage`s the costmap pixmap (`grids/grid.cpp:41`), which the flipped
+view mirrors vertically. Like markers, this is **not** patched in camp (Bucket A
+retire-and-replace): camp2's `ros/grids` (occupancy_grid / grid_map) is written for the
+Web-Mercator scene and supersedes it in PR5. Confirm the replacement costmap renders
+right-side-up as part of the PR5 parity gate.

@@ -138,3 +138,11 @@ Commit `362157c` (6 files, +107/-68). Deployed camp's scene is now the `camp::ma
 
 ### PR3a-i — visual verification + Y-flip fix (2026-06-04)
 Roland ran the local build (chart 13283). **Bug found + fixed:** chart + overlays rendered upside down — Web Mercator is Y-up, QGraphicsView is Y-down; `camp::MapView` compensates with a negative-Y scale, `ProjectView` was missing it. Fix (commit `754ffb1`): `scale(1,-1)` in the ProjectView ctor + `fitInView` the chart extent on load (both preserve the flip; uniform zooms keep the sign). Overlay labels use `ItemIgnoresTransformations` → stay upright; mouse↔geo unaffected. **Roland confirmed: chart renders north-up.** Substrate swap visually verified. Still to do: arrow/label scale cosmetic (pixel-tuned `mapScale`), then `/review-code` + push.
+
+### PR3a-i — second visual pass: markers/grids flip (deferred to PR5)
+Roland tested in the simulator (survey pattern + live boat track on chart 13283). Everything positioned via the per-point `geoToPixel`→`geoToMap` shim renders correctly (survey pattern, nav trail, platform path, AIS, collision monitor). **One regression found:** overlays that render in a *local frame with the old Y-down convention baked in* fight the new view Y-flip:
+- `markers.cpp` LINE_STRIP/LINE_LIST: local ENU offsets added with a reflection (`y = x·sinr - y·cosr`) that was correct for the old pixel scene → double-flips under the view flip. Also has a `pixel_size_` (chart metres/pixel) units assumption that's wrong against Web-Mercator scene units.
+- `grids/grid.cpp`: `drawImage` of the costmap pixmap → mirrored by the flipped view (same class of issue).
+- AIS / collision-monitor are fine (per-point geoToPixel).
+
+**Decision (Roland, 2026-06-04): DEFER to PR5, documented — do not patch.** `markers` and `grids` are the Bucket-A "true replacement" overlays already slated for wholesale swap to camp2's `ros/markers` + `ros/grids`, which are written for the flipped Web-Mercator scene. Patching camp's soon-to-be-deleted versions (flip **and** units) is throwaway work; the substrate swap (the PR3a-i deliverable) is proven correct by every other overlay. **Consequence:** camp's marker-path + costmap overlays render flipped on-branch between PR3a-i and PR5. Noted in `docs/parity/markers.md` + `grids.md`.
