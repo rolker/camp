@@ -430,7 +430,7 @@ SurveyArea * AutonomousVehicleProject::createSurveyArea(MissionItem* parent, int
 SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
 {
     SurveyArea *sa = createSurveyArea();
-    sa->setPos(sa->geoToPixel(position,this));
+    sa->setPos(sa->geoToPixel(position));
     sa->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,sa,&SurveyArea::updateBackground);
     return sa;
@@ -452,7 +452,7 @@ AvoidArea * AutonomousVehicleProject::createAvoidArea(MissionItem* parent, int r
 AvoidArea * AutonomousVehicleProject::addAvoidArea(QGeoCoordinate position)
 {
     AvoidArea *aa = createAvoidArea();
-    aa->setPos(aa->geoToPixel(position,this));
+    aa->setPos(aa->geoToPixel(position));
     aa->addPoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,aa,&AvoidArea::updateBackground);
     return aa;
@@ -496,7 +496,7 @@ TrackLine * AutonomousVehicleProject::createTrackLine(MissionItem* parent, int r
 TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position)
 {
     TrackLine *tl = createTrackLine();
-    tl->setPos(tl->geoToPixel(position,this));
+    tl->setPos(tl->geoToPixel(position));
     tl->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,tl,&TrackLine::updateBackground);
     return tl;

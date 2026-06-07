@@ -10,7 +10,7 @@ LineString::LineString(MissionItem* parent):GeoGraphicsMissionItem(parent)
 void LineString::updateProjectedPoints()
 {
     for(auto& p: m_points)
-        p.pos = geoToPixel(p.location,autonomousVehicleProject());
+        p.pos = geoToPixel(p.location);
     updateBBox();
 }
 
@@ -93,7 +93,7 @@ void LineString::addPoint(const QGeoCoordinate &location)
 {
     LocationPosition lp;
     lp.location = location;
-    lp.pos = geoToPixel(location,autonomousVehicleProject());
+    lp.pos = geoToPixel(location);
     m_points.append(lp);
     updateBBox();
 }

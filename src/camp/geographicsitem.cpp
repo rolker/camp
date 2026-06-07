@@ -27,14 +27,6 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
     //m_label->setFlag(QGraphicsItem::ItemIsMovable); this caused other elements to move while trying to move the label!
 }
 
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
-{
-    // [#59 ADR-0003] The scene is Web Mercator; no background is needed. Kept for
-    // callers not yet migrated to the bg-free overload — delegates straight to it.
-    Q_UNUSED(p);
-    return geoToPixel(point);
-}
-
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
     // [#59 PR3a] The scene is Web Mercator (ADR-0002). Position comes from
@@ -46,14 +38,6 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
     if(pi)
         return ret - pi->scenePos();
     return ret;
-}
-
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
-{
-    // [#59 PR6] bg is ignored — the scene is Web Mercator. Retained for callers
-    // not yet migrated to the bg-free overload.
-    Q_UNUSED(bg);
-    return geoToPixel(point);
 }
 
 qreal GeoGraphicsItem::metresPerPixel(const QGeoCoordinate &at) const
@@ -100,19 +84,5 @@ void GeoGraphicsItem::setShowLabelFlag(bool show)
         m_label->setText(m_labelText);
     else
         m_label->setText("");
-}
-
-BackgroundRaster* GeoGraphicsItem::findParentBackgroundRaster() const
-{
-    BackgroundRaster* ret = nullptr;
-    QGraphicsItem* parent = parentItem();
-    while(parent)
-    {
-        ret = dynamic_cast<BackgroundRaster*>(parent);
-        if(ret)
-            return ret;
-        parent = parent->parentItem();
-    }
-    return ret;
 }
 

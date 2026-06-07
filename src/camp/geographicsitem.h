@@ -36,12 +36,10 @@ public:
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
 
     
-    // [#59 PR6] Chart-independent position: the scene is Web Mercator, so this
-    // needs no BackgroundRaster. The bg/AVP overloads remain for callers not yet
-    // migrated; they delegate here (bg is ignored — see geoToPixel(point)).
+    // [#59 ADR-0003] Chart-independent position: the scene is Web Mercator, so
+    // this needs no BackgroundRaster. The old bg/AVP overloads are retired — every
+    // call site now uses this single overload.
     QPointF geoToPixel(QGeoCoordinate const &point) const;
-    QPointF geoToPixel(QGeoCoordinate const &point, AutonomousVehicleProject *p) const;
-    QPointF geoToPixel(QGeoCoordinate const &point, BackgroundRaster *bg) const;
     QGeoCoordinate pixelToGeo(QPointF const &point) const;
 
     // [#59 PR6] Real metres covered by one display pixel at the given location,
@@ -60,9 +58,6 @@ public:
     void setLabelPosition(QPointF pos);
     
     int type() const override=0;
-
-protected:
-    BackgroundRaster* findParentBackgroundRaster() const;
 
 private:
     QGraphicsSimpleTextItem *m_label;

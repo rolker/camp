@@ -174,9 +174,11 @@ void AISContact::updateLabel()
 
 void AISContact::updateProjectedPoints()
 {
-  BackgroundRaster* bg = dynamic_cast<BackgroundRaster*>(parentItem());
+  // [#59 ADR-0003] Positions are absolute Web-Mercator; geoToPixel needs no
+  // background raster (the old bg parent cast was already dead — overlays
+  // re-home to the map's scene-root anchor, not the chart).
   for (auto& s: m_states)
-    s.second.location.pos = geoToPixel(s.second.location.location, bg);
+    s.second.location.pos = geoToPixel(s.second.location.location);
   if (!m_states.empty())
     setLabelPosition(m_states.rbegin()->second.location.pos);
 }

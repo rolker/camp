@@ -88,13 +88,15 @@ bool GeoGraphicsMissionItem::locked() const
 
 void GeoGraphicsMissionItem::drawArrow(QPainterPath& path, const QPointF& from, const QPointF& to, bool drawAtBeginning) const
 {
+    // [#59 ADR-0003] Glyph scale tracks the project map scale, not a chart. With
+    // a chart loaded this is identical to the old BackgroundRaster::mapScale()
+    // (both follow ProjectView::scaleChanged); with no chart it now scales with
+    // zoom instead of freezing at 1.0, so arrows size correctly over OSM/WMTS.
     qreal scale = 1.0;
-    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
-    if(bgr)
-        scale = 1.0/bgr->mapScale();// scaledPixelSize();
-    //qDebug() << "scale: " << scale;
+    if(auto* avp = autonomousVehicleProject())
+        scale = 1.0/avp->mapScale();
     scale = std::max(0.05,scale);
-    
+
     QPointF anchor = to;
     if(drawAtBeginning)
         anchor = from;
@@ -118,9 +120,9 @@ void GeoGraphicsMissionItem::drawTriangle(QPainterPath& path, const QGeoCoordina
     QGeoCoordinate llcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees-150);
     QGeoCoordinate lrcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees+150);
 
-    QPointF ltip = geoToPixel(tip,autonomousVehicleProject());
-    QPointF lllocal = geoToPixel(llcorner,autonomousVehicleProject());
-    QPointF lrlocal = geoToPixel(lrcorner,autonomousVehicleProject());
+    QPointF ltip = geoToPixel(tip);
+    QPointF lllocal = geoToPixel(llcorner);
+    QPointF lrlocal = geoToPixel(lrcorner);
 
     path.moveTo(ltip);
     path.lineTo(lllocal);

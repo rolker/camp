@@ -33,7 +33,7 @@ QPainterPath MeasuringTool::shape() const
 {
     QPainterPath ret;
     ret.moveTo(0,0);
-    auto delta = geoToPixel(m_finish,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject())-geoToPixel(m_start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject());
+    auto delta = geoToPixel(m_finish)-geoToPixel(m_start);
     ret.lineTo(delta);
     auto distance =  sqrt(delta.x()*delta.x()+delta.y()*delta.y());
     ret.addEllipse(QPointF(0, 0), distance, distance);
@@ -43,7 +43,7 @@ QPainterPath MeasuringTool::shape() const
 void MeasuringTool::setStart(QGeoCoordinate start)
 {
     m_start = start;
-    setPos(geoToPixel(start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject()));
+    setPos(geoToPixel(start));
 }
 
 void MeasuringTool::setFinish(QGeoCoordinate finish)
@@ -74,7 +74,7 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     }
     
     setLabel(labelString);
-    auto halfDistance = (geoToPixel(m_finish,avp)-geoToPixel(m_start,avp))/2.0;
+    auto halfDistance = (geoToPixel(m_finish)-geoToPixel(m_start))/2.0;
     setLabelPosition(halfDistance);
     update();
 }
