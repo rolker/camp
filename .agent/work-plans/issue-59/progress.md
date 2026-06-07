@@ -395,3 +395,16 @@ generate a depth-shaded visual layer (#63); RasterLayer gains a SYNCHRONOUS exte
 
 Status: ADR locked; implementation not yet started. Sim-verify gates from increments
 2+3 (collision monitor / platform / AIS over chart + OSM-only) still pending Roland.
+
+## Sim verification — platform overlay (increments 2+3)
+**When**: 2026-06-07 — **By**: Roland (operator-driven), set up by Claude Code Agent
+
+Launched marine_simulation `simulator_launch.py` via ros2launch_session with the
+worktree env sourced, so the operator station ran the **worktree CAMP build**
+(re-homed overlays) with the 13283 KAP chart auto-loaded. **Roland verified: the
+ben platform overlay (boat icon, heading, nav track) renders correctly on the
+chart — no regression from the increment-2 anchor re-home or the increment-3
+metresPerPixel icon scale.** Covers the "platform WITH a chart" gate (the case
+most at risk from re-homing). Still unverified (need specific data / a no-chart
+CAMP): AIS contacts, collision-monitor zones, and the OSM-only-background path —
+those remain open sim gates.
