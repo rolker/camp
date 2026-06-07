@@ -588,3 +588,22 @@ single-chart model gone; the whole `BackgroundRaster` class hierarchy removed.
    no crash, chart simply absent from the mission tree.
 6. Glyph scale over OSM-only (waypoint/arrow) scales with zoom (step-3 change).
 7. Middle-button MeasuringTool works over OSM-only (now anchor-parented).
+
+## Map model-correctness test added (+ a bug it caught)
+**When**: 2026-06-07 17:30 -04:00 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+`54721e1` — **test_map_model** (3 tests) lifts the camp2 sandbox's
+`QAbstractItemModelTester` check (`camp2/main`, never run in CI) into the gtest
+suite, covering the model-mutation paths the BackgroundRaster retirement relies
+on: stacked-layer inserts, the Layers-tab Remove (detach+delete), and reorder.
+Links the shared `camp_map`; runs headless via `QT_QPA_PLATFORM=offscreen`.
+
+`57d5027` — **bug it caught**: `Map::setMapItemParent` passed its `row` straight
+to `beginInsertRows`, so the documented `row == -1` ("append at end") contract —
+and a drag-drop dropped *onto* a parent (Qt delivers row −1) — produced a
+malformed `beginInsertRows(parent, -1, -1)` and corrupted the model. Fixed by
+normalizing a negative/too-large row to the post-detach child count.
+
+Suite is now 48 tests, all green. This is the model-correctness coverage gap the
+camp2 map-system port opened; closing it is what reduces the camp2 *sandbox app*
+from a unique (manual) safety net to a convenience harness.
