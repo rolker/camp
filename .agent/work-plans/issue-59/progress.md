@@ -607,3 +607,32 @@ normalizing a negative/too-large row to the post-detach child count.
 Suite is now 48 tests, all green. This is the model-correctness coverage gap the
 camp2 map-system port opened; closing it is what reduces the camp2 *sandbox app*
 from a unique (manual) safety net to a convenience harness.
+
+## Sim/GUI testing — 4 bugs found and fixed
+**When**: 2026-06-07 18:30 -04:00 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Ran the worktree CAMP build (`.scratchpad/run_camp.sh`); Roland confirmed
+open-chart + Layers-tab-remove work in the GUI. Testing surfaced four real bugs,
+all fixed (build + 48 tests green):
+
+- `9b33658` **QSettings store undefined**: deployed camp never set an org/app
+  name → persisted to "Unknown Organization", a *different* store than camp2's
+  per-layer settings. Set UNH-CCOMJHC / CCOMAutonomousMissionPlanner in main.cpp
+  before MainWindow.
+- `52f5004` **chart dedup**: main.cpp always openBackground()s a cmdline chart
+  arg AND restore re-loads persisted charts, so a persisted+arg chart double-
+  loaded and accumulated a duplicate each launch (saw files=[13283_2 ×3]).
+  De-dup addBackgroundLayer by filename + self-heal the stored list on restore.
+- `545e73e` **shutdown segfault** (the one flagged earlier, now in scope):
+  ROSLink::nodeShuttingDown re-emits rosConnected with a null node; ROSClient::
+  nodeStarted ran onNodeUpdated → managers create_subscription on a null
+  rclcpp::Node → SIGSEGV every exit. Guarded onNodeUpdated against a null node.
+- `0787f80` **shutdown hang/abort** (exposed once the crash was gone): deployed
+  app didn't wire ROS shutdown → QApplication::quit (camp2 sandbox does), so
+  Ctrl-C hung; wiring it then aborted because ROSLink had no destructor to
+  quit()/wait() its still-running QThread. Added both. Shutdown now clean on
+  Ctrl-C and window close.
+
+Lesson: the deployed camp diverged from the camp2 sandbox in app-shell wiring
+(org name, quit-on-shutdown) — the sandbox's main_window.cpp is the reference
+for what the deployed main.cpp should also do.
