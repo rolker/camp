@@ -53,7 +53,6 @@ QPainterPath Platform::shape() const
         if (m_length == 0 || m_width == 0)
           forceTriangle = true;
         float max_size = std::max(m_length, m_width);
-        qreal pixel_size = bg->scaledPixelSize();
 
         LocationPositionHeadingTime location, heading;
         for(const auto& ns: m_nav_sources)
@@ -66,13 +65,18 @@ QPainterPath Platform::shape() const
             heading = possible_heading;
         }
 
+        // [#59 PR6] Icon scale is now chart-independent (view zoom + cos-latitude
+        // at the vessel's location), not bg->scaledPixelSize(). Computed after the
+        // location is known. bg here is only the render gate, removed when the
+        // platform overlay is re-homed off the BackgroundRaster (increment 2).
+        qreal pixel_size = metresPerPixel(location.location);
         if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, location.location, heading.heading, pixel_size);
+          drawTriangle(ret, location.location, heading.heading, pixel_size);
         else
         {
           double half_width = m_width/2.0;
           double half_length = m_length/2.0;
-          drawShipOutline(ret, bg, location.location, heading.heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+          drawShipOutline(ret, location.location, heading.heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
         }
       }
   }

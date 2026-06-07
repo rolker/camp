@@ -4,10 +4,13 @@
 #include "missionitem.h"
 #include "map_view/web_mercator.h"
 #include <QGraphicsSimpleTextItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QFont>
 #include <QBrush>
 #include <QPen>
 #include <QDebug>
+#include <cmath>
 
 GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(parentItem), m_showLabelFlag(false)
 {
@@ -32,18 +35,40 @@ QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehic
 
 }
 
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
+QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
     // [#59 PR3a] The scene is Web Mercator (ADR-0002). Position comes from
-    // web_mercator::geoToMap, independent of the (now depth-only) background
-    // raster, so the bg argument is ignored. The parent-offset subtraction is
-    // coordinate-agnostic, so nested items still resolve to parent-local coords.
-    Q_UNUSED(bg);
+    // web_mercator::geoToMap, independent of any background raster. The
+    // parent-offset subtraction is coordinate-agnostic, so nested items still
+    // resolve to parent-local coords.
     QPointF ret = web_mercator::geoToMap(point);
     QGraphicsItem *pi = parentItem();
     if(pi)
         return ret - pi->scenePos();
     return ret;
+}
+
+QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
+{
+    // [#59 PR6] bg is ignored — the scene is Web Mercator. Retained for callers
+    // not yet migrated to the bg-free overload.
+    Q_UNUSED(bg);
+    return geoToPixel(point);
+}
+
+qreal GeoGraphicsItem::metresPerPixel(const QGeoCoordinate &at) const
+{
+    // Display-pixels per scene-unit from the active view's transform (m11 is the
+    // positive X scale; a Y-flip leaves it positive). Scene units are
+    // Web-Mercator metres-at-equator, so metersPerUnit() applies the cos(latitude)
+    // correction to recover real metres. Result = real metres per display pixel.
+    qreal pixels_per_unit = 1.0;
+    if(scene() && !scene()->views().isEmpty())
+        pixels_per_unit = std::abs(scene()->views().first()->transform().m11());
+    if(pixels_per_unit <= 0.0)
+        pixels_per_unit = 1.0;
+    const double metres_per_unit = web_mercator::metersPerUnit(web_mercator::geoToMap(at));
+    return metres_per_unit / pixels_per_unit;
 }
 
 void GeoGraphicsItem::prepareGeometryChange()

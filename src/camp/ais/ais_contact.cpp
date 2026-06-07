@@ -242,11 +242,14 @@ QPainterPath AISContact::shape() const
         if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
           forceTriangle = true;
         float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
-        qreal pixel_size = bg->scaledPixelSize();
+        // [#59 PR6] Icon scale is now chart-independent (view zoom + cos-latitude),
+        // not bg->scaledPixelSize(). bg here is only the render gate, removed when
+        // AIS is re-homed off the BackgroundRaster (increment 2).
+        qreal pixel_size = metresPerPixel(state->second.location.location);
         if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, state->second.location.location, state->second.heading, pixel_size);
+          drawTriangle(ret, state->second.location.location, state->second.heading, pixel_size);
         else
-          drawShipOutline(ret, bg, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
+          drawShipOutline(ret, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);
       }
 
     }
@@ -271,17 +274,17 @@ QPainterPath AISContact::predictionShape() const
       BackgroundRaster* bg = findParentBackgroundRaster();
       if(bg)
       {
-        ret.lineTo(geoToPixel(futureLocation, bg));
+        ret.lineTo(geoToPixel(futureLocation));
 
         bool forceTriangle = false;
         if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
           forceTriangle = true;
         float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
-        qreal pixel_size = bg->scaledPixelSize();
+        qreal pixel_size = metresPerPixel(predicatedLocation);
         if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, predicatedLocation, state->second.heading, pixel_size);
+          drawTriangle(ret, predicatedLocation, state->second.heading, pixel_size);
         else
-          drawShipOutline(ret, bg, predicatedLocation, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
+          drawShipOutline(ret, predicatedLocation, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);
       }
     }
   }
