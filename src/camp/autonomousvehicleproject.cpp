@@ -65,7 +65,8 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
 
 AutonomousVehicleProject::~AutonomousVehicleProject()
 {
-    delete m_depthRaster;
+    for(auto* depth : m_depthRasters)
+        delete depth;
 }
 
 QGraphicsScene *AutonomousVehicleProject::scene() const
@@ -157,15 +158,14 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
             delete m_currentRasterLayer;
             m_currentRasterLayer = new camp::raster::RasterLayer(layers, fname);
         }
-        // [#59 PR6] Load the depth band into the standalone provider, decoupled
-        // from the BackgroundRaster. Kept null for charts with no depth band.
-        delete m_depthRaster;
-        m_depthRaster = new DepthRaster(fname);
-        if(!m_depthRaster->depthValid())
-        {
-            delete m_depthRaster;
-            m_depthRaster = nullptr;
-        }
+        // [#59 ADR-0003] Append this chart's depth band to the provider list
+        // (one entry per loaded chart). Charts with no depth band contribute
+        // nothing. Multiple loaded charts each keep their own provider.
+        auto* depth = new DepthRaster(fname);
+        if(depth->depthValid())
+            m_depthRasters.push_back(depth);
+        else
+            delete depth;
         endInsertRows();
         emit layoutChanged();
         return bgr;
@@ -280,12 +280,14 @@ QGraphicsItem *AutonomousVehicleProject::originAnchor() const
 
 float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
 {
-    // [#59 PR6] Depth comes from the standalone DepthRaster provider (decoupled
-    // from the BackgroundRaster's graphics identity). One provider today; this
-    // generalises to a depth-layer list in PR3c-ii.
-    if(m_depthRaster && m_depthRaster->depthValid())
+    // [#59 ADR-0003] Walk the depth-provider list in load order; the first
+    // provider with a valid (non-NaN) sounding at this location wins (order
+    // resolves overlap between charts). NaN if no provider covers the point.
+    for(auto* depth : m_depthRasters)
     {
-        float d = m_depthRaster->getDepth(location);
+        if(!depth->depthValid())
+            continue;
+        const float d = depth->getDepth(location);
         if(!std::isnan(d))
             return d;
     }
@@ -294,7 +296,10 @@ float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
 
 bool AutonomousVehicleProject::hasDepth() const
 {
-    return m_depthRaster && m_depthRaster->depthValid();
+    for(auto* depth : m_depthRasters)
+        if(depth->depthValid())
+            return true;
+    return false;
 }
 
 Behavior * AutonomousVehicleProject::createBehavior()
@@ -728,6 +733,18 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     if(bgr)
     {
         m_scene->removeItem(bgr);
+        // [#59 ADR-0003] Remove this chart's depth provider from the list,
+        // matched by filename — for ANY chart removed, not only the displayed
+        // one, since every loaded chart keeps its own provider.
+        for(auto it = m_depthRasters.begin(); it != m_depthRasters.end(); ++it)
+        {
+            if((*it)->filename() == bgr->filename())
+            {
+                delete *it;
+                m_depthRasters.erase(it);
+                break;
+            }
+        }
         // [#59 PR3a] Tear down the matching chart display layer (its dtor aborts
         // and joins the async load). Tied to the displayed background here; the
         // PR3b layer tree generalises this to per-layer management.
@@ -738,8 +755,6 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
                 m_map->setMapItemParent(m_currentRasterLayer, nullptr);
             delete m_currentRasterLayer;
             m_currentRasterLayer = nullptr;
-            delete m_depthRaster;       // [#59 PR6] depth shares the chart lifecycle
-            m_depthRaster = nullptr;
             setCurrentBackground(nullptr);
         }
     }

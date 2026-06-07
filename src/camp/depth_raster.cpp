@@ -2,7 +2,8 @@
 #include <gdal_priv.h>
 #include <cmath>
 
-DepthRaster::DepthRaster(const QString& filename)
+DepthRaster::DepthRaster(const QString& filename):
+    m_filename(filename)
 {
     GDALDataset* dataset = reinterpret_cast<GDALDataset*>(GDALOpen(filename.toStdString().c_str(), GA_ReadOnly));
     if(!dataset)

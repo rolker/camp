@@ -24,7 +24,13 @@ public:
     int width() const { return m_width; }
     int height() const { return m_height; }
 
+    // [#59 ADR-0003] The source file, so the owner can match this provider to
+    // its chart when that chart is removed (depth is a per-chart entry in the
+    // provider list).
+    const QString& filename() const { return m_filename; }
+
 private:
+    QString m_filename;
     int m_width = 0;
     int m_height = 0;
     std::vector<float> m_depth_data;

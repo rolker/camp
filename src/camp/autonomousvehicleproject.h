@@ -5,6 +5,8 @@
 #include <QGeoCoordinate>
 #include <QModelIndex>
 
+#include <vector>
+
 class QGraphicsScene;
 class QGraphicsItem;
 class QStandardItem;
@@ -167,9 +169,12 @@ private:
     camp::raster::RasterLayer* m_currentRasterLayer = nullptr;  // chart display layer for m_currentBackground
     QString m_filename;
     BackgroundRaster* m_currentBackground;
-    // [#59 PR6] Depth provider, decoupled from the BackgroundRaster's graphics
-    // identity. Owned here and torn down alongside the chart's RasterLayer.
-    DepthRaster* m_depthRaster = nullptr;
+    // [#59 ADR-0003] Depth provider list — one entry per loaded chart that
+    // carries a depth band, decoupled from the BackgroundRaster's graphics
+    // identity. getDepth(geo) walks the list in load order (first valid wins);
+    // an entry is removed when its chart is removed (matched by filename). This
+    // is the multi-background depth model (stage 4 will front it with a tree).
+    std::vector<DepthRaster*> m_depthRasters;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
