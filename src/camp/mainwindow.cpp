@@ -107,6 +107,9 @@ MainWindow::MainWindow(QWidget *parent) :
         });
 
     m_collision_monitor_manager = new CollisionMonitorManager();
+    // [#59 PR6] Anchor collision zones to the map's persistent scene root so they
+    // render with or without a chart loaded (OSM/WMTS-only).
+    m_collision_monitor_manager->setAnchor(project->originAnchor());
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
     connect(this, &MainWindow::closing, m_collision_monitor_manager, &QWidget::close);

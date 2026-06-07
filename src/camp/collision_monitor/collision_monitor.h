@@ -56,7 +56,7 @@ private:
   // Receiver slot for the TF bridge. Runs on the Qt main thread.
   void onPolygonPayload(PayloadT data);
 
-  QPainterPath polygonPath(BackgroundRaster* bg) const;
+  QPainterPath polygonPath() const;
 
   Ui::CollisionMonitor ui_;
 

@@ -12,6 +12,7 @@
 #include "nav2_msgs/msg/collision_monitor_state.hpp"
 
 class QTimer;
+class QGraphicsItem;
 class BackgroundRaster;
 class CollisionMonitor;
 
@@ -26,6 +27,10 @@ class CollisionMonitorManager: public camp_ros::ROSWidget
 public:
   explicit CollisionMonitorManager(QWidget* parent = nullptr);
   ~CollisionMonitorManager();
+
+  // [#59 PR6] Persistent scene-origin anchor (AVP::originAnchor()) that the
+  // collision zones parent to, so they render independent of any loaded chart.
+  void setAnchor(QGraphicsItem* anchor) { m_anchor = anchor; }
 
 public slots:
   void updateBackground(BackgroundRaster* bg);
@@ -50,7 +55,7 @@ private:
   // interval (e.g. the link drops over the horizon), clear all zones so a
   // stale STOP/SLOWDOWN fill can't linger and mislead the operator.
   QTimer* state_timeout_ = nullptr;
-  BackgroundRaster* background_ = nullptr;
+  QGraphicsItem* m_anchor = nullptr;
 };
 
 #endif

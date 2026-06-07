@@ -57,7 +57,7 @@ void CollisionMonitorManager::scanForSources()
         const bool is_stop = isCollisionPolygon(name, "stop");
         if((is_slow || is_stop) && monitors_.find(name) == monitors_.end())
         {
-          auto* monitor = new CollisionMonitor(this, background_);
+          auto* monitor = new CollisionMonitor(this, m_anchor);
           monitor->nodeStarted(node_, transform_buffer_);
           // stop zone = red, slowdown zone = amber.
           monitor->setKind(is_stop ? CollisionMonitor::Kind::Stop : CollisionMonitor::Kind::Slowdown);
@@ -122,7 +122,9 @@ void CollisionMonitorManager::clearActiveStates()
 
 void CollisionMonitorManager::updateBackground(BackgroundRaster* bg)
 {
-  background_ = bg;
+  // [#59 PR6] Zones are parented to the persistent scene anchor at creation and
+  // stay there. Forward so each zone repaints on a chart change (the zone's own
+  // updateBackground no longer reparents — it just triggers a repaint).
   for(auto& entry: monitors_)
     entry.second->updateBackground(bg);
 }
