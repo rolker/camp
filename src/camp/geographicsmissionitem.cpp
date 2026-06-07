@@ -22,7 +22,13 @@ GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent, int row):Mis
 
 void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)
 {
-    setParentItem(bg);
+    // [#59 PR6] Do NOT reparent to the background. The item is parented to the
+    // map's persistent scene-origin anchor at construction (findParentGraphicsItem)
+    // and stays there for the project's life — reparenting to bg would orphan it
+    // when no chart is loaded (bg == nullptr) and crash on the next geometry
+    // change. Positions are absolute Web-Mercator (chart-independent); just
+    // refresh them in case a newly-loaded chart shifted the view.
+    Q_UNUSED(bg);
     updateProjectedPoints();
 }
 

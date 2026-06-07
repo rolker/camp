@@ -79,7 +79,10 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
         if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
         {
             updateLocation();
-            parentItem()->update();
+            // [#59 PR6] Guard the parent deref: top-level items now parent to the
+            // map's persistent anchor, but a parentless item must never crash here.
+            if(auto* p = parentItem())
+                p->update();
         }
         if(change == ItemPositionChange)
             emit waypointAboutToMove();

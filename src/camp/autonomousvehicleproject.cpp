@@ -263,6 +263,14 @@ BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
     return m_currentBackground;
 }
 
+QGraphicsItem *AutonomousVehicleProject::originAnchor() const
+{
+    // [#59 PR6] The map's persistent scene-root item: always in the scene, at
+    // the origin, regardless of whether a chart is loaded. Top-level mission
+    // items parent to it so they render (and don't crash) over OSM/WMTS-only.
+    return m_map ? m_map->rootItem() : nullptr;
+}
+
 float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
 {
     // [#59 PR6] Depth comes from the standalone DepthRaster provider (decoupled

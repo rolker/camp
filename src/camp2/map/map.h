@@ -6,6 +6,7 @@
 #include "../map_view/map_view.h"
 
 class QGraphicsScene;
+class QGraphicsItem;
 class QMenu;
 
 namespace camp
@@ -54,6 +55,14 @@ public:
   /// Returns a pointer to the associated QGraphicsScene object
   /// or nullptr if it can't be found.
   QGraphicsScene* scene() const;
+
+  /// Returns the persistent scene-root item. It is created at construction,
+  /// added directly to the scene at the origin with an identity transform, and
+  /// outlives any loaded chart. Top-level overlays parent to it so they remain
+  /// in the scene independent of whether a BackgroundRaster (depth chart) is
+  /// loaded (camp#59 PR6 increment 2). Its scenePos() is (0,0), which the
+  /// GeoGraphicsItem::geoToPixel parent-offset shim relies on.
+  QGraphicsItem* rootItem() const;
 
   /// Called by map items to indicate that data relevant to the tree view has changed.
   void updateDisplay(const MapItem* map_item, const QVector<int> &roles = QVector<int>());

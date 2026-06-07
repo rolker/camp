@@ -218,8 +218,12 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
 
 QGraphicsItem * MissionItem::findParentGraphicsItem()
 {
+    // [#59 PR6] Top-level mission items parent to the map's persistent
+    // scene-origin anchor, not the BackgroundRaster (which is null when no
+    // chart is loaded — e.g. OSM/WMTS-only). The anchor is always in the scene
+    // at the origin, so items render and never dereference a null parent.
     if(parent() == autonomousVehicleProject())
-        return autonomousVehicleProject()->getBackgroundRaster();
+        return autonomousVehicleProject()->originAnchor();
     MissionItem *pmi = qobject_cast<MissionItem*>(parent());
     if(pmi)
         return pmi->findParentGraphicsItem();

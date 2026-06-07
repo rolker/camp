@@ -48,6 +48,11 @@ QGraphicsScene* Map::scene() const
   return nullptr;
 }
 
+QGraphicsItem* Map::rootItem() const
+{
+  return top_level_items_;
+}
+
 
 Qt::ItemFlags Map::flags(const QModelIndex & index) const
 {

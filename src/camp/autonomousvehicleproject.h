@@ -45,6 +45,12 @@ public:
     BackgroundRaster* openBackground(QString const &fname, QString label = "");
     BackgroundRaster * getBackgroundRaster() const;
 
+    // [#59 PR6] Persistent scene-origin anchor (camp::map::Map's root item),
+    // always present in the scene regardless of whether a chart is loaded.
+    // Top-level mission items / overlays parent to this instead of the
+    // (possibly-null) BackgroundRaster, so they survive OSM/WMTS-only operation.
+    QGraphicsItem * originAnchor() const;
+
     // [#59 PR3c] Depth query over the depth-provider list (first valid wins),
     // independent of the scene projection. Returns NaN where no provider has
     // data. hasDepth() gates depth-aware planning. See ADR-0002.
