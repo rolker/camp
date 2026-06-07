@@ -27,6 +27,11 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
+  // [#59 ADR-0003] Establish the scene extent + world transform synchronously,
+  // before kicking off the async pixel load, so the layer knows where it is
+  // (valid boundingRect/scenePos) immediately — fit-to-extent / zoom-on-open
+  // works at load time instead of only after the warp completes.
+  initExtent(filename);
   loadFile(filename);
 }
 
@@ -40,6 +45,11 @@ RasterLayer::~RasterLayer()
 
 QRectF RasterLayer::boundingRect() const
 {
+  // [#59 ADR-0003] Prefer the synchronously-known reprojected dimensions so the
+  // extent is valid before pixels load. The mipmap rect (same dimensions) is the
+  // fallback for the failed-initExtent / not-yet-set case.
+  if(reprojected_width_ > 0 && reprojected_height_ > 0)
+    return QRectF(0, 0, reprojected_width_, reprojected_height_);
   if(!mipmaps_.empty())
     return mipmaps_.begin()->second.rect();
   return QRectF();
@@ -63,6 +73,32 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
 
 }
 
+
+void RasterLayer::initExtent(const QString& filename)
+{
+  // [#59 ADR-0003] Read only the reprojected geotransform + dimensions (no
+  // pixels) and apply the world transform/position synchronously, so the layer
+  // has a valid extent and scene position before the async pixel load. Mirrors
+  // the placement loadAndReprojectFile/imageReady would set, just earlier and
+  // pixel-free. GDALAutoCreateWarpedVRT is metadata-only and effectively instant.
+  auto dataset = GDALDataset::FromHandle(GDALOpen(filename.toLatin1(), GA_ReadOnly));
+  if(!dataset)
+    return;
+  auto reprojected = GDALDataset::FromHandle(
+    GDALAutoCreateWarpedVRT(dataset, nullptr, web_mercator::wkt, GRA_Bilinear, 0.0, nullptr));
+  if(reprojected)
+  {
+    double geo_transform[6] = {0.0};
+    reprojected->GetGeoTransform(geo_transform);
+    reprojected_width_ = reprojected->GetRasterXSize();
+    reprojected_height_ = reprojected->GetRasterYSize();
+    prepareGeometryChange();
+    setTransform(QTransform::fromScale(geo_transform[1], geo_transform[5]), true);
+    setPos(geo_transform[0], geo_transform[3]);
+    GDALClose(reprojected);
+  }
+  GDALClose(dataset);
+}
 
 void RasterLayer::loadFile(const QString& filename)
 {
@@ -233,14 +269,24 @@ void RasterLayer::imageReady()
     setStatus("(load failed)");
     return;
   }
-  prepareGeometryChange();
-
   is_scalar_ = result.is_scalar;
   mipmaps_ = result.mipmaps;
 
-  setTransform(QTransform::fromScale(result.scale_x, result.scale_y), true);
-  setPos(result.world_x, result.world_y);
- 
+  // [#59 ADR-0003] The world transform + position were already applied
+  // synchronously in initExtent() (the warped geotransform is identical here),
+  // and boundingRect() comes from the reprojected dimensions, so the geometry
+  // does not change when the pixels arrive — only the painted content does.
+  // Defensive fallback: if initExtent() did not establish the extent (e.g. a
+  // transient open failure) but the async load nonetheless succeeded, apply the
+  // placement here so the layer is still positioned correctly.
+  if(reprojected_width_ <= 0 || reprojected_height_ <= 0)
+  {
+    prepareGeometryChange();
+    reprojected_width_ = result.mipmaps.begin()->second.width();
+    reprojected_height_ = result.mipmaps.begin()->second.height();
+    setTransform(QTransform::fromScale(result.scale_x, result.scale_y), true);
+    setPos(result.world_x, result.world_y);
+  }
   update(boundingRect());
   setStatus("");
 }

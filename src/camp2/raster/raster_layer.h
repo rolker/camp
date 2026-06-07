@@ -64,6 +64,18 @@ private:
   QString filename_;        // kept so a colormap change can re-render
   bool is_scalar_ = false;  // set once loaded; gates the colormap menu
 
+  // [#59 ADR-0003] Reprojected pixel dimensions, set synchronously in the
+  // constructor (cheap GDAL metadata) so boundingRect() — and therefore
+  // sceneBoundingRect() / fit-to-extent — is valid immediately, before the
+  // async pixel/mipmap build finishes. 0 until the extent is known (or on a
+  // failed/unreprojectable file).
+  int reprojected_width_ = 0;
+  int reprojected_height_ = 0;
+
+  // Compute the reprojected extent + world transform/pos from file metadata
+  // (no pixel reads) and apply them. Synchronous; safe before pixels load.
+  void initExtent(const QString& filename);
+
   LoadResult loadAndReprojectFile(const QString& filename);
 
 private slots:
