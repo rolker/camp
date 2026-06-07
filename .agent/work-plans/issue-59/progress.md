@@ -498,3 +498,49 @@ source changed bg→RasterLayer); platform overlay already verified.
 
 ### False positives
 - (Copilot) test_color_map.cpp:76 "no main() → fails to link": disproven by build artifacts. `ament_add_gtest` used with no NO_MAIN, so gtest_main supplies main(); binary `ui_ws/build/camp/test_color_map` exists and its gtest XML shows 7 tests / 0 failures / 0 errors (ran 2026-06-07 14:51). Other test files defining their own main() also link (object-file main wins over the archive's). No "self-main mode" is configured.
+
+## Review fixes applied (2026-06-07 15:55 -04:00)
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Two of the three Integrated-Review findings fixed (build + 44 tests pass):
+- `4a54408` surveyarea: null-guard `project` before `hasDepth()` in
+  `generateAdaptiveTrackLines` (parity with TrackLine::planPath).
+- `6663934` grid_map: `WARN_STREAM_THROTTLE` period 2/2.0 → 2000 ms.
+- Deferred (low): raster_layer `toLatin1()` → `toUtf8()` encoding nit.
+
+## Step 3 finish — geoToPixel collapse + last BackgroundRaster readers decoupled
+**When**: 2026-06-07 16:05 -04:00 (`6349e42`) — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+Removed the `geoToPixel(point, AVP*)` and `geoToPixel(point, BackgroundRaster*)`
+delegating overloads; migrated all ~40 call sites to the single bg-free
+`geoToPixel(point)`. Redirected the two glyph-scale readers (Waypoint::shape,
+GeoGraphicsMissionItem::drawArrow) from `getBackgroundRaster()->mapScale()` to
+`AVP::mapScale()` — identical with a chart loaded (both track
+ProjectView::scaleChanged), zoom-aware over OSM/WMTS instead of frozen at 1.0
+(matches the existing avp->mapScale() in updateETE). Dropped AISContact's dead
+`dynamic_cast<BackgroundRaster*>(parentItem())`. Deleted callerless
+`findParentBackgroundRaster`. Build + 44 tests pass.
+
+**Sim-verify gate (no chart loaded):** waypoint/arrow glyphs now scale with zoom
+over OSM/WMTS rather than staying fixed — confirm this looks right (intended
+chart-independent behavior, but a visible change in the no-chart case).
+
+**NEXT — the interlocked core (steps 1-final + 6 + 4 + 5, land together):**
+- step 1-final: `openBackground` appends a stacked `RasterLayer` to
+  `m_map->topLevelLayers()` (no `BackgroundRaster` mission node); retire
+  `m_currentBackground`/`m_currentRasterLayer`/`setCurrentBackground`/
+  `getBackgroundRaster`; `currentBackgroundExtent`/`backgroundUpdated` re-sourced
+  to the new layer.
+- step 6 (MUST land with step 1): Map-state persistence — chart currently
+  persists via the mission `.json` `BackgroundRaster` node (missionitem.cpp:184);
+  removing that node strands the chart unless the loaded chart-layer list is
+  persisted to QSettings (camp2 already persists per-layer settings by itemID()
+  — add the *list*) and restored on startup.
+- step 4: delete `backgroundraster.{h,cpp}`, `backgrounddetails.{h,cpp}`,
+  `detailsview.cpp:110` bg branch, `missionitem.cpp:182` read dispatch,
+  `BackgroundRasterType` enum entry, CMake refs. Entanglement to resolve first:
+  `MeasuringTool` still reaches the AVP via `dynamic_cast<BackgroundRaster*>(parent())`.
+- step 5: `Layer::contextMenu` base "Remove" action (detach via Map model +
+  delete; for a chart layer also drop its DepthRaster provider).
+- Heavy sim-verify: chart load/stack/remove, existing-`.json` project load (old
+  BackgroundRaster node ignored, no crash), persistence round-trip across restart.
