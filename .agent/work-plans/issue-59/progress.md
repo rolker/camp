@@ -544,3 +544,47 @@ chart-independent behavior, but a visible change in the no-chart case).
   delete; for a chart layer also drop its DepthRaster provider).
 - Heavy sim-verify: chart load/stack/remove, existing-`.json` project load (old
   BackgroundRaster node ignored, no crash), persistence round-trip across restart.
+
+## BackgroundRaster retirement IMPLEMENTED — backgrounds-core sub-plan complete
+**When**: 2026-06-07 17:05 -04:00 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+The interlocked core landed in two commits; backgrounds-core sub-plan (ADR-0003
+stages 3+2+5) is now fully implemented. Build + 44 tests pass at each.
+
+- `73559df` **Retire BackgroundRaster** (steps 1-final + 6 + 4): chart load now
+  appends a stacked, Map-owned `RasterLayer` (display) + `DepthRaster` (depth)
+  instead of a mission-tree `BackgroundRaster`; charts STACK. Retired
+  `m_currentBackground`/`m_currentRasterLayer`/`setCurrentBackground`/
+  `getBackgroundRaster`; `currentBackgroundExtent` = last layer's extent;
+  `hasBackground()` gates ProjectView center-save/fit. **Map-state persistence**:
+  ordered chart-filename list → QSettings `backgrounds/files`, recreated at
+  startup via `restorePersistedBackgrounds()` (MainWindow calls it after the
+  background signals are wired); per-layer settings restore by itemID since
+  layers rebuild in order. `backgroundUpdated`/`updatingBackground` are now
+  parameterless (every consumer ignored the bg pointer). MeasuringTool parents
+  to the Map scene-origin anchor + keeps the project for speed()/ETE. Dropped the
+  DetailsView bg branch + BackgroundDetails, the MissionItem read dispatch, the
+  dead `BackgroundRasterType` enum; deleted `backgroundraster.{h,cpp}` +
+  `backgrounddetails.{h,cpp,ui}` + CMake/includes. Legacy mission `.json`
+  BackgroundRaster nodes are ignored on load (no back-compat, per ADR-0003).
+- `55ca7f2` **Layers-tab Remove** (step 5): base `Layer::contextMenu` gains a
+  "Remove" (detach via Map model + drop from scene + delete). AVP listens to
+  `m_map::rowsAboutToBeRemoved` (`onChartLayerRemoved`) to drop the matching
+  DepthRaster + bookkeeping + re-persist — camp2 stays unaware of the project.
+
+Also `6349e42` (step-3 geoToPixel collapse) + review fixes `4a54408`/`6663934`.
+
+**Net since #60 head 7b40a06: 46 files, +405/−749.** `m_root`/`m_currentRasterLayer`
+single-chart model gone; the whole `BackgroundRaster` class hierarchy removed.
+
+### Sim-verify gates (Roland — no CI on camp; build+tests are the only auto gate)
+1. Chart load over OSM-only: opens, fits to extent, renders.
+2. Stack a 2nd chart: both present in Layers tab, view recenters (no jump).
+3. Layers-tab **Remove** on a chart: disappears; depth-aware planning (shoal A*)
+   no longer sees its soundings; gone after restart.
+4. Persistence round-trip: load chart(s) → quit → relaunch → charts reappear
+   (with their per-layer opacity/visibility/colormap).
+5. Open an existing mission `.json` that had a BackgroundRaster node: loads with
+   no crash, chart simply absent from the mission tree.
+6. Glyph scale over OSM-only (waypoint/arrow) scales with zoom (step-3 change).
+7. Middle-button MeasuringTool works over OSM-only (now anchor-parented).

@@ -1,5 +1,11 @@
 # Plan: Backgrounds-as-layers core (ADR-0003 stages 3 + 2 + 5)
 
+> **Status (2026-06-07): IMPLEMENTED.** All six steps landed on `feature/issue-59`
+> (commits `6349e42` step 3, `73559df` steps 1+4+6, `55ca7f2` step 5). Build + 44
+> tests pass; GUI sim-verify gates listed in `progress.md`. BackgroundRaster and
+> its single-current-chart model are gone; charts are stacked Map RasterLayers
+> with QSettings app-state persistence and a Layers-tab Remove action.
+
 Sub-plan of #59. Implements the heart of [ADR-0003](../../../docs/decisions/0003-backgrounds-as-layers-and-depth-tree.md):
 backgrounds fully dissolve into Map-owned layers. Stage 1 (RasterLayer
 synchronous extent, `b741d1d`) is done. Stage 4 (depth-layer tree) and stage 6
