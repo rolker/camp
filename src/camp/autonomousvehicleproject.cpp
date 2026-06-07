@@ -144,6 +144,15 @@ void AutonomousVehicleProject::openBackground(const QString &fname, QString labe
 
 void AutonomousVehicleProject::addBackgroundLayer(const QString &fname, const QString &label)
 {
+    // [#59 ADR-0003] De-dup by filename: a chart already loaded must not stack a
+    // second copy. Without this, the command-line chart arg (main.cpp always
+    // openBackground()s it) plus restorePersistedBackgrounds re-loading the same
+    // file would double-load it, and persist would then accumulate a duplicate
+    // on every launch.
+    for(auto* existing : m_chartLayers)
+        if(existing->filename() == fname)
+            return;
+
     // [#59 ADR-0003] Display the chart as a stacked, reprojecting RasterLayer
     // (exact GDAL warp to EPSG:3857), Map-owned (parented to topLevelLayers).
     // Charts STACK — we do not replace the previous one. The layer establishes
@@ -301,6 +310,11 @@ void AutonomousVehicleProject::restorePersistedBackgrounds()
     const QStringList files = settings.value("backgrounds/files").toStringList();
     for(const auto& fname : files)
         addBackgroundLayer(fname, QString());
+    // Re-persist once: addBackgroundLayer de-dups and drops files that no longer
+    // open, so this self-heals a stored list that had accumulated duplicates or
+    // stale entries down to what actually loaded.
+    if(files.size() != static_cast<int>(m_chartLayers.size()))
+        persistBackgrounds();
 }
 
 void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, int first, int last)
