@@ -272,16 +272,29 @@ has a runtime-verification gate:
    families (GeoGraphicsMissionItem, AISContact, Platform, CollisionMonitor) and
    the updatingBackground/backgroundUpdated reparenting signals. Coordinate-
    neutral (proven) but GUI-affecting: verify hit-detection, z-order, labels.
-   **🔶 PARTIAL (2026-06-07): mission-item subset DONE+pushed (GeoGraphicsMissionItem
-   only). The other 3 families (AISContact, Platform, CollisionMonitor + nav_source)
-   are STILL on `setParentItem(bg)` and deferred — see "Increment 2 (mission-item
-   subset)" entry below.** Discovered the remaining 3 are coupled with increment 3:
-   they consume `bg->scaledPixelSize()` and pass `bg` into drawTriangle/drawShipOutline/
-   polygonPath for SCALE, so re-homing them requires a chart-independent scene scale
-   first. That coupling + the collision-monitor safety path = its own scoped pass.
+   **✅ DONE (2026-06-07): all 4 families re-homed to the Map persistent anchor
+   (top_level_items_) + nav_source. Each manager (AIS/Platform/CollisionMonitor)
+   gained setAnchor(), wired in MainWindow to project->originAnchor(); items create
+   parented to the anchor, updateBackground no longer reparents, and the
+   findParentBackgroundRaster() render gates are removed (project unconditionally
+   via bg-free geoToPixel). Commits a039539 (incr3 scale prerequisite), afe44ad
+   (mission items), 973bce1 (AIS), 2351db4 (platform+nav_source), 29d4a5f
+   (collision monitor). Build + 44 tests pass. SIM-VERIFY PENDING: live AIS /
+   platform / collision overlays over BOTH a loaded chart and OSM-only.**
 3. **Scale helpers** → replace bg->mapScale()/scaledPixelSize()/pixelSize()
    (arrow + ship-outline scaling) with a Web-Mercator scene scale. Verify
    arrow/ship-outline sizing.
+   **✅ DONE for the vessel/contact path (2026-06-07, a039539): added
+   GeoGraphicsItem::metresPerPixel(geo) = web_mercator::metersPerUnit(at)/|view.m11()|
+   (latitude-corrected — raw 1/m11 under-sizes ~24% at 43N) and a bg-free
+   geoToPixel(geo) overload; ShipTrack::drawTriangle/drawShipOutline dropped their
+   BackgroundRaster* param; AIS + Platform size icons from metresPerPixel(vessel geo)
+   not bg->scaledPixelSize() (which was both chart-gated AND dimensionally broken in
+   the WM scene). REMAINING (optional, low-priority): the 3 mission-item mapScale
+   consumers (geographicsmissionitem drawArrow, waypoint shape(), ETE-label offset)
+   still read bg->mapScale()/avp->mapScale() — they are null-safe (guarded, default
+   scale) so they don't break with no chart; migrate them to retire
+   BackgroundRaster::mapScale/scaledPixelSize/pixelSize entirely in increment 5.**
 4. **MeasuringTool** → reparent to the anchor; obtain the project via a stored
    pointer instead of dynamic_cast<BackgroundRaster*>(parent()).
 5. **Metadata + persistence + deletion** → move filename/projection display off
@@ -325,3 +338,21 @@ Three commits (`ce84b18`, `afe44ad`, `0bc2007`), all pushed:
 - [ ] (suggestion) astar.cpp `NeighborsMask` prints `NDir:` to stdout unconditionally (pre-existing debug noise) — `astar.cpp:71`
 - [ ] (suggestion) camp has no CI / no pre-commit — manual build + pre-push review is the only gate
 - Code itself: Claude adversarial (Deep) + governance both found NO code must-fix; parenting/anchor reuse is ADR-0002-compliant, UAF fix correct at both sites, A* tests mutation-checked for real teeth.
+
+## Increments 3 + 2 complete — overlay re-homing + chart-independent scale
+**When**: 2026-06-07 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context)) — PR #60
+
+Five commits, all pushed (a039539, afe44ad already covered above, 973bce1, 2351db4, 29d4a5f):
+
+- **a039539 (incr 3)**: chart-independent vessel/contact icon scale. `metresPerPixel(geo)` (view zoom × cos-latitude), bg-free `geoToPixel(geo)`, ShipTrack helpers drop `BackgroundRaster*`, AIS+Platform size from it. Fixes a latent unit bug (`scaledPixelSize` was metres-per-CHART-pixel ÷ display-pixels-per-SCENE-unit, dimensionally wrong in the WM scene) AND removes the chart dependency.
+- **973bce1 (incr 2 / AIS)**, **2351db4 (incr 2 / platform+nav_source)**, **29d4a5f (incr 2 / collision monitor)**: each manager gained `setAnchor()` (wired in MainWindow to `project->originAnchor()`); items create parented to the anchor; `updateBackground` stops reparenting; the `findParentBackgroundRaster()` render gates are removed.
+
+Pattern per family: m_background member → m_anchor; `new X(this, m_anchor)`; updateBackground = refresh-only (Q_UNUSED bg); item-side `if(bg)`/`findParentBackgroundRaster()` gates removed → unconditional bg-free projection. CollisionMonitor::polygonPath dropped its bg param + `bg &&` gate (kept >=3-vertex guard); active-fill state logic untouched.
+
+**Consequence now true:** after this, NOTHING parents to the BackgroundRaster anymore. It is still (a) a mission-tree node (the Mission-tab duplication/accumulation Roland flagged), (b) added to the scene as a now-unused non-painting anchor, (c) the georef holder. All three are increment-5 (bg retirement) — now UNBLOCKED, since the overlays no longer need it as a scene anchor.
+
+**SIM-VERIFY PENDING (Roland drives) — safety-relevant, do before trusting:**
+- Collision monitor: live slowdown/stop polygons + CollisionMonitorState — zones render in the right place over BOTH a loaded chart and OSM-only, and the amber/red active fill still lights on SLOWDOWN/STOP.
+- Platform + nav_source: boat icon, heading, nav track render correctly over both backgrounds; icon size sane at multiple zooms (the scale formula changed — sizing may differ slightly from before, for the better).
+- AIS: contacts + prediction render over both backgrounds.
+- Mission items with a chart loaded still render correctly (regression check on the scale/anchor changes).
