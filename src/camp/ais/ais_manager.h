@@ -12,6 +12,7 @@ class AISManager;
 }
 
 class BackgroundRaster;
+class QGraphicsItem;
 
 class AISManager: public camp_ros::ROSWidget
 {
@@ -22,6 +23,11 @@ public:
   ~AISManager();
 
   void onNodeUpdated() override;
+
+  // [#59 PR6] Persistent scene-origin anchor (AVP::originAnchor()) that AIS
+  // contacts parent to, so they render independent of any loaded chart. Set
+  // once by MainWindow after the project exists.
+  void setAnchor(QGraphicsItem* anchor) { m_anchor = anchor; }
 
 signals:
   void newAisReport(AISReport *report);
@@ -44,7 +50,7 @@ private:
   QTimer* m_update_timer;
   std::map<uint32_t, AISContact*> m_contacts;
 
-  BackgroundRaster* m_background = nullptr;
+  QGraphicsItem* m_anchor = nullptr;
 };
 
 #endif

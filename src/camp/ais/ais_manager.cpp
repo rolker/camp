@@ -69,7 +69,7 @@ void AISManager::addAisReport(AISReport* report)
 {
   if(m_contacts.find(report->mmsi) == m_contacts.end())
   {
-    m_contacts[report->mmsi] = new AISContact(report, this, m_background);
+    m_contacts[report->mmsi] = new AISContact(report, this, m_anchor);
     m_contacts[report->mmsi]->nodeStarted(node_, transform_buffer_);
     connect(m_update_timer, &QTimer::timeout, m_contacts[report->mmsi], &AISContact::updateView);
     m_ui->contactListWidget->addItem(QString::number(report->mmsi));
@@ -86,13 +86,12 @@ void AISManager::onNodeUpdated()
 
 void AISManager::updateBackground(BackgroundRaster * bg)
 {
-  m_background = bg;
+  // [#59 PR6] Contacts are parented to the persistent scene anchor at creation
+  // and stay there — no reparenting to the (possibly-null) BackgroundRaster.
+  // Positions are absolute Web-Mercator; refresh them when a chart loads.
+  Q_UNUSED(bg);
   for(auto c: m_contacts)
-  {
-    c.second->setParentItem(bg);
     c.second->updateProjectedPoints();
-  }
-
 }
 
 void AISManager::updateViewport(QPointF ll, QPointF ur)

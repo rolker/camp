@@ -81,6 +81,9 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
     m_ais_manager = new AISManager();
+    // [#59 PR6] Anchor AIS contacts to the map's persistent scene root so they
+    // render with or without a chart loaded (OSM/WMTS-only).
+    m_ais_manager->setAnchor(project->originAnchor());
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
