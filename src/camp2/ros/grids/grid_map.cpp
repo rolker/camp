@@ -98,12 +98,12 @@ bool GridMap::renderToData(const grid_map_msgs::msg::GridMap &data,
   rclcpp::Clock clock;
   if(!grid_map::GridMapRosConverter::fromMessage(data, grid_map))
   {
-    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2, "Unable to convert GridMap message");
+    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2000, "Unable to convert GridMap message");
     return false;
   }
   if(grid_map.getLayers().empty())
   {
-    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2.0, "Got GridMap message with no layers");
+    RCLCPP_WARN_STREAM_THROTTLE(node->get_logger(), clock, 2000, "Got GridMap message with no layers");
     return false;
   }
   try
