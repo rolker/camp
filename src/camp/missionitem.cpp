@@ -6,7 +6,6 @@
 #include "trackline.h"
 #include "surveypattern.h"
 #include "searchpattern.h"
-#include "backgroundraster.h"
 #include "behavior.h"
 #include "surveyarea.h"
 #include "group.h"
@@ -179,12 +178,10 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
     {
         QJsonObject object = json[childIndex].toObject();
         qDebug() << object;
-        if(object["type"] == "BackgroundRaster")
-        {
-            BackgroundRaster* bgr = project->openBackground(object["filename"].toString(), object["label"].toString());
-            if(bgr)
-                bgr->read(object);
-        }
+        // [#59 ADR-0003] Charts are no longer mission-tree nodes — they are
+        // app-state Map layers (see AutonomousVehicleProject::openBackground /
+        // restorePersistedBackgrounds). A legacy "BackgroundRaster" entry in an
+        // old mission file is intentionally ignored (no back-compat shim).
         if(object["type"] == "VectorDataset")
             project->openGeometry(object["filename"].toString());
         MissionItem *item = nullptr;

@@ -1,6 +1,5 @@
 #include "geographicsmissionitem.h"
 
-#include "backgroundraster.h"
 #include <QDebug>
 #include <QVector2D>
 #include <QtMath>
@@ -20,15 +19,12 @@ GeoGraphicsMissionItem::GeoGraphicsMissionItem(MissionItem* parent, int row):Mis
     setZValue(3.0);
 }
 
-void GeoGraphicsMissionItem::updateBackground(BackgroundRaster* bg)
+void GeoGraphicsMissionItem::updateBackground()
 {
-    // [#59 PR6] Do NOT reparent to the background. The item is parented to the
-    // map's persistent scene-origin anchor at construction (findParentGraphicsItem)
-    // and stays there for the project's life — reparenting to bg would orphan it
-    // when no chart is loaded (bg == nullptr) and crash on the next geometry
-    // change. Positions are absolute Web-Mercator (chart-independent); just
-    // refresh them in case a newly-loaded chart shifted the view.
-    Q_UNUSED(bg);
+    // [#59 ADR-0003] The item is parented to the map's persistent scene-origin
+    // anchor at construction (findParentGraphicsItem) and stays there for the
+    // project's life. Positions are absolute Web-Mercator (chart-independent);
+    // just refresh them in case a newly-loaded chart shifted the view.
     updateProjectedPoints();
 }
 

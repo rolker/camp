@@ -13,7 +13,6 @@
 
 class QTimer;
 class QGraphicsItem;
-class BackgroundRaster;
 class CollisionMonitor;
 
 /// Discovers and displays the Nav2 Collision Monitor danger zones. Scans for
@@ -33,7 +32,7 @@ public:
   void setAnchor(QGraphicsItem* anchor) { m_anchor = anchor; }
 
 public slots:
-  void updateBackground(BackgroundRaster* bg);
+  void updateBackground();
 
 private slots:
   void scanForSources();

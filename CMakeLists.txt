@@ -62,8 +62,6 @@ endif()
 set(SOURCES
     src/camp/autonomousvehicleproject.cpp
     src/camp/avoid_area.cpp
-    src/camp/backgrounddetails.cpp
-    src/camp/backgroundraster.cpp
     src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
     src/camp/geographicsitem.cpp
@@ -125,7 +123,6 @@ set (UIS
     src/camp/waypointdetails.ui
     src/camp/helm_manager/helm_manager_config.ui
     src/camp/helm_manager/helm_manager.ui
-    src/camp/backgrounddetails.ui
     src/camp/roslink.ui
     src/camp/surveypatterndetails.ui
     src/camp/mission_manager/mission_manager.ui

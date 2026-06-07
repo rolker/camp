@@ -11,7 +11,6 @@
 
 #include "roslink.h"
 
-#include "backgroundraster.h"
 #include "trackline.h"
 #include "surveypattern.h"
 #include "surveyarea.h"
@@ -116,6 +115,10 @@ MainWindow::MainWindow(QWidget *parent) :
 
     m_ui->rosLink->connectROS();
 
+    // [#59 ADR-0003] Recreate the persisted chart layers now that the background
+    // signals are wired, so fit-to-extent and the overlay managers refresh for
+    // the restored charts. Charts are app state, independent of any mission file.
+    project->restorePersistedBackgrounds();
 }
 
 MainWindow::~MainWindow()

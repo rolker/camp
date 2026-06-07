@@ -9,7 +9,6 @@
 #include <QGraphicsSvgItem>
 #include <QColorDialog>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
 #include <QTimer>
 #include <tf2/utils.h>
 //#include "geographic_msgs/GeoPoint.h"

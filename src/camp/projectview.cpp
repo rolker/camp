@@ -5,7 +5,6 @@
 #include <QStatusBar>
 #include <QStandardItemModel>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
@@ -60,9 +59,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
     // [#59] Mission-item placement uses web_mercator::mapToGeo (Web-Mercator
     // scene → WGS84), independent of any loaded chart, so items can be created
     // over OSM/WMTS-only backgrounds. (Was gated on a BackgroundRaster being
-    // loaded back when the raster defined the coordinate system.) bg is still
-    // needed below: the middle-button MeasuringTool is parented to it.
-    BackgroundRaster *bg = m_project->getBackgroundRaster();
+    // loaded back when the raster defined the coordinate system.)
     switch(event->button())
     {
     case Qt::LeftButton:
@@ -184,9 +181,11 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         }
         break;
     case Qt::MiddleButton:
-        if(bg && !measuringTool)
+        if(!measuringTool)
         {
-            measuringTool = new MeasuringTool(bg);
+            // [#59 ADR-0003] Parent the tool to the Map scene-origin anchor (always
+            // present), not a chart, so measuring works over OSM/WMTS-only too.
+            measuringTool = new MeasuringTool(m_project->originAnchor(), m_project);
             measuringTool->setStart(web_mercator::mapToGeo(mapToScene(event->pos())));
             measuringTool->setFinish(web_mercator::mapToGeo(mapToScene(event->pos())));
         }
@@ -416,8 +415,10 @@ void ProjectView::sendLookAtASV()
 
 void ProjectView::beforeUpdateBackground()
 {
-    BackgroundRaster *bg =  m_project->getBackgroundRaster();
-    if(bg)
+    // [#59 ADR-0003] If a chart is already loaded, save the current view center so
+    // the next chart stacks without the view jumping; otherwise (first chart)
+    // leave it invalid so updateBackground fits to the new chart.
+    if(m_project->hasBackground())
     {
         QRect view = frameRect();
         QPointF center = mapToScene(view.center());
@@ -432,13 +433,14 @@ void ProjectView::beforeUpdateBackground()
 
 }
 
-void ProjectView::updateBackground(BackgroundRaster* bg)
+void ProjectView::updateBackground()
 {
     // [#59 PR3a] The chart is displayed by the reprojected RasterLayer; fit the
     // view to the chart's extent in Web-Mercator scene space. fitInView multiplies
     // the current transform, so the constructor's Y-flip (north up) is preserved.
-    // Across a chart swap, recenter on the saved geo position instead. See ADR-0002.
-    if(!bg)
+    // When stacking onto an existing chart, recenter on the saved geo position
+    // instead of jumping. See ADR-0002/0003.
+    if(!m_project->hasBackground())
         return;
     // [#59 ADR-0003] The chart extent comes from the RasterLayer's
     // sceneBoundingRect (already Web-Mercator scene space, valid synchronously

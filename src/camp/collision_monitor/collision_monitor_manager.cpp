@@ -5,7 +5,6 @@
 #include <QColor>
 #include <QTimer>
 
-#include "backgroundraster.h"
 #include "collision_monitor/collision_monitor.h"
 #include "ros/ros_context.h"
 
@@ -120,11 +119,11 @@ void CollisionMonitorManager::clearActiveStates()
     entry.second->setActive(false);
 }
 
-void CollisionMonitorManager::updateBackground(BackgroundRaster* bg)
+void CollisionMonitorManager::updateBackground()
 {
   // [#59 PR6] Zones are parented to the persistent scene anchor at creation and
   // stay there. Forward so each zone repaints on a chart change (the zone's own
   // updateBackground no longer reparents — it just triggers a repaint).
   for(auto& entry: monitors_)
-    entry.second->updateBackground(bg);
+    entry.second->updateBackground();
 }

@@ -1,7 +1,6 @@
 #include "platform_manager.h"
 #include "ui_platform_manager.h"
 #include "platform.h"
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 PlatformManager::PlatformManager(QWidget* parent):
@@ -45,12 +44,11 @@ void PlatformManager::updatePlatform(marine_interfaces::msg::Platform platform)
   m_platforms[platform.name]->update(platform);
 }
 
-void PlatformManager::updateBackground(BackgroundRaster * bg)
+void PlatformManager::updateBackground()
 {
-  // [#59 PR6] Platforms are parented to the persistent scene anchor at creation
-  // and stay there — no reparenting to the (possibly-null) BackgroundRaster.
-  // Positions are absolute Web-Mercator; refresh them when a chart loads.
-  Q_UNUSED(bg);
+  // [#59 ADR-0003] Platforms are parented to the persistent scene anchor at
+  // creation and stay there. Positions are absolute Web-Mercator; refresh them
+  // when a chart loads.
   for(auto p: m_platforms)
     p.second->updateProjectedPoints();
 }

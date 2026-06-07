@@ -1,5 +1,4 @@
 #include "ais_contact.h"
-#include "backgroundraster.h"
 #include <QPainter>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>

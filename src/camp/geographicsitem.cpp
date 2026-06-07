@@ -1,5 +1,4 @@
 #include "geographicsitem.h"
-#include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 #include "missionitem.h"
 #include "map_view/web_mercator.h"

@@ -1,10 +1,10 @@
 #include "measuringtool.h"
-#include "backgroundraster.h"
+#include "autonomousvehicleproject.h"
 #include <QPainter>
 #include <QDebug>
 #include <math.h>
 
-MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
+MeasuringTool::MeasuringTool(QGraphicsItem* parentItem, AutonomousVehicleProject* project): QObject(nullptr), GeoGraphicsItem(parentItem), m_project(project)
 {
     setShowLabelFlag(true);
     setZValue(10.0);
@@ -57,9 +57,7 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     if (distance < 1) distanceString = QString::number(distance,'f',2);
     QString labelString = distanceString+" meters\nbearing "+QString::number(int(azimuth))+" degrees";
     
-    BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
-    AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
-    auto speed = avp->speed();
+    auto speed = m_project ? m_project->speed() : 0.0;
     if(speed > 0.0)
     {
         double distanceInNMs = distance*0.000539957;

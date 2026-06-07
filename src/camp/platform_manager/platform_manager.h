@@ -13,7 +13,6 @@ namespace Ui
 }
 
 class Platform;
-class BackgroundRaster;
 class QGraphicsItem;
 
 class PlatformManager: public camp_ros::ROSWidget
@@ -34,7 +33,7 @@ signals:
   void currentPlatformPosition(QGeoCoordinate position);
 
 public slots:
-  void updateBackground(BackgroundRaster * bg);
+  void updateBackground();
   void platformPosition(Platform * platform, QGeoCoordinate position);
   
 private slots:

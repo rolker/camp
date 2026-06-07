@@ -3,8 +3,6 @@
 #include <QVBoxLayout>
 #include <QPushButton>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
-#include "backgrounddetails.h"
 #include "orbit.h"
 #include "orbitdetails.h"
 #include "waypoint.h"
@@ -42,8 +40,6 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
     buttons_layout->addWidget(m_executePushButton);
     buttons_layout->addWidget(m_appendPushButton);
 
-    backgroundDetails = new BackgroundDetails(this);
-    backgroundDetails->hide();
     waypointDetails = new WaypointDetails(this);
     waypointDetails->hide();
     trackLineDetails = new TrackLineDetails(this);
@@ -58,7 +54,6 @@ DetailsView::DetailsView(QWidget *parent) : QWidget(parent), m_project(nullptr),
 
     QVBoxLayout *layout = new QVBoxLayout;
     layout->addLayout(buttons_layout);
-    layout->addWidget(backgroundDetails);
     layout->addWidget(waypointDetails);
     layout->addWidget(trackLineDetails);
     layout->addWidget(surveyPatternDetails);
@@ -107,13 +102,7 @@ void DetailsView::onCurrentItemChanged(const QModelIndex &current, const QModelI
         qDebug() << "metaobject class name: " << mi->metaObject()->className();
         QString itemType = mi->metaObject()->className();
 
-        if (itemType == "BackgroundRaster")
-        {
-            BackgroundRaster *bg = qobject_cast<BackgroundRaster*>(mi);
-            setCurrentWidget(backgroundDetails, bg->canBeSentToRobot());
-            backgroundDetails->setBackgroundRaster(bg);
-        }
-        else if (itemType == "Waypoint")
+        if (itemType == "Waypoint")
         {
             Waypoint *wp = qobject_cast<Waypoint*>(mi);
             setCurrentWidget(waypointDetails, wp->canBeSentToRobot());

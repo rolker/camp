@@ -2,7 +2,6 @@
 #include "ui_platform.h"
 #include <QPainter>
 #include "nav_source.h"
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 #include <QDebug>

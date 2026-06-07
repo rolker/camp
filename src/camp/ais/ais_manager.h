@@ -11,7 +11,6 @@ namespace Ui
 class AISManager;
 }
 
-class BackgroundRaster;
 class QGraphicsItem;
 
 class AISManager: public camp_ros::ROSWidget
@@ -33,7 +32,7 @@ signals:
   void newAisReport(AISReport *report);
 
 public slots:
-  void updateBackground(BackgroundRaster * bg);
+  void updateBackground();
   void updateViewport(QPointF ll, QPointF ur);
 
 private slots:

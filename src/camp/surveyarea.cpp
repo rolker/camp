@@ -3,7 +3,6 @@
 #include <QPainter>
 #include <QJsonObject>
 #include <QJsonArray>
-#include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 #include "trackline.h"
 #include <QDebug>

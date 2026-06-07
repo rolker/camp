@@ -1,7 +1,6 @@
 #include "ais_manager.h"
 #include "ui_ais_manager.h"
 #include <QTimer>
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 AISManager::AISManager(QWidget* parent):
@@ -84,12 +83,11 @@ void AISManager::onNodeUpdated()
       contact.second->nodeStarted(node_, transform_buffer_);
 }
 
-void AISManager::updateBackground(BackgroundRaster * bg)
+void AISManager::updateBackground()
 {
-  // [#59 PR6] Contacts are parented to the persistent scene anchor at creation
-  // and stay there — no reparenting to the (possibly-null) BackgroundRaster.
-  // Positions are absolute Web-Mercator; refresh them when a chart loads.
-  Q_UNUSED(bg);
+  // [#59 ADR-0003] Contacts are parented to the persistent scene anchor at
+  // creation and stay there. Positions are absolute Web-Mercator; refresh them
+  // when a chart loads.
   for(auto c: m_contacts)
     c.second->updateProjectedPoints();
 }

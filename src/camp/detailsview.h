@@ -5,7 +5,6 @@
 
 class QPushButton;
 class AutonomousVehicleProject;
-class BackgroundDetails;
 class WaypointDetails;
 class TrackLineDetails;
 class SurveyPatternDetails;
@@ -41,7 +40,6 @@ private:
 
     QWidget * currentWidget;
 
-    BackgroundDetails * backgroundDetails;
     WaypointDetails * waypointDetails;
     TrackLineDetails * trackLineDetails;
     SurveyPatternDetails * surveyPatternDetails;

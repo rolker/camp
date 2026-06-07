@@ -6,7 +6,6 @@
 #include <QStandardItem>
 #include <QDebug>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
 #include "astar.h"
 #include "map_view/web_mercator.h"
 #include <QMessageBox>

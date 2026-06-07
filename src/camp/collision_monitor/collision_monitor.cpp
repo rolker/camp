@@ -8,7 +8,6 @@
 #include <QPainterPath>
 #include <QPen>
 
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 CollisionMonitor::CollisionMonitor(QWidget* parent, QGraphicsItem* parentItem):
@@ -146,12 +145,11 @@ void CollisionMonitor::visibilityChanged()
   GeoGraphicsItem::update();
 }
 
-void CollisionMonitor::updateBackground(BackgroundRaster* bg)
+void CollisionMonitor::updateBackground()
 {
-  // [#59 PR6] The zone is parented to the persistent scene anchor at creation
-  // and stays there — no reparenting to the (possibly-null) BackgroundRaster.
-  // Positions are absolute Web-Mercator; just trigger a repaint on chart change.
-  Q_UNUSED(bg);
+  // [#59 ADR-0003] The zone is parented to the persistent scene anchor at
+  // creation and stays there. Positions are absolute Web-Mercator; just trigger
+  // a repaint on chart change.
   prepareGeometryChange();
   GeoGraphicsItem::update();
 }

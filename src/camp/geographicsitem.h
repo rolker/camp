@@ -5,7 +5,6 @@
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
-class BackgroundRaster;
 
 class GeoGraphicsItem : public QGraphicsItem
 {
@@ -14,8 +13,8 @@ class GeoGraphicsItem : public QGraphicsItem
 public:
     enum
     {
-        BackgroundRasterType = UserType+1,
-        WaypointType,
+        // [#59 ADR-0003] BackgroundRasterType retired with BackgroundRaster.
+        WaypointType = UserType+1,
         TrackLineType,
         SurveyPatternType,
         PointType,

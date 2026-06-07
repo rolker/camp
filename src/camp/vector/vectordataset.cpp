@@ -3,7 +3,6 @@
 #include "group.h"
 #include "point.h"
 #include "linestring.h"
-#include "backgroundraster.h"
 #include "polygon.h"
 #include "autonomousvehicleproject.h"
 #include <ogrsf_frmts.h>

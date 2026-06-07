@@ -1,7 +1,6 @@
 #include "waypoint.h"
 #include <QPainter>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
 #include "map_view/web_mercator.h"
 #include <QJsonObject>
 #include <QJsonArray>

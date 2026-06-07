@@ -14,7 +14,6 @@ class QStandardItem;
 class QLabel;
 class QStatusBar;
 class MissionItem;
-class BackgroundRaster;
 class DepthRaster;
 class Waypoint;
 class TrackLine;
@@ -45,8 +44,20 @@ public:
     // map() exposes the layer model so chart rasters can be added as layers.
     camp::map::Map *map() const;
 
-    BackgroundRaster* openBackground(QString const &fname, QString label = "");
-    BackgroundRaster * getBackgroundRaster() const;
+    // [#59 ADR-0003] Load a chart as a stacked, Map-owned RasterLayer (display)
+    // plus a depth provider — NOT a mission-tree BackgroundRaster node. Multiple
+    // charts stack. Persists the loaded-chart list as app state (see
+    // restorePersistedBackgrounds), so charts survive across sessions
+    // independently of any mission file.
+    void openBackground(QString const &fname, QString label = "");
+
+    // [#59 ADR-0003] Re-create the persisted chart layers (app state). Call once
+    // after the MainWindow has wired up the background signals, so fit-to-extent
+    // and overlay refresh fire for the restored charts.
+    void restorePersistedBackgrounds();
+
+    // [#59 ADR-0003] True while at least one chart layer is loaded.
+    bool hasBackground() const;
 
     // [#59 PR6] Persistent scene-origin anchor (camp::map::Map's root item),
     // always present in the scene regardless of whether a chart is loaded.
@@ -140,9 +151,11 @@ public:
     double throttle() const;
 
 signals:
-    void backgroundUpdated(BackgroundRaster *bg);
+    // [#59 ADR-0003] Parameterless since BackgroundRaster retired — consumers
+    // refresh positions / fit-to-extent from the chart layers, not a bg pointer.
+    void backgroundUpdated();
     void aboutToUpdateBackground();
-    void updatingBackground(BackgroundRaster *bg);
+    void updatingBackground();
     void showTail(bool show);
 
 public slots:
@@ -173,14 +186,17 @@ public slots:
 private:
     camp::map::Map* m_map;
     QGraphicsScene* m_scene;        // owned by m_map; cached for internal use
-    camp::raster::RasterLayer* m_currentRasterLayer = nullptr;  // chart display layer for m_currentBackground
     QString m_filename;
-    BackgroundRaster* m_currentBackground;
+    // [#59 ADR-0003] Stacked chart display layers, Map-owned (parented to
+    // m_map->topLevelLayers()); we keep raw pointers in load order for
+    // fit-to-extent (last wins), persistence, and removal. Lifetime belongs to
+    // the Map model — drop a pointer here only after detaching+deleting via it.
+    std::vector<camp::raster::RasterLayer*> m_chartLayers;
     // [#59 ADR-0003] Depth provider list — one entry per loaded chart that
-    // carries a depth band, decoupled from the BackgroundRaster's graphics
-    // identity. getDepth(geo) walks the list in load order (first valid wins);
-    // an entry is removed when its chart is removed (matched by filename). This
-    // is the multi-background depth model (stage 4 will front it with a tree).
+    // carries a depth band. getDepth(geo) walks the list in load order (first
+    // valid wins); an entry is removed when its chart is removed (matched by
+    // filename). This is the multi-background depth model (stage 4 will front it
+    // with a tree).
     std::vector<DepthRaster*> m_depthRasters;
     Group* m_currentGroup;
     Group* m_root;
@@ -195,7 +211,14 @@ private:
     double m_speed = 0.0;
     double throttle_ = 0.4;
 
-    void setCurrentBackground(BackgroundRaster *bgr);
+    // [#59 ADR-0003] Core chart loader shared by openBackground and
+    // restorePersistedBackgrounds: append a stacked RasterLayer + DepthRaster,
+    // emit the background signals. Does NOT persist (the callers decide).
+    void addBackgroundLayer(QString const &fname, QString const &label);
+    // [#59 ADR-0003] Persist the loaded-chart filename list (ordered) as app
+    // state. Per-layer settings (visible/opacity/colormap) already persist via
+    // camp2's QSettings-by-itemID mechanism; this persists the *list*.
+    void persistBackgrounds() const;
     QString generateUniqueLabel(std::string const &prefix);
 
     

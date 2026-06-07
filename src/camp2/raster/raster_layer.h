@@ -32,6 +32,16 @@ public:
   /// persists and re-renders. No effect on RGB rasters.
   void setColormap(map::ColorMap::Type type);
 
+  /// [#59 ADR-0003] Source file this layer renders (kept for re-render, removal,
+  /// and app-state persistence of the loaded-chart list).
+  const QString& filename() const { return filename_; }
+
+  /// [#59 ADR-0003] True once the reprojected extent is known — i.e. the file
+  /// opened and warped to EPSG:3857. Valid synchronously after construction
+  /// (initExtent is metadata-only), before the async pixel load. False for a
+  /// missing or non-georeferenced file.
+  bool valid() const { return reprojected_width_ > 0; }
+
 protected:
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
