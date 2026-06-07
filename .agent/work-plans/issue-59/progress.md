@@ -356,3 +356,42 @@ Pattern per family: m_background member → m_anchor; `new X(this, m_anchor)`; u
 - Platform + nav_source: boat icon, heading, nav track render correctly over both backgrounds; icon size sane at multiple zooms (the scale formula changed — sizing may differ slightly from before, for the better).
 - AIS: contacts + prediction render over both backgrounds.
 - Mission items with a chart loaded still render correctly (regression check on the scale/anchor changes).
+
+## ADR-0003 accepted — backgrounds-as-layers redesign supersedes the old increment 5
+**When**: 2026-06-07 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context)) — PR #60 (a7c44b2)
+
+The original increment-5 framing (keep BackgroundRaster as a headless depth/georef
+holder, serialize it for back-compat) is **superseded by ADR-0003**. Roland's design
+input reframed it: multiple backgrounds is a wanted feature (one-at-a-time was a
+limitation), and we are NOT preserving the old project-file format. So backgrounds
+fully dissolve into the layer model. Decisions (see docs/decisions/0003): stackable
+RasterLayers; independent visual + depth layer trees (depth = subtree in Layers,
+co-sourced layers independent); BackgroundRaster deleted; split persistence
+(backgrounds = Map/app state, missions = project files); depth-only load offers to
+generate a depth-shaded visual layer (#63); RasterLayer gains a SYNCHRONOUS extent
+(B2) so fit-to-extent / zoom-on-open survives the async pixel warp.
+
+**Staged implementation plan (each independently buildable on the #59 branch):**
+1. **RasterLayer synchronous extent** (camp2 shared lib): compute geotransform+size
+   in the ctor (cheap GDAL metadata), set scenePos + valid boundingRect immediately;
+   pixel warp stays async; preserve the abort/reload path. Foundation; no behavior
+   change for camp/camp2.
+2. **Layers-tab Remove action** on RasterLayer context menu (prerequisite to taking
+   backgrounds out of the mission tree — else charts become un-removable).
+3. **Retire BackgroundRaster as a mission node** (the big one): openBackground stops
+   creating a BackgroundRaster + mission insert; backgrounds are pure RasterLayers
+   (stacking enabled); ProjectView fit-to-extent reads the RasterLayer; retire
+   m_currentBackground/setCurrentBackground; collapse geoToPixel overloads → bg-free;
+   redirect the 2 mapScale glyph readers to AVP::mapScale(); delete backgroundraster.
+   {h,cpp} + BackgroundRasterType + findParentBackgroundRaster; mission file stops
+   carrying backgrounds. Keep georeferenced.{h,cpp} (DepthRaster/VectorDataset use it).
+4. **Depth-layer tree**: DepthLayer MapItem type + depth subtree in the Layers tab +
+   MapTreeView; getDepth(geo) walks enabled depth layers in tree order; multiple
+   depth layers; DepthRaster (incr 1) is the backend.
+5. **Map-state persistence**: background/depth layer set (filename, visible, order,
+   opacity, colormap) persists across restart (camp2-style); missions stay project-file.
+6. **Depth-only → generate visual layer**: offer ColorMap depth-shaded RasterLayer
+   (#63), independent of the depth layer.
+
+Status: ADR locked; implementation not yet started. Sim-verify gates from increments
+2+3 (collision monitor / platform / AIS over chart + OSM-only) still pending Roland.
