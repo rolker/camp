@@ -29,10 +29,10 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
 {
-    if(p)
-        return geoToPixel(point, p->getBackgroundRaster());
-    return QPointF();
-
+    // [#59 ADR-0003] The scene is Web Mercator; no background is needed. Kept for
+    // callers not yet migrated to the bg-free overload — delegates straight to it.
+    Q_UNUSED(p);
+    return geoToPixel(point);
 }
 
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const

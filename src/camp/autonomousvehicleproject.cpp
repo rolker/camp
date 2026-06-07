@@ -138,7 +138,6 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
             bgr->setObjectName(QFileInfo(fname).fileName());
         else
             bgr->setObjectName(label);
-        setCurrentBackground(bgr);
         // [#59 PR3a] Display the chart via the shared reprojecting RasterLayer
         // (exact GDAL warp to EPSG:3857). The BackgroundRaster above is retained
         // headless as the depth oracle (getDepth) until depth becomes a first-
@@ -166,6 +165,11 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
             m_depthRasters.push_back(depth);
         else
             delete depth;
+        // [#59 ADR-0003] Emit after the RasterLayer exists: ProjectView's
+        // fit-to-extent (driven by backgroundUpdated) reads
+        // currentBackgroundExtent() = the new RasterLayer's scene extent, so the
+        // layer must be created first or the view would fit to the previous chart.
+        setCurrentBackground(bgr);
         endInsertRows();
         emit layoutChanged();
         return bgr;
@@ -276,6 +280,17 @@ QGraphicsItem *AutonomousVehicleProject::originAnchor() const
     // the origin, regardless of whether a chart is loaded. Top-level mission
     // items parent to it so they render (and don't crash) over OSM/WMTS-only.
     return m_map ? m_map->rootItem() : nullptr;
+}
+
+QRectF AutonomousVehicleProject::currentBackgroundExtent() const
+{
+    // [#59 ADR-0003] The chart layer's extent in Web-Mercator scene space. The
+    // RasterLayer establishes its scene transform/position synchronously in its
+    // constructor (stage 1), so this is valid the moment a chart is loaded — no
+    // BackgroundRaster georeference round-trip needed.
+    if(m_currentRasterLayer)
+        return m_currentRasterLayer->sceneBoundingRect();
+    return QRectF();
 }
 
 float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const

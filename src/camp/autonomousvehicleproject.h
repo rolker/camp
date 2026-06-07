@@ -4,6 +4,7 @@
 #include <QAbstractItemModel>
 #include <QGeoCoordinate>
 #include <QModelIndex>
+#include <QRectF>
 
 #include <vector>
 
@@ -52,6 +53,12 @@ public:
     // Top-level mission items / overlays parent to this instead of the
     // (possibly-null) BackgroundRaster, so they survive OSM/WMTS-only operation.
     QGraphicsItem * originAnchor() const;
+
+    // [#59 ADR-0003] The displayed chart's extent in Web-Mercator scene space,
+    // read from the RasterLayer (which knows its extent synchronously — ADR-0003
+    // stage 1). Empty when no chart is displayed. Used by ProjectView to fit the
+    // view to a newly-loaded chart, replacing the BackgroundRaster georeference.
+    QRectF currentBackgroundExtent() const;
 
     // [#59 PR3c] Depth query over the depth-provider list (first valid wins),
     // independent of the scene projection. Returns NaN where no provider has
