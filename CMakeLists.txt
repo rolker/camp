@@ -483,6 +483,22 @@ if(BUILD_TESTING)
   target_include_directories(test_astar PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
   )
+
+  # camp::map::Map item-model correctness (#59 — model-mutation paths added by
+  # the BackgroundRaster retirement: stacked-layer inserts + the Layers-tab
+  # Remove action). Lifts the camp2 sandbox's QAbstractItemModelTester check
+  # into CI by linking the shared camp_map library.
+  ament_add_gtest(test_map_model
+    test/test_map_model.cpp
+  )
+  target_include_directories(test_map_model PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_map_model
+    camp_map
+    Qt5::Widgets
+    Qt5::Test
+  )
 endif()
 
 
