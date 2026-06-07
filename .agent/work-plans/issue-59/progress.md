@@ -408,3 +408,22 @@ metresPerPixel icon scale.** Covers the "platform WITH a chart" gate (the case
 most at risk from re-homing). Still unverified (need specific data / a no-chart
 CAMP): AIS contacts, collision-monitor zones, and the OSM-only-background path —
 those remain open sim gates.
+
+## ADR-0003 stage 1 DONE — RasterLayer synchronous extent
+**When**: 2026-06-07 (b741d1d) — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+RasterLayer::initExtent() (called from ctor before the async load) reads the
+reprojected geotransform + dimensions (no pixels) and applies the world
+transform/pos synchronously; boundingRect() now returns the reprojected
+dimensions immediately. imageReady() no longer re-applies the placement (with a
+defensive fallback). No camp behavior change yet (fit-to-extent still reads the
+bg until stage 3); camp2 layers now position the instant they're created. Build
++ 44 tests pass.
+
+**Staging note (2/3 coupling):** stage 2 (Layers-tab Remove action) is coupled to
+stage 3 (retire BackgroundRaster ownership). The displayed chart's RasterLayer is
+currently owned by AVP (m_currentRasterLayer/m_currentBackground/m_depthRaster), so
+a standalone Layer "Remove" would dangle those pointers. The clean order is stage 3
+FIRST — backgrounds become independent layers owned by the Map model, AVP sheds the
+single-current-background pointers — and the Remove action then falls out naturally
+on those independent layers. So fold stage 2 into stage 3 (or do 3 then 2).
