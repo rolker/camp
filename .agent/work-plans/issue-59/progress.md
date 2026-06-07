@@ -480,3 +480,21 @@ geoToPixel overload + delete backgroundraster.{h,cpp} + Layers-tab Remove action
 
 **Open sim-verify gates:** fit-to-extent zoom-on-chart-load still correct (extent
 source changed bg→RasterLayer); platform overlay already verified.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-06-07 15:25 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**PR**: #60 at `7b40a06`
+**Sources**: 1 live (Copilot review @ `7b40a06`, 4 inline comments) + local timeline (Pre-Push @ `0bc2007`, prior Integrated Review @ `f32ceb4`)
+**Cross-source confirmations**: 0 at head SHA (1 lineage link — see finding 2)
+**CI**: no real build/test CI on camp; the lone "copilot-pull-request-reviewer" check is the reviewer action firing (success), not a build
+
+### Findings
+- [ ] (low-med, Copilot) surveyarea: `generateAdaptiveTrackLines()` derefs `project = autonomousVehicleProject()` (`project->hasDepth()`) with no null guard; `autonomousVehicleProject()` returns nullptr for an unattached item (missionitem.cpp:37). Sibling `TrackLine::planPath` already guards (`!avp || … || !avp->hasDepth()`, trackline.cpp:265) — add matching guard for parity. Lineage: sibling of the f32ceb4 trackline.cpp:264 finding (accepted+fixed) — `src/camp/surveyarea.cpp:254`
+- [ ] (low-med, Copilot) grid_map: `RCLCPP_WARN_STREAM_THROTTLE(…, clock, 2/2.0, …)` — throttle period is **ms**, so 2 ms disables throttling → log spam on malformed/empty GridMap messages; use 2000 — `src/camp2/ros/grids/grid_map.cpp:101,106`
+- [ ] (low, Copilot) raster_layer: `GDALOpen(filename.toLatin1(), …)` — implicit QByteArray→const char* + temporary lifetime is correct (NOT a bug), but `toLatin1()` silently corrupts non-ASCII paths → GDALOpen null → raster silently fails to load; switch to `toUtf8()` at both sites — `src/camp2/raster/raster_layer.cpp:84,129`
+
+### False positives
+- (Copilot) test_color_map.cpp:76 "no main() → fails to link": disproven by build artifacts. `ament_add_gtest` used with no NO_MAIN, so gtest_main supplies main(); binary `ui_ws/build/camp/test_color_map` exists and its gtest XML shows 7 tests / 0 failures / 0 errors (ran 2026-06-07 14:51). Other test files defining their own main() also link (object-file main wins over the archive's). No "self-main mode" is configured.
