@@ -251,7 +251,7 @@ void SurveyArea::generateAdaptiveTrackLines()
 
     AutonomousVehicleProject *project = autonomousVehicleProject();
 
-    if(wps.size() > 2 && project->hasDepth())
+    if(project && wps.size() > 2 && project->hasDepth())
     {
 
         BPolygon area_poly;
