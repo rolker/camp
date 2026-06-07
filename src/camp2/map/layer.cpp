@@ -1,7 +1,9 @@
 #include "layer.h"
 #include "layer_list.h"
+#include "map.h"
 #include <QGraphicsScene>
 #include <QSettings>
+#include <QMenu>
 
 namespace camp
 {
@@ -12,6 +14,23 @@ Layer::Layer(MapItem* parent, const QString& object_name):
   MapItem(parent, object_name)
 {
 
+}
+
+void Layer::contextMenu(QMenu* menu)
+{
+  MapItem::contextMenu(menu);
+  // [#59 ADR-0003] Detach through the Map model (fires rowsAboutToBeRemoved so
+  // owners can sync their bookkeeping), drop it from the scene so it stops
+  // rendering at once, then delete after the menu event unwinds.
+  QAction* remove_action = menu->addAction("Remove");
+  connect(remove_action, &QAction::triggered, this, [this]()
+  {
+    if(auto* m = parentMap())
+      m->setMapItemParent(this, nullptr);
+    if(scene())
+      scene()->removeItem(this);
+    deleteLater();
+  });
 }
 
 

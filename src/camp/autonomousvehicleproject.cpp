@@ -33,9 +33,11 @@
 #include "mission_manager/mission_manager.h"
 
 #include "map/map.h"
+#include "map/map_item.h"
 #include "map/layer_list.h"
 #include "raster/raster_layer.h"
 #include <QSettings>
+#include <algorithm>
 
 #include <iostream>
 #include <sstream>
@@ -51,6 +53,10 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     // they resolve independently of whether any chart layer is loaded.
     m_map = new camp::map::Map(this);
     m_scene = m_map->scene();
+    // [#59 ADR-0003] Keep chart/depth bookkeeping in sync when a chart layer is
+    // removed via the Layers-tab Remove action (camp2 Layer detaches through the
+    // Map model; we react here so camp2 stays unaware of the project).
+    connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
 
     m_root = new Group();
     m_root->setParent(this);
@@ -295,6 +301,42 @@ void AutonomousVehicleProject::restorePersistedBackgrounds()
     const QStringList files = settings.value("backgrounds/files").toStringList();
     for(const auto& fname : files)
         addBackgroundLayer(fname, QString());
+}
+
+void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, int first, int last)
+{
+    // [#59 ADR-0003] A layer is being detached from the Map model (Layers-tab
+    // Remove). The item still exists during rowsAboutToBeRemoved, so we can read
+    // its filename. For each removed row that is one of our tracked chart layers,
+    // drop the matching depth provider + bookkeeping entry, then re-persist.
+    bool changed = false;
+    for(int row = first; row <= last; ++row)
+    {
+        auto idx = m_map->index(row, 0, parent);
+        auto* item = reinterpret_cast<camp::map::MapItem*>(idx.internalPointer());
+        auto* layer = qobject_cast<camp::raster::RasterLayer*>(item);
+        if(!layer)
+            continue;
+        auto it = std::find(m_chartLayers.begin(), m_chartLayers.end(), layer);
+        if(it == m_chartLayers.end())
+            continue;  // a non-chart layer (e.g. an OSM/WMTS base layer)
+        const QString fname = layer->filename();
+        for(auto dit = m_depthRasters.begin(); dit != m_depthRasters.end(); ++dit)
+            if((*dit)->filename() == fname)
+            {
+                delete *dit;
+                m_depthRasters.erase(dit);
+                break;
+            }
+        m_chartLayers.erase(it);
+        changed = true;
+    }
+    if(changed)
+    {
+        persistBackgrounds();
+        // Refresh overlays (depth-dependent planning, fit-to-extent presence).
+        emit backgroundUpdated();
+    }
 }
 
 QGraphicsItem *AutonomousVehicleProject::originAnchor() const
@@ -769,7 +811,7 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     }
     // [#59 ADR-0003] Charts are no longer mission-tree items, so deleteItem never
     // sees a chart here — chart layers (and their depth providers) are removed
-    // via the Layers-tab Remove action (see removeBackgroundLayer).
+    // via the Layers-tab Remove action (see onChartLayerRemoved).
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
     int rownum = pi->childMissionItems().indexOf(item);
