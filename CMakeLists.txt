@@ -476,6 +476,16 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled
+  # from BackgroundRaster). Pure std C++; no Qt/ROS link needed.
+  ament_add_gtest(test_astar
+    test/test_astar.cpp
+    src/camp/astar.cpp
+  )
+  target_include_directories(test_astar PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
 endif()
 
 
