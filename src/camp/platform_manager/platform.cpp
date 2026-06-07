@@ -46,39 +46,35 @@ QPainterPath Platform::shape() const
   QPainterPath ret;
   if(!m_nav_sources.empty())
   {
-    BackgroundRaster* bg = findParentBackgroundRaster();
-    if(bg)
-      {
-        bool forceTriangle = false;
-        if (m_length == 0 || m_width == 0)
-          forceTriangle = true;
-        float max_size = std::max(m_length, m_width);
+    // [#59 PR6] Draw unconditionally — the platform is anchored to the persistent
+    // scene root (Web-Mercator scene), so no BackgroundRaster is required.
+    bool forceTriangle = false;
+    if (m_length == 0 || m_width == 0)
+      forceTriangle = true;
+    float max_size = std::max(m_length, m_width);
 
-        LocationPositionHeadingTime location, heading;
-        for(const auto& ns: m_nav_sources)
-        {
-          auto possible_location = ns.second->location();
-          if(possible_location.location.isValid() && possible_location.time > location.time)
-            location = possible_location;
-          auto possible_heading = ns.second->heading();
-          if(!isnan(possible_heading.heading) && possible_heading.time > heading.time)
-            heading = possible_heading;
-        }
+    LocationPositionHeadingTime location, heading;
+    for(const auto& ns: m_nav_sources)
+    {
+      auto possible_location = ns.second->location();
+      if(possible_location.location.isValid() && possible_location.time > location.time)
+        location = possible_location;
+      auto possible_heading = ns.second->heading();
+      if(!isnan(possible_heading.heading) && possible_heading.time > heading.time)
+        heading = possible_heading;
+    }
 
-        // [#59 PR6] Icon scale is now chart-independent (view zoom + cos-latitude
-        // at the vessel's location), not bg->scaledPixelSize(). Computed after the
-        // location is known. bg here is only the render gate, removed when the
-        // platform overlay is re-homed off the BackgroundRaster (increment 2).
-        qreal pixel_size = metresPerPixel(location.location);
-        if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, location.location, heading.heading, pixel_size);
-        else
-        {
-          double half_width = m_width/2.0;
-          double half_length = m_length/2.0;
-          drawShipOutline(ret, location.location, heading.heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
-        }
-      }
+    // [#59 PR6] Icon scale is chart-independent (view zoom + cos-latitude at the
+    // vessel's location), computed after the location is known.
+    qreal pixel_size = metresPerPixel(location.location);
+    if(pixel_size > max_size/10.0 || forceTriangle)
+      drawTriangle(ret, location.location, heading.heading, pixel_size);
+    else
+    {
+      double half_width = m_width/2.0;
+      double half_length = m_length/2.0;
+      drawShipOutline(ret, location.location, heading.heading, half_length - m_reference_x, half_width - m_reference_y, half_width + m_reference_y, half_length + m_reference_x);
+    }
   }
 
   if(!path_local_points_.empty())
@@ -253,12 +249,11 @@ void Platform::pathCallback(const nav_msgs::msg::Path::SharedPtr msg)
   path_geopoints_.clear();
   std::vector<QPointF> path_local_points;
 
-  auto bg = findParentBackgroundRaster();
-
+  // [#59 PR6] Chart-independent projection (Web-Mercator scene; anchored item).
   for(const auto& p: msg->poses)
   {
     path_geopoints_.push_back(getGeoCoordinate(p.pose, p.header));
-    path_local_points.push_back(geoToPixel(path_geopoints_.back(), bg));
+    path_local_points.push_back(geoToPixel(path_geopoints_.back()));
   }
   emit pathUpdated(path_local_points);
   

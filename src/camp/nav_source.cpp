@@ -266,9 +266,8 @@ void NavSource::updateLocation(QGeoCoordinate const &location, float heading, do
   if(location.isValid())
   {
     location_history_[time].location = location;
-    auto bg = findParentBackgroundRaster();
-    if(bg)
-      location_history_[time].pos = geoToPixel(location, bg);
+    // [#59 PR6] Chart-independent projection (anchored item; Web-Mercator scene).
+    location_history_[time].pos = geoToPixel(location);
   }
   if(!isnan(heading))
     location_history_[time].heading = heading;
@@ -310,10 +309,9 @@ void NavSource::updateLocation(QGeoCoordinate const &location, float heading, do
 void NavSource::updateProjectedPoints()
 {
   prepareGeometryChange();
-  auto bg = findParentBackgroundRaster();
-  if(bg)
-    for(auto& lp: location_history_)
-      lp.second.pos = geoToPixel(lp.second.location, bg);
+  // [#59 PR6] Chart-independent projection (anchored item; Web-Mercator scene).
+  for(auto& lp: location_history_)
+    lp.second.pos = geoToPixel(lp.second.location);
 }
 
 LocationPositionHeadingTime NavSource::location() const

@@ -14,6 +14,7 @@ namespace Ui
 
 class Platform;
 class BackgroundRaster;
+class QGraphicsItem;
 
 class PlatformManager: public camp_ros::ROSWidget
 {
@@ -23,6 +24,10 @@ public:
   ~PlatformManager();
 
   void onNodeUpdated() override;
+
+  // [#59 PR6] Persistent scene-origin anchor (AVP::originAnchor()) that platform
+  // overlays parent to, so they render independent of any loaded chart.
+  void setAnchor(QGraphicsItem* anchor) { m_anchor = anchor; }
 
 signals:
   void currentPlatform(Platform* platform);
@@ -44,7 +49,7 @@ private:
 
   std::map<std::string, Platform*> m_platforms;
 
-  BackgroundRaster* m_background = nullptr;
+  QGraphicsItem* m_anchor = nullptr;
 };
 
 #endif

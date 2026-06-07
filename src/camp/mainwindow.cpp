@@ -72,6 +72,9 @@ MainWindow::MainWindow(QWidget *parent) :
 
     //connect(m_ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
+    // [#59 PR6] Anchor platform overlays to the map's persistent scene root so
+    // they render with or without a chart loaded (OSM/WMTS-only).
+    m_ui->platformManager->setAnchor(project->originAnchor());
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
     connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
