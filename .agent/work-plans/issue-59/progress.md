@@ -442,3 +442,19 @@ on those independent layers. So fold stage 2 into stage 3 (or do 3 then 2).
 - [ ] Persistence store: QSettings (matches camp2) vs config file? Lean QSettings.
 - [ ] Depth-provider ordering across stacked charts pre-stage-4: load order? Lean yes.
 - [ ] fit-to-extent re-fits on every chart open (not just first)? Lean yes (matches today).
+
+## Step 1 (part 1/?) — depth provider list
+**When**: 2026-06-07 (e881816) — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+m_depthRaster (single) -> std::vector<DepthRaster*>; openBackground appends,
+deleteItem removes by filename (any chart), getDepth walks in load order (first
+valid wins), hasDepth = any valid. DepthRaster gained filename(). Multiple loaded
+charts now each contribute depth. Build + 44 tests pass.
+
+**Remaining in step 1 (the entangled core, larger):** visual RasterLayer stacking
+(retire single m_currentRasterLayer) + retire m_currentBackground/setCurrentBackground/
+getBackgroundRaster. This interlocks with step 2 (fit-to-extent re-source from the
+RasterLayer) and step 3 (collapse geoToPixel — getBackgroundRaster has consumers in
+geoToPixel(AVP*) + ProjectView fit-to-extent + deleteItem), so the next buildable
+increment necessarily spans 1+2+3-partial. Steps 1+6 still must land together
+(persistence gap) before the mission file drops backgrounds.
