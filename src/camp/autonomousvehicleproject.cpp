@@ -147,6 +147,13 @@ BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname,
         // tree). Deleting the old RasterLayer aborts/joins its async load safely.
         if(auto layers = m_map->topLevelLayers())
         {
+            // [#59 PR6] Detach the old chart layer through the Map model before
+            // deleting it. A bare delete bypasses beginRemoveRows/endRemoveRows,
+            // desyncing the Map model's row count and leaving the attached tree
+            // view with a dangling index to the freed layer — a use-after-free
+            // crash when the next chart is inserted (KAP→VRT swap). See PR3b.
+            if(m_currentRasterLayer)
+                m_map->setMapItemParent(m_currentRasterLayer, nullptr);
             delete m_currentRasterLayer;
             m_currentRasterLayer = new camp::raster::RasterLayer(layers, fname);
         }
@@ -726,6 +733,9 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
         // PR3b layer tree generalises this to per-layer management.
         if(m_currentBackground == bgr)
         {
+            // [#59 PR6] Detach through the Map model before delete (see openBackground).
+            if(m_currentRasterLayer)
+                m_map->setMapItemParent(m_currentRasterLayer, nullptr);
             delete m_currentRasterLayer;
             m_currentRasterLayer = nullptr;
             delete m_depthRaster;       // [#59 PR6] depth shares the chart lifecycle
