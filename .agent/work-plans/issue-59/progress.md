@@ -458,3 +458,25 @@ RasterLayer) and step 3 (collapse geoToPixel — getBackgroundRaster has consume
 geoToPixel(AVP*) + ProjectView fit-to-extent + deleteItem), so the next buildable
 increment necessarily spans 1+2+3-partial. Steps 1+6 still must land together
 (persistence gap) before the mission file drops backgrounds.
+
+## Step 1+2+3 (part 2) — fit-to-extent re-source + geoToPixel(AVP*) bg-free
+**When**: 2026-06-07 (3228621) — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+ProjectView fit-to-extent now reads AVP::currentBackgroundExtent() (= the
+RasterLayer's sceneBoundingRect, sync-valid via stage 1) instead of bg
+boundingRect/pixelToGeo. geoToPixel(point, AVP*) delegates to the bg-free
+overload. Ordering fix: setCurrentBackground (emits backgroundUpdated→fit) now
+runs AFTER the RasterLayer is created. Build + 44 tests pass.
+
+**getBackgroundRaster() remaining consumers** (all trivial/vestigial, go with the
+BackgroundRaster deletion): the mission-tree node itself; the presence gates in
+ProjectView beforeUpdateBackground + updateBackground `if(!bg)`; deleteItem's bg
+branch. The hard georef consumer is gone.
+
+**NEXT (the hardest, interlocked piece — best with fresh context):** remove the
+BackgroundRaster from the mission tree (fixes the duplication) + Map-state
+persistence (steps 1-final + 6, must land together) + collapse the remaining
+geoToPixel overload + delete backgroundraster.{h,cpp} + Layers-tab Remove action.
+
+**Open sim-verify gates:** fit-to-extent zoom-on-chart-load still correct (extent
+source changed bg→RasterLayer); platform overlay already verified.
