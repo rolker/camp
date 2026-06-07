@@ -427,3 +427,18 @@ a standalone Layer "Remove" would dangle those pointers. The clean order is stag
 FIRST — backgrounds become independent layers owned by the Map model, AVP sheds the
 single-current-background pointers — and the Remove action then falls out naturally
 on those independent layers. So fold stage 2 into stage 3 (or do 3 then 2).
+
+## Plan Authored — backgrounds-as-layers core (stages 3+2+5)
+**Status**: complete
+**When**: 2026-06-07 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Plan**: `.agent/work-plans/issue-59/plan-backgrounds-core.md` at `8765adc`
+**PR**: https://github.com/rolker/camp/pull/60 (existing #59 implementation PR)
+**Phases**: 6 ordered steps in one PR; steps 1+6 land together (persistence gap),
+3+4 are the large ones (geoToPixel collapse + BackgroundRaster delete)
+
+### Open questions
+- [ ] Persistence store: QSettings (matches camp2) vs config file? Lean QSettings.
+- [ ] Depth-provider ordering across stacked charts pre-stage-4: load order? Lean yes.
+- [ ] fit-to-extent re-fits on every chart open (not just first)? Lean yes (matches today).
