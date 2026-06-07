@@ -25,7 +25,13 @@ public slots:
   {
     node_ = node;
     transform_buffer_ = buffer;
-    this->onNodeUpdated();
+    // [#59] On shutdown ROSLink re-emits rosConnected with a null node
+    // (roslink.cpp nodeShuttingDown) to signal teardown. Subclass
+    // onNodeUpdated() overrides create subscriptions off node_, so running it
+    // with a null node dereferences a null rclcpp::Node — the segfault seen on
+    // SIGINT exit. Skip the update when the node is gone.
+    if(node_)
+      this->onNodeUpdated();
   }
 
 protected:
