@@ -309,6 +309,15 @@ void Map::setMapItemParent(MapItem* child_item, MapItem* parent_item, int row)
   if(parent_item)
   {
     auto parent_index = index(parent_item);
+    // [#59] A negative or out-of-range row means "append at the end" — the
+    // documented contract, and what a drag-drop onto the parent (rather than
+    // between rows) delivers as row == -1. Normalise before beginInsertRows: a
+    // raw -1 (or row > count) is an invalid insert position that violates the
+    // QAbstractItemModel protocol. The moving child was already detached above,
+    // so childMapItems() here excludes it, making count the valid append index.
+    const int child_count = parent_item->childMapItems().size();
+    if(row < 0 || row > child_count)
+      row = child_count;
     beginInsertRows(parent_index, row, row);
     child_item->setParentItem(parent_item);
     if(row > 0)
