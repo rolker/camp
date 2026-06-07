@@ -22,6 +22,9 @@ class ROSLink : public QWidget
   Q_OBJECT
 public:
   ROSLink(QWidget* parent);
+  // [#59] Stops node_thread_ before its QThread member is destroyed — otherwise
+  // QThread aborts with "Destroyed while thread is still running" on app exit.
+  ~ROSLink();
 
   rclcpp::Node::SharedPtr node();
   tf2_ros::Buffer::SharedPtr tfBuffer();
