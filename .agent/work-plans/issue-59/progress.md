@@ -272,6 +272,13 @@ has a runtime-verification gate:
    families (GeoGraphicsMissionItem, AISContact, Platform, CollisionMonitor) and
    the updatingBackground/backgroundUpdated reparenting signals. Coordinate-
    neutral (proven) but GUI-affecting: verify hit-detection, z-order, labels.
+   **🔶 PARTIAL (2026-06-07): mission-item subset DONE+pushed (GeoGraphicsMissionItem
+   only). The other 3 families (AISContact, Platform, CollisionMonitor + nav_source)
+   are STILL on `setParentItem(bg)` and deferred — see "Increment 2 (mission-item
+   subset)" entry below.** Discovered the remaining 3 are coupled with increment 3:
+   they consume `bg->scaledPixelSize()` and pass `bg` into drawTriangle/drawShipOutline/
+   polygonPath for SCALE, so re-homing them requires a chart-independent scene scale
+   first. That coupling + the collision-monitor safety path = its own scoped pass.
 3. **Scale helpers** → replace bg->mapScale()/scaledPixelSize()/pixelSize()
    (arrow + ship-outline scaling) with a Web-Mercator scene scale. Verify
    arrow/ship-outline sizing.
@@ -283,3 +290,38 @@ has a runtime-verification gate:
    (+ its now-redundant depth/image load), backgrounddetails, the geoToPixel(bg)
    overload, findParentBackgroundRaster, georeferenced if unused. Also fixes the
    triage #7 chart double-load.
+
+## Increment 2 (mission-item subset) + chart-swap UAF + A* tests
+**When**: 2026-06-07 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context)) — PR #60, HEAD after these commits
+
+Three commits (`ce84b18`, `afe44ad`, `0bc2007`), all pushed:
+
+- **`ce84b18` — A* shoal-avoidance gtests** (`test/test_astar.cpp`, 5 tests; CMake `test_astar` links only `astar.cpp`, no Qt/ROS): open-water reaches goal; shoal-with-gap detoured (path never crosses `<minDepth`); full barrier → no path (fail-safe); unknown-depth barrier impassable (the `getDepth==NaN → unsafe` contract); out-of-grid = obstacle. 44 camp tests pass. `AVP::getDepth`/`hasDepth` provider wiring stays GUI/sim-verified (QAbstractItemModel, not cheaply unit-instantiable) — documented in the test header.
+
+- **`afe44ad` — anchor top-level mission items to persistent scene root** (increment-2 mission-item subset). Root cause of the OSM/WMTS-only crash: `MissionItem::findParentGraphicsItem()` returned the (null-when-no-chart) `BackgroundRaster` for top-level items → `waypoint.cpp` itemChange null-deref + survey pattern orphaned from the scene. Fix reuses `camp::map::Map`'s existing persistent `top_level_items_` (scene root, origin, identity transform, outlives any chart) via new `Map::rootItem()` + `AVP::originAnchor()`; `findParentGraphicsItem()` returns the anchor for top-level items; `GeoGraphicsMissionItem::updateBackground()` no longer reparents to bg (kept positions = absolute Web-Mercator); `waypoint.cpp` itemChange guards the parent deref. **Sim-verified by Roland 2026-06-07: waypoint + survey pattern + trackline all create and render over an OSM-only background, no crash.** Z-order preserved (mission items carry explicit `setZValue(3.0)`; anchor reuse is the ADR-0002 documented scene root). **The other 3 overlay families remain deferred (see increment-2 note above).**
+
+- **`0bc2007` — fix use-after-free replacing a loaded chart.** Loading a 2nd background (KAP→VRT) or deleting the current chart segfaulted: `delete m_currentRasterLayer` bypassed the Map model's `beginRemoveRows`/`endRemoveRows`, desyncing its row count + leaving the MapTreeView a dangling index to the freed layer (logged "endInsertRows: Invalid index (4,0) in model camp::map::Map"). Fix detaches via `m_map->setMapItemParent(layer, nullptr)` before `delete`, at both sites (openBackground + deleteItem). First load unaffected (delete nullptr). **Sim-verified by Roland 2026-06-07: KAP→VRT swap replaces cleanly, no crash.**
+
+**Known follow-ups surfaced during sim verification (NOT yet addressed):**
+- **Chart appears in BOTH the Layers tab AND the Mission tab, and Mission-tab entries accumulate** (each `openBackground` does `new BackgroundRaster(fname, m_root)` and `setCurrentBackground` removes the old from the scene but not from the mission model → pile-up + leak). The proper fix is retiring BackgroundRaster as a mission-tree node, which is gated on finishing increment-2 overlay re-homing (the bg's last scene users). Tracked as the bg-off-mission-tree work in increment 5.
+- **nav_source (boat icon/track) won't render over OSM-only** (still `findParentBackgroundRaster()`-gated) — same class as the mission-item fix, part of the deferred increment-2 overlay re-homing.
+- **Scroll widgets** on ProjectView are vestigial under Web-Mercator drag-pan — small UI cleanup, pending.
+- camp still has **no CI and no `.pre-commit-config.yaml`** — these increments rely on manual build + the pre-push review; there is no automated gate.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-07 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved (must-fix items were documentation, fixed in follow-up commit)
+**Branch**: feature/issue-59 at `0bc2007` (+ doc fixes)
+**Mode**: pre-push
+**Depth**: Deep (reason: scene-graph parenting + use-after-free / memory-lifecycle change in safety-relevant code)
+**Must-fix**: 2 (both documentation) | **Suggestions**: 3
+
+### Findings
+- [x] (must-fix) Stale comment in `setCurrentBackground` said "overlays parent to it" — untrue for mission items after the anchor change — `autonomousvehicleproject.cpp:800` — FIXED
+- [x] (must-fix) progress.md not updated to record increment-2-core / test / swap-fix / deferred-3-families — FIXED (this entry)
+- [ ] (suggestion) nav_source won't render over OSM-only (deferred increment-2 overlay re-homing) — `nav_source.cpp:269,313`
+- [ ] (suggestion) astar.cpp `NeighborsMask` prints `NDir:` to stdout unconditionally (pre-existing debug noise) — `astar.cpp:71`
+- [ ] (suggestion) camp has no CI / no pre-commit — manual build + pre-push review is the only gate
+- Code itself: Claude adversarial (Deep) + governance both found NO code must-fix; parenting/anchor reuse is ADR-0002-compliant, UAF fix correct at both sites, A* tests mutation-checked for real teeth.

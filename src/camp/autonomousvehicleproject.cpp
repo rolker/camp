@@ -798,11 +798,14 @@ void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
     {
         bgr->updateMapScale(m_map_scale);
         // [#59 PR3a] The chart image is drawn by the reprojected RasterLayer; the
-        // background raster stays in the scene only as a non-painting origin
-        // anchor — overlays parent to it and convert via the geoToPixel shim — and
-        // as the depth/georeference oracle. ItemHasNoContents suppresses its
-        // pixel-space chart; the raised Z keeps overlays above the base layers.
-        // See ADR-0002.
+        // background raster stays in the scene only as a non-painting anchor for
+        // the overlays still parented to it (AIS, platform, collision monitor) and
+        // as the georeference oracle. ItemHasNoContents suppresses its pixel-space
+        // chart; the raised Z keeps those overlays above the base layers.
+        // [#59 PR6] Mission items NO LONGER parent here — they parent to the map's
+        // persistent scene-origin anchor (Map::rootItem(), via originAnchor()), so
+        // they survive with no chart loaded. Re-homing AIS/platform/collision onto
+        // that anchor too is the remainder of increment 2. See ADR-0002.
         bgr->setFlag(QGraphicsItem::ItemHasNoContents, true);
         bgr->setZValue(1.0);
         m_scene->addItem(bgr);
