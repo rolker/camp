@@ -30,6 +30,7 @@ public:
         GridType,
         AvoidAreaType,
         CollisionMonitorType,
+        FootprintType,
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
