@@ -6,15 +6,15 @@ desktop GUI for planning and monitoring autonomous marine-vehicle missions.
 ## Workflow
 
 Standard worktree/PR workflow (this is a GitHub-origin repo). The default branch
-is **`jazzy`**, not `main`. To check field vs dev mode:
-
-```bash
-# From the workspace root, pass the path to this repo
-.agent/scripts/field_mode.sh --describe layers/main/ui_ws/src/camp
-```
+is **`jazzy`**, not `main`.
 
 There is **no CI and no pre-commit config** in this repo. The build + the gtest
 suite are the only automated gates — run them locally before pushing.
+
+> When developed inside the `ros2_agent_workspace` (the usual case), the
+> workspace's `.agent/scripts/` (field-mode detection, worktree helpers, etc.)
+> apply from the workspace root — see that repo's `AGENTS.md`. They are not part
+> of this standalone repo.
 
 ## Package Inventory
 
