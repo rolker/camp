@@ -4,6 +4,8 @@
 #include <QGraphicsScene>
 #include <QSettings>
 #include <QMenu>
+#include <QWidgetAction>
+#include <QSlider>
 
 namespace camp
 {
@@ -19,6 +21,27 @@ Layer::Layer(MapItem* parent, const QString& object_name):
 void Layer::contextMenu(QMenu* menu)
 {
   MapItem::contextMenu(menu);
+
+  // [#59] Discoverable per-layer transparency control. The tree delegate already
+  // edits opacity, but only via an obscure double-click-to-edit inline spinbox
+  // (and it doesn't persist). Expose a labeled 0-100% slider in the right-click
+  // menu — consistent with the Colormap submenu on grids/rasters — wired to
+  // setOpacity (live) + writeSettings (persists across restarts). On every
+  // layer, including the non-removable AIS / Collision / chart layers.
+  QMenu* opacity_menu = menu->addMenu("Opacity");
+  auto* slider = new QSlider(Qt::Horizontal, opacity_menu);
+  slider->setRange(0, 100);
+  slider->setValue(static_cast<int>(opacity() * 100.0 + 0.5));
+  slider->setMinimumWidth(160);
+  connect(slider, &QSlider::valueChanged, this, [this](int value)
+  {
+    setOpacity(value / 100.0);
+    writeSettings();
+  });
+  auto* slider_action = new QWidgetAction(opacity_menu);
+  slider_action->setDefaultWidget(slider);
+  opacity_menu->addAction(slider_action);
+
   if(!removable_)
     return;
   // [#59 ADR-0003] Detach through the Map model (fires rowsAboutToBeRemoved so
