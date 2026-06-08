@@ -19,6 +19,7 @@
 #include "ais/ais_manager.h"
 #include "platform_manager/platform.h"
 #include "collision_monitor/collision_monitor_manager.h"
+#include "footprint/footprint_manager.h"
 
 #include "map/map.h"
 #include "map/layer.h"
@@ -118,6 +119,16 @@ MainWindow::MainWindow(QWidget *parent) :
     m_collision_monitor_manager->setAnchor(collision_layer);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
+
+    // [#64] Boat footprint lives under a non-removable "Boat Footprint" layer in
+    // the Layers tab (checkbox toggles it). Discovers nav2 published_footprint
+    // PolygonStamped topics and renders the outline; same pattern as collision.
+    m_footprint_manager = new FootprintManager(this);
+    auto* footprint_layer = new camp::map::Layer(project->map()->topLevelLayers(), "Boat Footprint");
+    footprint_layer->setRemovable(false);
+    m_footprint_manager->setAnchor(footprint_layer);
+    connect(m_ui->rosLink, &ROSLink::rosConnected, m_footprint_manager, &FootprintManager::nodeStarted);
+    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_footprint_manager, &FootprintManager::updateBackground);
 
     m_ui->rosLink->connectROS();
 

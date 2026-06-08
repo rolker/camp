@@ -70,6 +70,8 @@ set(SOURCES
     src/camp/mainwindow.cpp
     src/camp/collision_monitor/collision_monitor.cpp
     src/camp/collision_monitor/collision_monitor_manager.cpp
+    src/camp/footprint/footprint.cpp
+    src/camp/footprint/footprint_manager.cpp
     src/camp/missionitem.cpp
     src/camp/mission_manager/mission_manager.cpp
     src/camp/orbit.cpp
