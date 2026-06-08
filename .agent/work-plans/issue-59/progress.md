@@ -636,3 +636,24 @@ all fixed (build + 48 tests green):
 Lesson: the deployed camp diverged from the camp2 sandbox in app-shell wiring
 (org name, quit-on-shutdown) — the sandbox's main_window.cpp is the reference
 for what the deployed main.cpp should also do.
+
+## PR5 — AIS + Collision manager windows retired into Layers-tab layers
+**When**: 2026-06-07 19:05 -04:00 — **By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+`1258642` (+ `Layer::setRemovable` infra): AISManager + CollisionMonitorManager
+converted from ROSWidget windows to camp_ros::ROSObjects; their contacts/zones
+parent to a non-removable "AIS" / "Collision Monitor" Map layer in the Layers
+tab (visibility = the layer's checkbox), matching grids/markers. Deleted the
+.ui files, list/layout population, menu actions, show()/close(). No
+overlay-manager windows remain. Build + 48 tests pass; clean offscreen start/stop.
+
+Carry-forwards:
+- CollisionMonitor zone is still QWidget-derived (created parentless, rendered
+  via its GeoGraphicsItem); fully de-widgeting it is a follow-up.
+- **Topic-selection design (Roland's note):** these managers auto-subscribe to
+  every matching topic (old camp behavior, preserved). camp2's experimental
+  direction is to make useful topics *easy to select* without subscribing to all
+  (overload risk). Low risk for AIS/collision (1 AIS source, 2-3 collision
+  polygons), but the selectable-topic pattern (TopicsManager discover →
+  user-checked subscribe) could be applied uniformly as a follow-up. Open
+  question for Roland.
