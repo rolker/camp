@@ -84,6 +84,20 @@ MarkerNamespace* Markers::markerNamespace(const QString& marker_namespace) const
 
 void Markers::updateMarker(const MarkerData& data)
 {
+  // [#70] DELETEALL clears EVERY namespace per the visualization_msgs spec, not
+  // just the message's own ns (which is conventionally empty). Fan it out to all
+  // existing MarkerNamespaces; routing it to a single namespace (the previous
+  // behavior) left markers in every other namespace as stale visuals on the
+  // operator's map. Each MarkerNamespace::updateMarker handles DELETEALL by
+  // clearing its own markers.
+  if(data.marker.action == visualization_msgs::msg::Marker::DELETEALL)
+  {
+    for(auto item: childItems())
+      if(auto* ns = qgraphicsitem_cast<MarkerNamespace*>(item))
+        ns->updateMarker(data);
+    return;
+  }
+
   auto marker_namespace = markerNamespace(data.marker.ns.c_str());
   if(!marker_namespace)
     marker_namespace = new MarkerNamespace(this, node_, data.marker.ns.c_str());
