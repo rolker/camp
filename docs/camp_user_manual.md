@@ -90,7 +90,10 @@ Each boat gets a tab containing:
 - **Grids / costmaps** — the *Grid Manager* auto-discovers occupancy-grid / grid-map
   topics and draws them (e.g. the navigation costmap). Note: a costmap may read empty
   until a second subscriber attaches — a known lazy-publish quirk, not a CAMP fault.
-- **Collision Monitor** — draws the boat's reflex/collision-zone polygons on the map.
+- **Collision Monitor** — draws the boat's reflex/collision-zone (slowdown / stop)
+  polygons on the map. *(These are now published by the CA safety gate
+  (`unh_marine_navigation#64`) that replaced the nav2 Collision Monitor; the overlay
+  and topic name are unchanged.)*
 - **Markers** and **AIS** — generic marker overlays and AIS contacts.
 
 > **Not in CAMP:** camera/sonar/segmentation imagery and the annunciators — those
