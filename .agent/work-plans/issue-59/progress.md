@@ -657,3 +657,27 @@ Carry-forwards:
   polygons), but the selectable-topic pattern (TopicsManager discover →
   user-checked subscribe) could be applied uniformly as a follow-up. Open
   question for Roland.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-07 19:40 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved
+
+**Branch**: feature/issue-59 at `0afc444`
+**Mode**: pre-push
+**Depth**: Deep (reason: large cross-layer change — lifecycle/concurrency/persistence)
+**Must-fix**: 1 (fixed) | **Suggestions**: 1
+
+Scope: this session's work vs the `7b40a06` Integrated-Review baseline (BackgroundRaster
+retirement, persistence, Remove action, shutdown fixes, manager-window retirement,
+test_map_model). Static analysis skipped (cpplint unavailable; camp has no CI/pre-commit).
+Copilot Adversarial skipped (CLI not installed). Fresh-context Claude adversarial pass run.
+
+### Findings
+- [x] (must-fix) `~ROSLink` quit()/wait()s the spin thread without `rclcpp::shutdown()` first → executor.spin never returns on window-close → deadlock/hang on exit — `src/camp/roslink.cpp:32` — FIXED `0afc444`
+- [ ] (suggestion) per-layer QSettings keyed on `itemID()` = file *basename*, so two charts with the same basename in different dirs collide on visibility/opacity/colormap — `src/camp2/map/map_item.cpp:53` — edge case, not a crash; deferred
+
+All other reviewed areas (onChartLayerRemoved index use, persistence dedup/self-heal,
+setMapItemParent row clamp, double-parent ownership, parameterless signal conversions,
+ros_client null guard) verified clean. Added `.agents/README.md` (architecture guide).
