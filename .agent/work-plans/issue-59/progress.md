@@ -681,3 +681,23 @@ Copilot Adversarial skipped (CLI not installed). Fresh-context Claude adversaria
 All other reviewed areas (onChartLayerRemoved index use, persistence dedup/self-heal,
 setMapItemParent row clamp, double-parent ownership, parameterless signal conversions,
 ros_client null guard) verified clean. Added `.agents/README.md` (architecture guide).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-06-08 01:40 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**PR**: #60 at `c1d0049`
+**Sources**: 1 (Copilot review @ `c1d0049`, 3 inline comments) + local timeline
+**Cross-source confirmations**: 0 at head SHA (1 lineage note on finding 1)
+**CI**: only the copilot-pull-request-reviewer action (success); camp has no real build/test CI
+
+### Findings (all valid — fixed)
+- [x] (safety, Copilot) depth_raster: `depthValid()` checked only the Float32 band, not georeferencing → a non-georeferenced raster returns finite bogus depth (not NaN) into the shoal-avoidance A*; require non-empty projection — `src/camp/depth_raster.cpp:33` — FIXED `a023268`
+- [x] (low, Copilot) geographicsitem: `geoToPixel` used `ret - parentItem()->scenePos()` (only correct for translation-only parents); switch to `parentItem()->mapFromScene(ret)` — robust to any parent transform, behavior-preserving for today's untransformed origin-anchored parents (lineage: progress.md design note lines 116/127) — `src/camp/geographicsitem.cpp:39` — FIXED `1fbf6f7`
+- [x] (doc, Copilot) `.agents/README` referenced workspace-only `.agent/scripts/field_mode.sh` (not in standalone camp) — reworded as workspace tooling — `.agents/README.md:14` — FIXED `348afa7`
+
+### False positives
+- (none)
+
+Build + 48 tests pass after fixes.
