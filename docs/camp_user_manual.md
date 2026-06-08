@@ -1,4 +1,10 @@
-# CAMP User Manual
+# CAMP User Manual *(draft)*
+
+> ⚠️ **Draft — corrections welcome.** This is a first draft from the 2026 field
+> setup; some details (menus, buttons, commands) may be wrong, incomplete, or out
+> of date. If you hit something incorrect, unclear, or missing, **open an issue** in
+> `camp` (label `documentation`) describing what you saw. Operator corrections are
+> how this becomes trustworthy.
 
 A guide for **operators** running CAMP: how to start it, connect to a boat, read the
 display, plan a survey, and send/control missions.
