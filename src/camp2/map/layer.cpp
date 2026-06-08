@@ -19,6 +19,8 @@ Layer::Layer(MapItem* parent, const QString& object_name):
 void Layer::contextMenu(QMenu* menu)
 {
   MapItem::contextMenu(menu);
+  if(!removable_)
+    return;
   // [#59 ADR-0003] Detach through the Map model (fires rowsAboutToBeRemoved so
   // owners can sync their bookkeeping), drop it from the scene so it stops
   // rendering at once, then delete after the menu event unwinds.
