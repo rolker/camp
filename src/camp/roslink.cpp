@@ -34,11 +34,17 @@ ROSLink::~ROSLink()
   // [#59] Stop the ROS spin thread before node_thread_ (a QThread member) is
   // destroyed. node_thread_ runs an event loop (QThread::exec) that outlives
   // NodeThread::start returning, so it is still running at teardown; destroying
-  // a running QThread aborts. quit() exits its loop, wait() joins it (which in
-  // turn fires QThread::finished -> NodeThread::deleteLater). Guarded so it is a
-  // no-op if ROS was never connected.
+  // a running QThread aborts. Guarded so it is a no-op if ROS was never connected.
   if(node_thread_.isRunning())
   {
+    // rclcpp::shutdown() FIRST: NodeThread::start blocks in executor.spin(),
+    // which only returns once rclcpp is shut down. On the SIGINT path rclcpp's
+    // signal handler already did this; on the normal window-close path nothing
+    // else does, so without it spin never returns, quit()'s posted event is
+    // never processed, and wait() deadlocks. Idempotent, so it's safe on both
+    // paths. Mirrors camp2's Node::~Node. quit() then exits the thread's exec()
+    // loop and wait() joins it (firing QThread::finished -> NodeThread::deleteLater).
+    rclcpp::shutdown();
     node_thread_.quit();
     node_thread_.wait();
   }
