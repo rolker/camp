@@ -29,13 +29,16 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
 QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
     // [#59 PR3a] The scene is Web Mercator (ADR-0002). Position comes from
-    // web_mercator::geoToMap, independent of any background raster. The
-    // parent-offset subtraction is coordinate-agnostic, so nested items still
-    // resolve to parent-local coords.
+    // web_mercator::geoToMap, independent of any background raster. setPos wants
+    // the point in PARENT-local coordinates, so map the scene point through the
+    // parent with mapFromScene — correct for any parent transform (translation,
+    // scale, rotation), not just the translation-only case the old
+    // `ret - parentItem()->scenePos()` handled. Reduces to the same value for the
+    // untransformed origin anchor / container layers overlays parent to today.
     QPointF ret = web_mercator::geoToMap(point);
     QGraphicsItem *pi = parentItem();
     if(pi)
-        return ret - pi->scenePos();
+        return pi->mapFromScene(ret);
     return ret;
 }
 
