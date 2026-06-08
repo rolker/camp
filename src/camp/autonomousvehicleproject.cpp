@@ -808,13 +808,43 @@ void AutonomousVehicleProject::updateMission(const QModelIndex& index)
 
 void AutonomousVehicleProject::deleteItems(const QModelIndexList &indices)
 {
+    // [#65] Resolve to items first, then delete only the TOPMOST selected ones.
+    // If a parent (e.g. a trackline, group, or survey area) and one of its
+    // descendants (e.g. a waypoint) are both selected, deleting the parent frees
+    // the descendant — deleting it afterwards would removeItem()/qobject_cast a
+    // freed pointer (the trackline-removal crash, #65). Deleting a parent already
+    // takes its children with it.
+    std::vector<MissionItem*> items;
     for(auto index: indices)
-        deleteItem(index);
+        if(auto* item = itemFromIndex(index))
+            items.push_back(item);
+
+    for(auto* item: items)
+    {
+        bool has_selected_ancestor = false;
+        for(QObject* a = item->parent(); a && !has_selected_ancestor; a = a->parent())
+            has_selected_ancestor = std::find(items.begin(), items.end(), a) != items.end();
+        if(!has_selected_ancestor)
+            deleteItem(item);
+    }
 }
 
 void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
 {
     MissionItem *item = itemFromIndex(index);
+    // [#65] Defensive: a stale index (e.g. an item already freed as a child of a
+    // previously-deleted parent) resolves to no/garbage item — never touch it.
+    if(!item)
+        return;
+    // [#65] Clear selection/group bookkeeping if it points at the item being
+    // deleted (or a descendant of it — deleting a parent frees its children).
+    // Otherwise endRemoveRows below fires the tree's currentChanged cascade,
+    // which dereferences the now-freed m_currentSelected → use-after-free.
+    for(MissionItem* s = m_currentSelected; s; s = qobject_cast<MissionItem*>(s->parent()))
+        if(s == item) { m_currentSelected = nullptr; break; }
+    for(MissionItem* g = m_currentGroup; g; g = qobject_cast<MissionItem*>(g->parent()))
+        if(g == item) { m_currentGroup = m_root; break; }
+
     GeoGraphicsMissionItem *ggi = qobject_cast<GeoGraphicsMissionItem*>(item);
     if(ggi)
     {
