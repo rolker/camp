@@ -43,8 +43,8 @@ void SearchPattern::setStartLocation(const QGeoCoordinate &location)
     m_startLocation->setObjectName("start");
   }
   m_startLocation->setLocation(location);
-  setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
-  m_startLocation->setPos(m_startLocation->geoToPixel(location,autonomousVehicleProject()));
+  setPos(m_startLocation->geoToPixel(location));
+  m_startLocation->setPos(m_startLocation->geoToPixel(location));
   update();
 }
 
@@ -56,7 +56,7 @@ void SearchPattern::setEndLocation(const QGeoCoordinate &location, bool calc)
     m_endLocation->setObjectName("end");
   }
   m_endLocation->setLocation(location);
-  m_endLocation->setPos(m_endLocation->geoToPixel(location,autonomousVehicleProject()));
+  m_endLocation->setPos(m_endLocation->geoToPixel(location));
   if(calc)
     calculateFromWaypoints();
   update();
@@ -258,11 +258,11 @@ void SearchPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
           p.setWidth(10);
           p.setColor(Qt::blue);
           painter->setPen(p);
-          painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+          painter->drawPoint(m_startLocation->geoToPixel(*first));
           p.setWidth(8);
           p.setColor(Qt::black);
           painter->setPen(p);
-          painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
+          painter->drawLine(m_startLocation->geoToPixel(*first),m_startLocation->geoToPixel(*second));
           
           first++;
           second++;
@@ -270,7 +270,7 @@ void SearchPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         p.setWidth(10);
         p.setColor(Qt::blue);
         painter->setPen(p);
-        painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+        painter->drawPoint(m_startLocation->geoToPixel(*first));
       }
     }
     if(locked())
@@ -289,7 +289,7 @@ void SearchPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         p.setWidth(10);
         p.setColor(Qt::blue);
         painter->setPen(p);
-        painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+        painter->drawPoint(m_startLocation->geoToPixel(*first));
         if (selected)
           p.setWidth(5);
         else
@@ -299,7 +299,7 @@ void SearchPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
         else
           p.setColor(m_unlockedColor);
         painter->setPen(p);
-        painter->drawLine(m_startLocation->geoToPixel(*first,autonomousVehicleProject()),m_startLocation->geoToPixel(*second,autonomousVehicleProject()));
+        painter->drawLine(m_startLocation->geoToPixel(*first),m_startLocation->geoToPixel(*second));
         
         first++;
         second++;
@@ -307,23 +307,23 @@ void SearchPattern::paint(QPainter *painter, const QStyleOptionGraphicsItem *opt
 
       if(!lines.empty() && lines[0].size() >= 2)
       {
-        QPainterPath ret(m_startLocation->geoToPixel(lines[0][0],autonomousVehicleProject()));
-        drawArrow(ret,m_startLocation->geoToPixel(lines[0][0],autonomousVehicleProject()),m_startLocation->geoToPixel(lines[0][1],autonomousVehicleProject()), true);
+        QPainterPath ret(m_startLocation->geoToPixel(lines[0][0]));
+        drawArrow(ret,m_startLocation->geoToPixel(lines[0][0]),m_startLocation->geoToPixel(lines[0][1]), true);
         painter->drawPath(ret);
       }
       if(!lines.empty() && lines.rbegin()->size() >= 2)
       {
         int start_index = lines.rbegin()->size()-2;
         int end_index = start_index + 1;
-        QPainterPath ret(m_startLocation->geoToPixel((*lines.rbegin())[start_index],autonomousVehicleProject()));
-        drawArrow(ret,m_startLocation->geoToPixel((*lines.rbegin())[start_index],autonomousVehicleProject()),m_startLocation->geoToPixel((*lines.rbegin())[end_index],autonomousVehicleProject()), false);
+        QPainterPath ret(m_startLocation->geoToPixel((*lines.rbegin())[start_index]));
+        drawArrow(ret,m_startLocation->geoToPixel((*lines.rbegin())[start_index]),m_startLocation->geoToPixel((*lines.rbegin())[end_index]), false);
         painter->drawPath(ret);
       }
 
       p.setWidth(10);
       p.setColor(Qt::blue);
       painter->setPen(p);
-      painter->drawPoint(m_startLocation->geoToPixel(*first,autonomousVehicleProject()));
+      painter->drawPoint(m_startLocation->geoToPixel(*first));
     }
 
     painter->restore();
@@ -338,10 +338,10 @@ QPainterPath SearchPattern::shape() const
   {
     if(!lines.front().empty())
     {
-      QPainterPath ret(m_startLocation->geoToPixel(lines.front().front(),autonomousVehicleProject()));
+      QPainterPath ret(m_startLocation->geoToPixel(lines.front().front()));
       for(auto l: lines)
         for(auto p:l)
-          ret.lineTo(m_startLocation->geoToPixel(p,autonomousVehicleProject()));
+          ret.lineTo(m_startLocation->geoToPixel(p));
       QPainterPathStroker pps;
       pps.setWidth(10);
       return pps.createStroke(ret);
@@ -471,6 +471,6 @@ void SearchPattern::updateETE()
   AutonomousVehicleProject* avp = autonomousVehicleProject();
   if(avp && m_startLocation)
   {
-    setLabelPosition(m_startLocation->geoToPixel(m_startLocation->location(), autonomousVehicleProject()));
+    setLabelPosition(m_startLocation->geoToPixel(m_startLocation->location()));
   }
 }

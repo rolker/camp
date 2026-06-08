@@ -6,10 +6,16 @@
 #include "../map_view/map_view.h"
 
 class QGraphicsScene;
+class QGraphicsItem;
 class QMenu;
 
 namespace camp
 {
+
+namespace tools
+{
+  class ToolsManager;
+}
 
 namespace map
 {
@@ -50,6 +56,14 @@ public:
   /// or nullptr if it can't be found.
   QGraphicsScene* scene() const;
 
+  /// Returns the persistent scene-root item. It is created at construction,
+  /// added directly to the scene at the origin with an identity transform, and
+  /// outlives any loaded chart. Top-level overlays parent to it so they remain
+  /// in the scene independent of whether a BackgroundRaster (depth chart) is
+  /// loaded (camp#59 PR6 increment 2). Its scenePos() is (0,0), which the
+  /// GeoGraphicsItem::geoToPixel parent-offset shim relies on.
+  QGraphicsItem* rootItem() const;
+
   /// Called by map items to indicate that data relevant to the tree view has changed.
   void updateDisplay(const MapItem* map_item, const QVector<int> &roles = QVector<int>());
 
@@ -63,6 +77,11 @@ public:
   void contextMenuFor(QMenu* menu, const QModelIndex& index);
 
   LayerList* topLevelLayers() const;
+
+  /// Returns the ToolsManager this map owns. The ROS node and interaction
+  /// tools are parented to it; the app layer attaches the ROS node here so
+  /// the map core stays ROS-free.
+  tools::ToolsManager* toolsManager() const;
 signals:
   void viewportChanged(camp::MapView::Viewport viewport);
 
@@ -70,6 +89,7 @@ private:
   QModelIndex index(const MapItem* map_item) const;
 
   MapItem* top_level_items_;
+  tools::ToolsManager* tools_manager_ = nullptr;
 };
 
 } // namespace map

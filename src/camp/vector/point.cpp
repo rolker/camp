@@ -14,7 +14,7 @@ Point::Point(MissionItem* parent):GeoGraphicsMissionItem(parent)
 
 void Point::updateProjectedPoints()
 {
-   setPos(geoToPixel(m_location,autonomousVehicleProject()));
+   setPos(geoToPixel(m_location));
 }
 
 void Point::write(QJsonObject& json) const
@@ -39,7 +39,7 @@ QRectF Point::boundingRect() const
 
 void Point::setLocation(QGeoCoordinate const &location)
 {
-    setPos(geoToPixel(location,autonomousVehicleProject()));
+    setPos(geoToPixel(location));
     m_location = location;
     setLabel(location.toString());
 }

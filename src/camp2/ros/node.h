@@ -24,7 +24,16 @@ class Node: public tools::LayerManager
 {
   Q_OBJECT
 public:
+  /// Spawns its own ROS node thread (camp2 standalone use).
   Node(tools::ToolsManager* tools_manager);
+
+  /// Adopts an externally-owned node + tf buffer (e.g. an app that already runs
+  /// its own ROS connection) instead of spawning a thread. The node's lifetime
+  /// is the owner's responsibility; this Node won't call rclcpp::shutdown().
+  /// Manager creation is deferred to the event loop so it runs after this
+  /// MapItem is fully constructed.
+  Node(tools::ToolsManager* tools_manager, rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer);
+
   ~Node();
 
   enum { Type = map::RosNodeType};
@@ -58,6 +67,15 @@ public slots:
 private:
   QThread node_thread_;
   GraphThread* graph_thread_ = nullptr;
+
+  // False when adopting an external node: the destructor must not stop a thread
+  // it never started nor call rclcpp::shutdown() on a node it doesn't own.
+  bool owns_thread_ = true;
+
+  // Whether to create the geometry (PolygonStamped) manager. An adopting host
+  // may already render PolygonStamped itself (e.g. a collision-zone overlay) and
+  // not want a second, generic renderer of the same topics.
+  bool create_geometry_manager_ = true;
 
   rclcpp::Node::SharedPtr node_;
   tf2_ros::Buffer::SharedPtr transform_buffer_;

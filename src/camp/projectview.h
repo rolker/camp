@@ -12,7 +12,6 @@ class SurveyPattern;
 class SurveyArea;
 class SearchPattern;
 class Waypoint;
-class BackgroundRaster;
 class MeasuringTool;
 class AvoidArea;
 
@@ -45,7 +44,7 @@ public slots:
     void sendLookAt();
     void sendLookAtASV();
     void beforeUpdateBackground();
-    void updateBackground(BackgroundRaster * bg);
+    void updateBackground();
     void sendViewport(); 
     void centerMap(QGeoCoordinate location);
 

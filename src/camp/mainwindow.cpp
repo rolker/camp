@@ -11,20 +11,21 @@
 
 #include "roslink.h"
 
-#include "backgroundraster.h"
 #include "trackline.h"
 #include "surveypattern.h"
 #include "surveyarea.h"
 #include "searchpattern.h"
 
 #include "ais/ais_manager.h"
-//#include "radar/radar_manager.h"
-// #include "sound_play/sound_play_widget.h"
-// #include "sound_play/speech_alerts.h"
 #include "platform_manager/platform.h"
-#include "grids/grid_manager.h"
-#include "markers/markers_manager.h"
 #include "collision_monitor/collision_monitor_manager.h"
+
+#include "map/map.h"
+#include "map/layer.h"
+#include "map/layer_list.h"
+#include "ros/node.h"          // camp2's camp::ros::Node (src/camp2/ros/node.h)
+#include "map_tree_view/map_tree_view.h"
+#include <QTabWidget>
 
 #include <QDebug>
 
@@ -45,11 +46,36 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(m_ui->treeView->selectionModel(),&QItemSelectionModel::currentChanged,this,&MainWindow::setCurrent);
 
+    // [#59 PR3b] Two-model split (ADR-0002): tab the existing mission tree
+    // alongside a Web-Mercator layer tree (camp::map::Map) in the left panel.
+    // The mission tree edits the plan; the layer tree manages backgrounds,
+    // OSM/WMTS tiles, and chart raster layers (inline visibility checkboxes +
+    // opacity delegate). detailsView follows the active tab (mission selection
+    // on the Mission tab; cleared on the Layers tab — layer detail widgets are
+    // future work). Built in code to avoid reworking the .ui splitter layout.
+    auto treeTabs = new QTabWidget(this);
+    const int treeSlot = m_ui->missionElementsSplitter->indexOf(m_ui->treeView);
+    auto mapTreeView = new camp::map_tree_view::MapTreeView(treeTabs);
+    mapTreeView->setMap(project->map());
+    treeTabs->addTab(m_ui->treeView, "Mission");   // reparents treeView out of the splitter
+    treeTabs->addTab(mapTreeView, "Layers");
+    m_ui->missionElementsSplitter->insertWidget(treeSlot, treeTabs);
+    connect(treeTabs, &QTabWidget::currentChanged, this, [this, treeTabs](int)
+    {
+        if(treeTabs->currentWidget() == m_ui->treeView)
+            m_ui->detailsView->onCurrentItemChanged(m_ui->treeView->currentIndex(), QModelIndex());
+        else
+            m_ui->detailsView->onCurrentItemChanged(QModelIndex(), QModelIndex());  // clear for layer tab
+    });
+
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->projectView, &ProjectView::updateBackground);
     connect(project, &AutonomousVehicleProject::aboutToUpdateBackground, m_ui->projectView, &ProjectView::beforeUpdateBackground);
 
     //connect(m_ui->projectView,&ProjectView::currentChanged,this,&MainWindow::setCurrent);
 
+    // [#59 PR6] Anchor platform overlays to the map's persistent scene root so
+    // they render with or without a chart loaded (OSM/WMTS-only).
+    m_ui->platformManager->setAnchor(project->originAnchor());
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ui->platformManager, &PlatformManager::updateBackground);
 
     connect(m_ui->platformManager, &PlatformManager::currentPlatform, project, &AutonomousVehicleProject::updateActivePlatform);
@@ -58,45 +84,53 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
-    m_ais_manager = new AISManager();
+    m_ais_manager = new AISManager(this);
+    // [#59 PR5] AIS contacts live under a non-removable "AIS" layer in the Layers
+    // tab; its checkbox toggles all contacts. No separate window. The layer sits
+    // at the scene origin (like the root anchor) so geoToPixel resolves contacts
+    // correctly, and renders with or without a chart (OSM/WMTS-only).
+    auto* ais_layer = new camp::map::Layer(project->map()->topLevelLayers(), "AIS");
+    ais_layer->setRemovable(false);
+    m_ais_manager->setAnchor(ais_layer);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
-    connect(this, &MainWindow::closing, m_ais_manager, &QWidget::close);
 
-    m_grid_manager = new GridManager();
-    connect(m_ui->rosLink, &ROSLink::rosConnected, m_grid_manager, &GridManager::nodeStarted);
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_grid_manager, &GridManager::updateBackground);
-    connect(this, &MainWindow::closing, m_grid_manager, &QWidget::close);
+    // [#59 PR5] Grids and markers are now provided by camp2's scene-correct
+    // ros overlays, hosted on camp's existing ROS node (no second node). When
+    // ROSLink connects, attach a camp::ros::Node to the Map's ToolsManager; it
+    // auto-discovers grid/marker/geometry topics and creates layers in the
+    // Layers tab. Replaces camp's GridManager/MarkersManager (retired).
+    connect(m_ui->rosLink, &ROSLink::rosConnected, this,
+        [this](rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr buffer)
+        {
+            if(m_map_ros_started)
+                return;
+            m_map_ros_started = true;
+            new camp::ros::Node(project->map()->toolsManager(), node, buffer);
+        });
 
-    m_markers_manager = new MarkersManager();
-    connect(m_ui->rosLink, &ROSLink::rosConnected, m_markers_manager, &MarkersManager::nodeStarted);
-    connect(project, &AutonomousVehicleProject::backgroundUpdated, m_markers_manager, &MarkersManager::updateBackground);
-    connect(this, &MainWindow::closing, m_markers_manager, &QWidget::close);
-
-    m_collision_monitor_manager = new CollisionMonitorManager();
+    m_collision_monitor_manager = new CollisionMonitorManager(this);
+    // [#59 PR5] Collision zones live under a non-removable "Collision Monitor"
+    // layer in the Layers tab; its checkbox toggles all zones. No separate window.
+    auto* collision_layer = new camp::map::Layer(project->map()->topLevelLayers(), "Collision Monitor");
+    collision_layer->setRemovable(false);
+    m_collision_monitor_manager->setAnchor(collision_layer);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
-    connect(this, &MainWindow::closing, m_collision_monitor_manager, &QWidget::close);
-
-    // m_sound_play = new SoundPlay();
-    // connect(m_ui->rosLink, &ROSLink::rosConnected, m_sound_play, &SoundPlay::nodeStarted);
-
-    // m_speech_alerts = new SpeechAlerts(this);
-    // connect(m_speech_alerts, &SpeechAlerts::tell, m_sound_play, &SoundPlay::say);
-    //connect(m_ui->helmManager, &HelmManager::pilotingModeUpdated, m_speech_alerts, &SpeechAlerts::updatePilotingMode);
 
     m_ui->rosLink->connectROS();
 
+    // [#59 ADR-0003] Recreate the persisted chart layers now that the background
+    // signals are wired, so fit-to-extent and the overlay managers refresh for
+    // the restored charts. Charts are app state, independent of any mission file.
+    project->restorePersistedBackgrounds();
 }
 
 MainWindow::~MainWindow()
 {
     delete m_ui;
     delete m_ais_manager;
-    //delete m_radar_manager;
-    delete m_grid_manager;
-    delete m_markers_manager;
     delete m_collision_monitor_manager;
 }
 
@@ -350,7 +384,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         {
             QAction *reverseDirectionAction = menu.addAction("Reverse Direction");
             connect(reverseDirectionAction, &QAction::triggered, tl, &TrackLine::reverseDirection);
-            if(project->getBackgroundRaster() && project->getDepthRaster())
+            if(project->hasDepth())
             {
                 QAction *planPathAction = menu.addAction("Plan path");
                 connect(planPathAction, &QAction::triggered, tl, &TrackLine::planPath);
@@ -390,7 +424,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
         if(sa)
         {
-            if(project->getBackgroundRaster() && project->getDepthRaster())
+            if(project->hasDepth())
             {
                 QAction *generateAdaptiveTrackLinesAction = menu.addAction("Generate Adaptive Track Lines");
                 connect(generateAdaptiveTrackLinesAction, &QAction::triggered, sa, &SurveyArea::generateAdaptiveTrackLines);
@@ -552,12 +586,6 @@ void MainWindow::on_actionAvoidFromContext_triggered()
 }
 
 
-void MainWindow::on_actionRadar_triggered()
-{
-    qDebug() << "radar: " << m_ui->actionRadar->isChecked();
-    emit project->showRadar(m_ui->actionRadar->isChecked());
-}
-
 void MainWindow::on_actionFollow_triggered()
 {
     //emit project->followRobot(m_ui->actionFollow->isChecked());
@@ -567,11 +595,6 @@ void MainWindow::activePlatformPosition(QGeoCoordinate position)
 {
     if(m_ui->actionFollow->isChecked())
       m_ui->projectView->centerMap(position);
-}
-
-void MainWindow::on_actionRadarColor_triggered()
-{
-    emit project->selectRadarColor();
 }
 
 void MainWindow::on_actionShowTail_triggered()
@@ -584,32 +607,3 @@ void MainWindow::onROSConnected(bool connected)
     //m_ui->rosDetails->setEnabled(connected);
 }
 
-void MainWindow::on_actionAISManager_triggered()
-{
-    m_ais_manager->show();
-}
-
-void MainWindow::on_actionRadarManager_triggered()
-{
-    //m_radar_manager->show();
-}
-
-void MainWindow::on_actionGridManager_triggered()
-{
-    m_grid_manager->show();
-}
-
-void MainWindow::on_actionMarkersManager_triggered()
-{
-    m_markers_manager->show();
-}
-
-void MainWindow::on_actionCollisionMonitorManager_triggered()
-{
-    m_collision_monitor_manager->show();
-}
-
-// void MainWindow::on_actionSay_something_triggered()
-// {
-//     m_sound_play->show();
-// }

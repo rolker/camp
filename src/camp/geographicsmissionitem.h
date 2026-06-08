@@ -4,8 +4,6 @@
 #include "missionitem.h"
 #include "geographicsitem.h"
 
-class BackgroundRaster;
-
 class GeoGraphicsMissionItem : public MissionItem, public GeoGraphicsItem
 {
     Q_OBJECT
@@ -23,7 +21,7 @@ public:
     virtual void readChildren(const QJsonArray &json, int row = -1) override;
 
 public slots:
-    void updateBackground(BackgroundRaster * bg);
+    void updateBackground();
     void lock();
     void unlock();
     virtual void updateETE();

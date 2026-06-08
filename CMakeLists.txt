@@ -20,7 +20,6 @@ find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
 
-#find_package(sound_play REQUIRED) pending port to ROS2
 find_package(qt_gui_cpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
 find_package(rqt_gui_cpp REQUIRED)
@@ -63,17 +62,12 @@ endif()
 set(SOURCES
     src/camp/autonomousvehicleproject.cpp
     src/camp/avoid_area.cpp
-    src/camp/backgrounddetails.cpp
-    src/camp/backgroundraster.cpp
+    src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
-    src/camp/grids/grid.cpp
-    src/camp/grids/grid_manager.cpp
     src/camp/main.cpp
     src/camp/mainwindow.cpp
-    src/camp/markers/markers.cpp
-    src/camp/markers/markers_manager.cpp
     src/camp/collision_monitor/collision_monitor.cpp
     src/camp/collision_monitor/collision_monitor_manager.cpp
     src/camp/missionitem.cpp
@@ -88,8 +82,6 @@ set(SOURCES
     src/camp/ros/ros_object.cpp
     src/camp/ros/ros_widget.cpp
     src/camp/searchpattern.cpp
-    # src/camp/sound_play/sound_play_widget.cpp
-    # src/camp/sound_play/speech_alerts.cpp
     src/camp/surveypattern.cpp
     src/camp/surveypatterndetails.cpp
     src/camp/trackline.cpp
@@ -116,35 +108,23 @@ set(SOURCES
     src/camp/nav_source.cpp
 )
 
-# src/radar/radar_display.cpp
-# src/radar/radar_manager.cpp
-
 set ( RESOURCES
     src/camp/main.qrc
 )
 
 set (UIS
     src/camp/behaviordetails.ui
-    src/camp/sonar_manager/sonar_manager.ui
-    # src/camp/sound_play/sound_play_widget.ui
     src/camp/platform_manager/platform.ui
     src/camp/platform_manager/platform_manager.ui
     src/camp/orbitdetails.ui
     src/camp/mainwindow.ui
-    src/camp/markers/markers.ui
-    src/camp/markers/markers_manager.ui
     src/camp/collision_monitor/collision_monitor.ui
-    src/camp/collision_monitor/collision_monitor_manager.ui
     src/camp/waypointdetails.ui
-    src/camp/grids/grid.ui
-    src/camp/grids/grid_manager.ui
     src/camp/helm_manager/helm_manager_config.ui
     src/camp/helm_manager/helm_manager.ui
-    src/camp/backgrounddetails.ui
     src/camp/roslink.ui
     src/camp/surveypatterndetails.ui
     src/camp/mission_manager/mission_manager.ui
-    src/camp/ais/ais_manager.ui
     src/camp/tracklinedetails.ui
 )
 
@@ -166,7 +146,6 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     marine_interfaces
 
     rclcpp
-    # sound_play
     tf2
     tf2_geometry_msgs
     tf2_ros
@@ -182,6 +161,12 @@ target_link_libraries(CCOMAutonomousMissionPlanner
 )
 
 target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} yaml-cpp)
+
+# [#59 PR3a] Deployed camp adopts the shared map framework. camp_map_ros links
+# camp_map transitively and propagates the src/camp2 PUBLIC include path, so the
+# Web-Mercator scene (camp::map::Map), web_mercator helpers, and raster::RasterLayer
+# resolve from headers rooted at src/camp2 (e.g. "map/map.h"). See ADR-0002.
+target_link_libraries(CCOMAutonomousMissionPlanner camp_map_ros)
 
 install (TARGETS CCOMAutonomousMissionPlanner
     DESTINATION lib/${PROJECT_NAME})
@@ -236,17 +221,23 @@ pluginlib_export_plugin_description_file(rqt_gui "plugins.xml")
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 
-# camp2
+# ============================================================================
+# libcamp_map — shared map substrate, pure Qt/GDAL (ROS-free)   [#59 PR2]
+# ============================================================================
+# camp2's self-contained map core: layer model, Web-Mercator scene, OSM/WMTS
+# tiles, reprojected rasters, tree view, interaction tools. The ROS node is
+# attached by the application layer (MainWindow) via Map::toolsManager(), so
+# this library has no ROS dependency. Linked by the camp2 executable below and,
+# from PR3a, by CCOMAutonomousMissionPlanner.
 
-set( CAMP2_SOURCES
+set(CAMP_MAP_SOURCES
     src/camp2/background/background_manager.cpp
-    src/camp2/main/main_window.cpp
-    src/camp2/main/main.cpp
     src/camp2/map/map.cpp
     src/camp2/map/map_item.cpp
     src/camp2/map/map_item_mime_data.cpp
     src/camp2/map/layer_list.cpp
     src/camp2/map/layer.cpp
+    src/camp2/map/color_map.cpp
     src/camp2/map_tiles/cached_tile_loader.cpp
     src/camp2/map_tiles/map_tiles.cpp
     src/camp2/map_tiles/tile.cpp
@@ -258,6 +249,49 @@ set( CAMP2_SOURCES
     src/camp2/map_view/map_view.cpp
     src/camp2/map_view/web_mercator.cpp
     src/camp2/raster/raster_layer.cpp
+    src/camp2/tools/layer_manager.cpp
+    src/camp2/tools/map_tool.cpp
+    src/camp2/tools/tools_manager.cpp
+    src/camp2/util/cached_file_loader.cpp
+    src/camp2/wmts/capabilities.cpp
+    src/camp2/wmts/layer.cpp
+    src/camp2/wmts/tile_matrix_set.cpp
+)
+
+add_library(camp_map SHARED ${CAMP_MAP_SOURCES})
+
+# src/camp2 on the include path is PUBLIC so it propagates to camp_map_ros and
+# the executables (header includes are rooted at src/camp2, e.g. "map/map.h").
+target_include_directories(camp_map PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+)
+
+target_link_libraries(camp_map
+    PUBLIC
+        Qt5::Core
+        Qt5::Widgets
+        Qt5::Concurrent
+        Qt5::Network
+        Qt5::Xml
+        Qt5::Positioning
+    PRIVATE
+        ${GDAL_LIBRARY}
+)
+
+install(TARGETS camp_map
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+# ============================================================================
+# libcamp_map_ros — ROS-dependent map layers; links libcamp_map   [#59 PR2]
+# ============================================================================
+# The camp2 ROS layer set (geometry, grids, markers) + node/name plumbing.
+# Boundary verified one-directional after inverting Map's node creation: the
+# src/camp2 core has zero ROS includes; only this layer depends on
+# rclcpp/tf2/messages.
+
+set(CAMP_MAP_ROS_SOURCES
     src/camp2/ros/geometry/geometry_manager.cpp
     src/camp2/ros/geometry/polygon.cpp
     src/camp2/ros/graph_thread.cpp
@@ -274,45 +308,63 @@ set( CAMP2_SOURCES
     src/camp2/ros/names_manager.cpp
     src/camp2/ros/node.cpp
     src/camp2/ros/node_thread.cpp
-    src/camp2/tools/layer_manager.cpp
-    src/camp2/tools/map_tool.cpp
-    src/camp2/tools/tools_manager.cpp
-    src/camp2/util/cached_file_loader.cpp
-    src/camp2/wmts/capabilities.cpp
-    src/camp2/wmts/layer.cpp
-    src/camp2/wmts/tile_matrix_set.cpp
+    src/camp2/ros/transform_cache.cpp
 )
 
-add_executable(camp2 ${CAMP2_SOURCES})
+add_library(camp_map_ros SHARED ${CAMP_MAP_ROS_SOURCES})
 
-target_include_directories(camp2
-    PRIVATE 
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
-)
+# Plain signature (no PUBLIC keyword): ament_target_dependencies below uses the
+# plain target_link_libraries form, and CMake forbids mixing the two on one
+# target. The plain form still links camp_map transitively, so camp_map's
+# PUBLIC Qt + include-dir usage requirements propagate downstream.
+target_link_libraries(camp_map_ros camp_map)
 
-ament_target_dependencies(camp2
+ament_target_dependencies(camp_map_ros
     geometry_msgs
     grid_map_ros
     marine_ais_msgs
     marine_autonomy
     marine_interfaces
-
     rclcpp
     tf2
     tf2_ros
     tf2_geometry_msgs
 )
 
-target_link_libraries(camp2
-    ${QT_LIBRARIES}
-    ${GDAL_LIBRARY}
-    Qt5::Core
-    Qt5::Widgets
-    Qt5::Concurrent
-    Qt5::Network
-    Qt5::Test
-    Qt5::Xml
-    Qt5::Positioning
+install(TARGETS camp_map_ros
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+# ============================================================================
+# camp2 executable — app shell only; links the shared libraries   [#59 PR2]
+# ============================================================================
+
+add_executable(camp2
+    src/camp2/main/main.cpp
+    src/camp2/main/main_window.cpp
+)
+
+target_include_directories(camp2 PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+)
+
+# Qt5::Test supplies QAbstractItemModelTester, used by main_window.cpp.
+target_link_libraries(camp2 camp_map_ros Qt5::Test)
+
+# camp_map_ros transitively brings camp_map + Qt. The ROS package deps are
+# repeated here so main.cpp/main_window.cpp (which include ros/node.h directly)
+# always resolve ROS headers, independent of ament's interface-propagation.
+ament_target_dependencies(camp2
+    geometry_msgs
+    grid_map_ros
+    marine_ais_msgs
+    marine_autonomy
+    marine_interfaces
+    rclcpp
+    tf2
+    tf2_ros
+    tf2_geometry_msgs
 )
 
 install (TARGETS camp2
@@ -360,25 +412,14 @@ if(BUILD_TESTING)
     Qt5::Test
   )
 
-  # Marker converter unit tests
-  ament_add_gtest(test_markers_converter
-    test/test_markers_converter.cpp
+
+  # ColorMap facility unit tests (camp#63)
+  ament_add_gtest(test_color_map
+    test/test_color_map.cpp
   )
-  target_include_directories(test_markers_converter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
-  )
-  ament_target_dependencies(test_markers_converter
-    rclcpp
-    tf2
-    tf2_ros
-    tf2_geometry_msgs
-    geometry_msgs
-    visualization_msgs
-    marine_autonomy
-  )
-  target_link_libraries(test_markers_converter
-    Qt5::Core
-    Qt5::Positioning
+  target_link_libraries(test_color_map
+    camp_map
+    Qt5::Test
   )
 
   # Collision-monitor polygon converter unit tests
@@ -399,6 +440,62 @@ if(BUILD_TESTING)
   target_link_libraries(test_collision_monitor_converter
     Qt5::Core
     Qt5::Positioning
+  )
+
+  # earth<-frame transform cache / staleness decision (#59 — TF-gap flicker fix)
+  ament_add_gtest(test_transform_cache
+    test/test_transform_cache.cpp
+    src/camp2/ros/transform_cache.cpp
+  )
+  target_include_directories(test_transform_cache PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  ament_target_dependencies(test_transform_cache
+    rclcpp
+    tf2
+    tf2_ros
+    geometry_msgs
+  )
+
+  # DepthRaster safe-degradation (#59 PR6 — depth extracted from BackgroundRaster)
+  ament_add_gtest(test_depth_raster
+    test/test_depth_raster.cpp
+    src/camp/depth_raster.cpp
+    src/camp/georeferenced.cpp
+  )
+  target_include_directories(test_depth_raster PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  target_link_libraries(test_depth_raster
+    Qt5::Core
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled
+  # from BackgroundRaster). Pure std C++; no Qt/ROS link needed.
+  ament_add_gtest(test_astar
+    test/test_astar.cpp
+    src/camp/astar.cpp
+  )
+  target_include_directories(test_astar PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+
+  # camp::map::Map item-model correctness (#59 — model-mutation paths added by
+  # the BackgroundRaster retirement: stacked-layer inserts + the Layers-tab
+  # Remove action). Lifts the camp2 sandbox's QAbstractItemModelTester check
+  # into CI by linking the shared camp_map library.
+  ament_add_gtest(test_map_model
+    test/test_map_model.cpp
+  )
+  target_include_directories(test_map_model PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_map_model
+    camp_map
+    Qt5::Widgets
+    Qt5::Test
   )
 endif()
 

@@ -6,8 +6,11 @@
 #include <QStandardItem>
 #include <QDebug>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
 #include "astar.h"
+#include "map_view/web_mercator.h"
+#include <QMessageBox>
+#include <algorithm>
+#include <cmath>
 
 TrackLine::TrackLine(MissionItem *parent, int row) :GeoGraphicsMissionItem(parent, row)
 {
@@ -251,40 +254,94 @@ bool TrackLine::canBeSentToRobot() const
 
 void TrackLine::planPath()
 {
+    // [#59 PR3c] A* plans on a self-defined square grid in Web-Mercator metres
+    // (fixed cell count), independent of any raster's pixel grid. Depth per cell
+    // comes from AutonomousVehicleProject::getDepth(geo); cells with no coverage
+    // are obstacles (unknown = unsafe). See ADR-0002.
     auto wps = waypoints();
-    
-    BackgroundRaster *depthRaster = autonomousVehicleProject()->getDepthRaster();
+    AutonomousVehicleProject* avp = autonomousVehicleProject();
+    // avp can be null for an item not yet attached to a project (construction/load).
+    if(!avp || wps.size() < 2 || !avp->hasDepth())
+        return;
+
+    const int N = 256;                  // fixed grid cell count per axis
+    const double marginFraction = 0.5;  // expand the start->goal bbox by this fraction per side
 
     std::vector<QGeoCoordinate> newWaypoints;
-    
-    for (int i = 0; i <  wps.size()-1; i++)
+    newWaypoints.push_back(wps[0]->location());  // exact first endpoint (never cell-snapped)
+    int failedSegments = 0;
+
+    for (int i = 0; i < wps.size()-1; i++)
     {
-        auto start = depthRaster->geoToPixel(wps[i]->location());
-        auto finish = depthRaster->geoToPixel(wps[i+1]->location());
-        qDebug() << "start: " << start << " finish: " << finish;
+        const QPointF startWM = web_mercator::geoToMap(wps[i]->location());
+        const QPointF finishWM = web_mercator::geoToMap(wps[i+1]->location());
+
+        // Square planning box centred on the segment, expanded by the margin.
+        const double cx = (startWM.x() + finishWM.x())/2.0;
+        const double cy = (startWM.y() + finishWM.y())/2.0;
+        double extent = std::max(std::abs(finishWM.x()-startWM.x()), std::abs(finishWM.y()-startWM.y()));
+        if(extent <= 0.0)
+            extent = 1.0;
+        const double half = extent/2.0 + extent*marginFraction;
+        const double originX = cx - half;
+        const double originY = cy - half;
+        const double cellSize = (2.0*half) / N;
+
+        // Pre-sample depth at each cell centre (geo query, scene-independent).
         astar::Context c;
-        c.start.x = start.x();
-        c.start.y = start.y();
-        c.finish.x = finish.x();
-        c.finish.y = finish.y();
-        c.map = depthRaster;
+        c.gridSize = N;
+        c.depthGrid.resize(static_cast<size_t>(N)*N);
+        for(int gy = 0; gy < N; gy++)
+            for(int gx = 0; gx < N; gx++)
+            {
+                const QPointF centre(originX + (gx+0.5)*cellSize, originY + (gy+0.5)*cellSize);
+                const float d = avp->getDepth(web_mercator::mapToGeo(centre));
+                c.depthGrid[static_cast<size_t>(gy)*N + gx] = std::isnan(d) ? astar::Context::unknownDepth : d;
+            }
+
+        auto toCell = [&](const QPointF& p)
+        {
+            const int gx = std::clamp(int((p.x()-originX)/cellSize), 0, N-1);
+            const int gy = std::clamp(int((p.y()-originY)/cellSize), 0, N-1);
+            return astar::Position(gx, gy);
+        };
+        c.start = toCell(startWM);
+        c.finish = toCell(finishWM);
         c.maxDepth = 15.0;
         c.minDepth = 3.0;
         c.shipDraft = 1.0;
+
         astar::AStar as;
         auto result = as.search(c);
         if(result.empty())
+            ++failedSegments;
+        // Emit only the A* INTERIOR cells; the exact segment endpoints are kept
+        // (wps[i+1] below, and wps[0] before the loop). This avoids cell-snap
+        // drift at the endpoints and keeps segment joins continuous (the shared
+        // waypoint is the same exact coordinate in both segments, not quantized
+        // into two different grids). On failure result is empty -> a straight
+        // segment to the exact endpoint.
+        for(size_t k = 1; k + 1 < result.size(); k++)
         {
-            newWaypoints.push_back(wps[i]->location());
-            newWaypoints.push_back(wps[i+1]->location());
+            const auto& p = result[k];
+            const QPointF centre(originX + (p.x+0.5)*cellSize, originY + (p.y+0.5)*cellSize);
+            newWaypoints.push_back(web_mercator::mapToGeo(centre));
         }
-        else
-            for(auto p: result)
-                newWaypoints.push_back(depthRaster->pixelToGeo(QPointF(p.x,p.y)));
+        newWaypoints.push_back(wps[i+1]->location());  // exact segment end (= next segment's exact start)
     }
     for(auto wp: wps)
         removeWaypoint(wp);
 
-    for(auto nwp: newWaypoints)
+    for(const auto& nwp: newWaypoints)
         addWaypoint(nwp);
+
+    // [#59 PR3c] A* failure falls back to a straight segment, which can cross the
+    // unknown/too-shallow water the planner meant to avoid. Warn the operator so a
+    // silent unsafe leg isn't mistaken for a planned one.
+    if(failedSegments > 0)
+        QMessageBox::warning(nullptr, tr("Plan path"),
+            tr("%1 of %2 segment(s) could not be planned around obstacles or "
+               "unsurveyed water; a straight line was used for those segments. "
+               "Review the route before sending it to the boat.")
+            .arg(failedSegments).arg(int(wps.size()-1)));
 }

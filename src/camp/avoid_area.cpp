@@ -2,7 +2,6 @@
 #include <QPainter>
 #include <QJsonObject>
 #include <QJsonArray>
-#include "backgroundraster.h"
 #include <QDebug>
 #include "waypoint.h"
 #include <cmath>

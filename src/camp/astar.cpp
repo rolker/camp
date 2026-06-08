@@ -106,9 +106,9 @@ double  AStar::extendedPathAverageDepth(Context const &c, Position const& positi
     // If the node is a Moore Neighboor, check the cell on either side of desired cell
     {
         // If either cell next to the desired cell is an obstacle, the path is not valid
-        if ((c.map->getDepth(position.x,newPosition.y) < c.minDepth) || (c.map->getDepth(newPosition.x,position.y) < c.minDepth))
+        if ((c.depthAt(position.x,newPosition.y) < c.minDepth) || (c.depthAt(newPosition.x,position.y) < c.minDepth))
             return 0.0; // Path is invalid)
-        return c.map->getDepth(newPosition.x,newPosition.y);
+        return c.depthAt(newPosition.x,newPosition.y);
     }
     else
     // Otherwise check all cells in the path between the two cells
@@ -142,14 +142,15 @@ double  AStar::extendedPathAverageDepth(Context const &c, Position const& positi
                 //  is an obstacle, the path is not valid
                 int floor_x = int(floor(x));
                 int ceil_x = int(ceil(x));
+                int cell_y = int(floor(y));   // explicit: cell of a fractional coord (floor, not truncate-toward-zero)
 
                 // If either cell is an obstacle, the path is not valid
-                if ( c.map->getDepth(floor_x,y) < c.minDepth || c.map->getDepth(ceil_x,y) < c.minDepth)
+                if ( c.depthAt(floor_x,cell_y) < c.minDepth || c.depthAt(ceil_x,cell_y) < c.minDepth)
                 {
                     return 0.0; // Path is invalid
                 }
 
-                cummulative_cost += c.map->getDepth(round(x),round(y));
+                cummulative_cost += c.depthAt(int(round(x)),int(round(y)));
             }
         }
         else
@@ -171,12 +172,13 @@ double  AStar::extendedPathAverageDepth(Context const &c, Position const& positi
                 //  is an obstacle, the path is not valid
                 int floor_y = int(floor(y));
                 int ceil_y = int(ceil(y));
-                if ( c.map->getDepth(x,floor_y) < c.minDepth || c.map->getDepth(x,ceil_y) < c.minDepth)
+                int cell_x = int(floor(x));   // explicit: cell of a fractional coord (floor, not truncate-toward-zero)
+                if ( c.depthAt(cell_x,floor_y) < c.minDepth || c.depthAt(cell_x,ceil_y) < c.minDepth)
                 {
                     return 0.0; // Path is invalid
                 }
 
-                cummulative_cost += c.map->getDepth(round(x),round(y));
+                cummulative_cost += c.depthAt(int(round(x)),int(round(y)));
             }
         }
         // The depth cost for traversing to the proposed cell, is the mean depth
@@ -197,7 +199,7 @@ std::vector<Position> AStar::search(Context const &c)
     std::priority_queue<Node, std::vector<Node>, std::greater<Node> > frontier;
     
     // Start node
-    Node n0(c, c.start, c.map->getDepth(c.start.x, c.start.y), Node());
+    Node n0(c, c.start, c.depthAt(c.start.x, c.start.y), Node());
     frontier.push(n0);
     
     while (!frontier.empty())
@@ -229,7 +231,7 @@ std::vector<Position> AStar::search(Context const &c)
                 Position newPosition = position + candidate;
                 // Place the node in the frontier if the neighbor is within the
                 //  map dimensions, not an obstacle, and not closed.
-                if(newPosition.isWithinBounds(*c.map) && c.map->getDepth(newPosition.x, newPosition.y) > c.minDepth && nodeMap.find(newPosition) == nodeMap.end())
+                if(newPosition.isWithinBounds(c.gridSize) && c.depthAt(newPosition.x, newPosition.y) > c.minDepth && nodeMap.find(newPosition) == nodeMap.end())
                 {
                     // Check to see if the extended path goes through obstacles
                     // Also calculate the average depth from the parent node to this

@@ -1,10 +1,10 @@
 #include "measuringtool.h"
-#include "backgroundraster.h"
+#include "autonomousvehicleproject.h"
 #include <QPainter>
 #include <QDebug>
 #include <math.h>
 
-MeasuringTool::MeasuringTool(BackgroundRaster* parent): QObject(parent), GeoGraphicsItem(parent)
+MeasuringTool::MeasuringTool(QGraphicsItem* parentItem, AutonomousVehicleProject* project): QObject(nullptr), GeoGraphicsItem(parentItem), m_project(project)
 {
     setShowLabelFlag(true);
     setZValue(10.0);
@@ -33,7 +33,7 @@ QPainterPath MeasuringTool::shape() const
 {
     QPainterPath ret;
     ret.moveTo(0,0);
-    auto delta = geoToPixel(m_finish,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject())-geoToPixel(m_start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject());
+    auto delta = geoToPixel(m_finish)-geoToPixel(m_start);
     ret.lineTo(delta);
     auto distance =  sqrt(delta.x()*delta.x()+delta.y()*delta.y());
     ret.addEllipse(QPointF(0, 0), distance, distance);
@@ -43,7 +43,7 @@ QPainterPath MeasuringTool::shape() const
 void MeasuringTool::setStart(QGeoCoordinate start)
 {
     m_start = start;
-    setPos(geoToPixel(start,dynamic_cast<BackgroundRaster*>(parent())->autonomousVehicleProject()));
+    setPos(geoToPixel(start));
 }
 
 void MeasuringTool::setFinish(QGeoCoordinate finish)
@@ -57,9 +57,7 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     if (distance < 1) distanceString = QString::number(distance,'f',2);
     QString labelString = distanceString+" meters\nbearing "+QString::number(int(azimuth))+" degrees";
     
-    BackgroundRaster* bgr = dynamic_cast<BackgroundRaster*>(parent());
-    AutonomousVehicleProject* avp = bgr->autonomousVehicleProject();
-    auto speed = avp->speed();
+    auto speed = m_project ? m_project->speed() : 0.0;
     if(speed > 0.0)
     {
         double distanceInNMs = distance*0.000539957;
@@ -74,7 +72,7 @@ void MeasuringTool::setFinish(QGeoCoordinate finish)
     }
     
     setLabel(labelString);
-    auto halfDistance = (geoToPixel(m_finish,avp)-geoToPixel(m_start,avp))/2.0;
+    auto halfDistance = (geoToPixel(m_finish)-geoToPixel(m_start))/2.0;
     setLabelPosition(halfDistance);
     update();
 }

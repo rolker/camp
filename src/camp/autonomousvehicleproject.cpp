@@ -3,6 +3,7 @@
 #include <QStandardItemModel>
 #include <QGraphicsScene>
 #include <QGraphicsPixmapItem>
+#include <QGraphicsItem>
 #include <QFileDialog>
 #include <QTextStream>
 #include <QJsonDocument>
@@ -12,7 +13,7 @@
 #include <QMimeData>
 #include <QDebug>
 
-#include "backgroundraster.h"
+#include "depth_raster.h"
 #include "waypoint.h"
 #include "trackline.h"
 #include "surveypattern.h"
@@ -31,14 +32,32 @@
 #include "platform_manager/platform.h"
 #include "mission_manager/mission_manager.h"
 
+#include "map/map.h"
+#include "map/map_item.h"
+#include "map/layer_list.h"
+#include "raster/raster_layer.h"
+#include <QSettings>
+#include <algorithm>
+
 #include <iostream>
 #include <sstream>
+#include <cmath>
 
-AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentBackground(nullptr), m_currentDepthRaster(nullptr), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
+AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractItemModel(parent), m_currentGroup(nullptr), m_currentSelected(nullptr), m_symbols(new QSvgRenderer(QString(":/symbols.svg"),this)), m_map_scale(1.0), unique_label_counter(0)
 {
     GDALAllRegister();
 
-    m_scene = new QGraphicsScene(this);
+    // [#59 ADR-0002/0003] The Web-Mercator scene is owned by camp::map::Map.
+    // Overlays position via web_mercator::geoToMap through the geoToPixel shim
+    // and parent to the Map's persistent scene-origin anchor (originAnchor), so
+    // they resolve independently of whether any chart layer is loaded.
+    m_map = new camp::map::Map(this);
+    m_scene = m_map->scene();
+    // [#59 ADR-0003] Keep chart/depth bookkeeping in sync when a chart layer is
+    // removed via the Layers-tab Remove action (camp2 Layer detaches through the
+    // Map model; we react here so camp2 stays unaware of the project).
+    connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
+
     m_root = new Group();
     m_root->setParent(this);
     m_root->setObjectName("root");
@@ -46,19 +65,24 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     setObjectName("projectModel");
     
     //m_ROSLink =  new ROSLink(this);
-    //connect(this,&AutonomousVehicleProject::showRadar,m_ROSLink, &ROSLink::showRadar);
-    //connect(this,&AutonomousVehicleProject::selectRadarColor,m_ROSLink, &ROSLink::selectRadarColor);
     //connect(this,&AutonomousVehicleProject::showTail,m_ROSLink, &ROSLink::showTail);
     //connect(this,&AutonomousVehicleProject::followRobot,m_ROSLink, &ROSLink::followRobot);
 }
 
 AutonomousVehicleProject::~AutonomousVehicleProject()
 {
+    for(auto* depth : m_depthRasters)
+        delete depth;
 }
 
 QGraphicsScene *AutonomousVehicleProject::scene() const
 {
     return m_scene;
+}
+
+camp::map::Map *AutonomousVehicleProject::map() const
+{
+    return m_map;
 }
 
 QString const &AutonomousVehicleProject::filename() const
@@ -110,28 +134,65 @@ void AutonomousVehicleProject::open(const QString &fname)
 }
 
 
-BackgroundRaster* AutonomousVehicleProject::openBackground(const QString &fname, QString label)
+void AutonomousVehicleProject::openBackground(const QString &fname, QString label)
 {
-    beginInsertRows(indexFromItem(m_root),m_root->childMissionItems().size(),m_root->childMissionItems().size());
-    BackgroundRaster *bgr = new BackgroundRaster(fname, m_root);
-    if(bgr->valid())
-    {   
-        if(label.isEmpty())
-            bgr->setObjectName(QFileInfo(fname).fileName());
-        else
-            bgr->setObjectName(label);
-        setCurrentBackground(bgr);
-        endInsertRows();
-        emit layoutChanged();
-        return bgr;
-    }
-    else
+    // [#59 ADR-0003] Load + persist. The chart is now app state (a Map layer),
+    // not a mission-tree node, so it no longer touches the mission model.
+    addBackgroundLayer(fname, label);
+    persistBackgrounds();
+}
+
+void AutonomousVehicleProject::addBackgroundLayer(const QString &fname, const QString &label)
+{
+    // [#59 ADR-0003] De-dup by filename: a chart already loaded must not stack a
+    // second copy. Without this, the command-line chart arg (main.cpp always
+    // openBackground()s it) plus restorePersistedBackgrounds re-loading the same
+    // file would double-load it, and persist would then accumulate a duplicate
+    // on every launch.
+    for(auto* existing : m_chartLayers)
+        if(existing->filename() == fname)
+            return;
+
+    // [#59 ADR-0003] Display the chart as a stacked, reprojecting RasterLayer
+    // (exact GDAL warp to EPSG:3857), Map-owned (parented to topLevelLayers).
+    // Charts STACK — we do not replace the previous one. The layer establishes
+    // its scene extent synchronously in its constructor (stage 1), so valid()
+    // and fit-to-extent are meaningful immediately, before pixels load.
+    auto layers = m_map->topLevelLayers();
+    if(!layers)
+        return;
+    auto* layer = new camp::raster::RasterLayer(layers, fname);
+    if(!layer->valid())
     {
-        endInsertRows();
-        deleteItem(bgr);
+        // Not a usable raster. Detach through the Map model (keeps the model's
+        // row count and any attached tree view in sync — a bare delete would
+        // leave a dangling index) and discard. No depth provider, no signals.
+        m_map->setMapItemParent(layer, nullptr);
+        delete layer;
+        return;
     }
-    emit layoutChanged();
-    return nullptr;
+    if(!label.isEmpty())
+        layer->setObjectName(label);
+
+    // [#59 ADR-0003] Notify before recording the layer so ProjectView can save
+    // the current view center (to recenter rather than jump when stacking onto
+    // an existing chart); hasBackground() still reflects the pre-add state here.
+    emit aboutToUpdateBackground();
+    m_chartLayers.push_back(layer);
+
+    // [#59 ADR-0003] Append this chart's depth band to the provider list (one
+    // entry per loaded chart; charts with no depth band contribute nothing).
+    auto* depth = new DepthRaster(fname);
+    if(depth->depthValid())
+        m_depthRasters.push_back(depth);
+    else
+        delete depth;
+
+    // [#59 ADR-0003] Emit after the layer exists and is recorded: ProjectView
+    // fits to the new chart (currentBackgroundExtent = the last layer's scene
+    // extent) and the overlay managers refresh their projected positions.
+    emit updatingBackground();
+    emit backgroundUpdated();
 }
 
 void AutonomousVehicleProject::openGeometry(const QString& fname, QString label)
@@ -220,14 +281,119 @@ void AutonomousVehicleProject::import(const QString& fname)
 }
 
 
-BackgroundRaster *AutonomousVehicleProject::getBackgroundRaster() const
+bool AutonomousVehicleProject::hasBackground() const
 {
-    return m_currentBackground;
+    return !m_chartLayers.empty();
 }
 
-BackgroundRaster *AutonomousVehicleProject::getDepthRaster() const
+void AutonomousVehicleProject::persistBackgrounds() const
 {
-    return m_currentDepthRaster;
+    // [#59 ADR-0003] Persist the ordered chart filename list as app state.
+    // Per-layer settings (visible/opacity/colormap) already persist via camp2's
+    // QSettings-by-itemID mechanism; this records which charts to recreate, in
+    // order, so itemIDs (and thus those per-layer settings) line up on restore.
+    QStringList files;
+    for(auto* layer : m_chartLayers)
+        files.push_back(layer->filename());
+    QSettings settings;
+    settings.setValue("backgrounds/files", files);
+}
+
+void AutonomousVehicleProject::restorePersistedBackgrounds()
+{
+    // [#59 ADR-0003] Recreate the persisted chart layers (app state). Read the
+    // list first (addBackgroundLayer does not persist, so the stored list is
+    // stable across the loop) and recreate in order; per-layer settings restore
+    // by itemID as each layer is rebuilt. Skipped silently for files that no
+    // longer open (addBackgroundLayer rejects an invalid raster).
+    QSettings settings;
+    const QStringList files = settings.value("backgrounds/files").toStringList();
+    for(const auto& fname : files)
+        addBackgroundLayer(fname, QString());
+    // Re-persist once: addBackgroundLayer de-dups and drops files that no longer
+    // open, so this self-heals a stored list that had accumulated duplicates or
+    // stale entries down to what actually loaded.
+    if(files.size() != static_cast<int>(m_chartLayers.size()))
+        persistBackgrounds();
+}
+
+void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, int first, int last)
+{
+    // [#59 ADR-0003] A layer is being detached from the Map model (Layers-tab
+    // Remove). The item still exists during rowsAboutToBeRemoved, so we can read
+    // its filename. For each removed row that is one of our tracked chart layers,
+    // drop the matching depth provider + bookkeeping entry, then re-persist.
+    bool changed = false;
+    for(int row = first; row <= last; ++row)
+    {
+        auto idx = m_map->index(row, 0, parent);
+        auto* item = reinterpret_cast<camp::map::MapItem*>(idx.internalPointer());
+        auto* layer = qobject_cast<camp::raster::RasterLayer*>(item);
+        if(!layer)
+            continue;
+        auto it = std::find(m_chartLayers.begin(), m_chartLayers.end(), layer);
+        if(it == m_chartLayers.end())
+            continue;  // a non-chart layer (e.g. an OSM/WMTS base layer)
+        const QString fname = layer->filename();
+        for(auto dit = m_depthRasters.begin(); dit != m_depthRasters.end(); ++dit)
+            if((*dit)->filename() == fname)
+            {
+                delete *dit;
+                m_depthRasters.erase(dit);
+                break;
+            }
+        m_chartLayers.erase(it);
+        changed = true;
+    }
+    if(changed)
+    {
+        persistBackgrounds();
+        // Refresh overlays (depth-dependent planning, fit-to-extent presence).
+        emit backgroundUpdated();
+    }
+}
+
+QGraphicsItem *AutonomousVehicleProject::originAnchor() const
+{
+    // [#59 PR6] The map's persistent scene-root item: always in the scene, at
+    // the origin, regardless of whether a chart is loaded. Top-level mission
+    // items parent to it so they render (and don't crash) over OSM/WMTS-only.
+    return m_map ? m_map->rootItem() : nullptr;
+}
+
+QRectF AutonomousVehicleProject::currentBackgroundExtent() const
+{
+    // [#59 ADR-0003] Fit-to-extent targets the most-recently-added chart layer.
+    // The RasterLayer establishes its scene transform/position synchronously in
+    // its constructor (stage 1), so this is valid the moment a chart loads — no
+    // BackgroundRaster georeference round-trip needed.
+    if(!m_chartLayers.empty())
+        return m_chartLayers.back()->sceneBoundingRect();
+    return QRectF();
+}
+
+float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
+{
+    // [#59 ADR-0003] Walk the depth-provider list in load order; the first
+    // provider with a valid (non-NaN) sounding at this location wins (order
+    // resolves overlap between charts). NaN if no provider covers the point.
+    for(auto* depth : m_depthRasters)
+    {
+        if(!depth->depthValid())
+            continue;
+        const float d = depth->getDepth(location);
+        if(!std::isnan(d))
+            return d;
+    }
+    return std::nanf("");
+}
+
+bool AutonomousVehicleProject::hasDepth() const
+{
+    for(auto* depth : m_depthRasters)
+        if(depth->depthValid())
+            return true;
+    return false;
 }
 
 Behavior * AutonomousVehicleProject::createBehavior()
@@ -343,7 +509,7 @@ SurveyArea * AutonomousVehicleProject::createSurveyArea(MissionItem* parent, int
 SurveyArea * AutonomousVehicleProject::addSurveyArea(QGeoCoordinate position)
 {
     SurveyArea *sa = createSurveyArea();
-    sa->setPos(sa->geoToPixel(position,this));
+    sa->setPos(sa->geoToPixel(position));
     sa->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,sa,&SurveyArea::updateBackground);
     return sa;
@@ -365,7 +531,7 @@ AvoidArea * AutonomousVehicleProject::createAvoidArea(MissionItem* parent, int r
 AvoidArea * AutonomousVehicleProject::addAvoidArea(QGeoCoordinate position)
 {
     AvoidArea *aa = createAvoidArea();
-    aa->setPos(aa->geoToPixel(position,this));
+    aa->setPos(aa->geoToPixel(position));
     aa->addPoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,aa,&AvoidArea::updateBackground);
     return aa;
@@ -409,7 +575,7 @@ TrackLine * AutonomousVehicleProject::createTrackLine(MissionItem* parent, int r
 TrackLine * AutonomousVehicleProject::addTrackLine(QGeoCoordinate position)
 {
     TrackLine *tl = createTrackLine();
-    tl->setPos(tl->geoToPixel(position,this));
+    tl->setPos(tl->geoToPixel(position));
     tl->addWaypoint(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,tl,&TrackLine::updateBackground);
     return tl;
@@ -657,16 +823,9 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
             pggi->prepareGeometryChange();
         m_scene->removeItem(ggi);
     }
-    BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(item);
-    if(bgr)
-    {
-        m_scene->removeItem(bgr);
-        if(m_currentBackground == bgr)
-            setCurrentBackground(nullptr);
-            //m_currentBackground = nullptr;
-        if(m_currentDepthRaster == bgr)
-            m_currentDepthRaster = nullptr;
-    }
+    // [#59 ADR-0003] Charts are no longer mission-tree items, so deleteItem never
+    // sees a chart here — chart layers (and their depth providers) are removed
+    // via the Layers-tab Remove action (see onChartLayerRemoved).
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
     int rownum = pi->childMissionItems().indexOf(item);
@@ -690,9 +849,6 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
     {
         QString itemType = m_currentSelected->metaObject()->className();
 
-        BackgroundRaster *bgr = qobject_cast<BackgroundRaster*>(m_currentSelected);
-        if(bgr)
-            setCurrentBackground(bgr);
         Group *g = qobject_cast<Group*>(m_currentSelected);
         if(g)
             m_currentGroup = g;
@@ -710,23 +866,6 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 MissionItem * AutonomousVehicleProject::currentSelected() const
 {
     return m_currentSelected;
-}
-
-void AutonomousVehicleProject::setCurrentBackground(BackgroundRaster *bgr)
-{
-    emit aboutToUpdateBackground();
-    if(m_currentBackground)
-        m_scene->removeItem(m_currentBackground);
-    m_currentBackground = bgr;
-    if(bgr)
-    {
-        bgr->updateMapScale(m_map_scale);
-        m_scene->addItem(bgr);
-        if(bgr->depthValid())
-            m_currentDepthRaster = bgr;
-    }
-    emit updatingBackground(bgr);
-    emit backgroundUpdated(bgr);
 }
 
 QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelIndex& parent) const
@@ -812,9 +951,6 @@ Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
     MissionItem * item = itemFromIndex(index);
     if(item)
     {
-        if(qobject_cast<BackgroundRaster*>(item))
-            return QAbstractItemModel::flags(index);
-
         if(qobject_cast<Waypoint*>(item))
             if(qobject_cast<SurveyPattern*>(item->parent()))
                 return QAbstractItemModel::flags(index);
@@ -976,10 +1112,10 @@ bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropActio
 
 void AutonomousVehicleProject::updateMapScale(qreal scale)
 {
-    if(m_currentBackground)
-        m_currentBackground->updateMapScale(scale);
+    // [#59 ADR-0003] Project-level map scale (driven by ProjectView::scaleChanged).
+    // Glyph readers (Waypoint::shape, drawArrow, updateETE) read it via mapScale();
+    // no per-chart copy to update now that BackgroundRaster is retired.
     m_map_scale = scale;
-    
 }
 
 qreal AutonomousVehicleProject::mapScale() const

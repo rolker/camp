@@ -14,7 +14,6 @@
 #include "ui_collision_monitor.h"
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 
-class BackgroundRaster;
 
 /// One Nav2 Collision Monitor danger zone (slowdown or stop), rendered as a
 /// georeferenced polygon on the map. Drawn as a thin outline when idle and
@@ -50,13 +49,13 @@ public slots:
   /// Toggle filled (active) vs outline-only (idle) rendering.
   void setActive(bool active);
   void visibilityChanged();
-  void updateBackground(BackgroundRaster* bg);
+  void updateBackground();
 
 private:
   // Receiver slot for the TF bridge. Runs on the Qt main thread.
   void onPolygonPayload(PayloadT data);
 
-  QPainterPath polygonPath(BackgroundRaster* bg) const;
+  QPainterPath polygonPath() const;
 
   Ui::CollisionMonitor ui_;
 

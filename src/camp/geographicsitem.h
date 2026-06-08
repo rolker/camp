@@ -5,7 +5,6 @@
 #include <QGeoCoordinate>
 
 class AutonomousVehicleProject;
-class BackgroundRaster;
 
 class GeoGraphicsItem : public QGraphicsItem
 {
@@ -14,8 +13,8 @@ class GeoGraphicsItem : public QGraphicsItem
 public:
     enum
     {
-        BackgroundRasterType = UserType+1,
-        WaypointType,
+        // [#59 ADR-0003] BackgroundRasterType retired with BackgroundRaster.
+        WaypointType = UserType+1,
         TrackLineType,
         SurveyPatternType,
         PointType,
@@ -24,11 +23,9 @@ public:
         ROSLinkType,
         SurveyAreaType,
         MeasuringToolType,
-        RadarDisplayType,
         AISContactType,
         PlatformType,
         NavSourceType,
-        GeovizDisplayType,
         SearchPatternType,
         GridType,
         AvoidAreaType,
@@ -38,9 +35,19 @@ public:
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);
 
     
-    QPointF geoToPixel(QGeoCoordinate const &point, AutonomousVehicleProject *p) const;
-    QPointF geoToPixel(QGeoCoordinate const &point, BackgroundRaster *bg) const;
+    // [#59 ADR-0003] Chart-independent position: the scene is Web Mercator, so
+    // this needs no BackgroundRaster. The old bg/AVP overloads are retired — every
+    // call site now uses this single overload.
+    QPointF geoToPixel(QGeoCoordinate const &point) const;
     QGeoCoordinate pixelToGeo(QPointF const &point) const;
+
+    // [#59 PR6] Real metres covered by one display pixel at the given location,
+    // from the active view's zoom and the Web-Mercator cos(latitude) correction
+    // — the chart-independent replacement for BackgroundRaster::scaledPixelSize().
+    // Sizes on-screen vessel/contact icons to a constant pixel footprint
+    // regardless of zoom or whether a chart is loaded. Returns a sane default
+    // (metres-per-unit at the location) when no view is attached yet.
+    qreal metresPerPixel(QGeoCoordinate const &at) const;
 
     void prepareGeometryChange();
 
@@ -50,9 +57,6 @@ public:
     void setLabelPosition(QPointF pos);
     
     int type() const override=0;
-
-protected:
-    BackgroundRaster* findParentBackgroundRaster() const;
 
 private:
     QGraphicsSimpleTextItem *m_label;

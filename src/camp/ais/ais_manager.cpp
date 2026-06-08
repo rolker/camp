@@ -1,15 +1,10 @@
 #include "ais_manager.h"
-#include "ui_ais_manager.h"
 #include <QTimer>
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
-AISManager::AISManager(QWidget* parent):
-  camp_ros::ROSWidget(parent),
-  m_ui(new Ui::AISManager)
+AISManager::AISManager(QObject* parent):
+  camp_ros::ROSObject(parent)
 {
-  m_ui->setupUi(this);
-
   connect(this, &AISManager::newAisReport, this, &AISManager::addAisReport, Qt::QueuedConnection);
 
   m_scan_timer = new QTimer(this);
@@ -18,11 +13,6 @@ AISManager::AISManager(QWidget* parent):
 
   m_update_timer = new QTimer(this);
   m_update_timer->start(200);
-}
-
-AISManager::~AISManager()
-{
-  delete m_ui;
 }
 
 void AISManager::scanForSources()
@@ -44,7 +34,6 @@ void AISManager::scanForSources()
             if (auto ctx = camp_ros::RosContext::instance())
               sub_options.callback_group = ctx->nextDedicatedGroup();
             m_sources[name] = node_->create_subscription<marine_ais_msgs::msg::AISContact>(name, 10, std::bind(&AISManager::aisContactCallback, this, std::placeholders::_1), sub_options);
-            m_ui->sourcesListWidget->addItem(name.c_str());
             break;
           }
         }
@@ -69,10 +58,9 @@ void AISManager::addAisReport(AISReport* report)
 {
   if(m_contacts.find(report->mmsi) == m_contacts.end())
   {
-    m_contacts[report->mmsi] = new AISContact(report, this, m_background);
+    m_contacts[report->mmsi] = new AISContact(report, this, m_anchor);
     m_contacts[report->mmsi]->nodeStarted(node_, transform_buffer_);
     connect(m_update_timer, &QTimer::timeout, m_contacts[report->mmsi], &AISContact::updateView);
-    m_ui->contactListWidget->addItem(QString::number(report->mmsi));
   }
   m_contacts[report->mmsi]->newReport(report);
 }
@@ -84,15 +72,13 @@ void AISManager::onNodeUpdated()
       contact.second->nodeStarted(node_, transform_buffer_);
 }
 
-void AISManager::updateBackground(BackgroundRaster * bg)
+void AISManager::updateBackground()
 {
-  m_background = bg;
+  // [#59 ADR-0003] Contacts are parented to the persistent scene anchor at
+  // creation and stay there. Positions are absolute Web-Mercator; refresh them
+  // when a chart loads.
   for(auto c: m_contacts)
-  {
-    c.second->setParentItem(bg);
     c.second->updateProjectedPoints();
-  }
-
 }
 
 void AISManager::updateViewport(QPointF ll, QPointF ur)

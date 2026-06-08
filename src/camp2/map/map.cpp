@@ -3,11 +3,9 @@
 #include "../tools/tools_manager.h"
 #include "layer_list.h"
 #include "../background/background_manager.h"
-#include "../ros/node.h"
 #include "map_item_mime_data.h"
 #include <QMenu>
 #include "layer.h"
-#include <QApplication>
 
 #include <QDebug>
 
@@ -25,12 +23,17 @@ Map::Map(QObject *parent):
 
   new LayerList(top_level_items_);
 
-  auto tools_manager = new tools::ToolsManager(top_level_items_);
-  auto background_manager = new background::BackgroundManager(tools_manager);
+  tools_manager_ = new tools::ToolsManager(top_level_items_);
+  auto background_manager = new background::BackgroundManager(tools_manager_);
   background_manager->createDefaultLayers();
 
-  auto ros_node = new camp::ros::Node(tools_manager);
-  connect(ros_node, &camp::ros::Node::shuttingDownRos, QCoreApplication::instance(), &QCoreApplication::quit);
+  // The ROS node is attached by the application layer (see MainWindow) via
+  // toolsManager(), so the map core has no ROS dependency.
+}
+
+tools::ToolsManager* Map::toolsManager() const
+{
+  return tools_manager_;
 }
 
 
@@ -43,6 +46,11 @@ QGraphicsScene* Map::scene() const
       return scene;
   }
   return nullptr;
+}
+
+QGraphicsItem* Map::rootItem() const
+{
+  return top_level_items_;
 }
 
 
@@ -301,6 +309,15 @@ void Map::setMapItemParent(MapItem* child_item, MapItem* parent_item, int row)
   if(parent_item)
   {
     auto parent_index = index(parent_item);
+    // [#59] A negative or out-of-range row means "append at the end" — the
+    // documented contract, and what a drag-drop onto the parent (rather than
+    // between rows) delivers as row == -1. Normalise before beginInsertRows: a
+    // raw -1 (or row > count) is an invalid insert position that violates the
+    // QAbstractItemModel protocol. The moving child was already detached above,
+    // so childMapItems() here excludes it, making count the valid append index.
+    const int child_count = parent_item->childMapItems().size();
+    if(row < 0 || row > child_count)
+      row = child_count;
     beginInsertRows(parent_index, row, row);
     child_item->setParentItem(parent_item);
     if(row > 0)

@@ -8,7 +8,6 @@
 #include <QPainterPath>
 #include <QPen>
 
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 CollisionMonitor::CollisionMonitor(QWidget* parent, QGraphicsItem* parentItem):
@@ -24,7 +23,7 @@ QRectF CollisionMonitor::boundingRect() const
 {
   if(!is_visible_)
     return QRectF();
-  return polygonPath(findParentBackgroundRaster()).boundingRect();
+  return polygonPath().boundingRect();
 }
 
 void CollisionMonitor::paint(QPainter* painter, const QStyleOptionGraphicsItem* option, QWidget* widget)
@@ -34,7 +33,7 @@ void CollisionMonitor::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
   if(!is_visible_)
     return;
 
-  auto path = polygonPath(findParentBackgroundRaster());
+  auto path = polygonPath();
   if(path.isEmpty())
     return;
 
@@ -58,18 +57,21 @@ void CollisionMonitor::paint(QPainter* painter, const QStyleOptionGraphicsItem* 
   painter->restore();
 }
 
-QPainterPath CollisionMonitor::polygonPath(BackgroundRaster* bg) const
+QPainterPath CollisionMonitor::polygonPath() const
 {
   QPainterPath path;
+  // [#59 PR6] Chart-independent: the zone is anchored to the persistent scene
+  // root and projected via the bg-free geoToPixel (Web-Mercator scene), so it
+  // renders with or without a chart loaded.
   // A closed, fillable polygon needs at least 3 vertices; fewer would
   // closeSubpath() into a degenerate line. Collision-monitor zones are always
   // >=3 (4 in practice), so this is a defensive guard.
-  if(bg && points_.size() >= 3)
+  if(points_.size() >= 3)
   {
     bool first = true;
     for(const auto& gc: points_)
     {
-      QPointF px = geoToPixel(gc, bg);
+      QPointF px = geoToPixel(gc);
       if(first)
       {
         path.moveTo(px);
@@ -143,9 +145,11 @@ void CollisionMonitor::visibilityChanged()
   GeoGraphicsItem::update();
 }
 
-void CollisionMonitor::updateBackground(BackgroundRaster* bg)
+void CollisionMonitor::updateBackground()
 {
+  // [#59 ADR-0003] The zone is parented to the persistent scene anchor at
+  // creation and stays there. Positions are absolute Web-Mercator; just trigger
+  // a repaint on chart change.
   prepareGeometryChange();
-  setParentItem(bg);
   GeoGraphicsItem::update();
 }

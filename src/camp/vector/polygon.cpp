@@ -90,10 +90,10 @@ QPainterPath Polygon::shape() const
 void Polygon::updateProjectedPoints()
 {
     for(auto& p: m_exteriorRing)
-        p.pos = geoToPixel(p.location,autonomousVehicleProject());
+        p.pos = geoToPixel(p.location);
     for(auto& ir: m_interiorRings)
         for(auto& p: ir)
-            p.pos = geoToPixel(p.location,autonomousVehicleProject());
+            p.pos = geoToPixel(p.location);
     updateBBox();
 }
 
@@ -126,7 +126,7 @@ void Polygon::addExteriorPoint(const QGeoCoordinate& location)
 {
     LocationPosition lp;
     lp.location = location;
-    lp.pos = geoToPixel(location,autonomousVehicleProject());
+    lp.pos = geoToPixel(location);
     m_exteriorRing.append(lp);
     //updateBBox();
 }
@@ -135,7 +135,7 @@ void Polygon::addInteriorPoint(const QGeoCoordinate& location)
 {
     LocationPosition lp;
     lp.location = location;
-    lp.pos = geoToPixel(location,autonomousVehicleProject());
+    lp.pos = geoToPixel(location);
     m_interiorRings.rbegin()->append(lp);
 }
 

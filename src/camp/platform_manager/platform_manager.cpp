@@ -1,7 +1,6 @@
 #include "platform_manager.h"
 #include "ui_platform_manager.h"
 #include "platform.h"
-#include "backgroundraster.h"
 #include "ros/ros_context.h"
 
 PlatformManager::PlatformManager(QWidget* parent):
@@ -38,21 +37,20 @@ void PlatformManager::updatePlatform(marine_interfaces::msg::Platform platform)
 {
   if(m_platforms.find(platform.name) == m_platforms.end())
   {
-    m_platforms[platform.name] = new Platform(this, m_background);
+    m_platforms[platform.name] = new Platform(this, m_anchor);
     m_platforms[platform.name]->nodeStarted(node_, transform_buffer_);
     m_ui->tabWidget->addTab(m_platforms[platform.name], platform.name.c_str());
   }
   m_platforms[platform.name]->update(platform);
 }
 
-void PlatformManager::updateBackground(BackgroundRaster * bg)
+void PlatformManager::updateBackground()
 {
-  m_background = bg;
+  // [#59 ADR-0003] Platforms are parented to the persistent scene anchor at
+  // creation and stay there. Positions are absolute Web-Mercator; refresh them
+  // when a chart loads.
   for(auto p: m_platforms)
-  {
-    p.second->setParentItem(bg);
     p.second->updateProjectedPoints();
-  }
 }
 
 void PlatformManager::on_tabWidget_currentChanged(int index)

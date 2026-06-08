@@ -1,12 +1,15 @@
 #include "geographicsitem.h"
-#include "backgroundraster.h"
 #include "autonomousvehicleproject.h"
 #include "missionitem.h"
+#include "map_view/web_mercator.h"
 #include <QGraphicsSimpleTextItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QFont>
 #include <QBrush>
 #include <QPen>
 #include <QDebug>
+#include <cmath>
 
 GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(parentItem), m_showLabelFlag(false)
 {
@@ -23,27 +26,35 @@ GeoGraphicsItem::GeoGraphicsItem(QGraphicsItem *parentItem): QGraphicsItem(paren
     //m_label->setFlag(QGraphicsItem::ItemIsMovable); this caused other elements to move while trying to move the label!
 }
 
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, AutonomousVehicleProject *p) const
+QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point) const
 {
-    if(p)
-        return geoToPixel(point, p->getBackgroundRaster());
-    return QPointF();
-
+    // [#59 PR3a] The scene is Web Mercator (ADR-0002). Position comes from
+    // web_mercator::geoToMap, independent of any background raster. setPos wants
+    // the point in PARENT-local coordinates, so map the scene point through the
+    // parent with mapFromScene — correct for any parent transform (translation,
+    // scale, rotation), not just the translation-only case the old
+    // `ret - parentItem()->scenePos()` handled. Reduces to the same value for the
+    // untransformed origin anchor / container layers overlays parent to today.
+    QPointF ret = web_mercator::geoToMap(point);
+    QGraphicsItem *pi = parentItem();
+    if(pi)
+        return pi->mapFromScene(ret);
+    return ret;
 }
 
-QPointF GeoGraphicsItem::geoToPixel(const QGeoCoordinate &point, BackgroundRaster *bg) const
+qreal GeoGraphicsItem::metresPerPixel(const QGeoCoordinate &at) const
 {
-    if(bg)
-    {
-        QPointF ret = bg->geoToPixel(point);
-        QGraphicsItem *pi = parentItem();
-        if(pi)
-        {
-            return ret - pi->scenePos();
-        }
-        return ret;
-    }
-    return QPointF();
+    // Display-pixels per scene-unit from the active view's transform (m11 is the
+    // positive X scale; a Y-flip leaves it positive). Scene units are
+    // Web-Mercator metres-at-equator, so metersPerUnit() applies the cos(latitude)
+    // correction to recover real metres. Result = real metres per display pixel.
+    qreal pixels_per_unit = 1.0;
+    if(scene() && !scene()->views().isEmpty())
+        pixels_per_unit = std::abs(scene()->views().first()->transform().m11());
+    if(pixels_per_unit <= 0.0)
+        pixels_per_unit = 1.0;
+    const double metres_per_unit = web_mercator::metersPerUnit(web_mercator::geoToMap(at));
+    return metres_per_unit / pixels_per_unit;
 }
 
 void GeoGraphicsItem::prepareGeometryChange()
@@ -75,19 +86,5 @@ void GeoGraphicsItem::setShowLabelFlag(bool show)
         m_label->setText(m_labelText);
     else
         m_label->setText("");
-}
-
-BackgroundRaster* GeoGraphicsItem::findParentBackgroundRaster() const
-{
-    BackgroundRaster* ret = nullptr;
-    QGraphicsItem* parent = parentItem();
-    while(parent)
-    {
-        ret = dynamic_cast<BackgroundRaster*>(parent);
-        if(ret)
-            return ret;
-        parent = parent->parentItem();
-    }
-    return ret;
 }
 

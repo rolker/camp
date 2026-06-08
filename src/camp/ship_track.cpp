@@ -8,13 +8,13 @@ ShipTrack::ShipTrack(QGraphicsItem *parentItem):GeoGraphicsItem(parentItem)
 
 }
 
-void ShipTrack::drawTriangle(QPainterPath& path, BackgroundRaster* bg, const QGeoCoordinate& location, double heading_degrees, double scale) const
+void ShipTrack::drawTriangle(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, double scale) const
 {
   if(std::isnan(heading_degrees))
   {
-    QPointF center = geoToPixel(location, bg);
+    QPointF center = geoToPixel(location);
     QGeoCoordinate radius_away = location.atDistanceAndAzimuth(15, 0);
-    QPointF radius_away_local = geoToPixel(radius_away, bg);
+    QPointF radius_away_local = geoToPixel(radius_away);
     QPointF radius_local = center-radius_away_local;
     float radius_pixel = sqrt(radius_local.rx()*radius_local.rx()+radius_local.ry()*radius_local.ry());
     path.addEllipse(center, radius_pixel, radius_pixel);
@@ -25,9 +25,9 @@ void ShipTrack::drawTriangle(QPainterPath& path, BackgroundRaster* bg, const QGe
   QGeoCoordinate llcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees-150);
   QGeoCoordinate lrcorner = location.atDistanceAndAzimuth(15*scale,heading_degrees+150);
 
-  QPointF ltip = geoToPixel(tip, bg);
-  QPointF lllocal = geoToPixel(llcorner, bg);
-  QPointF lrlocal = geoToPixel(lrcorner, bg);
+  QPointF ltip = geoToPixel(tip);
+  QPointF lllocal = geoToPixel(llcorner);
+  QPointF lrlocal = geoToPixel(lrcorner);
 
   path.moveTo(ltip);
   path.lineTo(lllocal);
@@ -35,16 +35,16 @@ void ShipTrack::drawTriangle(QPainterPath& path, BackgroundRaster* bg, const QGe
   path.lineTo(ltip);
 }
 
-void ShipTrack::drawShipOutline(QPainterPath& path, BackgroundRaster* bg, const QGeoCoordinate& location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const
+void ShipTrack::drawShipOutline(QPainterPath& path, const QGeoCoordinate& location, double heading_degrees, float dimension_to_bow, float dimension_to_port, float dimension_to_stbd, float dimension_to_stern) const
 {
   if(std::isnan(heading_degrees))
   {
-    QPointF center = geoToPixel(location, bg);
+    QPointF center = geoToPixel(location);
     float radius = std::max(dimension_to_bow, dimension_to_stern);
     radius = std::max(radius, dimension_to_port);
     radius = std::max(radius, dimension_to_stbd);
     QGeoCoordinate radius_away = location.atDistanceAndAzimuth(radius,0);
-    QPointF radius_away_local = geoToPixel(radius_away, bg);
+    QPointF radius_away_local = geoToPixel(radius_away);
     QPointF radius_local = center-radius_away_local;
     float radius_pixel = sqrt(radius_local.rx()*radius_local.rx()+radius_local.ry()*radius_local.ry());
     path.addEllipse(center, radius_pixel, radius_pixel);
@@ -60,11 +60,11 @@ void ShipTrack::drawShipOutline(QPainterPath& path, BackgroundRaster* bg, const 
   QGeoCoordinate rkink = lrcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
   QGeoCoordinate lkink = llcorner.atDistanceAndAzimuth(length*.8,heading_degrees);
   QGeoCoordinate bow = ulcorner.atDistanceAndAzimuth(width/2.0,90+heading_degrees);
-  QPointF lllocal = geoToPixel(llcorner, bg);
-  QPointF lrlocal = geoToPixel(lrcorner, bg);
-  QPointF lkinkl = geoToPixel(lkink, bg);
-  QPointF rkinkl = geoToPixel(rkink, bg);
-  QPointF bowl = geoToPixel(bow, bg);
+  QPointF lllocal = geoToPixel(llcorner);
+  QPointF lrlocal = geoToPixel(lrcorner);
+  QPointF lkinkl = geoToPixel(lkink);
+  QPointF rkinkl = geoToPixel(rkink);
+  QPointF bowl = geoToPixel(bow);
   
   path.moveTo(lllocal);
   path.lineTo(lrlocal);

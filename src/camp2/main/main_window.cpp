@@ -1,8 +1,10 @@
 #include "main_window.h"
+#include <QApplication>
 #include <QLabel>
 #include "../map/map.h"
 #include "../map_tree_view/map_item_delegate.h"
 #include "../map_tiles/map_tiles.h"
+#include "../ros/node.h"
 #include <QAbstractItemModelTester>
 #include <QSettings>
 
@@ -22,6 +24,11 @@ MainWindow::MainWindow(QWidget *parent)
   connect(ui_.mapView, &MapView::mouseMoved, this, &MainWindow::mousePositionUpdate);
 
   map_ = new map::Map(this);
+
+  // Attach the ROS node to the map's tools manager. Done here in the app layer
+  // (rather than inside Map) so the map core library stays ROS-free.
+  auto ros_node = new ros::Node(map_->toolsManager());
+  connect(ros_node, &ros::Node::shuttingDownRos, qApp, &QCoreApplication::quit);
 
   new QAbstractItemModelTester(map_,QAbstractItemModelTester::FailureReportingMode::Fatal, this);
   

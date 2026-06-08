@@ -1,5 +1,4 @@
 #include "ais_contact.h"
-#include "backgroundraster.h"
 #include <QPainter>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2/LinearMath/Vector3.h>
@@ -148,12 +147,10 @@ void AISContact::newReport(AISReport *report)
   dimension_to_stbd = report->dimension_to_stbd;
   dimension_to_stern = report->dimension_to_stern;
   m_states[report->timestamp] = *report;
-  BackgroundRaster* bg = findParentBackgroundRaster();
-  if(bg)
-  {
-    m_states[report->timestamp].location.pos = geoToPixel(report->location.location, bg);
-    setLabelPosition(m_states[report->timestamp].location.pos);
-  }
+  // [#59 PR6] Chart-independent: project unconditionally (the contact is parented
+  // to the persistent scene anchor; the scene is Web Mercator).
+  m_states[report->timestamp].location.pos = geoToPixel(report->location.location);
+  setLabelPosition(m_states[report->timestamp].location.pos);
 }
 
 void AISContact::updateLabel()
@@ -176,9 +173,11 @@ void AISContact::updateLabel()
 
 void AISContact::updateProjectedPoints()
 {
-  BackgroundRaster* bg = dynamic_cast<BackgroundRaster*>(parentItem());
+  // [#59 ADR-0003] Positions are absolute Web-Mercator; geoToPixel needs no
+  // background raster (the old bg parent cast was already dead — overlays
+  // re-home to the map's scene-root anchor, not the chart).
   for (auto& s: m_states)
-    s.second.location.pos = geoToPixel(s.second.location.location, bg);
+    s.second.location.pos = geoToPixel(s.second.location.location);
   if (!m_states.empty())
     setLabelPosition(m_states.rbegin()->second.location.pos);
 }
@@ -235,19 +234,17 @@ QPainterPath AISContact::shape() const
           break;
       }
 
-      BackgroundRaster* bg = findParentBackgroundRaster();
-      if(bg)
-      {
-        bool forceTriangle = false;
-        if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
-          forceTriangle = true;
-        float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
-        qreal pixel_size = bg->scaledPixelSize();
-        if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, state->second.location.location, state->second.heading, pixel_size);
-        else
-          drawShipOutline(ret, bg, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
-      }
+      // [#59 PR6] Draw unconditionally — chart-independent (anchored to the
+      // persistent scene root; Web-Mercator scene).
+      bool forceTriangle = false;
+      if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
+        forceTriangle = true;
+      float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
+      qreal pixel_size = metresPerPixel(state->second.location.location);
+      if(pixel_size > max_size/10.0 || forceTriangle)
+        drawTriangle(ret, state->second.location.location, state->second.heading, pixel_size);
+      else
+        drawShipOutline(ret, state->second.location.location, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);
 
     }
   }
@@ -268,21 +265,17 @@ QPainterPath AISContact::predictionShape() const
       QGeoCoordinate futureLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*300, state->second.cog);
       auto timeSinceReport = m_displayTime - state->first;
       QGeoCoordinate predicatedLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*timeSinceReport.seconds(), state->second.cog);
-      BackgroundRaster* bg = findParentBackgroundRaster();
-      if(bg)
-      {
-        ret.lineTo(geoToPixel(futureLocation, bg));
+      ret.lineTo(geoToPixel(futureLocation));
 
-        bool forceTriangle = false;
-        if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
-          forceTriangle = true;
-        float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
-        qreal pixel_size = bg->scaledPixelSize();
-        if(pixel_size > max_size/10.0 || forceTriangle)
-          drawTriangle(ret, bg, predicatedLocation, state->second.heading, pixel_size);
-        else
-          drawShipOutline(ret, bg, predicatedLocation, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);      
-      }
+      bool forceTriangle = false;
+      if (dimension_to_bow + dimension_to_stern == 0 || dimension_to_port + dimension_to_stbd == 0)
+        forceTriangle = true;
+      float max_size = std::max(dimension_to_bow + dimension_to_stern, dimension_to_port + dimension_to_stbd);
+      qreal pixel_size = metresPerPixel(predicatedLocation);
+      if(pixel_size > max_size/10.0 || forceTriangle)
+        drawTriangle(ret, predicatedLocation, state->second.heading, pixel_size);
+      else
+        drawShipOutline(ret, predicatedLocation, state->second.heading, dimension_to_bow, dimension_to_port, dimension_to_stbd, dimension_to_stern);
     }
   }
   return ret;

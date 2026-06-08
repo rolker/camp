@@ -225,11 +225,6 @@
      <string>Setti&amp;ngs</string>
     </property>
     <addaction name="actionShowTail"/>
-    <addaction name="actionGridManager"/>
-    <addaction name="actionMarkersManager"/>
-    <addaction name="actionCollisionMonitorManager"/>
-    <addaction name="actionAISManager"/>
-    <addaction name="actionSay_something"/>
     <addaction name="actionFollow"/>
    </widget>
    <addaction name="menu_File"/>
@@ -350,17 +345,6 @@
     <string>Behavior</string>
    </property>
   </action>
-  <action name="actionRadar">
-   <property name="checkable">
-    <bool>true</bool>
-   </property>
-   <property name="checked">
-    <bool>true</bool>
-   </property>
-   <property name="text">
-    <string>Radar</string>
-   </property>
-  </action>
   <action name="actionShowTail">
    <property name="checkable">
     <bool>true</bool>
@@ -370,21 +354,6 @@
    </property>
    <property name="text">
     <string>Show tail</string>
-   </property>
-  </action>
-  <action name="actionAISManager">
-   <property name="text">
-    <string>AIS Manager</string>
-   </property>
-  </action>
-  <action name="actionSay_something">
-   <property name="text">
-    <string>Say something</string>
-   </property>
-  </action>
-  <action name="actionRadarColor">
-   <property name="text">
-    <string>Radar Color</string>
    </property>
   </action>
   <action name="actionFollow">
@@ -403,26 +372,6 @@
   <action name="actionOrbit">
    <property name="text">
     <string>Orbit</string>
-   </property>
-  </action>
-  <action name="actionRadarManager">
-   <property name="text">
-    <string>Radar Manager</string>
-   </property>
-  </action>
-  <action name="actionGridManager">
-   <property name="text">
-    <string>Grid Manager</string>
-   </property>
-  </action>
-  <action name="actionMarkersManager">
-   <property name="text">
-    <string>Markers Manager</string>
-   </property>
-  </action>
-  <action name="actionCollisionMonitorManager">
-   <property name="text">
-    <string>Collision Monitor Manager</string>
    </property>
   </action>
   <action name="actionAvoid">

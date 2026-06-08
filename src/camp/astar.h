@@ -13,8 +13,8 @@
 #include <cmath> // For sqrt and pow
 #include <algorithm> // for max_element and sort
 #include <queue> // for priority_queue
+#include <map> // for std::map
 #include <iostream>
-#include "backgroundraster.h"
 
 namespace astar
 {
@@ -41,9 +41,9 @@ struct Position
         return x == other.x && y == other.y;
     }
     
-    bool isWithinBounds(BackgroundRaster const&map) const
+    bool isWithinBounds(int gridSize) const
     {
-        return x >= 0 && y >= 0 && x < map.width() && y < map.height();
+        return x >= 0 && y >= 0 && x < gridSize && y < gridSize;
     }
     
     double distanceFromOrigin() const
@@ -63,13 +63,29 @@ struct Context
 {
     Context():depthWeightValue(0.11)
     {}
-    
-    BackgroundRaster *map;
+
+    // [#59 PR3c] A* runs on a self-defined square grid (gridSize x gridSize),
+    // independent of any raster's pixel grid. The caller builds the grid from
+    // the planning area and pre-samples depth per cell (depthGrid, row-major).
+    // Cells with no depth coverage are stored as unknownDepth so the existing
+    // "< minDepth" obstacle checks treat unknown water as unsafe.
+    static constexpr float unknownDepth = -1.0e9f;
+
+    int gridSize = 0;
+    std::vector<float> depthGrid;       // size gridSize*gridSize, row-major (index = y*gridSize + x)
     Position start, finish;
     float depthWeightValue;
     double shipDraft;
     double maxDepth;
     double minDepth;
+
+    // Depth at grid cell (x,y); out-of-grid reads return unknownDepth (obstacle).
+    float depthAt(int x, int y) const
+    {
+        if(x < 0 || y < 0 || x >= gridSize || y >= gridSize)
+            return unknownDepth;
+        return depthGrid[y*gridSize + x];
+    }
 };
 
 /* --------------------------------------------------------------------------

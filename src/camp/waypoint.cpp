@@ -1,7 +1,7 @@
 #include "waypoint.h"
 #include <QPainter>
 #include "autonomousvehicleproject.h"
-#include "backgroundraster.h"
+#include "map_view/web_mercator.h"
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QDebug>
@@ -20,7 +20,7 @@ QGeoCoordinate const &Waypoint::location() const
 void Waypoint::setLocation(QGeoCoordinate const &location)
 {
     //qDebug() << "Waypoint::setLocation " << static_cast<const void *>(this) << location;
-    setPos(geoToPixel(location,autonomousVehicleProject()));
+    setPos(geoToPixel(location));
     m_location = location;
     setLabel(location.toString());
 }
@@ -51,11 +51,12 @@ void Waypoint::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 QPainterPath Waypoint::shape() const
 {
     QPainterPath ret;
+    // [#59 ADR-0003] Glyph scale tracks the project map scale, not a chart (see
+    // GeoGraphicsMissionItem::drawArrow). Identical to the old
+    // BackgroundRaster::mapScale() with a chart loaded; zoom-aware over OSM/WMTS.
     qreal scale = 1.0;
-    auto bgr = autonomousVehicleProject()->getBackgroundRaster();
-    if(bgr)
-        scale = 1.0/bgr->mapScale();// scaledPixelSize();
-    //qDebug() << "scale: " << scale;
+    if(auto* avp = autonomousVehicleProject())
+        scale = 1.0/avp->mapScale();
     scale = std::max(0.05,scale);
     ret.addRoundedRect(-10*scale,-10*scale,20*scale,20*scale,8*scale,8*scale);
     return ret;
@@ -64,10 +65,10 @@ QPainterPath Waypoint::shape() const
 
 void Waypoint::updateLocation()
 {
-    AutonomousVehicleProject *avp = autonomousVehicleProject();
-    BackgroundRaster *bgr = avp->getBackgroundRaster();
-    QPointF projectedPosition = bgr->pixelToProjectedPoint(scenePos());
-    m_location = bgr->unproject(projectedPosition);
+    // [#59 PR3a] Scene is Web Mercator; recover geo directly from the scene
+    // position rather than the (depth-only) background raster's pixel space.
+    // See ADR-0002.
+    m_location = web_mercator::mapToGeo(scenePos());
     setLabel(m_location.toString());
 }
 
@@ -78,7 +79,10 @@ QVariant Waypoint::itemChange(GraphicsItemChange change, const QVariant &value)
         if(change == ItemPositionChange || change == ItemScenePositionHasChanged)
         {
             updateLocation();
-            parentItem()->update();
+            // [#59 PR6] Guard the parent deref: top-level items now parent to the
+            // map's persistent anchor, but a parentless item must never crash here.
+            if(auto* p = parentItem())
+                p->update();
         }
         if(change == ItemPositionChange)
             emit waypointAboutToMove();
@@ -198,7 +202,7 @@ void Waypoint::writeToGeoJsonCoordinates(QJsonArray & json) const
 void Waypoint::updateProjectedPoints()
 {
     m_internalPositionChangeFlag = true;
-    setPos(geoToPixel(m_location,autonomousVehicleProject()));
+    setPos(geoToPixel(m_location));
     m_internalPositionChangeFlag = false;
 }
 
@@ -214,7 +218,7 @@ void Waypoint::hoverEnterEvent(QGraphicsSceneHoverEvent * event)
 {
     GeoGraphicsMissionItem::hoverEnterEvent(event);
     setLabel(objectName() + "\n" + m_location.toString(QGeoCoordinate::Degrees)+"\n"+m_location.toString(QGeoCoordinate::DegreesMinutesWithHemisphere));
-    //setLabelPosition(geoToPixel(m_location,autonomousVehicleProject()));
+    //setLabelPosition(geoToPixel(m_location));
     setShowLabelFlag(true);
 }
 
