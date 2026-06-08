@@ -32,7 +32,14 @@ DepthRaster::DepthRaster(const QString& filename):
 
 bool DepthRaster::depthValid() const
 {
-    return m_width > 0 && m_height > 0 && m_depth_data.size() == static_cast<size_t>(m_width) * m_height;
+    // [#59] A Float32 band alone is not enough: without a projection the
+    // georeference is meaningless, so getDepth(geo) would map every query through
+    // a degenerate transform and return a *finite* bogus depth instead of NaN —
+    // garbage that would feed the shoal-avoidance A*. Require a real projection
+    // so a non-georeferenced raster is treated as "no depth" (getDepth → NaN =
+    // safe unknown). Chart-derived depth rasters (KAP/BAG/VRT) always have one.
+    return m_width > 0 && m_height > 0 && !projection().isEmpty()
+           && m_depth_data.size() == static_cast<size_t>(m_width) * m_height;
 }
 
 float DepthRaster::getDepth(int x, int y) const
