@@ -119,14 +119,12 @@ set (UIS
     src/camp/orbitdetails.ui
     src/camp/mainwindow.ui
     src/camp/collision_monitor/collision_monitor.ui
-    src/camp/collision_monitor/collision_monitor_manager.ui
     src/camp/waypointdetails.ui
     src/camp/helm_manager/helm_manager_config.ui
     src/camp/helm_manager/helm_manager.ui
     src/camp/roslink.ui
     src/camp/surveypatterndetails.ui
     src/camp/mission_manager/mission_manager.ui
-    src/camp/ais/ais_manager.ui
     src/camp/tracklinedetails.ui
 )
 

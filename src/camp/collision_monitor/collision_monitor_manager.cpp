@@ -21,11 +21,9 @@ bool isCollisionPolygon(const std::string& name, const char* kind)
 }
 }  // namespace
 
-CollisionMonitorManager::CollisionMonitorManager(QWidget* parent):
-  camp_ros::ROSWidget(parent)
+CollisionMonitorManager::CollisionMonitorManager(QObject* parent):
+  camp_ros::ROSObject(parent)
 {
-  ui_.setupUi(this);
-
   scan_timer_ = new QTimer(this);
   connect(scan_timer_, &QTimer::timeout, this, &CollisionMonitorManager::scanForSources);
   scan_timer_->start(1000);
@@ -56,14 +54,16 @@ void CollisionMonitorManager::scanForSources()
         const bool is_stop = isCollisionPolygon(name, "stop");
         if((is_slow || is_stop) && monitors_.find(name) == monitors_.end())
         {
-          auto* monitor = new CollisionMonitor(this, m_anchor);
+          // [#59 PR5] No QWidget parent — the zone renders via its GeoGraphicsItem
+          // under the "Collision Monitor" Map layer (m_anchor); the per-zone
+          // widget UI is unused now that visibility is the layer's checkbox.
+          auto* monitor = new CollisionMonitor(nullptr, m_anchor);
           monitor->nodeStarted(node_, transform_buffer_);
           // stop zone = red, slowdown zone = amber.
           monitor->setKind(is_stop ? CollisionMonitor::Kind::Stop : CollisionMonitor::Kind::Slowdown);
           monitor->setColor(is_stop ? QColor(220, 30, 30) : QColor(240, 180, 0));
           monitor->setTopic(name);
           monitor->setObjectName(name.c_str());
-          ui_.monitorsLayout->addWidget(monitor);
           monitors_[name] = monitor;
         }
       }

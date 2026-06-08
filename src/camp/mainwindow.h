@@ -69,8 +69,6 @@ private slots:
     void on_treeView_customContextMenuRequested(const QPoint &pos);
 
     void on_actionShowTail_triggered();
-    void on_actionAISManager_triggered();
-    void on_actionCollisionMonitorManager_triggered();
     void on_actionFollow_triggered();
 
     void on_speedLineEdit_editingFinished();

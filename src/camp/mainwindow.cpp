@@ -21,6 +21,8 @@
 #include "collision_monitor/collision_monitor_manager.h"
 
 #include "map/map.h"
+#include "map/layer.h"
+#include "map/layer_list.h"
 #include "ros/node.h"          // camp2's camp::ros::Node (src/camp2/ros/node.h)
 #include "map_tree_view/map_tree_view.h"
 #include <QTabWidget>
@@ -82,14 +84,17 @@ MainWindow::MainWindow(QWidget *parent) :
 
     connect(m_ui->projectView,&ProjectView::scaleChanged,project,&AutonomousVehicleProject::updateMapScale);
 
-    m_ais_manager = new AISManager();
-    // [#59 PR6] Anchor AIS contacts to the map's persistent scene root so they
-    // render with or without a chart loaded (OSM/WMTS-only).
-    m_ais_manager->setAnchor(project->originAnchor());
+    m_ais_manager = new AISManager(this);
+    // [#59 PR5] AIS contacts live under a non-removable "AIS" layer in the Layers
+    // tab; its checkbox toggles all contacts. No separate window. The layer sits
+    // at the scene origin (like the root anchor) so geoToPixel resolves contacts
+    // correctly, and renders with or without a chart (OSM/WMTS-only).
+    auto* ais_layer = new camp::map::Layer(project->map()->topLevelLayers(), "AIS");
+    ais_layer->setRemovable(false);
+    m_ais_manager->setAnchor(ais_layer);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_ais_manager, &AISManager::updateBackground);
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
-    connect(this, &MainWindow::closing, m_ais_manager, &QWidget::close);
 
     // [#59 PR5] Grids and markers are now provided by camp2's scene-correct
     // ros overlays, hosted on camp's existing ROS node (no second node). When
@@ -105,13 +110,14 @@ MainWindow::MainWindow(QWidget *parent) :
             new camp::ros::Node(project->map()->toolsManager(), node, buffer);
         });
 
-    m_collision_monitor_manager = new CollisionMonitorManager();
-    // [#59 PR6] Anchor collision zones to the map's persistent scene root so they
-    // render with or without a chart loaded (OSM/WMTS-only).
-    m_collision_monitor_manager->setAnchor(project->originAnchor());
+    m_collision_monitor_manager = new CollisionMonitorManager(this);
+    // [#59 PR5] Collision zones live under a non-removable "Collision Monitor"
+    // layer in the Layers tab; its checkbox toggles all zones. No separate window.
+    auto* collision_layer = new camp::map::Layer(project->map()->topLevelLayers(), "Collision Monitor");
+    collision_layer->setRemovable(false);
+    m_collision_monitor_manager->setAnchor(collision_layer);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_collision_monitor_manager, &CollisionMonitorManager::nodeStarted);
     connect(project, &AutonomousVehicleProject::backgroundUpdated, m_collision_monitor_manager, &CollisionMonitorManager::updateBackground);
-    connect(this, &MainWindow::closing, m_collision_monitor_manager, &QWidget::close);
 
     m_ui->rosLink->connectROS();
 
@@ -601,12 +607,3 @@ void MainWindow::onROSConnected(bool connected)
     //m_ui->rosDetails->setEnabled(connected);
 }
 
-void MainWindow::on_actionAISManager_triggered()
-{
-    m_ais_manager->show();
-}
-
-void MainWindow::on_actionCollisionMonitorManager_triggered()
-{
-    m_collision_monitor_manager->show();
-}

@@ -225,8 +225,6 @@
      <string>Setti&amp;ngs</string>
     </property>
     <addaction name="actionShowTail"/>
-    <addaction name="actionCollisionMonitorManager"/>
-    <addaction name="actionAISManager"/>
     <addaction name="actionFollow"/>
    </widget>
    <addaction name="menu_File"/>
@@ -358,11 +356,6 @@
     <string>Show tail</string>
    </property>
   </action>
-  <action name="actionAISManager">
-   <property name="text">
-    <string>AIS Manager</string>
-   </property>
-  </action>
   <action name="actionFollow">
    <property name="checkable">
     <bool>true</bool>
@@ -379,11 +372,6 @@
   <action name="actionOrbit">
    <property name="text">
     <string>Orbit</string>
-   </property>
-  </action>
-  <action name="actionCollisionMonitorManager">
-   <property name="text">
-    <string>Collision Monitor Manager</string>
    </property>
   </action>
   <action name="actionAvoid">
