@@ -21,9 +21,11 @@ void FootprintManager::scanForSources()
   for(const auto& topic: topics)
   {
     const auto& name = topic.first;
-    // Match nav2's `.../local_costmap/published_footprint` robustly to whatever
-    // namespace prefix the udp_bridge applies (e.g. /bizzy/...).
-    if(name.find("published_footprint") == std::string::npos)
+    // PolygonStamped is a generic type, so we match by name. Nav2 publishes
+    // `published_footprint` from BOTH local_costmap and global_costmap (same
+    // boat outline) — match only the local one so we don't draw two overlapping
+    // footprints. The substring is namespace-prefix agnostic (e.g. /bizzy/...).
+    if(name.find("local_costmap/published_footprint") == std::string::npos)
       continue;
     if(footprints_.find(name) != footprints_.end())
       continue;
