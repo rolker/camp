@@ -50,8 +50,38 @@ void Markers::markerCallback(const visualization_msgs::msg::Marker &data)
 
 void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &markers)
 {
-  for(auto m: markers)
+  // Throttle against the node's clock so log intervals track sim time when
+  // use_sim_time is set, rather than a local system-time clock.
+  auto clock = node_->node()->get_clock();
+  auto now = clock->now();
+  for(const auto& m: markers)
   {
+    if(m.action == visualization_msgs::msg::Marker::ADD)
+    {
+      // [#70] Drop markers that are already expired on arrival. Without this
+      // they'd be added, drawn once, then cleared by the 1 Hz expiry poll a
+      // moment later. The non-zero-stamp guard mirrors Marker::checkExpired and
+      // avoids comparing against a default-constructed (zero) stamp.
+      // Ported from camp's markers_converter drop checks.
+      // Construct the stamp in the node clock's time domain so the comparison
+      // against `now` is valid under use_sim_time (rclcpp::Time rejects mixing
+      // clock types, and the message stamp would otherwise default to ROS time).
+      const rclcpp::Time stamp(m.header.stamp, clock->get_clock_type());
+      if(stamp.nanoseconds() != 0 &&
+         rclcpp::Duration(m.lifetime).nanoseconds() != 0 &&
+         stamp + rclcpp::Duration(m.lifetime) < now)
+      {
+        RCLCPP_DEBUG_STREAM_THROTTLE(node_->node()->get_logger(), *clock, 5000, "Dropping already-expired marker " << m.ns << ": " << m.id);
+        continue;
+      }
+      // [#70] Drop markers with no frame_id — the transform to earth can't be
+      // resolved, so they would only throw and spam the catch below every frame.
+      if(m.header.frame_id.empty())
+      {
+        RCLCPP_DEBUG_STREAM_THROTTLE(node_->node()->get_logger(), *clock, 1000, "Dropping marker with empty frame_id " << m.ns << ": " << m.id);
+        continue;
+      }
+    }
     try
     {
       MarkerData marker_data;
@@ -65,8 +95,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &mar
     }
     catch (tf2::TransformException &ex)
     {
-      rclcpp::Clock clock;
-      RCLCPP_WARN_STREAM_THROTTLE(node_->node()->get_logger(), clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " what: " << ex.what());
+      RCLCPP_WARN_STREAM_THROTTLE(node_->node()->get_logger(), *clock, 2000, "Unable to find transform to earth for marker " << m.ns << ": " << m.id << " what: " << ex.what());
     }
   }
 }
@@ -84,24 +113,62 @@ MarkerNamespace* Markers::markerNamespace(const QString& marker_namespace) const
 
 void Markers::updateMarker(const MarkerData& data)
 {
+  const auto action = data.marker.action;
+
   // [#70] DELETEALL clears EVERY namespace per the visualization_msgs spec, not
   // just the message's own ns (which is conventionally empty). Fan it out to all
   // existing MarkerNamespaces; routing it to a single namespace (the previous
   // behavior) left markers in every other namespace as stale visuals on the
   // operator's map. Each MarkerNamespace::updateMarker handles DELETEALL by
-  // clearing its own markers.
-  if(data.marker.action == visualization_msgs::msg::Marker::DELETEALL)
+  // deleting its own markers; prune the namespaces it empties.
+  if(action == visualization_msgs::msg::Marker::DELETEALL)
   {
     for(auto item: childItems())
       if(auto* ns = qgraphicsitem_cast<MarkerNamespace*>(item))
         ns->updateMarker(data);
+    pruneEmptyNamespaces();
+    return;
+  }
+
+  // [#70] Warn on unrecognized actions instead of silently creating dead state
+  // (the camp original logged this; the camp2 port dropped it).
+  if(action != visualization_msgs::msg::Marker::ADD &&
+     action != visualization_msgs::msg::Marker::MODIFY &&
+     action != visualization_msgs::msg::Marker::DELETE)
+  {
+    RCLCPP_WARN_STREAM_THROTTLE(node_->node()->get_logger(), *node_->node()->get_clock(), 5000, "Unknown marker action " << static_cast<int>(action) << " for " << data.marker.ns << ": " << data.marker.id);
     return;
   }
 
   auto marker_namespace = markerNamespace(data.marker.ns.c_str());
+
+  // [#70] A DELETE for a namespace we don't track is a no-op — never create a
+  // namespace just to delete from it. Prune the namespace if this empties it.
+  if(action == visualization_msgs::msg::Marker::DELETE)
+  {
+    if(marker_namespace)
+    {
+      marker_namespace->updateMarker(data);
+      pruneEmptyNamespaces();
+    }
+    return;
+  }
+
+  // ADD / MODIFY
   if(!marker_namespace)
     marker_namespace = new MarkerNamespace(this, node_, data.marker.ns.c_str());
   marker_namespace->updateMarker(data);
+}
+
+void Markers::pruneEmptyNamespaces()
+{
+  // removeFromMap() detaches each namespace through the Map model (ADR-0003),
+  // which calls setParentItem(nullptr) synchronously — so an emptied namespace
+  // leaves childItems() within this loop and won't be revisited. [#70]
+  for(auto item: childItems())
+    if(auto* ns = qgraphicsitem_cast<MarkerNamespace*>(item))
+      if(ns->isEmpty())
+        ns->removeFromMap();
 }
 
 }  // namespace markers
