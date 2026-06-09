@@ -88,6 +88,13 @@ void Marker::updateMarker(const MarkerData& data)
       case visualization_msgs::msg::Marker::TEXT_VIEW_FACING:
       {
         auto text = new QGraphicsSimpleTextItem(data.marker.text.c_str(), this);
+        // The map view flips the Y axis so north renders up (ProjectView applies
+        // scale(1.0, -1.0); Web Mercator is Y-up, QGraphicsView is Y-down). A plain
+        // child item inherits that flip and renders upside-down. ItemIgnoresTransformations
+        // keeps the text screen-aligned, upright, and constant-size — the correct behavior
+        // for TEXT_VIEW_FACING (a billboard in rviz) and the same convention camp's other
+        // labels use (see geographicsitem.cpp, vector/point.cpp).
+        text->setFlag(QGraphicsItem::ItemIgnoresTransformations);
         text->setBrush(b);
         break;
       }
