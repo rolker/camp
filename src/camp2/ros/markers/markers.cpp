@@ -54,7 +54,7 @@ void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &mar
   // use_sim_time is set, rather than a local system-time clock.
   auto clock = node_->node()->get_clock();
   auto now = clock->now();
-  for(auto m: markers)
+  for(const auto& m: markers)
   {
     if(m.action == visualization_msgs::msg::Marker::ADD)
     {
@@ -63,9 +63,13 @@ void Markers::addMarkers(const std::vector<visualization_msgs::msg::Marker> &mar
       // moment later. The non-zero-stamp guard mirrors Marker::checkExpired and
       // avoids comparing against a default-constructed (zero) stamp.
       // Ported from camp's markers_converter drop checks.
-      if(rclcpp::Time(m.header.stamp).nanoseconds() != 0 &&
+      // Construct the stamp in the node clock's time domain so the comparison
+      // against `now` is valid under use_sim_time (rclcpp::Time rejects mixing
+      // clock types, and the message stamp would otherwise default to ROS time).
+      const rclcpp::Time stamp(m.header.stamp, clock->get_clock_type());
+      if(stamp.nanoseconds() != 0 &&
          rclcpp::Duration(m.lifetime).nanoseconds() != 0 &&
-         rclcpp::Time(m.header.stamp) + rclcpp::Duration(m.lifetime) < now)
+         stamp + rclcpp::Duration(m.lifetime) < now)
       {
         RCLCPP_DEBUG_STREAM_THROTTLE(node_->node()->get_logger(), *clock, 5000, "Dropping already-expired marker " << m.ns << ": " << m.id);
         continue;
