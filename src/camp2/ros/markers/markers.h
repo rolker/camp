@@ -41,6 +41,10 @@ private:
 
   MarkerNamespace * markerNamespace(const QString& marker_namepsace) const;
 
+  // Delete MarkerNamespaces left empty by a DELETE/DELETEALL so they don't
+  // linger as husks in the scene tree and the Layers list. [#70]
+  void pruneEmptyNamespaces();
+
 private slots:
   void updateMarker(const MarkerData& data);
 

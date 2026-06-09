@@ -29,11 +29,15 @@ public:
   }
 
 
+  // True when this namespace holds no markers — used by Markers to prune it
+  // after a DELETE/DELETEALL empties it. [#70]
+  bool isEmpty() const;
+
 public slots:
   void updateMarker(const MarkerData& data);
 
 private:
-  std::map<uint32_t, Marker*> markers() const;  
+  std::map<uint32_t, Marker*> markers() const;
 
 };
 

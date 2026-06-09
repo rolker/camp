@@ -35,16 +35,16 @@ the child list via `qgraphicsitem_cast`. Positioning is Web Mercator
 | SPHERE | `markers.cpp:96-101` | `marker.cpp:53-59` | parity | keep camp2 |
 | LINE_STRIP | `markers.cpp:102-118` | `marker.cpp:60-87` | parity | keep camp2 |
 | LINE_LIST | `markers.cpp:119-144` | `marker.cpp:60-87` | parity | keep camp2 |
-| TEXT_VIEW_FACING | `markers.cpp:145-154` (font scaled by `scale.z`) | `marker.cpp:88-93` (no scale) | differs | **port camp's font sizing into camp2 text branch** |
+| TEXT_VIEW_FACING | `markers.cpp:145-154` (font scaled by `scale.z`) | `marker.cpp:88-93` (no scale) | differs | font sizing tracked with the TEXT-rendering work in **#76 / PR #78** (same code path); not in #70 |
 | **CUBE** | not handled (`markers.cpp:155-157` warn) | `marker.cpp:46-52` | camp2-only (keep) | inherit |
 | CYLINDER / CUBE_LIST / SPHERE_LIST / POINTS / MESH / TRIANGLE_LIST / ARROW | not handled | not handled | parity (gap) | out of scope unless needed |
 | Action ADD/MODIFY (0) | `markers.cpp:251-264` | `marker.cpp:33-97` | parity | keep camp2 |
-| **Action DELETE (2)** | `markers.cpp:265-271` (erases id) | visuals cleared (`marker.cpp:27-32`) + `checkExpired` action!=0 (`marker.cpp:110`); **`Marker`/`MarkerNamespace` objects leaked** | differs | **port real object removal + prune empty namespaces** |
-| **Action DELETEALL (3)** | `markers.cpp:272-276` (clears **all** ns) | `marker_namespace.cpp:19-24` clears **one** ns only | differs (**regression**) | **fix: clear every namespace per spec** |
-| Unknown action handling | warns (`markers.cpp:277-280`) | silent | camp-only (port) | add warn log |
+| **Action DELETE (2)** | `markers.cpp:265-271` (erases id) | visuals cleared (`marker.cpp:27-32`) + `checkExpired` action!=0 (`marker.cpp:110`); **`Marker`/`MarkerNamespace` objects leaked** | differs | ✅ **#70**: `MarkerNamespace::updateMarker` deletes the `Marker` object; `Markers::pruneEmptyNamespaces` drops the emptied namespace |
+| **Action DELETEALL (3)** | `markers.cpp:272-276` (clears **all** ns) | `marker_namespace.cpp:19-24` clears **one** ns only | differs (**regression**) | ✅ **#70 / PR #75**: fans out to every namespace; this PR also deletes the `Marker` objects + prunes namespaces |
+| Unknown action handling | warns (`markers.cpp:277-280`) | silent | camp-only (port) | ✅ **#70**: throttled warn in `Markers::updateMarker` |
 | Lifetime expiry | one-shot per ADD + `purgeExpiredMarkers` (`markers.cpp:254-263,287-311`) | per-Marker 1 Hz poll (`marker.cpp:106-118`) | differs | both work; keep camp2 |
-| Already-expired drop at ingest | `markers_converter.h:61-68` | none | camp-only (port) | add pre-drop in `addMarkers` |
-| Empty frame_id drop | `markers_converter.h:69-75` | none | camp-only (port) | add explicit guard |
+| Already-expired drop at ingest | `markers_converter.h:61-68` | none | camp-only (port) | ✅ **#70**: pre-drop in `addMarkers` (non-zero-stamp guard mirrors `checkExpired`) |
+| Empty frame_id drop | `markers_converter.h:69-75` | none | camp-only (port) | ✅ **#70**: explicit guard in `addMarkers` |
 | Namespace+id keying | nested `std::map` (`markers.h:52`) | scene-graph tree (`markers.cpp:74-83`, `marker_namespace.cpp:26-44`) | differs | keep camp2 tree |
 | Color (RGBA) | pen a=a, brush a=a/2 (half-alpha fill) (`markers.cpp:70,79`) | pen+brush full a=a (`marker.cpp:38-42`) | differs (UX) | **DECIDED 2026-06-02: make fill alpha a config option** (don't hardcode either). Wire a fill-opacity setting during the markers migration; pick the default at PR5 |
 | Pose / yaw | `markers_converter.h:106` + path rotate | `markers.cpp:62` + `setRotation` (`marker.cpp:36`) | parity | keep camp2 |
@@ -56,13 +56,20 @@ the child list via `qgraphicsitem_cast`. Positioning is Web Mercator
 
 ## Direct answer: do we lose DELETE/DELETEALL, and does expiry subsume them?
 
+> **Resolved (#70).** DELETEALL fan-out landed in PR #75; DELETE object removal,
+> namespace pruning, the two ingest drops, and the unknown-action warn landed in
+> the #70 follow-up PR. Bullets below are the original analysis, kept for context.
+
 - **DELETE (2):** Not a hard *visual* regression (camp2 clears children), **but**
   camp2 leaks empty `Marker`/`MarkerNamespace` objects camp does not. **Port:
   actually remove the `Marker` item + prune empty namespaces on DELETE.**
+  → *Done:* `MarkerNamespace::updateMarker` now deletes the `Marker` and
+  `Markers::pruneEmptyNamespaces` drops the emptied namespace.
 - **DELETEALL (3):** **Real semantic regression.** camp clears **all**
   namespaces (`markers.cpp:272-275`, per the visualization_msgs spec); camp2
   only clears the message's single namespace (`marker_namespace.cpp:19-24`).
-  **Fix before retiring camp's markers.**
+  **Fix before retiring camp's markers.** → *Done in PR #75* (fan-out), extended
+  here to delete the `Marker` objects and prune namespaces.
 - **Does the expiry timer subsume them?** **No.** The timer handles *lifetime*
   removal; it provides neither the all-namespace `DELETEALL` fan-out nor object
   cleanup. Complementary, not a substitute — `DELETEALL` must be fixed

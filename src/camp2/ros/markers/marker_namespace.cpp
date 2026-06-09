@@ -16,10 +16,24 @@ MarkerNamespace::MarkerNamespace(MapItem* parent, Node* node, QString marker_nam
 void MarkerNamespace::updateMarker(const MarkerData& data)
 {
   auto markers_map = markers();
+
+  // [#70] DELETE/DELETEALL remove the Marker objects outright. The port only
+  // cleared each Marker's visual children, leaving empty Marker husks in the
+  // scene tree and the Layers list. removeFromMap() detaches each Marker through
+  // the Map model (ADR-0003) before deleting it; Markers::pruneEmptyNamespaces
+  // then drops this namespace once it is emptied.
   if(data.marker.action == visualization_msgs::msg::Marker::DELETEALL)
   {
     for(auto m: markers_map)
-      m.second->updateMarker(data);
+      m.second->removeFromMap();
+    return;
+  }
+
+  if(data.marker.action == visualization_msgs::msg::Marker::DELETE)
+  {
+    auto it = markers_map.find(data.marker.id);
+    if(it != markers_map.end())
+      it->second->removeFromMap();
     return;
   }
 
@@ -29,6 +43,11 @@ void MarkerNamespace::updateMarker(const MarkerData& data)
   else
     marker = markers_map[data.marker.id];
   marker->updateMarker(data);
+}
+
+bool MarkerNamespace::isEmpty() const
+{
+  return markers().empty();
 }
 
 std::map<uint32_t, Marker*> MarkerNamespace::markers() const
