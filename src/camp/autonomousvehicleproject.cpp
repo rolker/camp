@@ -858,7 +858,18 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     // via the Layers-tab Remove action (see onChartLayerRemoved).
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
-    int rownum = pi->childMissionItems().indexOf(item);
+    // [#86] Guard the parent/row lookup. pi is null if parent(index) is invalid
+    // (an orphaned or root-edge item); rownum is -1 if the item is no longer in
+    // its parent's child list (a re-entrant or double delete reaching a still-
+    // alive, already-detached item — a window the deleteLater() below widens).
+    // Either way there is nothing to remove from the model: just free the item.
+    // beginRemoveRows(p,-1,-1) would otherwise be an invalid range and assert.
+    int rownum = pi ? pi->childMissionItems().indexOf(item) : -1;
+    if(rownum < 0)
+    {
+        item->deleteLater();
+        return;
+    }
     // [#86] Complete the model removal with the item still alive, then defer the
     // delete. The old synchronous `delete item` ran mid-cascade (before
     // endRemoveRows), so any slot reached by endRemoveRows' currentChanged could
