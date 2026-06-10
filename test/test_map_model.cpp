@@ -74,8 +74,8 @@ QList<MapItem*> topLevelLayerItems(Map& map)
 TEST(MapModel, StackedInsertsKeepModelValid)
 {
   Map map;
-  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
   WarningTrap trap;
+  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
 
   const int before = topLevelLayerItems(map).size();
   for(int i = 0; i < 3; ++i)
@@ -91,8 +91,8 @@ TEST(MapModel, StackedInsertsKeepModelValid)
 TEST(MapModel, DetachAndDeleteRemovesOneRow)
 {
   Map map;
-  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
   WarningTrap trap;
+  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
 
   const int before = topLevelLayerItems(map).size();
   Layer* a = new Layer(map.topLevelLayers(), "a");
@@ -118,8 +118,8 @@ TEST(MapModel, DetachAndDeleteRemovesOneRow)
 TEST(MapModel, ReorderKeepsModelValid)
 {
   Map map;
-  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
   WarningTrap trap;
+  QAbstractItemModelTester tester(&map, QAbstractItemModelTester::FailureReportingMode::Warning);
 
   const int before = topLevelLayerItems(map).size();
   Layer* a = new Layer(map.topLevelLayers(), "a");
@@ -248,8 +248,8 @@ TEST(MapModel, DropReordersToTargetRow)
   for(const auto& c : cases)
   {
     Map m;
-    QAbstractItemModelTester tester(&m, QAbstractItemModelTester::FailureReportingMode::Warning);
     WarningTrap trap;
+    QAbstractItemModelTester tester(&m, QAbstractItemModelTester::FailureReportingMode::Warning);
     new Layer(m.topLevelLayers(), "a");
     new Layer(m.topLevelLayers(), "b");
     new Layer(m.topLevelLayers(), "c");
