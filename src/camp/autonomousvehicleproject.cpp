@@ -915,6 +915,19 @@ MissionItem * AutonomousVehicleProject::currentSelected() const
     return m_currentSelected;
 }
 
+void AutonomousVehicleProject::renameItem(MissionItem * item, const QString & label)
+{
+    // [#85] Apply the new label and tell the view. data() returns objectName for
+    // DisplayRole, so a dataChanged on the item's index (all roles by default) is
+    // what makes the tree refresh the displayed name after a rename.
+    if(!item)
+        return;
+    item->setObjectName(label);
+    QModelIndex idx = indexFromItem(item);
+    if(idx.isValid())
+        emit dataChanged(idx, idx);
+}
+
 QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelIndex& parent) const
 {
     if(column != 0 || row < 0)
