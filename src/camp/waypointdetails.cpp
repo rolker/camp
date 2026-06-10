@@ -28,6 +28,8 @@ void WaypointDetails::setWaypoint(Waypoint *waypoint)
 
 void WaypointDetails::onLocationChanged()
 {
+    if(!m_waypoint)
+        return;
     //qDebug() << m_waypoint->location();
     //ui->latDisplayLabel->setText(QString::number(m_waypoint->location().latitude(),'f',8));
     //ui->lonDisplayLabel->setText(QString::number(m_waypoint->location().longitude(),'f',8));

@@ -175,6 +175,19 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
     //m_ui->treeView->setCurrentIndex(index);
     //project->setCurrent(index);
     MissionItem* i = project->itemFromIndex(index);
+    // [#86] currentChanged fires with an invalid index when the selection is
+    // cleared — which happens when the selected mission item is deleted
+    // (endRemoveRows leaves no current row, e.g. last item or a whole-mission
+    // select-all delete). itemFromIndex then returns nullptr; dereferencing it
+    // here was a synchronous crash on the delete path. Clear the fields instead.
+    if(!i)
+    {
+        m_ui->speedLineEdit->clear();
+        m_ui->throttleLineEdit->clear();
+        m_ui->priorityLineEdit->clear();
+        m_ui->taskDataLineEdit->clear();
+        return;
+    }
     m_ui->speedLineEdit->setText(QString::number(i->speed()));
     emit speedUpdated(i->speed());
     m_ui->throttleLineEdit->setText(QString::number(i->throttle()*100.0));

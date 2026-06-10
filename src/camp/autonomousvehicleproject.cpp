@@ -858,11 +858,28 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     // via the Layers-tab Remove action (see onChartLayerRemoved).
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
-    int rownum = pi->childMissionItems().indexOf(item);
+    // [#86] Guard the parent/row lookup. pi is null if parent(index) is invalid
+    // (an orphaned or root-edge item); rownum is -1 if the item is no longer in
+    // its parent's child list (a re-entrant or double delete reaching a still-
+    // alive, already-detached item — a window the deleteLater() below widens).
+    // Either way there is nothing to remove from the model: just free the item.
+    // beginRemoveRows(p,-1,-1) would otherwise be an invalid range and assert.
+    int rownum = pi ? pi->childMissionItems().indexOf(item) : -1;
+    if(rownum < 0)
+    {
+        item->deleteLater();
+        return;
+    }
+    // [#86] Complete the model removal with the item still alive, then defer the
+    // delete. The old synchronous `delete item` ran mid-cascade (before
+    // endRemoveRows), so any slot reached by endRemoveRows' currentChanged could
+    // touch a freed object. deleteLater() — the same idiom the camp2 layer-delete
+    // path uses (camp::map::Layer::removeFromMap) — lets connected slots unwind
+    // first; QPointer observers in the detail panels null out when it finally dies.
     beginRemoveRows(p,rownum,rownum);
     pi->removeChildMissionItem(item);
-    delete item;
     endRemoveRows();
+    item->deleteLater();
 }
 
 void AutonomousVehicleProject::deleteItem(MissionItem *item)
@@ -896,6 +913,19 @@ void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 MissionItem * AutonomousVehicleProject::currentSelected() const
 {
     return m_currentSelected;
+}
+
+void AutonomousVehicleProject::renameItem(MissionItem * item, const QString & label)
+{
+    // [#85] Apply the new label and tell the view. data() returns objectName for
+    // DisplayRole, so a dataChanged on the item's index (all roles by default) is
+    // what makes the tree refresh the displayed name after a rename.
+    if(!item)
+        return;
+    item->setObjectName(label);
+    QModelIndex idx = indexFromItem(item);
+    if(idx.isValid())
+        emit dataChanged(idx, idx);
 }
 
 QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelIndex& parent) const

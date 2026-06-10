@@ -2,6 +2,7 @@
 #define ORBITDETAILS_H
 
 #include <QWidget>
+#include <QPointer>
 #include "ui_orbitdetails.h"
 
 
@@ -28,7 +29,7 @@ private slots:
 
 private:
     Ui::OrbitDetails ui_;
-    Orbit * orbit_ = nullptr;
+    QPointer<Orbit> orbit_;
 };
 
 #endif

@@ -114,6 +114,12 @@ public:
     QModelIndex index(int row, int column, const QModelIndex & parent) const override;
     QModelIndex parent(const QModelIndex & child) const override;
     QModelIndex indexFromItem(MissionItem * item) const;
+
+    // [#85] Rename a mission item and notify the view. setObjectName alone
+    // changes the label the tree displays (data() returns objectName for
+    // DisplayRole) but emits no model signal, so the view never refreshes —
+    // the rename silently has no visible effect. Route renames through here.
+    void renameItem(MissionItem * item, const QString & label);
     
     Qt::DropActions supportedDropActions() const override;
     

@@ -2,6 +2,7 @@
 #define SURVEYPATTERNDETAILS_H
 
 #include <QWidget>
+#include <QPointer>
 
 namespace Ui {
 class SurveyPatternDetails;
@@ -39,7 +40,7 @@ private slots:
 private:
     Ui::SurveyPatternDetails *ui;
 
-    SurveyPattern * m_surveyPattern;
+    QPointer<SurveyPattern> m_surveyPattern;
     QMetaObject::Connection m_connection;
     bool updating;
     bool m_updating_ui = false;

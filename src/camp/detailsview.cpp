@@ -154,7 +154,7 @@ void DetailsView::onRenamedPushButton_clicked()
                                          tr("New label:"), QLineEdit::Normal,
                                          mi->objectName(), &ok);
     if (ok && !text.isEmpty())
-        mi->setObjectName(text);
+        m_project->renameItem(mi, text);
     }
 }
 

@@ -23,5 +23,7 @@ void TrackLineDetails::setTrackLine(TrackLine *trackLine)
 
 void TrackLineDetails::onTrackLineUpdated()
 {
+    if(!m_trackLine)
+        return;
     ui->label->setText(QString::number(m_trackLine->waypoints().length())+" waypoints");
 }
