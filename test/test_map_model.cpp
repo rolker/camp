@@ -19,6 +19,7 @@
 
 #include <QApplication>
 #include <QAbstractItemModelTester>
+#include <QMimeData>
 
 #include "map/map.h"
 #include "map/layer.h"
