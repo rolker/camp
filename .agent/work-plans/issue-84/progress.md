@@ -22,3 +22,19 @@ issue: 84
 - [ ] (note) No test drives the view-side OnItem→Above/Below conversion that is the literal bug (Qt QTreeView behavior; not unit-testable) — manual sim confirm requested in PR #87
 
 Two independent adversarial reviewers (fresh-context Claude + Copilot CLI) confirmed the fix is sound with no must-fix issues.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-06-10 07:20 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**PR**: #87 at `2e47f65`
+**Sources**: 2 (Copilot R1 @ `62e2316`, Local Review (Pre-Push) @ `62e2316`)
+**Cross-source confirmations**: 0
+**CI**: none configured (camp has no CI)
+
+### Findings
+- [ ] (low, Copilot) `WarningTrap` is constructed after `QAbstractItemModelTester`, so the tester's constructor-time validation warnings go untrapped — swap so `WarningTrap` precedes the tester (applies to all four pairs: lines 77–78, 94–95, 121–122, 251–252) — `test/test_map_model.cpp`
+
+### False positives
+- (none)
