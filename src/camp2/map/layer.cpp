@@ -69,7 +69,21 @@ void Layer::updateFlags(Qt::ItemFlags& flags) const
   flags |= Qt::ItemIsEditable;
   flags |= Qt::ItemIsUserCheckable;
   flags |= Qt::ItemIsDragEnabled;
-  flags |= Qt::ItemIsDropEnabled;
+  // [#84] A leaf layer must NOT be drop-enabled. Reordering happens by dropping
+  // a layer onto the gap between rows, which targets the LayerList (the layer's
+  // parent) and is handled by Map::dropMimeData. When the drop lands in the
+  // middle of a *row*, QAbstractItemView treats it as a drop ONTO that row
+  // (OnItem) — but only converts it to an Above/Below (between-row) drop if the
+  // target row is not ItemIsDropEnabled (see QAbstractItemViewPrivate::position).
+  // A Layer has no working canDropMimeData (MapItem's returns false: layers are
+  // not drop containers), so leaving the flag set made every mid-row drop read
+  // as a forbidden OnItem drop — reordering only worked in the thin between-row
+  // margins, which presented as "drops only land at the first spot". Dropping
+  // the flag lets OnItem become a between-row drop everywhere, so the reorder
+  // works wherever the row is. Some Layer subclasses (markers, grids) already
+  // nest children, but none accept drops, so this is correct for all of them
+  // today. A layer that should accept drops *into* it must re-add this flag
+  // *and* override canDropMimeData.
 }
 
 void Layer::readSettings()
