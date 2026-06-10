@@ -2,6 +2,7 @@
 #define TRACKLINEDETAILS_H
 
 #include <QWidget>
+#include <QPointer>
 
 namespace Ui {
 class TrackLineDetails;
@@ -23,7 +24,7 @@ public slots:
 
 private:
     Ui::TrackLineDetails *ui;
-    TrackLine *m_trackLine;
+    QPointer<TrackLine> m_trackLine;
 };
 
 #endif // TRACKLINEDETAILS_H

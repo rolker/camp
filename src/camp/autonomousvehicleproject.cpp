@@ -859,10 +859,16 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     QModelIndex p = parent(index);
     MissionItem * pi = itemFromIndex(p);
     int rownum = pi->childMissionItems().indexOf(item);
+    // [#86] Complete the model removal with the item still alive, then defer the
+    // delete. The old synchronous `delete item` ran mid-cascade (before
+    // endRemoveRows), so any slot reached by endRemoveRows' currentChanged could
+    // touch a freed object. deleteLater() — the same idiom the camp2 layer-delete
+    // path uses (camp::map::Layer::removeFromMap) — lets connected slots unwind
+    // first; QPointer observers in the detail panels null out when it finally dies.
     beginRemoveRows(p,rownum,rownum);
     pi->removeChildMissionItem(item);
-    delete item;
     endRemoveRows();
+    item->deleteLater();
 }
 
 void AutonomousVehicleProject::deleteItem(MissionItem *item)

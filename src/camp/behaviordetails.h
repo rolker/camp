@@ -2,6 +2,7 @@
 #define BEHAVIORDETAILS_H
 
 #include <QWidget>
+#include <QPointer>
 
 namespace Ui
 {
@@ -27,7 +28,7 @@ private slots:
 
 private:
     Ui::BehaviorDetails* ui;
-    Behavior *m_behavior;
+    QPointer<Behavior> m_behavior;
 };
 
 #endif // BEHAVIORDETAILS_H

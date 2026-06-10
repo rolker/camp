@@ -31,6 +31,8 @@ void SurveyPatternDetails::setSurveyPattern(SurveyPattern *surveyPattern)
 
 void SurveyPatternDetails::onSurveyPatternUpdated()
 {
+    if(!m_surveyPattern)
+        return;
     if(!updating)
     {
         m_updating_ui = true;
@@ -44,6 +46,8 @@ void SurveyPatternDetails::onSurveyPatternUpdated()
 
 void SurveyPatternDetails::updateSurveyPattern()
 {
+    if(!m_surveyPattern)
+        return;
     updating = true;
     m_surveyPattern->setDirectionAndSpacing(ui->headingDoubleSpinBox->value(),ui->lineSpacingEdit->text().toDouble());
     m_surveyPattern->setLineLength(ui->lineLengthLineEdit->text().toDouble());

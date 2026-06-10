@@ -2,6 +2,7 @@
 #define WAYPOINTDETAILS_H
 
 #include <QWidget>
+#include <QPointer>
 
 namespace Ui {
 class WaypointDetails;
@@ -27,7 +28,7 @@ private slots:
 
 private:
     Ui::WaypointDetails *ui;
-    Waypoint * m_waypoint;
+    QPointer<Waypoint> m_waypoint;
 
     QMetaObject::Connection moveConnection;
 
