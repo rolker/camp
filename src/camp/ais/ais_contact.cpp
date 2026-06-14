@@ -10,16 +10,6 @@ AISContactDetails::AISContactDetails()
 
 }
 
-AISContactDetails::AISContactDetails(const marine_interfaces::msg::Contact& message)
-{
-  mmsi = message.mmsi;
-  name = message.name;
-  dimension_to_bow = message.dimension_to_bow;
-  dimension_to_port = message.dimension_to_port;
-  dimension_to_stbd = message.dimension_to_stbd;
-  dimension_to_stern = message.dimension_to_stern;
-}
-
 AISContactDetails::AISContactDetails(const marine_ais_msgs::msg::AISContact& message)
 {
   mmsi = message.id;
@@ -34,22 +24,6 @@ AISContactDetails::AISContactDetails(const marine_ais_msgs::msg::AISContact& mes
 AISContactState::AISContactState()
 {
 
-}
-
-AISContactState::AISContactState(const marine_interfaces::msg::Contact& message)
-{
-  timestamp = message.header.stamp;
-  location.location.setLatitude(message.position.latitude);
-  location.location.setLongitude(message.position.longitude);
-  if(message.heading < 0)
-    if(message.sog > 0.25)
-      heading = message.cog*180.0/M_PI;
-    else
-      heading = std::nan("");
-  else
-    heading = message.heading*180.0/M_PI;
-  cog = message.cog*180.0/M_PI;
-  sog = message.sog;
 }
 
 AISContactState::AISContactState(const marine_ais_msgs::msg::AISContact& message)
@@ -86,14 +60,6 @@ AISContactState::AISContactState(const marine_ais_msgs::msg::AISContact& message
 }
 
 AISReport::AISReport(QObject *parent):QObject(parent)
-{
-
-}
-
-AISReport::AISReport(const marine_interfaces::msg::Contact& message, QObject *parent):
-  QObject(parent),
-  AISContactDetails(message),
-  AISContactState(message)
 {
 
 }
