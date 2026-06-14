@@ -27,6 +27,8 @@ int main(int argc, char *argv[])
     for(std::size_t i = 1; i < args.size(); i++)
     {
         QString arg(args[i].c_str());
+        if(arg.isEmpty())  // empty arg (e.g. an empty background_chart) -> ignore
+            continue;
         if(arg.endsWith(".json", Qt::CaseInsensitive))
             //w.open(arg);
             QMetaObject::invokeMethod(&w, "open", Qt::QueuedConnection, Q_ARG(QString, arg));
