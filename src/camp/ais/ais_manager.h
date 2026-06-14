@@ -2,7 +2,6 @@
 #define CAMP_AIS_MANAGER_H
 
 #include "ros/ros_object.h"
-#include "marine_interfaces/msg/contact.hpp"
 #include "marine_ais_msgs/msg/ais_contact.hpp"
 #include "ais_contact.h"
 
@@ -37,7 +36,6 @@ private slots:
   void addAisReport(AISReport *report);
 
 private:
-  void contactCallback(const marine_interfaces::msg::Contact& message);
   void aisContactCallback(const marine_ais_msgs::msg::AISContact& message);
 
   std::map<std::string, rclcpp::Subscription<marine_ais_msgs::msg::AISContact>::SharedPtr > m_sources;
