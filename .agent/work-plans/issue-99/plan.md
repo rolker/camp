@@ -185,7 +185,7 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 
 ## Implementation Status (filled in during implementation)
 
-- [x] Phase 1 — radar layer added in `background_manager.cpp` (default OFF, opacity 0.65, WMTS via `Capabilities`/`setLayoutFromWMTS`, framed as #98 tile path NOT #96 GDAL).
+- [x] Phase 1 — radar layer added in `background_manager.cpp` (default OFF, opacity 0.65, IEM NEXRAD N0Q XYZ tiles via `osm::generateTileLayout()` — same path as OSM/OpenSeaMap, NOT WMTS — framed as #98 tile path NOT #96 GDAL).
 - [x] Phase 2 — `setRefreshInterval(int)` + owned `QTimer` + `onRefreshTimer()` private slot in `map_tiles.{h,cpp}`; `invalidateCache()` in `cached_tile_loader.{h,cpp}` with a guard (non-empty + must contain `/map_tiles/`, never the global cache root); radar wired to 300000 ms.
 - [x] Network-failure path confirmed graceful with a comment in `cached_file_loader.cpp` (no behavior change).
 - [x] Tests — `test/test_map_tiles_refresh.cpp`: timer config (interval/active/single-shot/disabled/opt-in) + one deterministic refresh via `QMetaObject::invokeMethod(onRefreshTimer)` + bounded `Tile`-child count across 10 cycles (the #98-risk regression). Tile children counted via public `childItems()` + `qgraphicsitem_cast<Tile*>`. Registered in `CMakeLists.txt`.

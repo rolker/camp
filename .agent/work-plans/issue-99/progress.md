@@ -283,3 +283,69 @@ Changes:
 
 Refresh-timer mechanics (epoch, cache guard, tests) unchanged. Build OK (recompiled,
 pre-existing warnings only); `test_map_tiles_refresh` 5/5 (gtest XML 17:01). Not pushed.
+
+## Local Review (Pre-Push)
+
+**Type**: Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-18 +00:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Correlation**: issue #99
+
+**Scope:** focused re-review of the PROVIDER-SWITCH delta only (`4ada9cf..HEAD` —
+`1cc33d5` provider switch + `b5e61ea` plan/progress sync). The timer/epoch/cache-guard
+mechanics were approved in the prior round and were NOT disturbed by this delta (the
+only `map_tiles.cpp` change is a comment; `tile_address.*`, the QTimer, and the cache
+guard are untouched in this range).
+
+**Item-by-item verification:**
+
+1. **Radar layer wiring — PASS.** `background_manager.cpp:53-57` constructs the radar
+   `MapTiles` with `osm::generateTileLayout("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/")`,
+   label `"nexrad_radar"`, `setOpacity(0.65)`, `setVisible(false)`,
+   `setRefreshInterval(5 * 60 * 1000)`. URL templating verified against
+   `osm.cpp:42-48`: the layout appends `base_url` + `{TileMatrix}` + `/` + `{TileCol}`
+   + `/` + `{TileRow}` + `.png`, so the assembled URL is
+   `.../nexrad-n0q-900913/{z}/{x}/{y}.png` — correct, and the base URL correctly ends
+   in `/` (same convention as the OSM/OpenSeaMap bases). No dangling
+   `wmts::Capabilities`/`radar_caps`/`NOAA_radar` references remain (grep clean). The
+   `wmts` include (`background_manager.cpp:12`) is still required by the NOAA charts
+   layer (`:33-35`), correctly retained.
+
+2. **No stale provider references — PASS.** The only remaining `nowcoast`/`WMTS`
+   mentions in code/ADR/plan are intentional rejection-rationale ("nowCOAST serves
+   radar only via WMS, not WMTS"). One stale line was found and FIXED during this
+   review: `plan.md` "Implementation Status" still described Phase 1 as "WMTS via
+   `Capabilities`/`setLayoutFromWMTS`" — corrected to the IEM N0Q XYZ /
+   `osm::generateTileLayout()` path so it matches the implementation.
+
+3. **ADR-0004 rename — PASS.** `0004-noaa-nowcoast-radar-dependency.md` deleted,
+   `0004-weather-radar-tile-provider.md` added (clean rename/rewrite, not a stray
+   duplicate). ADR number 0004 is unique (0001–0004 each appear once). Content accurate:
+   IEM N0Q decision + nowCOAST-WMS rejection rationale + always-latest-frame + graceful
+   degradation consequences.
+
+4. **Freshness comments — PASS.** `map_tiles.cpp` `onRefreshTimer` comment now states
+   the IEM `nexrad-n0q` product always serves the latest mosaic (caveat resolved, with
+   a forward-looking note that a timestamp-pinned provider would break the assumption).
+   `cached_file_loader.cpp:123` example updated from nowCOAST to "the IEM NEXRAD radar
+   tiles".
+
+5. **plan.md in sync — PASS (after fix).** Provider-decision section, Phase 1 approach,
+   files-to-change row, ADR row, and open questions all reflect IEM N0Q + endpoint
+   verified + ADR created. The one out-of-sync "Implementation Status" line was fixed in
+   this review (item 2).
+
+6. **Governance — PASS.** Two commits in the delta, both authored by `Claude Code Agent
+   <roland+claude-code@ccom.unh.edu>`, atomic split (code switch / doc sync), both
+   reference #99. No scope creep — change is confined to the radar provider wiring and
+   its documentation.
+
+**New findings:** one minor doc-accuracy gap (stale "WMTS via Capabilities" line in
+plan.md Implementation Status), fixed in-place during this review. No blocking issues.
+Build (host-confirmed: clean recompile, pre-existing warnings only) and
+`test_map_tiles_refresh` 5/5 corroborate the switch did not disturb the approved
+mechanics.
+
+**Verdict: approved.** Provider switch is correct, internally consistent, well-documented,
+and leaves the previously-approved refresh mechanics untouched. Clear to push.
