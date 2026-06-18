@@ -168,3 +168,80 @@ Not in scope (the 5th *review* suggestion — "tear down" comment + unchecked
   → QtGlobal); build confirms it compiles.
 - `invalidateCache` resolved-root prefix matches how `MapTiles` builds the path
   (`QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles/"+label)`).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-18 14:40 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: approved
+
+**Branch**: feature/issue-99 at `51c9297`
+**Mode**: pre-push (re-review of fixes `3873f63..HEAD`: `fc15d44`, `b4d97c6`, `b7af79b`, `51c9297`)
+**Depth**: Deep (reason: tile-lifecycle/concurrency surface coordinating with the #98 OOM path; ADR-touching)
+**Must-fix**: 0 | **Suggestions**: 2
+
+Focused re-review of the 4 fix commits that addressed the prior changes-requested
+entry. Scope: diff vs `origin/jazzy` only (camp2 map_tiles + cached loaders + ADR +
+test + work-plans). Static analysis: no camp lint profile (no pre-commit/CI in repo)
+— content review only. Host pre-verified: colcon build OK; `test_map_tiles_refresh`
+gtest XML 5/5 (timestamp 14:14:50, confirmed this run). IDE/clang "QObject/QPoint not
+found" are LSP Qt-path false positives — ignored.
+
+### Prior findings — all 5 genuinely resolved
+1. **Stale-pixmap epoch fix** — RESOLVED. `quint64 layout_epoch_` bumped in every
+   `setLayout()` (`map_tiles.cpp:100`), carried into every `TileAddress` minted in
+   `paint()` (`:75`) and `setLayout()` (`:108`). `operator==` now includes `epoch_`
+   (`tile_address.cpp:53-54`); `operator<` deliberately excludes it (`:57-62`).
+   (a) Internally consistent: `operator<` was ALREADY layout-agnostic pre-fix (the
+   `tiles_` map has keyed on zoom/y/x only since before this work — see the existing
+   `tileLoaded` comment); the epoch addition extends that established split, so
+   strict-weak-ordering of `std::map<TileAddress,Tile*>` is unchanged and lookups are
+   not broken. (b) Guard works: `tileLoaded` does `find()` (epoch-agnostic → locates
+   the rebuilt same-position tile) then `address() == tile_address` (epoch-aware →
+   pre-refresh reply with stale epoch compares unequal and is rejected),
+   `map_tiles.cpp:181-186`. (c) Non-refresh layers unaffected: matching is relative
+   within a layout generation, so OSM/NOAA behave exactly as before.
+2. **Honesty caveat (freshness)** — RESOLVED. ADR-0004 Consequences gains an explicit
+   "fresh frame only if endpoint is time-aware (latest), not timestamp-pinned" note
+   tied to the endpoint-confirmation TODO; mirrored at `onRefreshTimer`
+   (`map_tiles.cpp:157-162`).
+3. **invalidateCache() guard** — RESOLVED. Free `contains("/map_tiles/")` replaced
+   with a resolved-root prefix check: `allowed_prefix = QDir(home/.CCOMAutonomous-
+   MissionPlanner/map_tiles).absolutePath()+"/"`, `normalized.startsWith(allowed_prefix)`
+   (`cached_tile_loader.cpp:70-78`). Verified the resolved root matches how `MapTiles`
+   builds the path (`map_tiles.cpp:27`): legitimate `.../map_tiles/<label>` passes; the
+   bare global root and `.../map_tiles` (no trailing slash) are refused. No
+   legitimate-path rejection, no real-file miss.
+4. **ADR Consequences (#98 on second layer)** — RESOLVED. ADR-0004 states enabling
+   radar reintroduces #98-class within-cycle pan/zoom accumulation on a second layer;
+   default-OFF is conditional, not eliminated.
+5. **Test honesty** — RESOLVED. `MemoryStaysBoundedAcrossManyRefreshes` →
+   `RefreshBoundaryResetsTileSet` (`test/test_map_tiles_refresh.cpp:157`); header +
+   assertion message reworded to claim only the refresh-boundary reset, not within-cycle
+   growth. gtest XML reflects the renamed test, 5/5.
+
+### Findings (this round)
+- [ ] (suggestion) No dedicated unit test exercises the new epoch stale-pixmap path
+  (the `operator==`-epoch reject in `tileLoaded`). The mechanism is verified by code
+  reasoning + a clean build, but a regression test would need to simulate an in-flight
+  pre-refresh reply landing after a `setLayout` swap. Acceptable to defer (hard to test
+  the async race deterministically), but worth a follow-up — `test/test_map_tiles_refresh.cpp`
+- [ ] (suggestion) Minor plan drift: `plan.md` "Files to Change" doesn't list
+  `tile_address.{h,cpp}` or mention the epoch mechanism, since those arose in the
+  pre-push review round (post-plan). Fully captured in this progress.md timeline; could
+  add a one-line note to the plan's Files-to-Change for completeness — `.agent/work-plans/issue-99/plan.md:133-144`
+
+### Governance / regressions
+- Commit identity clean: all 14 branch commits authored by `Claude Code Agent`
+  (`roland+claude-code@ccom.unh.edu`).
+- Atomic commits: epoch / guard-hardening / ADR+test / progress are each one logical
+  change.
+- No scope creep: diff is confined to the radar overlay surface; no wider-workspace edits.
+- No regressions introduced by `fc15d44..51c9297`: `operator<` unchanged, lookups intact;
+  the prior 5th *review* item (the "tear down" comment + unchecked `mkpath()` return) was
+  explicitly out of the assigned fix list and is a pre-existing cosmetic nit, not a
+  regression.
+
+**Verdict: approved.** The 4 fix commits resolve all 5 prior findings without papering
+over them, the mechanism is sound and internally consistent, and the two new suggestions
+are non-blocking. Clear to push.
