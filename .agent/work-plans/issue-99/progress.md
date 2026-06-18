@@ -54,3 +54,30 @@ issue: 99
 ### Decision notes
 - **Both phases in one PR**: acceptable, no hard blocker. Phase 1 alone is a static snapshot (low value) and the bounded-memory tests ARE the #98 coordination artifact, so combining is defensible. The total is ~100-150 LOC. The only risk is that Phase 2 touches the #98-implicated tile lifecycle while #98 is still OPEN — but the eviction + bounded-memory test is the gate, and the radar layer is default-OFF, so it can't worsen a live crash unless an operator enables it. The user's both-in-one decision stands.
 - **NOAA endpoint**: correctly flagged as needs-live-verification; graceful failure on 404 is confirmed (blank layer). Acceptable to land with a verified-or-TODO comment.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-18 12:30 +00:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-99
+**Commits** (oldest→newest):
+- `f07961f` feat(map_tiles): periodic refresh timer + cache invalidation (#99 Phase 2)
+- `cf66f3e` feat(background): NOAA nowCOAST weather-radar WMTS overlay (#99 Phase 1)
+- `fd2d326` test(map_tiles): refresh-timer config + bounded-memory regression (#99)
+- `defc566` docs(adr): ADR-0004 NOAA nowCOAST radar tile-provider dependency (#99)
+
+### What was implemented
+- **Phase 1** — NOAA nowCOAST NEXRAD radar layer in `background_manager.cpp::createDefaultLayers()`, mirroring the NOAA charts WMTS block (`wmts::Capabilities` + `setLayoutFromWMTS`). Default `setVisible(false)`, `setOpacity(0.65)`, `setRefreshInterval(5*60*1000)`.
+- **Phase 2** — `MapTiles::setRefreshInterval(int msec)` + owned `QTimer` + private `onRefreshTimer()` slot in `map_tiles.{h,cpp}`. `onRefreshTimer` calls `tile_loader_->invalidateCache()` then `setLayout(tile_layout_)` + `update()`. `msec<=0` disables. `CachedTileLoader::invalidateCache()` added to `cached_tile_loader.{h,cpp}` with a guard (path non-empty AND under `/map_tiles/` before `removeRecursively()`; never the global cache root). Graceful network-error path confirmed with a comment in `cached_file_loader.cpp` (no behavior change).
+- **Tests** — `test/test_map_tiles_refresh.cpp` (registered in `CMakeLists.txt`): 5 tests — timer config (interval/active/single-shot=false/disabled-on-0/opt-in), one deterministic refresh via `QMetaObject::invokeMethod(onRefreshTimer)`, and bounded `Tile`-child count across 10 refresh cycles (the #98 regression). Tile count via public `childItems()` + `qgraphicsitem_cast<Tile*>`. Honored the plan-review must-fix: no wall-clock fire counting.
+- **ADR** — `docs/decisions/0004-noaa-nowcoast-radar-dependency.md`.
+
+### Build / test
+- Built `camp` via `./ui_ws/build.sh camp` — **success** (only pre-existing codebase warnings; one initial test-compile error from a missing `map/layer_list.h` include was fixed).
+- `test_map_tiles_refresh` ran via `colcon test` — gtest XML shows **5 tests, 0 failures, 0 errors**.
+
+### Residual risks / TODOs
+- **NOAA endpoint NOT verified live** — hardcoded `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS` with an explicit `// TODO: confirm endpoint` in `background_manager.cpp`. A 404 degrades gracefully (blank layer), so landing with the TODO is acceptable; confirm before operational reliance.
+- Refresh cadence (5 min) is hardcoded; a follow-up could expose it as a user setting.
+- Honest scope note (per plan review): `setLayout()` bounds memory only AT each refresh boundary; within-cycle pan/zoom tile accumulation is unchanged from today.
