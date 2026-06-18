@@ -81,3 +81,31 @@ issue: 99
 - **NOAA endpoint NOT verified live** — hardcoded `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS` with an explicit `// TODO: confirm endpoint` in `background_manager.cpp`. A 404 degrades gracefully (blank layer), so landing with the TODO is acceptable; confirm before operational reliance.
 - Refresh cadence (5 min) is hardcoded; a follow-up could expose it as a user setting.
 - Honest scope note (per plan review): `setLayout()` bounds memory only AT each refresh boundary; within-cycle pan/zoom tile accumulation is unchanged from today.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-18 14:06 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-99 at `703c74f`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + tile-lifecycle/concurrency surface coordinating with the #98 OOM path)
+**Must-fix**: 0 | **Suggestions**: 5
+
+Scope: diff vs `origin/jazzy` only (src/camp2 + test + ADR + work-plans). Static
+analysis: no camp lint profile (no pre-commit/CI in repo) — content review only.
+Claude Adversarial: 2 passes (Lens A logic + Lens B systemic). Copilot: off (default).
+Host pre-verified: colcon build OK, test_map_tiles_refresh 5/5.
+
+No blocking must-fix. The implementation closely follows plan.md, commit identity is
+correct (all `Claude Code Agent`), ADR-0004 is well-formed and correctly numbered,
+atomic commits. Verdict is changes-requested only to land the should-fixes below
+(honesty/defense-in-depth) before push, per the Quality Standard — none require redesign.
+
+### Findings
+- [ ] (should-fix) Stale-pixmap on refresh: `onRefreshTimer` re-applies the SAME `tile_layout_` object, so `TileAddress::operator==` (compares `layout_` pointer) does NOT reject an in-flight pre-refresh pixmap landing on the rebuilt same-address tile — a stale radar frame can paint for up to one cycle until the re-requested fetch overwrites it. Self-corrects within the cycle; narrow window at 5-min cadence. Consider a per-refresh layout generation/epoch so the guard rejects pre-refresh replies — `src/camp2/map_tiles/map_tiles.cpp:154,168-176`, `src/camp2/map_tiles/tile_address.cpp:44`
+- [ ] (should-fix) Honesty gap: ADR + `onRefreshTimer` comment claim re-fetching each cycle yields time-varying radar, but that depends on the (unverified, TODO) time-aware nowCOAST endpoint resolving to "latest". If the WMTS template pins a timestamp, refresh re-serves the same frame. State this dependency alongside the existing endpoint TODO — `docs/decisions/0004-noaa-nowcoast-radar-dependency.md` (Consequences), `src/camp2/map_tiles/map_tiles.cpp:145-151`
+- [ ] (should-fix) `invalidateCache()` guard is a free substring (`contains("/map_tiles/")`) not a verified-root prefix. Current call sites pass a hardcoded literal label so practical risk is nil, but a prefix check vs the resolved cache root (`QDir(cache_root).absolutePath()+"/map_tiles/"`, startsWith) is a cheap permanent hardening per the Quality Standard ("field configs change under pressure") — `src/camp2/map_tiles/cached_tile_loader.cpp:65`
+- [ ] (suggestion) ADR-0004 Consequences should note that ENABLING radar reintroduces #98-class within-cycle tile accumulation on a second layer (default-OFF makes this conditional, not eliminated); the `MemoryStaysBounded...` test name/assertion overstates coverage — it guards the refresh-boundary reset, not the within-cycle `paint()` accumulation (honestly caveated in the test header + code comment, but the assertion message says "the #98 leak") — `test/test_map_tiles_refresh.cpp:149-164`, `docs/decisions/0004-noaa-nowcoast-radar-dependency.md`
+- [ ] (suggestion) Minor: `setRefreshInterval` disable comment says "tear down the timer" but only `stop()`s (correct behavior, retains for re-enable — fix comment); `invalidateCache` ignores `mkpath()` return (self-heals via `downloadFinished` re-mkpath, but inconsistent with checked mkpath elsewhere) — `src/camp2/map_tiles/map_tiles.cpp:128`, `src/camp2/map_tiles/cached_tile_loader.cpp:76`
