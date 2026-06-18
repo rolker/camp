@@ -120,7 +120,7 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
     // [#99] Intentional graceful degradation: on any network error we log and
     // drop the reply WITHOUT emitting dataLoaded. The tile's pixmap is never
     // set, so it simply stays blank — no crash, no UI block. This is the desired
-    // field-ops behavior when a tile server (e.g. NOAA nowCOAST radar) is
+    // field-ops behavior when a tile server (e.g. the IEM NEXRAD radar tiles) is
     // unreachable. Do not "fix" this into an emit; a missing tile must be silent.
     qDebug() << "Error " << reply->error() << " when getting " << reply->request().url();
   reply->deleteLater();

@@ -154,12 +154,13 @@ void MapTiles::onRefreshTimer()
   // deletes) tiles as the viewport pans/zooms between refreshes, exactly as
   // before. The refresh resets periodically; it is not an eviction policy.
   //
-  // HONESTY CAVEAT (#99): re-fetching each cycle only yields a *fresh* radar frame
-  // if the nowCOAST WMTS tile template resolves to the LATEST frame. That endpoint
-  // is still unverified (see the "TODO: confirm endpoint" in background_manager.cpp
-  // and ADR-0004): if the confirmed template pins a specific timestamp, this
-  // refresh re-serves the same frame and the overlay is effectively static. Verify
-  // the endpoint is time-aware ("latest") before relying on this for live weather.
+  // FRESHNESS (#99): re-fetching each cycle yields a genuinely *fresh* radar frame
+  // because the configured IEM "nexrad-n0q" tile product always serves the latest
+  // mosaic (no timestamp pinning) — verified live 2026-06-18 (see ADR-0004). The
+  // disk-cache invalidation below is what forces the network re-fetch; without it
+  // the on-disk PNGs would re-serve the previous frame for this same z/x/y. A
+  // future timestamp-pinned source would break this assumption and re-serve a
+  // static frame — keep that in mind if the radar provider is ever changed.
   if(tile_loader_)
     tile_loader_->invalidateCache();
   setLayout(tile_layout_);
