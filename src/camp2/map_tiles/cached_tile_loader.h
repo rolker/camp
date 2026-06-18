@@ -31,6 +31,12 @@ public:
 
   QDir cachePath() const;
 
+  // [#99 Phase 2] Remove this layer's disk-cached tiles so the next load()
+  // re-fetches from the network instead of serving stale PNGs. Scoped to this
+  // loader's own per-layer cache subdir; bails safely if the path is empty or
+  // not the expected map_tiles subdir (never touches the global cache root).
+  void invalidateCache();
+
 signals:
   void pixmapLoaded(QPixmap pixmap, TileAddress tile_address);
 

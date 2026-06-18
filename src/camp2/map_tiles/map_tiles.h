@@ -4,6 +4,8 @@
 #include "../map/layer.h"
 #include "tile_address.h"
 
+class QTimer;
+
 namespace camp
 {
 
@@ -41,6 +43,12 @@ public:
 
   void loadTile(TileAddress tile_address);
 
+  // [#99 Phase 2] Periodically refresh the layer's tiles. On each interval the
+  // disk cache is invalidated and the layout is reset, forcing a fresh network
+  // fetch — needed for time-varying overlays such as weather radar. msec <= 0
+  // disables refresh (the default; existing static layers never call this).
+  void setRefreshInterval(int msec);
+
   //void setBaseUrl(QString base_url);
 
 public slots:
@@ -56,8 +64,17 @@ private:
   const wmts::Capabilities* wmts_capabilites_ = nullptr;
   QString wmts_layer_id_;
   QString wmts_tile_matrix_set_;
+
+  // [#99 Phase 2] Owned (parent=this), null until setRefreshInterval enables it.
+  QTimer* refresh_timer_ = nullptr;
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
+
+  // [#99 Phase 2] Refresh slot — invoked by refresh_timer_ on timeout, and
+  // directly (via QMetaObject::invokeMethod) by test_map_tiles_refresh for a
+  // deterministic single-fire check. Invalidates the disk cache then resets the
+  // layout, deleting all current Tile* children and re-fetching from the network.
+  void onRefreshTimer();
 };
 
 } // namespace map_tiles

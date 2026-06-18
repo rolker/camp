@@ -7,6 +7,7 @@
 #include "cached_tile_loader.h"
 #include <QDir>
 #include <QStyleOptionGraphicsItem>
+#include <QTimer>
 #include <set>
 #include "wmts/capabilities.h"
 
@@ -118,6 +119,40 @@ void MapTiles::setLayoutFromWMTS(const wmts::Capabilities &capabilites, QString 
 void MapTiles::wmtsCapabilitiesReady()
 {
   setLayout(wmts_capabilites_->getLayout(wmts_layer_id_, wmts_tile_matrix_set_));
+}
+
+void MapTiles::setRefreshInterval(int msec)
+{
+  if(msec <= 0)
+  {
+    // Disable: stop and tear down the timer if one was running.
+    if(refresh_timer_)
+      refresh_timer_->stop();
+    return;
+  }
+
+  if(!refresh_timer_)
+  {
+    refresh_timer_ = new QTimer(this);
+    refresh_timer_->setSingleShot(false);
+    connect(refresh_timer_, &QTimer::timeout, this, &MapTiles::onRefreshTimer);
+  }
+  refresh_timer_->start(msec);
+}
+
+void MapTiles::onRefreshTimer()
+{
+  // Drop disk-cached PNGs first so the re-fetch hits the network rather than
+  // re-serving stale tiles, then reset the layout. setLayout() deletes every
+  // current Tile* (each holds a QGraphicsPixmapItem child) and rebuilds the
+  // zoom-0 tiles, so memory is bounded AT each refresh boundary. NOTE: this does
+  // not change within-cycle accumulation — paint() still only hides (not
+  // deletes) tiles as the viewport pans/zooms between refreshes, exactly as
+  // before. The refresh resets periodically; it is not an eviction policy.
+  if(tile_loader_)
+    tile_loader_->invalidateCache();
+  setLayout(tile_layout_);
+  update();
 }
 
 void MapTiles::updateViewScale(double view_scale)

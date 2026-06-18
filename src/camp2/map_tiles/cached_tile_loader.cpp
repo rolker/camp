@@ -47,6 +47,35 @@ void CachedTileLoader::load(TileAddress address)
   CachedFileLoader::instance()->load(url_str, file_path.filePath(), client);
 }
 
+void CachedTileLoader::invalidateCache()
+{
+  // Safety guard before a recursive removal: only ever delete this loader's own
+  // per-layer cache subdir (set in MapTiles to
+  // ~/.CCOMAutonomousMissionPlanner/map_tiles/<label>). An empty or
+  // misconfigured path could otherwise target an unexpected root, so bail unless
+  // the path is non-empty AND lives under a "map_tiles" segment. This must never
+  // hit the global cache root (~/.CCOMAutonomousMissionPlanner/).
+  if(local_cache_path_.isEmpty())
+  {
+    qDebug() << "CachedTileLoader::invalidateCache skipped: cache path not set";
+    return;
+  }
+
+  const QString normalized = QDir(local_cache_path_).absolutePath();
+  if(!normalized.contains("/map_tiles/"))
+  {
+    qDebug() << "CachedTileLoader::invalidateCache refused: path is not a "
+                "per-layer map_tiles subdir:" << normalized;
+    return;
+  }
+
+  QDir cache_dir(normalized);
+  if(cache_dir.exists())
+    cache_dir.removeRecursively();
+  // Recreate the (now empty) subdir so the subsequent load() can write into it.
+  QDir::root().mkpath(normalized);
+}
+
 void CachedTileLoader::dataLoaded(QByteArray &data, CachedFileClient* client)
 {
   auto address = client->property("address").value<TileAddress>();
