@@ -143,10 +143,18 @@ TEST(MapTilesRefresh, RefreshRepopulatesTiles)
       << "refresh must rebuild the zoom-0 tile set, not leave it empty";
 }
 
-// The #98-risk regression: memory must stay bounded across many refresh cycles.
-// Each onRefreshTimer() must DELETE the prior Tile children before rebuilding, so
-// the Tile-child count after N cycles equals the per-layout count, never N*count.
-TEST(MapTilesRefresh, MemoryStaysBoundedAcrossManyRefreshes)
+// Refresh-boundary reset regression: each onRefreshTimer() must DELETE the prior
+// Tile children before rebuilding, so the Tile-child count after N cycles equals
+// the per-layout count, never N*count.
+//
+// SCOPE (honest): this guards ONLY the refresh-boundary reset — that a refresh
+// does not leave the previous cycle's tiles behind. It does NOT cover the
+// within-cycle growth that the #98 OOM is about: between refreshes, paint() still
+// only hides (never deletes) tiles as the viewport pans/zooms, so tiles_ can still
+// grow within a single cycle exactly as in the existing layers. This test is the
+// #98-coordination artifact (the refresh path doesn't make the boundary leak),
+// not a fix for the within-cycle accumulation.
+TEST(MapTilesRefresh, RefreshBoundaryResetsTileSet)
 {
   Map map;
   auto* layer = new MapTiles(map.topLevelLayers(), "test_radar_bounded", makeLayout(2, 2));
@@ -158,8 +166,10 @@ TEST(MapTilesRefresh, MemoryStaysBoundedAcrossManyRefreshes)
   {
     ASSERT_TRUE(invokeRefresh(layer));
     EXPECT_EQ(tileChildCount(layer), expected)
-        << "Tile children accumulated on refresh cycle " << cycle
-        << " — old tiles are not being deleted (the #98 leak)";
+        << "Tile children carried over across refresh cycle " << cycle
+        << " — the refresh boundary is not resetting the tile set (old tiles "
+           "not deleted by setLayout). NOTE: this checks the refresh-boundary "
+           "reset only, not within-cycle pan/zoom accumulation.";
   }
 }
 

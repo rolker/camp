@@ -72,6 +72,23 @@ nowCOAST docs is a follow-up.
 - The radar layer refreshes every ~5 minutes (`setRefreshInterval`, #99 Phase 2),
   re-fetching from nowCOAST each cycle. Cadence is hardcoded for now; exposing it
   as a user setting is a possible follow-up.
+- **Refresh yields a fresh frame only if the endpoint is time-aware.** "Re-fetch
+  each cycle gives a new radar frame" is contingent on the (still-unverified, TODO)
+  nowCOAST WMTS tile template resolving to the *latest* frame. If the confirmed
+  template instead pins a specific timestamp, the refresh re-serves the same image
+  and the overlay is effectively static. This is tied to the endpoint-confirmation
+  TODO above (and noted at `onRefreshTimer` in `map_tiles.cpp`): confirming the
+  endpoint must also confirm it is time-aware, not just reachable.
+- **Enabling radar reintroduces #98-class within-cycle tile accumulation — on a
+  second layer.** The refresh path bounds memory only AT each refresh boundary
+  (`setLayout` resets the tile set); within a cycle, `paint()` still only hides
+  (never deletes) tiles as the operator pans/zooms, exactly as the existing layers
+  do. Default-OFF makes this *conditional* — it does not eliminate the #98 leak,
+  it just keeps the radar layer from contributing to it unless an operator turns
+  the layer on. With radar enabled, an operator who pans/zooms heavily before a
+  refresh accumulates tiles on the radar layer in addition to the basemap/chart
+  layers. The bounded-memory test guards the refresh-boundary reset, not the
+  within-cycle growth.
 - Disk caching applies per-layer under
   `~/.CCOMAutonomousMissionPlanner/map_tiles/NOAA_radar/`; the refresh path
   invalidates that subdir each cycle so stale radar PNGs are not re-served.
