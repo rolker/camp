@@ -51,21 +51,29 @@ void CachedTileLoader::invalidateCache()
 {
   // Safety guard before a recursive removal: only ever delete this loader's own
   // per-layer cache subdir (set in MapTiles to
-  // ~/.CCOMAutonomousMissionPlanner/map_tiles/<label>). An empty or
-  // misconfigured path could otherwise target an unexpected root, so bail unless
-  // the path is non-empty AND lives under a "map_tiles" segment. This must never
-  // hit the global cache root (~/.CCOMAutonomousMissionPlanner/).
+  // ~/.CCOMAutonomousMissionPlanner/map_tiles/<label>). An empty or misconfigured
+  // path could otherwise target an unexpected root, so bail unless the path is
+  // non-empty AND is a verified descendant of the resolved cache root's
+  // "map_tiles" directory. A *prefix* check (not a free substring) is used so a
+  // path that merely contains "/map_tiles/" somewhere — or resolves elsewhere via
+  // symlinks/relative segments — cannot pass. This must never hit the global cache
+  // root (~/.CCOMAutonomousMissionPlanner/) or any path outside it.
   if(local_cache_path_.isEmpty())
   {
     qDebug() << "CachedTileLoader::invalidateCache skipped: cache path not set";
     return;
   }
 
+  // Resolve the cache root the same way MapTiles builds the per-layer path
+  // (QDir::home() + ".CCOMAutonomousMissionPlanner/map_tiles"), then require the
+  // configured path to live strictly beneath it.
+  const QString allowed_prefix =
+      QDir(QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles")).absolutePath() + "/";
   const QString normalized = QDir(local_cache_path_).absolutePath();
-  if(!normalized.contains("/map_tiles/"))
+  if(!normalized.startsWith(allowed_prefix))
   {
-    qDebug() << "CachedTileLoader::invalidateCache refused: path is not a "
-                "per-layer map_tiles subdir:" << normalized;
+    qDebug() << "CachedTileLoader::invalidateCache refused: path is not under the "
+                "resolved per-layer cache root" << allowed_prefix << ":" << normalized;
     return;
   }
 
