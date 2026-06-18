@@ -67,6 +67,14 @@ private:
 
   // [#99 Phase 2] Owned (parent=this), null until setRefreshInterval enables it.
   QTimer* refresh_timer_ = nullptr;
+
+  // [#99] Per-refresh layout generation. Bumped on every setLayout() so that
+  // TileAddresses minted after a refresh compare unequal (operator==) to ones
+  // minted before it. Without this, onRefreshTimer re-applies the SAME tile_layout_
+  // object, leaving the layout pointer unchanged across a refresh — an in-flight
+  // pre-refresh pixmap would then satisfy the tileLoaded guard on the rebuilt
+  // same-position tile and paint a stale radar frame for up to one cycle.
+  quint64 layout_epoch_ = 0;
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
 

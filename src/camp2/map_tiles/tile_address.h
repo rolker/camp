@@ -18,7 +18,12 @@ namespace map_tiles
 class TileAddress
 {
 public:
-  TileAddress(const TileLayout* layout = nullptr, uint8_t zoom_level = 0, QPoint index = QPoint());
+  // [#99] epoch is a per-refresh layout generation counter (see MapTiles). It is
+  // part of address *identity* (operator==) but NOT of the map ordering
+  // (operator<), so two addresses that differ only by epoch sort equal yet
+  // compare unequal — this lets MapTiles::tileLoaded reject an in-flight,
+  // pre-refresh pixmap that lands on a rebuilt same-position tile after a refresh.
+  TileAddress(const TileLayout* layout = nullptr, uint8_t zoom_level = 0, QPoint index = QPoint(), quint64 epoch = 0);
   ~TileAddress() = default;
   TileAddress(const TileAddress& other) = default;
 
@@ -48,6 +53,9 @@ private:
   const TileLayout* layout_;
   uint8_t zoom_level_ = 0;
   QPoint index_;
+  // [#99] Per-refresh layout generation. Compared by operator== (identity), not
+  // by operator< (ordering). Default 0 for non-refreshing layers.
+  quint64 epoch_ = 0;
 
 };
 

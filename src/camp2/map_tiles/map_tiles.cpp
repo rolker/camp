@@ -72,7 +72,7 @@ void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     for(int row = start_y_index; row <= end_y_index && row < level.matrix_height; row++)
       for(int col = start_x_index; col <= end_x_index && col < level.matrix_width; col++)
       {
-        TileAddress address(&tile_layout_, render_level, QPoint(col, row));
+        TileAddress address(&tile_layout_, render_level, QPoint(col, row), layout_epoch_);
         if(tiles_.find(address) == tiles_.end() || tiles_[address] == nullptr)
         {
           tiles_[address] = new Tile(address, this);
@@ -94,6 +94,10 @@ void MapTiles::setLayout(const TileLayout& tile_layout)
     if(tile.second)
       delete tile.second;
   tiles_.clear();
+  // [#99] Bump the layout generation so any in-flight pixmap requested under the
+  // previous layout (same tile_layout_ pointer across a refresh) is rejected by
+  // tileLoaded once it lands on the rebuilt tile set.
+  ++layout_epoch_;
   tile_layout_ = tile_layout;
   if(!tile_layout_.zoom_levels.empty())
   {
@@ -101,7 +105,7 @@ void MapTiles::setLayout(const TileLayout& tile_layout)
     for(int row = 0; row < top_level.matrix_height; row++)
       for(int col = 0; col < top_level.matrix_width; col++)
       {
-        TileAddress address(&tile_layout_, 0, QPoint(col, row));
+        TileAddress address(&tile_layout_, 0, QPoint(col, row), layout_epoch_);
         tiles_[address] = new Tile(address, this);
         tile_loader_->load(address);
       }
@@ -149,6 +153,13 @@ void MapTiles::onRefreshTimer()
   // not change within-cycle accumulation — paint() still only hides (not
   // deletes) tiles as the viewport pans/zooms between refreshes, exactly as
   // before. The refresh resets periodically; it is not an eviction policy.
+  //
+  // HONESTY CAVEAT (#99): re-fetching each cycle only yields a *fresh* radar frame
+  // if the nowCOAST WMTS tile template resolves to the LATEST frame. That endpoint
+  // is still unverified (see the "TODO: confirm endpoint" in background_manager.cpp
+  // and ADR-0004): if the confirmed template pins a specific timestamp, this
+  // refresh re-serves the same frame and the overlay is effectively static. Verify
+  // the endpoint is time-aware ("latest") before relying on this for live weather.
   if(tile_loader_)
     tile_loader_->invalidateCache();
   setLayout(tile_layout_);
