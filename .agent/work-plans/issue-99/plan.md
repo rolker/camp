@@ -136,7 +136,8 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 |------|--------|
 | `src/camp2/background/background_manager.cpp` | Add NOAA nowCOAST radar WMTS layer (Phase 1), wire `setRefreshInterval(5*60*1000)` (Phase 2) |
 | `src/camp2/map_tiles/map_tiles.h` | Add `setRefreshInterval(int)`, `QTimer* refresh_timer_`, `onRefreshTimer()` slot |
-| `src/camp2/map_tiles/map_tiles.cpp` | Implement `setRefreshInterval` and `onRefreshTimer` |
+| `src/camp2/map_tiles/map_tiles.cpp` | Implement `setRefreshInterval` and `onRefreshTimer`; per-refresh `layout_epoch_` carried into minted `TileAddress`es (pre-push review fix — rejects stale pre-refresh pixmaps) |
+| `src/camp2/map_tiles/tile_address.h` / `tile_address.cpp` | Add `quint64 epoch_` to `TileAddress`; compared in `operator==` (identity) but **not** `operator<` (ordering) so refresh rejects stale in-flight pixmaps without breaking `tiles_` lookups (pre-push review fix) |
 | `src/camp2/map_tiles/cached_tile_loader.h` | Add `invalidateCache()` declaration |
 | `src/camp2/map_tiles/cached_tile_loader.cpp` | Implement `invalidateCache()` (remove + recreate cache subdir) |
 | `src/camp2/util/cached_file_loader.cpp` | Add comment on intentional silence for network errors (no behavior change if already correct) |
