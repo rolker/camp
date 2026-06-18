@@ -245,3 +245,41 @@ found" are LSP Qt-path false positives — ignored.
 **Verdict: approved.** The 4 fix commits resolve all 5 prior findings without papering
 over them, the mechanism is sound and internally consistent, and the two new suggestions
 are non-blocking. Clear to push.
+
+## Implementation
+
+**Type**: Implementation
+**Status**: complete
+**When**: 2026-06-18 +00:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+**Correlation**: issue #99
+
+**Provider switched NOAA nowCOAST → IEM NEXRAD N0Q after live endpoint verification (2026-06-18).**
+
+Endpoint verification (host, read-only, pre-publish) found the committed nowCOAST WMTS
+approach unworkable:
+- The legacy ArcGIS WMTS host (`nowcoast.noaa.gov/arcgis/.../MapServer/WMTS`) is decommissioned;
+  `new.nowcoast.noaa.gov` refuses connection.
+- Current nowCOAST GeoServer serves radar (`base_reflectivity_mosaic`, MRMS, EPSG:3857,
+  time-enabled, ~4-min) only via **WMS** (dynamic GetMap). Its GWC WMTS advertises only
+  bluetopo/stofs3d — radar is not tile-cached. WMS does not fit the `MapTiles` z/x/y path
+  without new WMS code.
+
+User chose **IEM NEXRAD N0Q** (NOAA NEXRAD origin, redistributed by Iowa State as XYZ
+Web-Mercator tiles). Verified live: `nexrad-n0q-900913/{z}/{x}/{y}.png` returns 256×256
+image/png in EPSG:3857; NH-area tile confirmed. The `n0q` alias always serves the latest
+frame, so the 5-min refresh genuinely fetches fresh imagery (resolves the prior freshness
+caveat; no runtime endpoint TODO remains).
+
+Changes:
+- `background_manager.cpp`: radar layer switched from `wmts::Capabilities`/`setLayoutFromWMTS`
+  to `osm::generateTileLayout()` XYZ (mirrors OSM/OpenSeaMap), label `nexrad_radar`,
+  default OFF, opacity 0.65, 5-min refresh. Endpoint TODO removed (verified).
+- `map_tiles.cpp` `onRefreshTimer`: freshness comment updated (n0q always-latest, verified).
+- `cached_file_loader.cpp`: graceful-degradation comment example updated to IEM.
+- ADR renamed `0004-noaa-nowcoast-radar-dependency.md` → `0004-weather-radar-tile-provider.md`,
+  rewritten for IEM N0Q with the nowCOAST-WMS rejection rationale.
+- `plan.md` synced (provider section, Phase 1 approach, files-to-change, ADR row, open questions).
+
+Refresh-timer mechanics (epoch, cache guard, tests) unchanged. Build OK (recompiled,
+pre-existing warnings only); `test_map_tiles_refresh` 5/5 (gtest XML 17:01). Not pushed.

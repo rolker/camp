@@ -14,16 +14,20 @@ per-layer opacity/visibility in the layer tree. The sole missing piece is a
 periodic refresh mechanism — tiles cache indefinitely and only reload on pan/zoom,
 so a weather radar overlay would show a stale snapshot without it.
 
-**Provider decision (pre-decided by user):** NOAA nowCOAST WMTS — specifically the
-MRMS base-reflectivity radar product. This is US government-hosted, no API key
-required, updated every ~2–5 minutes, covers Lake Massabesic NH (target operating
-area), and has permissive terms for operational use. The likely WMTS endpoint is:
-`https://nowcoast.noaa.gov/arcgis/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMSServer?service=WMS&version=1.1.1&request=GetCapabilities`
-but the WMTS form is: `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS`
-**This endpoint needs confirmation against live NOAA nowCOAST docs before
-hardcoding** — NOAA periodically restructures ArcGIS service paths. The NOAA
-charts pattern already in `background_manager.cpp` (line 36) serves as the
-structural template.
+**Provider decision (revised after live endpoint verification 2026-06-18):**
+**IEM NEXRAD N0Q** — NOAA NEXRAD base-reflectivity data redistributed by Iowa
+State University's Environmental Mesonet as XYZ Web-Mercator (EPSG:3857) tiles.
+No API key, ~5-min cadence, CONUS coverage (includes Lake Massabesic NH), and the
+`n0q` alias always serves the latest frame. Verified endpoint:
+`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png`
+
+The user originally chose **NOAA nowCOAST**, but verification showed nowCOAST
+serves radar only via **WMS** (dynamic GetMap), not tiled WMTS — its legacy
+ArcGIS WMTS host is decommissioned and its GeoServer GWC tiles only non-radar
+layers. WMS does not fit the `MapTiles` z/x/y path without new WMS code, so the
+provider was switched to IEM (same NOAA NEXRAD origin, delivered as XYZ tiles).
+The OSM/OpenSeaMap XYZ pattern in `background_manager.cpp` (lines 29/31) is the
+structural template — *not* the WMTS NOAA-charts block. See ADR-0004.
 
 **#98 coordination:** Phase 2's periodic tile refresh shares the tile/raster code
 path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
@@ -31,23 +35,23 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 
 ## Approach
 
-### Phase 1 — Add radar as a stacked MapTiles WMTS layer
+### Phase 1 — Add radar as a stacked MapTiles XYZ layer
 
-1. **Confirm NOAA nowCOAST WMTS endpoint** — fetch the capabilities XML from the
-   live endpoint before hardcoding; note the confirmed URL in an inline comment.
-   If the endpoint is unreachable at implementation time, flag it in the PR.
+1. **Verified IEM NEXRAD endpoint** (done 2026-06-18) — returns 256×256
+   `image/png` EPSG:3857 tiles; NH-area tile confirmed live. No capabilities
+   fetch needed at runtime (XYZ template, not WMTS).
 
-2. **Add radar layer in `background_manager.cpp`** — mirror the NOAA charts block:
+2. **Add radar layer in `background_manager.cpp`** — mirror the OSM/OpenSeaMap
+   XYZ block (NOT the WMTS charts block):
    ```cpp
-   auto radar_caps = new camp::wmts::Capabilities("NOAA_Radar", this);
-   camp::map_tiles::MapTiles* radar = new camp::map_tiles::MapTiles(layers, "NOAA_radar");
-   radar->setLayoutFromWMTS(*radar_caps);
+   camp::map_tiles::MapTiles* radar = new camp::map_tiles::MapTiles(layers, "nexrad_radar",
+       camp::osm::generateTileLayout("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/"));
    radar->setOpacity(0.65);        // default ~0.65, transparent overlay on basemap
    radar->setVisible(false);       // default OFF — operator toggles in layer tree
-   radar_caps->setUrl("<confirmed-nowcoast-wmts-url>");
+   radar->setRefreshInterval(5 * 60 * 1000);  // Phase 2, 5-min cadence
    ```
-   The layer label `"NOAA_radar"` also drives the disk-cache subdirectory
-   (`~/.CCOMAutonomousMissionPlanner/map_tiles/NOAA_radar/`).
+   The layer label `"nexrad_radar"` also drives the disk-cache subdirectory
+   (`~/.CCOMAutonomousMissionPlanner/map_tiles/nexrad_radar/`).
 
 3. **Verify `CachedFileLoader` network-error path** — read `downloadFinished()` in
    `src/camp2/util/cached_file_loader.cpp` (lines 76–122). Currently on error it
@@ -134,7 +138,7 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 
 | File | Change |
 |------|--------|
-| `src/camp2/background/background_manager.cpp` | Add NOAA nowCOAST radar WMTS layer (Phase 1), wire `setRefreshInterval(5*60*1000)` (Phase 2) |
+| `src/camp2/background/background_manager.cpp` | Add IEM NEXRAD N0Q radar XYZ layer via `osm::generateTileLayout()` (Phase 1), wire `setRefreshInterval(5*60*1000)` (Phase 2) |
 | `src/camp2/map_tiles/map_tiles.h` | Add `setRefreshInterval(int)`, `QTimer* refresh_timer_`, `onRefreshTimer()` slot |
 | `src/camp2/map_tiles/map_tiles.cpp` | Implement `setRefreshInterval` and `onRefreshTimer`; per-refresh `layout_epoch_` carried into minted `TileAddress`es (pre-push review fix — rejects stale pre-refresh pixmaps) |
 | `src/camp2/map_tiles/tile_address.h` / `tile_address.cpp` | Add `quint64 epoch_` to `TileAddress`; compared in `operator==` (identity) but **not** `operator<` (ordering) so refresh rejects stale in-flight pixmaps without breaking `tiles_` lookups (pre-push review fix) |
@@ -161,7 +165,7 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 | ADR-0001 (TopicBridge/executor contract) | No | Timer is Qt-only (`QTimer`), no ROS threading concerns |
 | ADR-0002 (Web-Mercator scene + library split) | Yes | Radar layer goes into `libcamp_map` (pure Qt, no ROS); `background_manager.cpp` is the correct registration point; no ROS boundary crossed |
 | ADR-0003 (Backgrounds as layers) | Yes | Radar is a `MapTiles` layer in `BackgroundManager::createDefaultLayers()`, exactly the prescribed pattern for tile-based background layers |
-| External-dependency ADR (new) | Recommended | NOAA nowCOAST is a new long-lived external network dependency with operational implications (field-ops offline degradation, NOAA service continuity). **Recommend creating ADR-0004** documenting the provider choice rationale: authoritative source, no API key, US coverage, permissive ToS, graceful offline degradation. This keeps the decision traceable if nowCOAST changes URLs again or a field deployment needs an alternative |
+| External-dependency ADR (new) | Yes | The radar tile source (IEM NEXRAD N0Q — NOAA NEXRAD origin, redistributed by Iowa State) is a new long-lived external network dependency with operational implications (field-ops offline degradation, service continuity). **ADR-0004** (`docs/decisions/0004-weather-radar-tile-provider.md`) records the provider choice: NOAA-origin data, no API key, XYZ-tile fit, always-latest frame, graceful offline degradation — and why nowCOAST (WMS-only) was rejected. Keeps the decision traceable if the provider must be swapped |
 
 ## Consequences
 
@@ -169,14 +173,14 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 |---|---|---|
 | `MapTiles::setRefreshInterval` added | All existing callers of `MapTiles` (OSM, OpenSeaMap, NOAA charts) — timer is opt-in/disabled by default; no callers need to change | Yes — opt-in design means no caller changes |
 | `CachedTileLoader::invalidateCache()` added | `map_tiles.cpp` calls it in `onRefreshTimer()` | Yes |
-| Disk-cache cleared on refresh | Radar tiles re-fetched from NOAA on each cycle — this is the intended behavior; not a side-effect | Yes |
+| Disk-cache cleared on refresh | Radar tiles re-fetched from IEM (NOAA NEXRAD origin) on each cycle — this is the intended behavior; not a side-effect | Yes |
 | New tile layer in `createDefaultLayers()` | Layer tree UI — new row appears in the Layers panel (correct; no code change needed) | Yes |
 | Phase 2 shares #98 tile/raster code path | Coordinate with #98 fix; bounded-memory test is the gate | Yes — noted in tests step |
 
 ## Open Questions
 
-- [~] Confirm NOAA nowCOAST WMTS endpoint URL before hardcoding — **NOT verified live at implementation time.** Hardcoded the provisional URL `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS` with an explicit `// TODO: confirm endpoint` comment in `background_manager.cpp`. A 404 degrades gracefully (blank layer), so landing with the TODO is acceptable; confirming it is a follow-up.
-- [x] ADR-0004 for NOAA nowCOAST dependency — created `docs/decisions/0004-noaa-nowcoast-radar-dependency.md` as part of this PR.
+- [x] Radar endpoint **verified live 2026-06-18.** nowCOAST (the original pick) was found to serve radar only via WMS (dynamic GetMap), not tiled WMTS — its legacy ArcGIS WMTS host is decommissioned and its GeoServer GWC tiles only non-radar layers. Switched to **IEM NEXRAD N0Q** XYZ tiles (`https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png`), same NOAA NEXRAD origin, returns live PNG tiles in EPSG:3857. No runtime TODO remains.
+- [x] ADR-0004 for the radar-provider dependency — created `docs/decisions/0004-weather-radar-tile-provider.md` (IEM N0Q, with nowCOAST WMS rejection rationale) as part of this PR.
 - [~] Is 5 minutes the right refresh cadence? Kept hardcoded at `5 * 60 * 1000` ms. A follow-up issue can expose it as a user-configurable value.
 
 ## Implementation Status (filled in during implementation)
