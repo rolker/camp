@@ -499,6 +499,22 @@ if(BUILD_TESTING)
     Qt5::Widgets
     Qt5::Test
   )
+
+  # MapTiles auto-refresh timer + bounded-memory eviction (#99 Phase 2). The
+  # bounded-memory case is the #98 tile-lifecycle regression gate: refresh cycles
+  # must delete old Tile children, not accumulate them. Links the shared camp_map
+  # library where MapTiles/Tile live.
+  ament_add_gtest(test_map_tiles_refresh
+    test/test_map_tiles_refresh.cpp
+  )
+  target_include_directories(test_map_tiles_refresh PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_map_tiles_refresh
+    camp_map
+    Qt5::Widgets
+    Qt5::Test
+  )
 endif()
 
 

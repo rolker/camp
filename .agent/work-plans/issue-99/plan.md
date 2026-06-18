@@ -174,9 +174,17 @@ path implicated in the #98 map-zoom/pan OOM crash. The refresh eviction design
 
 ## Open Questions
 
-- [ ] Confirm NOAA nowCOAST WMTS endpoint URL before hardcoding — the pattern from NOAA charts (`gis.charttools.noaa.gov`) may not apply; nowCOAST has its own ArcGIS endpoint. Verify at implementation time: `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS?service=WMTS&request=GetCapabilities`. If unreachable, fall back to noting the URL in a `// TODO: confirm` comment.
-- [ ] ADR-0004 for NOAA nowCOAST dependency — create alongside or before the Phase 1 PR? Recommend: create it as part of the same PR (the implementation commit can include `docs/decisions/0004-noaa-nowcoast-radar-dependency.md`).
-- [ ] Is 5 minutes the right refresh cadence? NOAA MRMS updates every ~2 min; 5 min is a reasonable default to avoid hammering the endpoint. Could be made a constructor parameter or a settings-visible value. Keep hardcoded for now; a follow-up issue can expose it as a user-configurable value.
+- [~] Confirm NOAA nowCOAST WMTS endpoint URL before hardcoding — **NOT verified live at implementation time.** Hardcoded the provisional URL `https://nowcoast.noaa.gov/arcgis/rest/services/nowcoast/radar_meteo_imagery_nexrad_time/MapServer/WMTS` with an explicit `// TODO: confirm endpoint` comment in `background_manager.cpp`. A 404 degrades gracefully (blank layer), so landing with the TODO is acceptable; confirming it is a follow-up.
+- [x] ADR-0004 for NOAA nowCOAST dependency — created `docs/decisions/0004-noaa-nowcoast-radar-dependency.md` as part of this PR.
+- [~] Is 5 minutes the right refresh cadence? Kept hardcoded at `5 * 60 * 1000` ms. A follow-up issue can expose it as a user-configurable value.
+
+## Implementation Status (filled in during implementation)
+
+- [x] Phase 1 — radar layer added in `background_manager.cpp` (default OFF, opacity 0.65, WMTS via `Capabilities`/`setLayoutFromWMTS`, framed as #98 tile path NOT #96 GDAL).
+- [x] Phase 2 — `setRefreshInterval(int)` + owned `QTimer` + `onRefreshTimer()` private slot in `map_tiles.{h,cpp}`; `invalidateCache()` in `cached_tile_loader.{h,cpp}` with a guard (non-empty + must contain `/map_tiles/`, never the global cache root); radar wired to 300000 ms.
+- [x] Network-failure path confirmed graceful with a comment in `cached_file_loader.cpp` (no behavior change).
+- [x] Tests — `test/test_map_tiles_refresh.cpp`: timer config (interval/active/single-shot/disabled/opt-in) + one deterministic refresh via `QMetaObject::invokeMethod(onRefreshTimer)` + bounded `Tile`-child count across 10 cycles (the #98-risk regression). Tile children counted via public `childItems()` + `qgraphicsitem_cast<Tile*>`. Registered in `CMakeLists.txt`.
+- Honored plan-review must-fix: NO wall-clock fire counting; assert config + deterministic single refresh instead.
 
 ## Estimated Scope
 
