@@ -35,6 +35,27 @@ void BackgroundManager::createDefaultLayers()
     noaa_charts->setLayoutFromWMTS(*caps);
     caps->setUrl("https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS");
 
+    // [#99] Weather radar (NEXRAD base reflectivity) as a stacked, auto-refreshing
+    // overlay. Source: NOAA NEXRAD base reflectivity, redistributed as XYZ
+    // Web-Mercator (EPSG:3857) tiles by Iowa State University's Environmental
+    // Mesonet (IEM). nowCOAST itself serves this product only via WMS (dynamic
+    // GetMap), not tiled WMTS, so it does not fit the MapTiles z/x/y path; IEM's
+    // tile cache does (same NEXRAD origin). Endpoint verified live 2026-06-18.
+    // The "n0q" product alias always serves the LATEST frame, so the 5-minute
+    // refresh (Phase 2) genuinely fetches fresh imagery (no timestamp pinning).
+    // Layer is:
+    //   - default OFF (operator toggles it in the Layers tree),
+    //   - ~0.65 opacity so it reads as a transparent overlay on the basemap, and
+    //   - refreshed every 5 minutes since radar imagery is time-varying.
+    // Radar is a QPixmap MapTiles layer, so it rides the #98 tile lifecycle, NOT
+    // the #96 GDAL raster path. On a fetch failure the tile stays blank (graceful
+    // degradation in CachedFileLoader::downloadFinished — no crash, no UI block).
+    camp::map_tiles::MapTiles* radar = new camp::map_tiles::MapTiles(layers, "nexrad_radar",
+        camp::osm::generateTileLayout("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/"));
+    radar->setOpacity(0.65);   // transparent overlay on the basemap
+    radar->setVisible(false);  // default OFF — operator opt-in via the layer tree
+    radar->setRefreshInterval(5 * 60 * 1000);  // [#99 Phase 2] 5-minute cadence
+
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
 
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");

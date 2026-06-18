@@ -4,6 +4,8 @@
 #include "../map/layer.h"
 #include "tile_address.h"
 
+class QTimer;
+
 namespace camp
 {
 
@@ -41,6 +43,12 @@ public:
 
   void loadTile(TileAddress tile_address);
 
+  // [#99 Phase 2] Periodically refresh the layer's tiles. On each interval the
+  // disk cache is invalidated and the layout is reset, forcing a fresh network
+  // fetch — needed for time-varying overlays such as weather radar. msec <= 0
+  // disables refresh (the default; existing static layers never call this).
+  void setRefreshInterval(int msec);
+
   //void setBaseUrl(QString base_url);
 
 public slots:
@@ -56,8 +64,25 @@ private:
   const wmts::Capabilities* wmts_capabilites_ = nullptr;
   QString wmts_layer_id_;
   QString wmts_tile_matrix_set_;
+
+  // [#99 Phase 2] Owned (parent=this), null until setRefreshInterval enables it.
+  QTimer* refresh_timer_ = nullptr;
+
+  // [#99] Per-refresh layout generation. Bumped on every setLayout() so that
+  // TileAddresses minted after a refresh compare unequal (operator==) to ones
+  // minted before it. Without this, onRefreshTimer re-applies the SAME tile_layout_
+  // object, leaving the layout pointer unchanged across a refresh — an in-flight
+  // pre-refresh pixmap would then satisfy the tileLoaded guard on the rebuilt
+  // same-position tile and paint a stale radar frame for up to one cycle.
+  quint64 layout_epoch_ = 0;
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
+
+  // [#99 Phase 2] Refresh slot — invoked by refresh_timer_ on timeout, and
+  // directly (via QMetaObject::invokeMethod) by test_map_tiles_refresh for a
+  // deterministic single-fire check. Invalidates the disk cache then resets the
+  // layout, deleting all current Tile* children and re-fetching from the network.
+  void onRefreshTimer();
 };
 
 } // namespace map_tiles

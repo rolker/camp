@@ -10,8 +10,8 @@ namespace camp
 namespace map_tiles
 {
 
-TileAddress::TileAddress(const TileLayout* layout, uint8_t zoom_level, QPoint index):
-  layout_(layout), zoom_level_(zoom_level), index_(index)
+TileAddress::TileAddress(const TileLayout* layout, uint8_t zoom_level, QPoint index, quint64 epoch):
+  layout_(layout), zoom_level_(zoom_level), index_(index), epoch_(epoch)
 {
 }
 
@@ -43,7 +43,15 @@ const QPoint& TileAddress::index() const
 
 bool TileAddress::operator==(const TileAddress& other) const
 {
-  return zoom_level_ == other.zoom_level_ && index_ == other.index_ && layout_ == other.layout_;
+  // [#99] epoch_ is part of identity: across a refresh the layout pointer is
+  // unchanged (onRefreshTimer re-applies the same TileLayout object), so without
+  // the epoch a pre-refresh in-flight pixmap would still satisfy == on the
+  // rebuilt same-position tile and paint a stale radar frame for up to one cycle.
+  // Bumping the epoch on each setLayout makes the pre-refresh reply compare
+  // unequal, so tileLoaded rejects it. Non-refreshing layers keep epoch_ == 0,
+  // so their matching is unchanged.
+  return zoom_level_ == other.zoom_level_ && index_ == other.index_ &&
+         layout_ == other.layout_ && epoch_ == other.epoch_;
 }
 
 bool TileAddress::operator<(const TileAddress& other) const

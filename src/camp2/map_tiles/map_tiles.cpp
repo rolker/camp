@@ -7,6 +7,7 @@
 #include "cached_tile_loader.h"
 #include <QDir>
 #include <QStyleOptionGraphicsItem>
+#include <QTimer>
 #include <set>
 #include "wmts/capabilities.h"
 
@@ -71,7 +72,7 @@ void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
     for(int row = start_y_index; row <= end_y_index && row < level.matrix_height; row++)
       for(int col = start_x_index; col <= end_x_index && col < level.matrix_width; col++)
       {
-        TileAddress address(&tile_layout_, render_level, QPoint(col, row));
+        TileAddress address(&tile_layout_, render_level, QPoint(col, row), layout_epoch_);
         if(tiles_.find(address) == tiles_.end() || tiles_[address] == nullptr)
         {
           tiles_[address] = new Tile(address, this);
@@ -93,6 +94,10 @@ void MapTiles::setLayout(const TileLayout& tile_layout)
     if(tile.second)
       delete tile.second;
   tiles_.clear();
+  // [#99] Bump the layout generation so any in-flight pixmap requested under the
+  // previous layout (same tile_layout_ pointer across a refresh) is rejected by
+  // tileLoaded once it lands on the rebuilt tile set.
+  ++layout_epoch_;
   tile_layout_ = tile_layout;
   if(!tile_layout_.zoom_levels.empty())
   {
@@ -100,7 +105,7 @@ void MapTiles::setLayout(const TileLayout& tile_layout)
     for(int row = 0; row < top_level.matrix_height; row++)
       for(int col = 0; col < top_level.matrix_width; col++)
       {
-        TileAddress address(&tile_layout_, 0, QPoint(col, row));
+        TileAddress address(&tile_layout_, 0, QPoint(col, row), layout_epoch_);
         tiles_[address] = new Tile(address, this);
         tile_loader_->load(address);
       }
@@ -118,6 +123,48 @@ void MapTiles::setLayoutFromWMTS(const wmts::Capabilities &capabilites, QString 
 void MapTiles::wmtsCapabilitiesReady()
 {
   setLayout(wmts_capabilites_->getLayout(wmts_layer_id_, wmts_tile_matrix_set_));
+}
+
+void MapTiles::setRefreshInterval(int msec)
+{
+  if(msec <= 0)
+  {
+    // Disable: stop and tear down the timer if one was running.
+    if(refresh_timer_)
+      refresh_timer_->stop();
+    return;
+  }
+
+  if(!refresh_timer_)
+  {
+    refresh_timer_ = new QTimer(this);
+    refresh_timer_->setSingleShot(false);
+    connect(refresh_timer_, &QTimer::timeout, this, &MapTiles::onRefreshTimer);
+  }
+  refresh_timer_->start(msec);
+}
+
+void MapTiles::onRefreshTimer()
+{
+  // Drop disk-cached PNGs first so the re-fetch hits the network rather than
+  // re-serving stale tiles, then reset the layout. setLayout() deletes every
+  // current Tile* (each holds a QGraphicsPixmapItem child) and rebuilds the
+  // zoom-0 tiles, so memory is bounded AT each refresh boundary. NOTE: this does
+  // not change within-cycle accumulation — paint() still only hides (not
+  // deletes) tiles as the viewport pans/zooms between refreshes, exactly as
+  // before. The refresh resets periodically; it is not an eviction policy.
+  //
+  // FRESHNESS (#99): re-fetching each cycle yields a genuinely *fresh* radar frame
+  // because the configured IEM "nexrad-n0q" tile product always serves the latest
+  // mosaic (no timestamp pinning) — verified live 2026-06-18 (see ADR-0004). The
+  // disk-cache invalidation below is what forces the network re-fetch; without it
+  // the on-disk PNGs would re-serve the previous frame for this same z/x/y. A
+  // future timestamp-pinned source would break this assumption and re-serve a
+  // static frame — keep that in mind if the radar provider is ever changed.
+  if(tile_loader_)
+    tile_loader_->invalidateCache();
+  setLayout(tile_layout_);
+  update();
 }
 
 void MapTiles::updateViewScale(double view_scale)
