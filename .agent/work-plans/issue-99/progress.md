@@ -109,3 +109,62 @@ atomic commits. Verdict is changes-requested only to land the should-fixes below
 - [ ] (should-fix) `invalidateCache()` guard is a free substring (`contains("/map_tiles/")`) not a verified-root prefix. Current call sites pass a hardcoded literal label so practical risk is nil, but a prefix check vs the resolved cache root (`QDir(cache_root).absolutePath()+"/map_tiles/"`, startsWith) is a cheap permanent hardening per the Quality Standard ("field configs change under pressure") — `src/camp2/map_tiles/cached_tile_loader.cpp:65`
 - [ ] (suggestion) ADR-0004 Consequences should note that ENABLING radar reintroduces #98-class within-cycle tile accumulation on a second layer (default-OFF makes this conditional, not eliminated); the `MemoryStaysBounded...` test name/assertion overstates coverage — it guards the refresh-boundary reset, not the within-cycle `paint()` accumulation (honestly caveated in the test header + code comment, but the assertion message says "the #98 leak") — `test/test_map_tiles_refresh.cpp:149-164`, `docs/decisions/0004-noaa-nowcoast-radar-dependency.md`
 - [ ] (suggestion) Minor: `setRefreshInterval` disable comment says "tear down the timer" but only `stop()`s (correct behavior, retains for re-enable — fix comment); `invalidateCache` ignores `mkpath()` return (self-heals via `downloadFinished` re-mkpath, but inconsistent with checked mkpath elsewhere) — `src/camp2/map_tiles/map_tiles.cpp:128`, `src/camp2/map_tiles/cached_tile_loader.cpp:76`
+
+## Implementation (Pre-Push Review Fixes)
+**Status**: complete
+**When**: 2026-06-18 14:20 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-99
+Addresses the 5 should-fix / honesty findings from the Local Review (Pre-Push)
+entry above. No redesign.
+
+**Commits** (oldest→newest):
+- `fc15d44` fix(map_tiles): per-refresh epoch rejects stale pre-refresh pixmaps (#99)
+- `b4d97c6` fix(map_tiles): harden invalidateCache with resolved-root prefix check (#99)
+- `b7af79b` docs(adr)+test: honesty caveats on refresh freshness and #98 scope (#99)
+
+### What was fixed
+1. **Stale-pixmap on refresh (epoch)** — Added a `quint64 layout_epoch_` to
+   `MapTiles`, incremented in `setLayout()`, and carried into every `TileAddress`
+   minted in `paint()` and `setLayout()`. `TileAddress` gains a `quint64 epoch_`
+   ctor arg (default 0); it is compared in `operator==` (identity) but deliberately
+   NOT in `operator<` (ordering). Effect: across a refresh, `tiles_.find()`
+   (`operator<`, epoch-agnostic) still locates the rebuilt same-position tile, but
+   the `tileLoaded` guard `tiles_[addr]->address() == addr` (`operator==`, now
+   epoch-aware) rejects the pre-refresh in-flight pixmap. Non-refreshing layers
+   keep epoch 0 → matching unchanged for OSM/NOAA. Files: `tile_address.{h,cpp}`,
+   `map_tiles.{h,cpp}`.
+2. **Honesty caveat on time-varying radar** — Added to the `onRefreshTimer` comment
+   (`map_tiles.cpp`) and ADR-0004 Consequences: "fresh frame each cycle" depends on
+   the unverified, TODO nowCOAST endpoint resolving to LATEST; a timestamp-pinned
+   template re-serves the same frame. Tied to the existing endpoint TODO.
+3. **`invalidateCache()` prefix hardening** — Replaced `contains("/map_tiles/")`
+   with a strict `startsWith(<resolved cache root>/.CCOMAutonomousMissionPlanner/map_tiles/)`
+   prefix check; bails safely (no-op + qDebug) otherwise; non-empty check retained.
+   File: `cached_tile_loader.cpp`.
+4. **ADR Consequences note** — ADR-0004 now states enabling radar reintroduces
+   #98-class within-cycle (pan/zoom) tile accumulation on a second layer; default-OFF
+   makes it conditional, not eliminated.
+5. **Test assertion honesty** — Renamed `MemoryStaysBoundedAcrossManyRefreshes` →
+   `RefreshBoundaryResetsTileSet` and softened the assertion message to reflect that
+   it guards the refresh-boundary reset, not within-cycle `paint()` growth.
+
+Not in scope (the 5th *review* suggestion — "tear down" comment + unchecked
+`mkpath()` return) was not in the assigned fix list; left as-is.
+
+### Build / test
+- `./ui_ws/build.sh camp` — **success** (only pre-existing codebase warnings).
+- `test_map_tiles_refresh` gtest XML (`ui_ws/build/camp/test_results/camp/test_map_tiles_refresh.gtest.xml`):
+  **5 tests, 0 failures, 0 errors** (regenerated this run; includes the renamed test).
+- Local uncrustify-0.78 mass-fail not run/not relevant (documented false positive;
+  verified via gtest XML per instructions).
+
+### For re-review to double-check
+- Epoch identity semantics: confirm `operator<` intentionally excludes `epoch_`
+  (map lookup must stay epoch-agnostic) while `operator==` includes it. The two
+  must disagree only on epoch — that's the whole mechanism.
+- `quint64` availability in `tile_address.h` / `map_tiles.h` (pulled in via QPoint
+  → QtGlobal); build confirms it compiles.
+- `invalidateCache` resolved-root prefix matches how `MapTiles` builds the path
+  (`QDir::home().filePath(".CCOMAutonomousMissionPlanner/map_tiles/"+label)`).
