@@ -40,6 +40,14 @@ public:
   void removeFromMap();
 
 protected:
+  /// [camp#90] Called by removeFromMap() (the "Remove" action and any
+  /// programmatic detach), but NOT on app shutdown — which destroys layers
+  /// without going through removeFromMap, so persisted layers survive a normal
+  /// quit. Subclasses persisted as app state (RasterLayer, GggsStoreLayer)
+  /// override this to drop themselves from their QSettings restore list so a
+  /// removed layer stays removed across sessions.
+  virtual void onRemovedFromMap() {}
+
   /// [#59 ADR-0003] Adds a "Remove" entry (unless setRemovable(false)). Detaches
   /// through the Map model — owners that track specific layers (e.g. the
   /// project's chart/depth bookkeeping) react via the model's

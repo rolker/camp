@@ -4,11 +4,15 @@
 #include "../map_tiles/map_tiles.h"
 #include "../map_tiles/osm.h"
 #include "../raster/raster_layer.h"
+#include "../raster/gggs_store_layer.h"
 #include "../tools/tools_manager.h"
+#include <QDir>
+#include <QFileInfo>
 #include <QGraphicsScene>
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
+#include <QSettings>
 #include "../wmts/capabilities.h"
 
 namespace camp
@@ -59,6 +63,23 @@ void BackgroundManager::createDefaultLayers()
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
 
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
+
+    // [camp#90] Re-create persisted GGGS tile stores + plain rasters so they
+    // auto-load each session (persisted in openTileStore / openRaster). Skip
+    // entries that no longer exist on disk.
+    // Slice-2 follow-up: GggsStoreLayer/GggsTile load every tile synchronously
+    // (GDAL RasterIO on the GUI thread), so a large multi-epoch store blocks
+    // startup. Bound this with lazy/visible-region loading like RasterLayer's
+    // async QtConcurrent path before stores get big.
+    QSettings settings;
+    const QStringList store_roots = settings.value("GggsStores/roots").toStringList();
+    for(const QString& root : store_roots)
+      if(QDir(root).exists())
+        new raster::GggsStoreLayer(layers, root);
+    const QStringList raster_files = settings.value("GggsRasters/files").toStringList();
+    for(const QString& fname : raster_files)
+      if(QFileInfo::exists(fname))
+        new raster::RasterLayer(layers, fname);
   }
 }
 
@@ -72,20 +93,50 @@ void BackgroundManager::contextMenu(QMenu* menu)
 {
   auto open_raster_action = menu->addAction("Open raster");
   connect(open_raster_action, &QAction::triggered, this, &BackgroundManager::openRaster);
+  auto open_tile_store_action = menu->addAction("Open tile store");
+  connect(open_tile_store_action, &QAction::triggered, this, &BackgroundManager::openTileStore);
 }
 
 void BackgroundManager::openRaster()
 {
   QString fname = QFileDialog::getOpenFileName(nullptr, tr("Open"));
-  if(!fname.isEmpty())
-  {
-    auto layers = topLevelLayers();
-    if(layers)
-    {
-      raster::RasterLayer* raster = new raster::RasterLayer(layers, fname);
-    }
-  }
+  if(fname.isEmpty())
+    return;
+  auto layers = topLevelLayers();
+  if(!layers)
+    return;
+  new raster::RasterLayer(layers, fname);
 
+  // Persist the raster so it auto-loads next session (createDefaultLayers
+  // re-creates it), matching the tile-store persistence.
+  QSettings settings;
+  QStringList files = settings.value("GggsRasters/files").toStringList();
+  if(!files.contains(fname))
+  {
+    files.append(fname);
+    settings.setValue("GggsRasters/files", files);
+  }
+}
+
+void BackgroundManager::openTileStore()
+{
+  QString directory = QFileDialog::getExistingDirectory(nullptr, tr("Open tile store"));
+  if(directory.isEmpty())
+    return;
+  auto layers = topLevelLayers();
+  if(!layers)
+    return;
+  new raster::GggsStoreLayer(layers, directory);
+
+  // Persist the store root so it auto-loads next session (createDefaultLayers
+  // re-creates it), matching the chart-list persistence.
+  QSettings settings;
+  QStringList roots = settings.value("GggsStores/roots").toStringList();
+  if(!roots.contains(directory))
+  {
+    roots.append(directory);
+    settings.setValue("GggsStores/roots", roots);
+  }
 }
 
 } // namespace background

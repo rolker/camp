@@ -46,6 +46,8 @@ protected:
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
   void writeSettings() override;
+  /// [camp#90] Drop this file from the persisted raster list on user removal.
+  void onRemovedFromMap() override;
 
 private:
   // Store lower resolutions in an image pyramid

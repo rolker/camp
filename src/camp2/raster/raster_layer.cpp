@@ -159,12 +159,15 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
 
   auto first_band = reprojected_dataset->GetRasterBand(1);
   if(reprojected_dataset->GetRasterCount() == 1 &&
-     first_band->GetRasterDataType() == GDT_Float32)
+     first_band->GetColorTable() == nullptr)
   {
     result.is_scalar = true;
-    // [camp#63/#59 PR3c] Single-band scalar field (e.g. a depth raster): shade
-    // through the ColorMap over the data range instead of the UInt32 RGB path
-    // (which renders Float32 values as near-black). NoData / NaN -> transparent.
+    // [camp#63/#59 PR3c / camp#90] Single-band scalar field (depth raster, GGGS
+    // backscatter/bathy tiles, etc.): shade through the ColorMap over the data
+    // range — read as Float32 so any numeric dtype (Float32/UInt16/...) works —
+    // instead of the UInt32 RGB path (which renders non-8-bit values as near-
+    // black AND opaque, ignoring NoData). NoData / NaN -> transparent. Paletted
+    // single-band rasters still use the colour-table path below.
     image.fill(Qt::transparent);
     int has_nodata = 0;
     const double nodata = first_band->GetNoDataValue(&has_nodata);
@@ -334,6 +337,16 @@ void RasterLayer::readSettings()
     if(!filename_.isEmpty())
       loadFile(filename_);
   }
+}
+
+void RasterLayer::onRemovedFromMap()
+{
+  // [camp#90] Drop this file from the BackgroundManager restore list so a
+  // user-removed raster stays gone next session.
+  QSettings settings;
+  QStringList files = settings.value("GggsRasters/files").toStringList();
+  if(files.removeAll(filename_) > 0)
+    settings.setValue("GggsRasters/files", files);
 }
 
 void RasterLayer::writeSettings()

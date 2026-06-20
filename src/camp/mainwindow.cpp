@@ -28,6 +28,10 @@
 #include "map_tree_view/map_tree_view.h"
 #include <QTabWidget>
 
+#include <QCloseEvent>
+#include <QSettings>
+#include <QTimer>
+
 #include <QDebug>
 
 MainWindow::MainWindow(QWidget *parent) :
@@ -136,6 +140,26 @@ MainWindow::MainWindow(QWidget *parent) :
     // signals are wired, so fit-to-extent and the overlay managers refresh for
     // the restored charts. Charts are app state, independent of any mission file.
     project->restorePersistedBackgrounds();
+
+    // [camp#90] Restore window geometry/state and the map view position+zoom from
+    // the previous session (saved in closeEvent). Geometry applies now; the map
+    // view scale/center is deferred to the next event-loop turn so it isn't
+    // overridden by initial layout or the restored charts' fit-to-extent.
+    QSettings settings;
+    restoreGeometry(settings.value("MainWindow/geometry").toByteArray());
+    restoreState(settings.value("MainWindow/state").toByteArray());
+    QTimer::singleShot(0, this, [this]()
+    {
+        QSettings s;
+        const double scale = s.value("MainWindow/mapScale", 0.0).toDouble();
+        if(scale > 0.0 && m_ui->projectView && m_ui->projectView->transform().m11() > 0.0)
+        {
+            const double factor = scale / m_ui->projectView->transform().m11();
+            m_ui->projectView->scale(factor, factor);
+            if(s.contains("MainWindow/mapCenter"))
+                m_ui->projectView->centerOn(s.value("MainWindow/mapCenter").toPointF());
+        }
+    });
 }
 
 MainWindow::~MainWindow()
@@ -147,6 +171,17 @@ MainWindow::~MainWindow()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    // [camp#90] Persist window geometry/state + map view position/zoom so they
+    // restore next session (restored in the constructor).
+    QSettings settings;
+    settings.setValue("MainWindow/geometry", saveGeometry());
+    settings.setValue("MainWindow/state", saveState());
+    if(m_ui->projectView)
+    {
+        settings.setValue("MainWindow/mapScale", m_ui->projectView->transform().m11());
+        settings.setValue("MainWindow/mapCenter",
+            m_ui->projectView->mapToScene(m_ui->projectView->viewport()->rect().center()));
+    }
     emit closing();
     QMainWindow::closeEvent(event);
 }
