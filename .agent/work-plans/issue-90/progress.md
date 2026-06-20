@@ -56,3 +56,18 @@ All 5 suggestions folded into the plan at `4e89b7b` before implementation.
 **Verified**: builds clean (camp, only pre-existing warnings); **camp test suite 63 tests, 0 failures** incl. `test_gggs_tile` (extent-from-geotransform, NoData-excluded-from-range, all-NoData-crossed-range, missing-file-invalid, shader-warp==geoToMap parity over φ∈[−85°,85°] incl. Massabesic, rel tol <1e-6).
 
 **Pending (Slice 1 close-out)**: runtime registration check — regenerate sidescan tiles from the #173 bag, open the tile store in CAMP, confirm tiles register vs a KAP chart (`workspace/13283`) + OSM tiles + a marker, and capture a camp#98 zoom/pan memory baseline. Needs a CAMP GUI session.
+
+## Implementation — update (offscreen-FBO pivot + settings)
+**Status**: Slice 1 code + headless verification complete; awaiting in-CAMP visual confirm
+**When**: 2026-06-20 13:30 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-90 at `91cfd6e` (`cb225a1` render pivot, `91cfd6e` settings)
+
+**Render approach revised** (Roland's call, plan §Approach updated): native GL in a QGraphicsView item gets **no current GL context** on this stack — Wayland composites via a software backingstore, not a GL surface; `beginNativePainting` → `QOpenGLFunctions` crashed on a null context (gdb-confirmed). Layer now warps tiles in its **own offscreen GL context** (`QOpenGLContext` + `QOffscreenSurface` + `QOpenGLFramebufferObject`) → `QImage` → `drawImage(boundingRect, img)`, cached by on-screen size. Portable (X11/Wayland/software); **`QOpenGLWidget` viewport reverted** (camp#98 risk moot).
+
+**Verified headlessly** (no window): `test_gggs_render` warps a synthetic tile (asserts geometry + orientation) and, via `GGGS_TEST_STORE`, the **real** `~/data/stores/sidescan_backscatter/draft` store → a coherent **north-up** backscatter mosaic (pixel analysis: QImage row 0 = south → `drawImage` + MapView `scale(s,−s)` flip = north up). **camp tests 66, 0 fail, 1 skip** (env-gated real render).
+
+**Settings persistence** (camp#90, folded in): the #59/#60 port wired view/window persistence only into the camp2 *test harness*, not deployed `MainWindow` → map pos/zoom + window geometry stopped saving. `closeEvent` now saves window geometry/state + `projectView` scale/center to QSettings; ctor restores geometry + (deferred to next event loop) map scale/center.
+
+**Open**: (1) **in-CAMP visual confirm** of tile registration + the settings round-trip (close/reopen); (2) the 544 m Massabesic patch is sub-pixel at default world zoom — zoom in to see it; (3) Slice 2 = visible-region-only render + tessellation/seam tuning; eviction/large-survey memory.
