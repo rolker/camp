@@ -45,12 +45,23 @@ across a tile; confirm shared-edge seams (identical `geoToMap(φ)`) are crack-fr
 behavior; many tiles without per-frame re-upload (texture cache keyed by `GridIndex` from the
 filename).
 
-**Slice 3 — bands + colormap + watcher.** Depth/Uncertainty band-select (bathy) and colormap
-as shader uniforms (1-D LUT texture); sidescan stays single-band. `QFileSystemWatcher` on the
-store dir → re-upload only changed tiles (matches the mosaicker's incremental flush). Context
--menu band/colormap controls + `readSettings`/`writeSettings` like `RasterLayer`.
+**camp#63 (between Slice 2 and Slice 3) — GPU colormap facility.** Land the GPU half of
+camp#63 *after* Slice 1 provides the GL viewport: adopt `marine_colormap::colormap_glsl()` +
+`bake_lut()` (merged in `marine_colormap#6`) as a reusable CAMP GL colormap helper (palette as
+1-D LUT, range/gain as uniforms), with the offscreen CPU/GPU **parity test** from the rqt
+waterfall consumer (`rqt_operator_tools#48`), plus the CPU shared-core swap so CAMP colors
+match rviz/rqt. Sequencing settled 2026-06-20: **I4 Slice 1 → camp#63 → I4 Slice 3** (the
+facility needs the GL viewport Slice 1 builds; Slice 3 then consumes it — no throwaway LUT).
 
-**Slice 4 (deferred — own sub-issue).** Live dirty-region transport (I3 / #86 Phase 6).
+**Slice 3 — bands + colormap + watcher.** Depth/Uncertainty band-select (bathy) rendered via
+**camp#63's GPU colormap facility** (palette LUT + range/gain uniforms, applied after the warp
+in the same shader); sidescan stays single-band. `QFileSystemWatcher` on the store dir →
+re-upload only changed tiles (matches the mosaicker's incremental flush; this is the original
+camp#90 Tier-1 directory-watcher, now on the GPU layer). Context-menu band/colormap controls +
+`readSettings`/`writeSettings` like `RasterLayer`.
+
+**Slice 4 (deferred — own sub-issue).** Live dirty-region transport (I3 / #86 Phase 6;
+original camp#90 Tier-2 live consumer).
 
 ## Files to Change
 
@@ -86,19 +97,20 @@ store dir → re-upload only changed tiles (matches the mosaicker's incremental 
 | If we change… | Also update… | In plan? |
 |---|---|---|
 | `MapView` viewport → QOpenGLWidget | Verify all existing CPU layers still render; watch camp#98 (OOM/GDAL leak on zoom/pan) doesn't worsen | Yes (Slice 1 verify step) |
-| New shared colormap (camp#63 open) | Converge the 1-D LUT uniform with camp#63's `ColorMap` facility when it lands | Yes — interim LUT now, note follow-up |
+| GPU colormap (camp#63) | camp#63's GPU facility (marine_colormap GLSL+LUT) is built between Slice 2 and Slice 3 and consumed by Slice 3 — no interim/throwaway LUT | Yes — sequenced I4 Slice1 → #63 → Slice3 |
 
 ## Open Questions
 
-- [ ] **GL integration approach** — recommend `QOpenGLWidget` viewport + `beginNativePainting()`
-  + raw `QOpenGLShaderProgram` (the only Qt-5.15-viable path; QRhi is Qt6). Risk: the viewport
-  swap is app-wide; must verify CPU layers and interaction with camp#98. OK to proceed on this?
-- [ ] **Colormap source** — implement a minimal 1-D LUT uniform now (reusing `ColorMap`'s
-  viridis/turbo/grayscale stops) and converge with camp#63 later, rather than blocking on #63?
-- [ ] **Slicing** — land as stacked PRs (Slice 1 first: GL plumbing + registered static
-  sidescan tile), or one larger PR? Recommend stacked.
+- [x] **GL integration approach** → `QOpenGLWidget` viewport + `beginNativePainting()` + raw
+  `QOpenGLShaderProgram` (only Qt-5.15-viable path; QRhi is Qt6). Slice 1 must verify CPU
+  layers still render and watch camp#98 interaction. (Resolved 2026-06-20.)
+- [x] **Colormap source** → not an interim LUT; Slice 3 consumes **camp#63's GPU colormap
+  facility** (`marine_colormap` GLSL + `bake_lut`), built between Slice 2 and Slice 3.
+  Sequencing: I4 Slice 1 → camp#63 → I4 Slice 3. (Resolved 2026-06-20.)
+- [x] **Slicing** → stacked PRs on `feature/issue-90`, Slice 1 first. (Resolved 2026-06-20.)
 
 ## Estimated Scope
 
-**Multiple stacked PRs** on `feature/issue-90` (Slices 1–3). Slice 4 (live transport) = a
-separate follow-on sub-issue of #171, gated on I3.
+**Multiple stacked PRs** on `feature/issue-90` (Slices 1–3), with **camp#63** (GPU colormap
+facility) landed between Slice 2 and Slice 3. Slice 4 (live transport) = a separate follow-on
+sub-issue of #171, gated on I3.

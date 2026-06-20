@@ -14,6 +14,6 @@ issue: 90
 **Phases**: 4 slices (stacked PRs; Slice 1 GL plumbing + registered static tile → Slice 2 warp correctness/multi-tile → Slice 3 bands+colormap+watcher → Slice 4 live transport, deferred to I3)
 
 ### Open questions
-- [ ] GL integration approach — recommend QOpenGLWidget viewport + beginNativePainting + raw QOpenGLShaderProgram (only Qt-5.15-viable path; QRhi is Qt6); risk = app-wide viewport swap + camp#98 interaction. Proceed?
-- [ ] Colormap source — minimal 1-D LUT uniform now (reuse ColorMap stops), converge with camp#63 later, vs block on #63?
-- [ ] Slicing — stacked PRs (Slice 1 first) vs one larger PR? Recommend stacked.
+- [x] GL integration → QOpenGLWidget viewport + beginNativePainting + raw QOpenGLShaderProgram (only Qt-5.15-viable; QRhi is Qt6). Resolved 2026-06-20.
+- [x] Colormap → Slice 3 consumes camp#63's GPU colormap facility (marine_colormap GLSL + bake_lut); sequencing I4 Slice1 → camp#63 → I4 Slice3 (no interim LUT). Resolved 2026-06-20.
+- [x] Slicing → stacked PRs on feature/issue-90, Slice 1 first. Resolved 2026-06-20.
