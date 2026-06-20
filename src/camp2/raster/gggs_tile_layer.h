@@ -57,6 +57,10 @@ public:
   /// True once at least one valid tile loaded.
   bool valid() const { return !tiles_.empty(); }
 
+  /// The layer's Web-Mercator extent (union of tile extents). The item is
+  /// setPos()'d at its top-left; exposed for tests.
+  QRectF sceneBounds() const { return scene_bounds_; }
+
   /// Warp the tiles into an offscreen image of @p size spanning the layer's
   /// Web-Mercator extent (boundingRect). Returns a null image if there is no
   /// data or GL is unavailable. Exposed so a headless test can render + inspect

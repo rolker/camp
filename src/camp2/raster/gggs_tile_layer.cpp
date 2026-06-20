@@ -15,6 +15,7 @@
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QPainter>
+#include <QTransform>
 
 #include <cmath>
 #include <vector>
@@ -77,11 +78,18 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
 {
   loadDirectory(directory);
   if(!tiles_.empty())
-    // Position the item at the extent's corner and paint in small LOCAL
-    // coordinates. QGraphicsView/QPainter lose precision rasterizing at raw
-    // Web-Mercator magnitudes (~1e7), which offsets the image; RasterLayer
-    // avoids this the same way (setPos + local pixel space).
-    setPos(scene_bounds_.topLeft());
+  {
+    // Match the camp2 raster convention (RasterLayer / MapTiles / grids): a
+    // NORTH-UP image anchored at the NW corner with a negative-Y item transform.
+    // The MapView applies its own scale(s, -s); composed with this fromScale(1,
+    // -1) the net Y is positive, so the image draws unmirrored and registers.
+    // (An identity transform + a south-up image relies on the view to mirror the
+    // image via drawImage, which misregisters it — the ~49 m latitude shift.)
+    // Local coordinates stay small (the extent, ~hundreds of m), so QPainter
+    // keeps precision at these large Web-Mercator positions.
+    setTransform(QTransform::fromScale(1.0, -1.0));
+    setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));   // NW corner
+  }
   else
     setStatus("(no tiles)");
 }
@@ -195,18 +203,17 @@ QImage GggsTileLayer::renderImage(const QSize& size)
 
   if(ensureProgram())
   {
-    // Map the layer's Web-Mercator extent to NDC. scene_bounds_ is normalised,
-    // so top() is the smaller mercator-y (south) and bottom() the larger
-    // (north). We want the offscreen QImage's row 0 to be the SOUTH edge, so
-    // that drawImage(boundingRect, image) — boundingRect.top() == south — is
-    // upright once MapView's negative-Y view flip puts north up on screen. So
-    // place south at NDC top (ortho 'top' param = south_y).
+    // Map the layer's Web-Mercator extent to NDC, producing a NORTH-UP image
+    // (row 0 = north): ortho 'top' param = north_y. The item carries a
+    // fromScale(1, -1) transform + NW anchor, so this north-up image draws
+    // upright (see the constructor). scene_bounds_ is normalised: top() is the
+    // smaller mercator-y (south), bottom() the larger (north).
     const double west_x = scene_bounds_.left();
     const double east_x = scene_bounds_.right();
     const double south_y = scene_bounds_.top();
     const double north_y = scene_bounds_.bottom();
     QMatrix4x4 mvp;
-    mvp.ortho(float(west_x), float(east_x), float(north_y), float(south_y),
+    mvp.ortho(float(west_x), float(east_x), float(south_y), float(north_y),
               -1.0f, 1.0f);
 
     program_->bind();
