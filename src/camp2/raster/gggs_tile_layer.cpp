@@ -3,10 +3,14 @@
 #include "gggs_tile.h"
 #include "../map_view/web_mercator.h"
 
+#include <QAction>
+#include <QColor>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QGeoCoordinate>
+#include <QMenu>
+#include <QSettings>
 #include <QMatrix4x4>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
@@ -47,13 +51,14 @@ void main()
 }
 )";
 
-// Fragment shader: auto-ranged grayscale of the single-band value. NoData (0,
+// Fragment shader: auto-ranged value mapped through a colormap LUT (the shared
+// camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). NoData (0,
 // reserved by the mosaicker; real returns floored to >= 1) is discarded so empty
-// cells are transparent. Premultiplied-alpha output. Band-select + real colormap
-// are Slice 3 (camp#63).
+// cells are transparent. Premultiplied-alpha output (opaque, so straight == premult).
 constexpr char kFragmentShader[] = R"(
 #version 120
-uniform sampler2D u_tex;
+uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
+uniform sampler2D u_lut;     // unit 1: colormap LUT (256x1 RGBA)
 uniform float u_min;
 uniform float u_max;
 varying vec2 v_texcoord;
@@ -62,8 +67,9 @@ void main()
   float v = texture2D(u_tex, v_texcoord).r;
   if(v <= 0.0)
     discard;
-  float g = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
-  gl_FragColor = vec4(g, g, g, 1.0);
+  float t = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
+  vec4 c = texture2D(u_lut, vec2(t, 0.5));
+  gl_FragColor = vec4(c.rgb, 1.0);
 }
 )";
 
@@ -173,6 +179,36 @@ bool GggsTileLayer::ensureProgram()
   return true;
 }
 
+QOpenGLTexture* GggsTileLayer::ensureLut()
+{
+  // Bake camp::map::ColorMap into a 256x1 RGBA LUT (re-baked when the ramp
+  // changes). Sampled by the fragment shader as the colour transfer.
+  if(lut_texture_ && !lut_dirty_)
+    return lut_texture_.get();
+  std::vector<uchar> lut(256 * 4);
+  for(int i = 0; i < 256; ++i)
+  {
+    const QColor c = colormap_.colorNormalized(i / 255.0);
+    lut[i * 4 + 0] = uchar(c.red());
+    lut[i * 4 + 1] = uchar(c.green());
+    lut[i * 4 + 2] = uchar(c.blue());
+    lut[i * 4 + 3] = uchar(c.alpha());
+  }
+  if(!lut_texture_)
+  {
+    lut_texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
+    lut_texture_->setFormat(QOpenGLTexture::RGBA8_UNorm);
+    lut_texture_->setSize(256, 1);
+    lut_texture_->setMipLevels(1);
+    lut_texture_->allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
+    lut_texture_->setMinMagFilters(QOpenGLTexture::Linear, QOpenGLTexture::Linear);
+    lut_texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
+  }
+  lut_texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, lut.data());
+  lut_dirty_ = false;
+  return lut_texture_.get();
+}
+
 QImage GggsTileLayer::renderImage(const QSize& size)
 {
   if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
@@ -216,6 +252,10 @@ QImage GggsTileLayer::renderImage(const QSize& size)
     program_->setUniformValue("u_min", float(data_min_));
     program_->setUniformValue("u_max", float(data_max_));
     program_->setUniformValue("u_tex", 0);
+    program_->setUniformValue("u_lut", 1);
+    QOpenGLTexture* lut = ensureLut();
+    if(lut)
+      lut->bind(1);
 
     const int pos_loc = program_->attributeLocation("a_pos");
     const int texcoord_loc = program_->attributeLocation("a_texcoord");
@@ -261,6 +301,8 @@ QImage GggsTileLayer::renderImage(const QSize& size)
       texture->release(0);
     }
 
+    if(lut)
+      lut->release(1);
     program_->disableAttributeArray(pos_loc);
     program_->disableAttributeArray(texcoord_loc);
     program_->release();
@@ -307,12 +349,66 @@ void GggsTileLayer::releaseGL()
   {
     fbo_.reset();
     program_.reset();
+    lut_texture_.reset();
     for(auto& tile : tiles_)
       tile->releaseGL();
     gl_context_->doneCurrent();
   }
   delete gl_context_; gl_context_ = nullptr;
   delete gl_surface_; gl_surface_ = nullptr;
+}
+
+void GggsTileLayer::setColormap(map::ColorMap::Type type)
+{
+  if(type == colormap_.type())
+    return;
+  colormap_.setType(type);
+  lut_dirty_ = true;
+  cached_image_ = QImage();   // force a re-render with the new ramp
+  writeSettings();
+  update(boundingRect());
+}
+
+void GggsTileLayer::contextMenu(QMenu* menu)
+{
+  map::Layer::contextMenu(menu);
+  QMenu* colormap_menu = menu->addMenu("Colormap");
+  for(auto type : map::ColorMap::allTypes())
+  {
+    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    action->setCheckable(true);
+    action->setChecked(type == colormap_.type());
+    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+  }
+}
+
+void GggsTileLayer::readSettings()
+{
+  map::Layer::readSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  const map::ColorMap::Type type = map::ColorMap::typeFromName(
+    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+  settings.endGroup();
+  settings.endGroup();
+  if(type != colormap_.type())
+  {
+    colormap_.setType(type);
+    lut_dirty_ = true;
+    cached_image_ = QImage();
+  }
+}
+
+void GggsTileLayer::writeSettings()
+{
+  map::Layer::writeSettings();
+  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(itemID());
+  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.endGroup();
+  settings.endGroup();
 }
 
 }  // namespace raster

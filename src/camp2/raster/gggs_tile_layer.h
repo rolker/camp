@@ -2,6 +2,7 @@
 #define RASTER_GGGS_TILE_LAYER_H
 
 #include "../map/layer.h"
+#include "../map/color_map.h"
 
 #include <QImage>
 #include <QSize>
@@ -12,6 +13,7 @@ class QOpenGLContext;
 class QOffscreenSurface;
 class QOpenGLFramebufferObject;
 class QOpenGLShaderProgram;
+class QOpenGLTexture;
 
 namespace camp
 {
@@ -67,10 +69,20 @@ public:
   /// without a window.
   QImage renderImage(const QSize& size);
 
+  /// [camp#90] Select the colour ramp (the shared camp::map::ColorMap, baked to
+  /// a GPU LUT). Persists and re-renders.
+  void setColormap(map::ColorMap::Type type);
+
+protected:
+  void contextMenu(QMenu* menu) override;
+  void readSettings() override;
+  void writeSettings() override;
+
 private:
   void loadDirectory(const QString& directory);
   bool ensureGL();
   bool ensureProgram();
+  QOpenGLTexture* ensureLut();
   void releaseGL();
 
   // Latitude tessellation per tile. The geo->Web-Mercator warp is separable:
@@ -92,7 +104,12 @@ private:
   QOffscreenSurface* gl_surface_ = nullptr;
   std::unique_ptr<QOpenGLFramebufferObject> fbo_;
   std::unique_ptr<QOpenGLShaderProgram> program_;
+  std::unique_ptr<QOpenGLTexture> lut_texture_;   // colormap LUT (256x1 RGBA)
   bool gl_failed_ = false;
+
+  // Default grayscale preserves the original look; selectable via context menu.
+  map::ColorMap colormap_{map::ColorMap::Grayscale};
+  bool lut_dirty_ = true;      // re-bake the LUT on next render after a change
 
   QImage cached_image_;        // last render, reused on pan (re-rendered on zoom)
   QSize cached_size_;
