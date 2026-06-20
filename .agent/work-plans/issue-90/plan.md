@@ -1,0 +1,104 @@
+# Plan: GGGS-tiled raster map layer — GPU display-time warp (bathy + sidescan)
+
+## Issue
+
+https://github.com/rolker/camp/issues/90 (broadened; Part of rolker/unh_marine_autonomy#175 and #171)
+
+## Context
+
+camp#90 originally scoped a bathy-only, CPU directory-watching grid layer. Per the
+2026-06-19 decisions it is **broadened** into the unified **GGGS-tiled raster layer**
+(#175 / I4) that renders **both** products from the on-disk tile stores:
+- **sidescan** — 1-band `uint16` backscatter (`marine_sidescan_mosaic` #173, just merged)
+- **bathy** — 3-band `Float64` depth / uncertainty / timestamp (`marine_bathymetry_store`)
+
+Tiles are native-geographic (WGS84) GeoTIFFs named `<level>_<row>_<col>.tif`. CAMP's map
+core (`src/camp2`, Qt 5.15 + GDAL) is **entirely CPU** today: `RasterLayer` GDAL-warps each
+GeoTIFF to EPSG:3857 on load (`raster_layer.cpp:77,125`), colormaps on the CPU
+(`color_map.cpp`), and paints `QPixmap`s in a `QGraphicsScene` (`MapView : QGraphicsView`,
+no GL viewport). #175's decision is to render GGGS tiles via a **GPU display-time warp**
+instead: upload each native lat/lon tile once, warp into Web-Mercator per frame.
+
+**Why GPU warp** (separable): geo→Web-Mercator is `x=R·λ` (longitude linear) and
+`y=R·asinh(tan φ)` (the only nonlinearity, 1-D in latitude) → a tile is a vertically
+tessellated textured mesh (N×1 strip, 4–16 subdivisions sub-pixel). Keeps the store
+canonically GGGS-geographic (ADR-0002 §D2), no producer-side pre-warp, free reproject on
+pan/zoom, and band-select + colormap become **shader uniforms** (instant switch, no reload).
+
+## Approach — slices (stacked PRs on `feature/issue-90`)
+
+**Slice 1 — GL plumbing + registered static tile (de-risks #175 acceptance 1).**
+1. Switch `MapView` viewport to `QOpenGLWidget` so layers can issue native GL; verify
+   existing CPU layers (raster/tiles/markers) still paint correctly over it.
+2. New `GggsTileLayer : camp::map::Layer` (pure map, `CAMP_MAP_SOURCES`, no ROS). Load a
+   tile *directory*: glob `*.tif`, read each tile's **native** band + geotransform via GDAL
+   (no warp VRT), upload band as an `R32F` texture; record geographic corner extents.
+3. `paint()` → `beginNativePainting()`: a `QOpenGLShaderProgram` whose **vertex shader
+   replicates `web_mercator::geoToMap` exactly** (R=6378137, `asinh(tan φ)`) over a
+   tessellated mesh; build the GL ortho/MVP from the `QPainter` scene→viewport transform so
+   tiles register with vector overlays; fragment shader = grayscale of the sampled value
+   (sidescan), no-data 0 → transparent. `endNativePainting()`.
+4. `boundingRect()` from the union of tile extents (mapped via `web_mercator::geoToMap`).
+
+**Slice 2 — warp correctness + multi-tile.** Tune tessellation so Mercator-y error < 0.5 px
+across a tile; confirm shared-edge seams (identical `geoToMap(φ)`) are crack-free; LOD/zoom
+behavior; many tiles without per-frame re-upload (texture cache keyed by `GridIndex` from the
+filename).
+
+**Slice 3 — bands + colormap + watcher.** Depth/Uncertainty band-select (bathy) and colormap
+as shader uniforms (1-D LUT texture); sidescan stays single-band. `QFileSystemWatcher` on the
+store dir → re-upload only changed tiles (matches the mosaicker's incremental flush). Context
+-menu band/colormap controls + `readSettings`/`writeSettings` like `RasterLayer`.
+
+**Slice 4 (deferred — own sub-issue).** Live dirty-region transport (I3 / #86 Phase 6).
+
+## Files to Change
+
+| File | Change |
+|------|--------|
+| `src/camp2/map_view/map_view.cpp` | Set `QOpenGLWidget` viewport (Slice 1) |
+| `src/camp2/raster/gggs_tile_layer.{h,cpp}` | New GL layer: dir load, R32F upload, warp+colormap shaders, paint |
+| `src/camp2/raster/gggs_tile.{h,cpp}` | Per-tile: GDAL native read, geotransform extent, GL texture/mesh, `GridIndex` key |
+| `src/camp2/shaders/*.vert/.frag` (or inline) | geoToMap warp vertex + colormap fragment shaders |
+| `CMakeLists.txt` | Add sources to `CAMP_MAP_SOURCES`; GL libs (Qt5::Widgets has `QOpenGLWidget`, QtGui has `QOpenGLShaderProgram`/`QOpenGLFunctions`) |
+| Layer registration (`background_manager.cpp` and/or an "Open tile store" action) | Expose the layer |
+| `test/test_gggs_tile_layer.cpp` | Extent-from-geotransform + geoToMap-parity (CPU mirror of the shader) + no-data unit tests |
+| `README` / repo docs | Document the layer |
+
+## Principles Self-Check
+
+| Principle | Consideration |
+|---|---|
+| Only what's needed | Slices 1–3 here; live transport (Slice 4) is a separate sub-issue gated on I3 |
+| Decoupling | Layer reuses GDAL IO + `web_mercator` + `ColorMap` stops; no `gggs` dep (geometry from GeoTIFF geotransform). New GL path is additive — CPU `RasterLayer` stays the static-chart fallback |
+| Simulation-First | De-risk against on-disk static tile sets (sidescan from the #173 Massabesic run; a bathy store epoch) before any live wiring |
+| Safety First | Display/search aid, not control; but mis-registration misleads a search → shader must match `geoToMap` exactly, unit-tested via a CPU mirror |
+
+## ADR Compliance
+
+| ADR | Triggered | How addressed |
+|---|---|---|
+| 0002 §D2 (canonical GGGS-geographic) | Yes | No producer-side pre-warp; tiles stay native-geographic, warped only at display |
+| 0002 §D5 (bathy bands depth/unc/ts) | Yes | Band-select uniform renders depth or uncertainty (Slice 3); ts not rendered (F32 epoch caveat noted) |
+
+## Consequences
+
+| If we change… | Also update… | In plan? |
+|---|---|---|
+| `MapView` viewport → QOpenGLWidget | Verify all existing CPU layers still render; watch camp#98 (OOM/GDAL leak on zoom/pan) doesn't worsen | Yes (Slice 1 verify step) |
+| New shared colormap (camp#63 open) | Converge the 1-D LUT uniform with camp#63's `ColorMap` facility when it lands | Yes — interim LUT now, note follow-up |
+
+## Open Questions
+
+- [ ] **GL integration approach** — recommend `QOpenGLWidget` viewport + `beginNativePainting()`
+  + raw `QOpenGLShaderProgram` (the only Qt-5.15-viable path; QRhi is Qt6). Risk: the viewport
+  swap is app-wide; must verify CPU layers and interaction with camp#98. OK to proceed on this?
+- [ ] **Colormap source** — implement a minimal 1-D LUT uniform now (reusing `ColorMap`'s
+  viridis/turbo/grayscale stops) and converge with camp#63 later, rather than blocking on #63?
+- [ ] **Slicing** — land as stacked PRs (Slice 1 first: GL plumbing + registered static
+  sidescan tile), or one larger PR? Recommend stacked.
+
+## Estimated Scope
+
+**Multiple stacked PRs** on `feature/issue-90` (Slices 1–3). Slice 4 (live transport) = a
+separate follow-on sub-issue of #171, gated on I3.
