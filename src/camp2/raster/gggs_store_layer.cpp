@@ -5,6 +5,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
+#include <QSettings>
 
 namespace camp
 {
@@ -34,6 +35,16 @@ GggsStoreLayer::GggsStoreLayer(map::MapItem* parentItem, const QString& director
   directory_(directory)
 {
   build(directory);
+}
+
+void GggsStoreLayer::onRemovedByUser()
+{
+  // [camp#90] Drop this store root from the BackgroundManager restore list so a
+  // user-removed store stays gone next session.
+  QSettings settings;
+  QStringList roots = settings.value("GggsStores/roots").toStringList();
+  if(roots.removeAll(directory_) > 0)
+    settings.setValue("GggsStores/roots", roots);
 }
 
 void GggsStoreLayer::build(const QString& directory)

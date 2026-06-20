@@ -339,6 +339,16 @@ void RasterLayer::readSettings()
   }
 }
 
+void RasterLayer::onRemovedByUser()
+{
+  // [camp#90] Drop this file from the BackgroundManager restore list so a
+  // user-removed raster stays gone next session.
+  QSettings settings;
+  QStringList files = settings.value("GggsRasters/files").toStringList();
+  if(files.removeAll(filename_) > 0)
+    settings.setValue("GggsRasters/files", files);
+}
+
 void RasterLayer::writeSettings()
 {
   map::Layer::writeSettings();

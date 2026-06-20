@@ -26,6 +26,10 @@ public:
 
   const QString& directory() const { return directory_; }
 
+protected:
+  /// [camp#90] Drop this store root from the persisted list on user removal.
+  void onRemovedByUser() override;
+
 private:
   void build(const QString& directory);
 
