@@ -28,24 +28,21 @@ namespace raster
 namespace
 {
 
-// Vertex shader: per-vertex geo->Web-Mercator warp. Line-by-line port of
-// web_mercator::geoToMap (x = R*lambda; y = R*asinh(tan phi)); asinh expanded as
-// log(t + sqrt(t^2+1)) to stay valid on GLSL profiles without the asinh builtin.
-// The geoToMap-parity unit test pins the formula so the shader can't drift.
+// Vertex shader: purely linear. The geo->Web-Mercator warp is done on the CPU in
+// double precision (web_mercator::geoToMap) per mesh vertex, with positions made
+// RELATIVE to the extent origin so values stay small. This is deliberate:
+// computing y = R*asinh(tan phi) in the shader used GPU transcendentals (tan/log/
+// sqrt) whose low precision, multiplied by R~6.4e6, produced a ~50 m latitude
+// error (longitude was exact because x = R*lambda needs no transcendental).
 constexpr char kVertexShader[] = R"(
 #version 120
-attribute vec2 a_lonlat;     // degrees
+attribute vec2 a_pos;        // local Web-Mercator metres (from extent origin)
 attribute vec2 a_texcoord;
-uniform mat4 u_mvp;          // scene(Web-Mercator) -> NDC
-uniform float u_radius;      // earth_radius_at_equator
+uniform mat4 u_mvp;          // local metres -> NDC
 varying vec2 v_texcoord;
 void main()
 {
-  float deg2rad = 0.0174532925199432958;
-  float x = a_lonlat.x * deg2rad * u_radius;
-  float t = tan(a_lonlat.y * deg2rad);
-  float y = log(t + sqrt(t * t + 1.0)) * u_radius;   // asinh(t) * R
-  gl_Position = u_mvp * vec4(x, y, 0.0, 1.0);
+  gl_Position = u_mvp * vec4(a_pos, 0.0, 1.0);
   v_texcoord = a_texcoord;
 }
 )";
@@ -203,34 +200,32 @@ QImage GggsTileLayer::renderImage(const QSize& size)
 
   if(ensureProgram())
   {
-    // Map the layer's Web-Mercator extent to NDC, producing a NORTH-UP image
-    // (row 0 = north): ortho 'top' param = north_y. The item carries a
-    // fromScale(1, -1) transform + NW anchor, so this north-up image draws
-    // upright (see the constructor). scene_bounds_ is normalised: top() is the
-    // smaller mercator-y (south), bottom() the larger (north).
-    const double west_x = scene_bounds_.left();
-    const double east_x = scene_bounds_.right();
-    const double south_y = scene_bounds_.top();
-    const double north_y = scene_bounds_.bottom();
+    // Vertices are LOCAL Web-Mercator metres from the extent origin (the SW
+    // corner), so map [0, width] x [0, height] -> NDC. local-y 0 = south,
+    // height = north, so 'top' = height gives a NORTH-UP image (row 0 = north);
+    // the item's fromScale(1,-1) + NW anchor draws it upright.
+    const double origin_x = scene_bounds_.left();    // west
+    const double origin_y = scene_bounds_.top();      // south (smaller mercator-y)
+    const double width_m = scene_bounds_.width();
+    const double height_m = scene_bounds_.height();
     QMatrix4x4 mvp;
-    mvp.ortho(float(west_x), float(east_x), float(south_y), float(north_y),
-              -1.0f, 1.0f);
+    mvp.ortho(0.0f, float(width_m), 0.0f, float(height_m), -1.0f, 1.0f);
 
     program_->bind();
     program_->setUniformValue("u_mvp", mvp);
-    program_->setUniformValue("u_radius",
-                              float(web_mercator::earth_radius_at_equator));
     program_->setUniformValue("u_min", float(data_min_));
     program_->setUniformValue("u_max", float(data_max_));
     program_->setUniformValue("u_tex", 0);
 
-    const int lonlat_loc = program_->attributeLocation("a_lonlat");
+    const int pos_loc = program_->attributeLocation("a_pos");
     const int texcoord_loc = program_->attributeLocation("a_texcoord");
-    program_->enableAttributeArray(lonlat_loc);
+    program_->enableAttributeArray(pos_loc);
     program_->enableAttributeArray(texcoord_loc);
 
-    // Per-tile triangle strip, subdivided in latitude only. Interleaved
-    // [lon, lat, u, v] per vertex.
+    // Per-tile triangle strip, subdivided in latitude only. Each vertex's
+    // Web-Mercator position is computed on the CPU (double precision) via
+    // web_mercator::geoToMap and made relative to the extent origin. Interleaved
+    // [local_x, local_y, u, v] per vertex.
     const int rows = kLatSubdivisions + 1;
     std::vector<float> verts;
     verts.reserve(rows * 2 * 4);
@@ -246,15 +241,19 @@ QImage GggsTileLayer::renderImage(const QSize& size)
         const double frac = double(r) / kLatSubdivisions;
         const double lat = max_lat + (min_lat - max_lat) * frac;   // north -> south
         const float v = float(frac);                               // tex row 0 = north
-        verts.insert(verts.end(), {float(min_lon), float(lat), 0.0f, v});
-        verts.insert(verts.end(), {float(max_lon), float(lat), 1.0f, v});
+        const QPointF l = web_mercator::geoToMap(QGeoCoordinate(lat, min_lon));
+        const QPointF rt = web_mercator::geoToMap(QGeoCoordinate(lat, max_lon));
+        verts.insert(verts.end(),
+                     {float(l.x() - origin_x), float(l.y() - origin_y), 0.0f, v});
+        verts.insert(verts.end(),
+                     {float(rt.x() - origin_x), float(rt.y() - origin_y), 1.0f, v});
       }
 
       QOpenGLTexture* texture = tile->texture();
       if(!texture)
         continue;
       texture->bind(0);
-      program_->setAttributeArray(lonlat_loc, GL_FLOAT, verts.data(), 2,
+      program_->setAttributeArray(pos_loc, GL_FLOAT, verts.data(), 2,
                                   4 * sizeof(float));
       program_->setAttributeArray(texcoord_loc, GL_FLOAT, verts.data() + 2, 2,
                                   4 * sizeof(float));
@@ -262,7 +261,7 @@ QImage GggsTileLayer::renderImage(const QSize& size)
       texture->release(0);
     }
 
-    program_->disableAttributeArray(lonlat_loc);
+    program_->disableAttributeArray(pos_loc);
     program_->disableAttributeArray(texcoord_loc);
     program_->release();
   }
