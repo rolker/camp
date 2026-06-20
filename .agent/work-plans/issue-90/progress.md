@@ -71,3 +71,27 @@ All 5 suggestions folded into the plan at `4e89b7b` before implementation.
 **Settings persistence** (camp#90, folded in): the #59/#60 port wired view/window persistence only into the camp2 *test harness*, not deployed `MainWindow` → map pos/zoom + window geometry stopped saving. `closeEvent` now saves window geometry/state + `projectView` scale/center to QSettings; ctor restores geometry + (deferred to next event loop) map scale/center.
 
 **Open**: (1) **in-CAMP visual confirm** of tile registration + the settings round-trip (close/reopen); (2) the 544 m Massabesic patch is sub-pixel at default world zoom — zoom in to see it; (3) Slice 2 = visible-region-only render + tessellation/seam tuning; eviction/large-survey memory.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-20 19:29 -0400
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-90 at `2030f8e`
+**Mode**: pre-push
+**Depth**: Deep (reason: new GL rendering subsystem + lifecycle/persistence, ~1534 lines)
+**Verdict**: changes-requested → must-fix + cheap suggestions addressed; rest deferred to Slice 2
+**Static analysis**: limited (cpplint not installed; clean compile, no warnings) | **Claude Adversarial**: 2 passes (Lens A logic + Lens B systemic) | **Copilot**: off (default)
+**Must-fix**: 1 | **Suggestions**: 8
+
+### Findings
+- [x] (must-fix) Data-range init: all-NoData first tile left `data_min_` stuck at sentinel 1.0 — fixed (separate first_extent/first_range) — `gggs_tile_layer.cpp`
+- [x] (suggestion) `gl_failed_` checked after context → makeCurrent-failure warn-spam every repaint — fixed (gl_failed_ first) — `gggs_tile_layer.cpp`
+- [x] (suggestion) store-tree recursion follows directory symlinks → unbounded loop — fixed (QDir::NoSymLinks) — `gggs_store_layer.cpp`
+- [x] (suggestion) GggsTile retains CPU float copy after GPU upload (~2x RAM/tile) — fixed (free after upload) — `gggs_tile.cpp`
+- [x] (suggestion) `onRemovedByUser` fires on all removeFromMap, not user-only — renamed `onRemovedFromMap` + comment — `layer.{h,cpp}`
+- [x] (suggestion) stale tests: ScenePaint reproduction + "shader"/"row0=south" comments — removed/retitled — `test/*`
+- [ ] (suggestion, DEFERRED Slice 2) synchronous full-store load on GUI thread → startup freeze for large stores — documented in code (async load follow-up) — `background_manager.cpp`
+- [ ] (suggestion, DEFERRED) map-view scale/center restore can be clobbered by a persisted chart's async fit-to-extent — `mainwindow.cpp`
+- [ ] (suggestion, DEFERRED) single-band 8-bit grayscale charts now default to Viridis (user-selectable via context menu) — `raster_layer.cpp`
+- [ ] (suggestion, DEFERRED) persisted store/raster lists grow unbounded; consider an MRU cap — `background_manager.cpp`
