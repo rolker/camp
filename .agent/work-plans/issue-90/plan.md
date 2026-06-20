@@ -29,15 +29,23 @@ pan/zoom, and band-select + colormap become **shader uniforms** (instant switch,
 
 **Slice 1 — GL plumbing + registered static tile (de-risks #175 acceptance 1).**
 1. Switch `MapView` viewport to `QOpenGLWidget` so layers can issue native GL; verify
-   existing CPU layers (raster/tiles/markers) still paint correctly over it.
+   existing CPU layers still paint registered over it with a **concrete check**: load a KAP
+   chart (`workspace/13283`), OSM/WMTS tiles, and a marker, confirm registration is
+   pixel-unchanged vs the pre-swap build, and capture a **camp#98 memory baseline**
+   (zoom/pan RSS, GDAL-leak #96) so a regression is detectable. This app-wide viewport swap
+   is the highest-risk step.
 2. New `GggsTileLayer : camp::map::Layer` (pure map, `CAMP_MAP_SOURCES`, no ROS). Load a
    tile *directory*: glob `*.tif`, read each tile's **native** band + geotransform via GDAL
    (no warp VRT), upload band as an `R32F` texture; record geographic corner extents.
 3. `paint()` → `beginNativePainting()`: a `QOpenGLShaderProgram` whose **vertex shader
    replicates `web_mercator::geoToMap` exactly** (R=6378137, `asinh(tan φ)`) over a
-   tessellated mesh; build the GL ortho/MVP from the `QPainter` scene→viewport transform so
-   tiles register with vector overlays; fragment shader = grayscale of the sampled value
-   (sidescan), no-data 0 → transparent. `endNativePainting()`.
+   tessellated mesh. Build the GL MVP from the **live `QPainter::worldTransform()`** (scene→
+   viewport), *not* a hand-rolled ortho — the scene transform is `scale(s, −s)`
+   (`map_view.cpp:19`, math-north → screen-down), so deriving from it makes the Y-flip,
+   pan/zoom, and device-pixel-ratio register automatically. Set GL state explicitly inside
+   the native block: **depth-test off, premultiplied-alpha blend**, so the CPU QPainter
+   layers composite correctly over the GL viewport. Fragment shader = grayscale of the
+   sampled value (sidescan), no-data 0 → transparent. `endNativePainting()`.
 4. `boundingRect()` from the union of tile extents (mapped via `web_mercator::geoToMap`).
 
 **Slice 2 — warp correctness + multi-tile.** Tune tessellation so Mercator-y error < 0.5 px
@@ -71,9 +79,9 @@ original camp#90 Tier-2 live consumer).
 | `src/camp2/raster/gggs_tile_layer.{h,cpp}` | New GL layer: dir load, R32F upload, warp+colormap shaders, paint |
 | `src/camp2/raster/gggs_tile.{h,cpp}` | Per-tile: GDAL native read, geotransform extent, GL texture/mesh, `GridIndex` key |
 | `src/camp2/shaders/*.vert/.frag` (or inline) | geoToMap warp vertex + colormap fragment shaders |
-| `CMakeLists.txt` | Add sources to `CAMP_MAP_SOURCES`; GL libs (Qt5::Widgets has `QOpenGLWidget`, QtGui has `QOpenGLShaderProgram`/`QOpenGLFunctions`) |
+| `CMakeLists.txt` | Add sources to `CAMP_MAP_SOURCES`; **add `Qt5::Gui` (and `OpenGL` if used) to the `find_package(Qt5 …)` COMPONENTS and the `camp_map` link list** — `QOpenGLShaderProgram`/`QOpenGLFunctions` are in `Qt5::Gui`, `QOpenGLWidget` in `Qt5::Widgets`; don't rely on transitive Widgets |
 | Layer registration (`background_manager.cpp` and/or an "Open tile store" action) | Expose the layer |
-| `test/test_gggs_tile_layer.cpp` | Extent-from-geotransform + geoToMap-parity (CPU mirror of the shader) + no-data unit tests |
+| `test/test_gggs_tile_layer.cpp` | Extent-from-geotransform + **geoToMap parity** (CPU mirror that calls `web_mercator::geoToMap` *directly* so it can't drift from the shader reference; tolerance < 1e-6 relative over φ ∈ [−85°, 85°], sampling Massabesic ~43°N) + no-data unit tests |
 | `README` / repo docs | Document the layer |
 
 ## Principles Self-Check
@@ -87,10 +95,14 @@ original camp#90 Tier-2 live consumer).
 
 ## ADR Compliance
 
+ADR refs below are **`unh_marine_autonomy` ADR-0002** (the bathy-store / GGGS ADR) — *not*
+camp's local `docs/decisions/0002` (Web-Mercator scene, two-model split), which a bare "0002"
+citation would mis-resolve to from inside the camp worktree.
+
 | ADR | Triggered | How addressed |
 |---|---|---|
-| 0002 §D2 (canonical GGGS-geographic) | Yes | No producer-side pre-warp; tiles stay native-geographic, warped only at display |
-| 0002 §D5 (bathy bands depth/unc/ts) | Yes | Band-select uniform renders depth or uncertainty (Slice 3); ts not rendered (F32 epoch caveat noted) |
+| unh_marine_autonomy 0002 §D2 (canonical GGGS-geographic) | Yes | No producer-side pre-warp; tiles stay native-geographic, warped only at display |
+| unh_marine_autonomy 0002 §D5 (bathy bands depth/unc/ts) | Yes | Band-select uniform renders depth or uncertainty (Slice 3); ts not rendered (F32 epoch caveat noted) |
 
 ## Consequences
 
