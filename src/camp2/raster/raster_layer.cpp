@@ -339,7 +339,7 @@ void RasterLayer::readSettings()
   }
 }
 
-void RasterLayer::onRemovedByUser()
+void RasterLayer::onRemovedFromMap()
 {
   // [camp#90] Drop this file from the BackgroundManager restore list so a
   // user-removed raster stays gone next session.

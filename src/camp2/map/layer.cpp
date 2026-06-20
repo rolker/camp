@@ -53,10 +53,10 @@ void Layer::contextMenu(QMenu* menu)
 
 void Layer::removeFromMap()
 {
-  // [camp#90] User-initiated removal: let a persisted layer drop itself from its
-  // restore list so it stays removed next session (app shutdown does not call
-  // this path, so persisted layers survive a normal quit).
-  onRemovedByUser();
+  // [camp#90] Removal (user "Remove" or programmatic): let a persisted layer
+  // drop itself from its restore list so it stays removed next session (app
+  // shutdown does not call this path, so persisted layers survive a normal quit).
+  onRemovedFromMap();
   // [#59 ADR-0003] Detach through the Map model (fires rowsAboutToBeRemoved so
   // owners can sync their bookkeeping), drop it from the scene so it stops
   // rendering at once, then delete after the current event unwinds.

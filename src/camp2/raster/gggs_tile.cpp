@@ -85,7 +85,7 @@ GggsTile::~GggsTile()
 
 QOpenGLTexture* GggsTile::texture()
 {
-  if(!texture_ && valid())
+  if(!texture_ && valid() && !data_.empty())
   {
     texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
     texture_->setFormat(QOpenGLTexture::R32F);
@@ -95,6 +95,10 @@ QOpenGLTexture* GggsTile::texture()
     texture_->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32, data_.data());
     texture_->setMinMagFilters(QOpenGLTexture::Linear, QOpenGLTexture::Linear);
     texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
+    // Free the CPU copy once it's on the GPU — the texture persists for the
+    // tile's lifetime, so we never re-upload (releaseGL = teardown). Halves
+    // resident memory per tile. dataMin/dataMax were captured at load.
+    data_ = std::vector<float>();
   }
   return texture_.get();
 }

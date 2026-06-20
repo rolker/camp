@@ -28,7 +28,7 @@ public:
 
 protected:
   /// [camp#90] Drop this store root from the persisted list on user removal.
-  void onRemovedByUser() override;
+  void onRemovedFromMap() override;
 
 private:
   void build(const QString& directory);

@@ -67,6 +67,10 @@ void BackgroundManager::createDefaultLayers()
     // [camp#90] Re-create persisted GGGS tile stores + plain rasters so they
     // auto-load each session (persisted in openTileStore / openRaster). Skip
     // entries that no longer exist on disk.
+    // Slice-2 follow-up: GggsStoreLayer/GggsTile load every tile synchronously
+    // (GDAL RasterIO on the GUI thread), so a large multi-epoch store blocks
+    // startup. Bound this with lazy/visible-region loading like RasterLayer's
+    // async QtConcurrent path before stores get big.
     QSettings settings;
     const QStringList store_roots = settings.value("GggsStores/roots").toStringList();
     for(const QString& root : store_roots)

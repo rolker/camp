@@ -107,7 +107,8 @@ void GggsTileLayer::loadDirectory(const QString& directory)
   QDir dir(directory);
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
                                           QDir::Files, QDir::Name);
-  bool first = true;
+  bool first_extent = true;   // first geometrically-valid tile (scene_bounds_)
+  bool first_range = true;    // first tile WITH valid samples (data range)
   for(const QString& name : files)
   {
     auto tile = std::make_unique<GggsTile>(dir.filePath(name));
@@ -121,14 +122,18 @@ void GggsTileLayer::loadDirectory(const QString& directory)
     const QPointF hi = web_mercator::geoToMap(
       QGeoCoordinate(tile->maxLat(), tile->maxLon()));
     const QRectF tile_rect = QRectF(lo, hi).normalized();
-    scene_bounds_ = first ? tile_rect : scene_bounds_.united(tile_rect);
+    scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
+    first_extent = false;
 
-    if(tile->dataMin() <= tile->dataMax())   // tile has valid samples
+    // Data range tracks the first tile that actually HAS samples — separately
+    // from the extent, or an all-NoData first tile would leave data_min_ stuck
+    // at the sentinel (its default 1.0 is never < a floored-to->=1 sample).
+    if(tile->dataMin() <= tile->dataMax())
     {
-      if(first || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
-      if(first || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
+      if(first_range || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
+      if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
+      first_range = false;
     }
-    first = false;
     tiles_.push_back(std::move(tile));
   }
 }
@@ -143,10 +148,13 @@ QRectF GggsTileLayer::boundingRect() const
 
 bool GggsTileLayer::ensureGL()
 {
-  if(gl_context_)
-    return true;
+  // gl_failed_ first: once GL is declared broken (creation OR a mid-session
+  // makeCurrent failure), stay failed and don't retry — otherwise every repaint
+  // re-enters renderImage (cached_image_ never populates) and re-warns.
   if(gl_failed_)
     return false;
+  if(gl_context_)
+    return true;
 
   gl_surface_ = new QOffscreenSurface();
   gl_surface_->create();

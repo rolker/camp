@@ -37,7 +37,7 @@ GggsStoreLayer::GggsStoreLayer(map::MapItem* parentItem, const QString& director
   build(directory);
 }
 
-void GggsStoreLayer::onRemovedByUser()
+void GggsStoreLayer::onRemovedFromMap()
 {
   // [camp#90] Drop this store root from the BackgroundManager restore list so a
   // user-removed store stays gone next session.
@@ -58,7 +58,9 @@ void GggsStoreLayer::build(const QString& directory)
 
   // Each subdirectory: a leaf if it holds tiles directly, a grouping node if it
   // only has tiles deeper down. Empty / tile-free subtrees are skipped.
-  const QStringList subs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
+  // NoSymLinks guards against a directory-symlink loop recursing unbounded.
+  const QStringList subs = dir.entryList(
+    QDir::Dirs | QDir::NoDotAndDotDot | QDir::NoSymLinks, QDir::Name);
   for(const QString& sub : subs)
   {
     const QString subpath = dir.filePath(sub);

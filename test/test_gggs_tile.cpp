@@ -117,9 +117,11 @@ TEST(GggsTileTest, MissingFileInvalid)
   EXPECT_FALSE(tile.valid());
 }
 
-// The shader's warp formula must equal web_mercator::geoToMap exactly. x is the
-// linear longitude map; y is asinh(tan phi)*R expanded without the builtin.
-TEST(GggsTileTest, ShaderWarpMatchesGeoToMap)
+// The layer warps each mesh vertex via web_mercator::geoToMap on the CPU (in
+// double precision — the warp is intentionally NOT done in the GPU shader, whose
+// transcendentals x R caused a ~50 m latitude error). This pins geoToMap against
+// the analytic EPSG:3857 formula: x = R*lambda (linear); y = R*asinh(tan phi).
+TEST(GggsTileTest, GeoToMapMatchesWebMercator)
 {
   const double R = web_mercator::earth_radius_at_equator;
   const double deg2rad = M_PI / 180.0;
