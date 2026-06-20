@@ -35,7 +35,7 @@ if(CMAKE_VERSION VERSION_LESS "3.7.0")
     set(CMAKE_INCLUDE_CURRENT_DIR ON)
 endif()
 
-find_package(Qt5 5.15 COMPONENTS Core Widgets Test Concurrent Positioning Network Svg Xml)
+find_package(Qt5 5.15 COMPONENTS Core Gui Widgets Test Concurrent Positioning Network Svg Xml)
 
 if (Qt5Widgets_FOUND)
     if (Qt5Widgets_VERSION VERSION_LESS 5.15.0)
@@ -251,6 +251,8 @@ set(CAMP_MAP_SOURCES
     src/camp2/map_view/map_view.cpp
     src/camp2/map_view/web_mercator.cpp
     src/camp2/raster/raster_layer.cpp
+    src/camp2/raster/gggs_tile.cpp
+    src/camp2/raster/gggs_tile_layer.cpp
     src/camp2/tools/layer_manager.cpp
     src/camp2/tools/map_tool.cpp
     src/camp2/tools/tools_manager.cpp
@@ -271,6 +273,7 @@ target_include_directories(camp_map PUBLIC
 target_link_libraries(camp_map
     PUBLIC
         Qt5::Core
+        Qt5::Gui
         Qt5::Widgets
         Qt5::Concurrent
         Qt5::Network
@@ -514,6 +517,23 @@ if(BUILD_TESTING)
     camp_map
     Qt5::Widgets
     Qt5::Test
+  )
+
+  # GGGS GPU-warp tile layer (camp#90 / I4): GggsTile extent-from-geotransform +
+  # NoData/range handling, and the shader-warp == web_mercator::geoToMap parity
+  # anchor. Links camp_map (GggsTile + web_mercator) and GDAL (synthetic tiles).
+  ament_add_gtest(test_gggs_tile
+    test/test_gggs_tile.cpp
+  )
+  target_include_directories(test_gggs_tile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_tile
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
   )
 endif()
 

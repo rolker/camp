@@ -4,6 +4,7 @@
 #include "../map_tiles/map_tiles.h"
 #include "../map_tiles/osm.h"
 #include "../raster/raster_layer.h"
+#include "../raster/gggs_tile_layer.h"
 #include "../tools/tools_manager.h"
 #include <QGraphicsScene>
 #include <QMenu>
@@ -72,6 +73,8 @@ void BackgroundManager::contextMenu(QMenu* menu)
 {
   auto open_raster_action = menu->addAction("Open raster");
   connect(open_raster_action, &QAction::triggered, this, &BackgroundManager::openRaster);
+  auto open_tile_store_action = menu->addAction("Open tile store");
+  connect(open_tile_store_action, &QAction::triggered, this, &BackgroundManager::openTileStore);
 }
 
 void BackgroundManager::openRaster()
@@ -86,6 +89,17 @@ void BackgroundManager::openRaster()
     }
   }
 
+}
+
+void BackgroundManager::openTileStore()
+{
+  QString directory = QFileDialog::getExistingDirectory(nullptr, tr("Open tile store"));
+  if(!directory.isEmpty())
+  {
+    auto layers = topLevelLayers();
+    if(layers)
+      new raster::GggsTileLayer(layers, directory);
+  }
 }
 
 } // namespace background

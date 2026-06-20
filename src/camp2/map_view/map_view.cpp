@@ -4,6 +4,7 @@
 #include <QAbstractSlider>
 #include <QScrollBar>
 #include <QGuiApplication>
+#include <QOpenGLWidget>
 #include "../map/map.h"
 #include <QSettings>
 
@@ -15,6 +16,16 @@ const double MapView::max_zoom_scale_;
 
 MapView::MapView(QWidget *parent) : QGraphicsView(parent)
 {
+  // [camp#90 / I4] Use a QOpenGLWidget as the viewport so map layers can issue
+  // native OpenGL inside their paint() (QPainter::beginNativePainting), e.g. the
+  // GPU display-time warp of GGGS raster tiles. The existing CPU layers
+  // (RasterLayer pixmaps, MapTiles, markers) keep working: Qt's GL paint engine
+  // rasterizes their QPainter calls onto the same context, and they remain
+  // pixel-registered because the scene→viewport transform is unchanged. Slice-1
+  // risk to watch: this is an app-wide viewport swap (verify CPU-layer
+  // registration; watch the camp#98 zoom/pan memory path).
+  setViewport(new QOpenGLWidget(this));
+  setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
   connect(horizontalScrollBar(), &QAbstractSlider::valueChanged, this, &MapView::sendViewport);
   connect(verticalScrollBar(), &QAbstractSlider::valueChanged, this , &MapView::sendViewport);
   scale(min_zoom_scale_, -min_zoom_scale_);

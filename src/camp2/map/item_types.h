@@ -34,6 +34,7 @@ enum ItemType
   MapTilesType,
   MapToolType,
   RasterLayerType,
+  GggsTileLayerType,
   RosGeometryManagerType,
   RosNamesManagerType,
   RosNodeType,
