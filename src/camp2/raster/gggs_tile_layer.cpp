@@ -76,7 +76,13 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   directory_(directory)
 {
   loadDirectory(directory);
-  if(tiles_.empty())
+  if(!tiles_.empty())
+    // Position the item at the extent's corner and paint in small LOCAL
+    // coordinates. QGraphicsView/QPainter lose precision rasterizing at raw
+    // Web-Mercator magnitudes (~1e7), which offsets the image; RasterLayer
+    // avoids this the same way (setPos + local pixel space).
+    setPos(scene_bounds_.topLeft());
+  else
     setStatus("(no tiles)");
 }
 
@@ -118,7 +124,10 @@ void GggsTileLayer::loadDirectory(const QString& directory)
 
 QRectF GggsTileLayer::boundingRect() const
 {
-  return scene_bounds_;
+  // Local coordinates: the item is setPos()'d at scene_bounds_.topLeft(), so its
+  // own space spans (0,0)..(width,height) in Web-Mercator metres. paint() and
+  // drawImage() work here (small magnitudes) to keep QPainter precise.
+  return QRectF(QPointF(0.0, 0.0), scene_bounds_.size());
 }
 
 bool GggsTileLayer::ensureGL()
