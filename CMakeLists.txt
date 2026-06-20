@@ -253,6 +253,7 @@ set(CAMP_MAP_SOURCES
     src/camp2/raster/raster_layer.cpp
     src/camp2/raster/gggs_tile.cpp
     src/camp2/raster/gggs_tile_layer.cpp
+    src/camp2/raster/gggs_store_layer.cpp
     src/camp2/tools/layer_manager.cpp
     src/camp2/tools/map_tool.cpp
     src/camp2/tools/tools_manager.cpp

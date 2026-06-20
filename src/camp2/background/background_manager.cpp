@@ -4,12 +4,14 @@
 #include "../map_tiles/map_tiles.h"
 #include "../map_tiles/osm.h"
 #include "../raster/raster_layer.h"
-#include "../raster/gggs_tile_layer.h"
+#include "../raster/gggs_store_layer.h"
 #include "../tools/tools_manager.h"
+#include <QDir>
 #include <QGraphicsScene>
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
+#include <QSettings>
 #include "../wmts/capabilities.h"
 
 namespace camp
@@ -60,6 +62,14 @@ void BackgroundManager::createDefaultLayers()
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
 
     // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
+
+    // [camp#90] Re-create persisted GGGS tile stores so they auto-load each
+    // session (persisted in openTileStore). Skip roots that no longer exist.
+    QSettings settings;
+    const QStringList store_roots = settings.value("GggsStores/roots").toStringList();
+    for(const QString& root : store_roots)
+      if(QDir(root).exists())
+        new raster::GggsStoreLayer(layers, root);
   }
 }
 
@@ -94,11 +104,21 @@ void BackgroundManager::openRaster()
 void BackgroundManager::openTileStore()
 {
   QString directory = QFileDialog::getExistingDirectory(nullptr, tr("Open tile store"));
-  if(!directory.isEmpty())
+  if(directory.isEmpty())
+    return;
+  auto layers = topLevelLayers();
+  if(!layers)
+    return;
+  new raster::GggsStoreLayer(layers, directory);
+
+  // Persist the store root so it auto-loads next session (createDefaultLayers
+  // re-creates it), matching the chart-list persistence.
+  QSettings settings;
+  QStringList roots = settings.value("GggsStores/roots").toStringList();
+  if(!roots.contains(directory))
   {
-    auto layers = topLevelLayers();
-    if(layers)
-      new raster::GggsTileLayer(layers, directory);
+    roots.append(directory);
+    settings.setValue("GggsStores/roots", roots);
   }
 }
 
