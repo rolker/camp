@@ -535,6 +535,24 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # GGGS offscreen-FBO render (camp#90 / I4): warps a synthetic tile in the
+  # layer's own GL context and checks the QImage is non-empty + oriented.
+  # Self-skips when no offscreen GL context is available.
+  ament_add_gtest(test_gggs_render
+    test/test_gggs_render.cpp
+  )
+  target_include_directories(test_gggs_render PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_render
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
 endif()
 
 

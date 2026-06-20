@@ -3,19 +3,21 @@
 #include "gggs_tile.h"
 #include "../map_view/web_mercator.h"
 
+#include <QDebug>
 #include <QDir>
+#include <QFileInfo>
 #include <QGeoCoordinate>
 #include <QMatrix4x4>
+#include <QOffscreenSurface>
+#include <QOpenGLContext>
+#include <QOpenGLFramebufferObject>
+#include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
-#include <QOpenGLWidget>
 #include <QPainter>
-#include <QStyleOptionGraphicsItem>
-#include <QFileInfo>
 
-#include <algorithm>
-#include <array>
 #include <cmath>
+#include <vector>
 
 namespace camp
 {
@@ -25,11 +27,10 @@ namespace raster
 namespace
 {
 
-// Vertex shader: per-vertex geo→Web-Mercator warp. This is a line-by-line port
-// of web_mercator::geoToMap (x = R·λ; y = R·asinh(tan φ)); asinh is expanded as
-// log(t + sqrt(t²+1)) to stay valid on GLSL profiles without the asinh builtin.
-// The geoToMap-parity unit test pins the formula so the shader can't silently
-// drift from the C++ reference.
+// Vertex shader: per-vertex geo->Web-Mercator warp. Line-by-line port of
+// web_mercator::geoToMap (x = R*lambda; y = R*asinh(tan phi)); asinh expanded as
+// log(t + sqrt(t^2+1)) to stay valid on GLSL profiles without the asinh builtin.
+// The geoToMap-parity unit test pins the formula so the shader can't drift.
 constexpr char kVertexShader[] = R"(
 #version 120
 attribute vec2 a_lonlat;     // degrees
@@ -49,9 +50,9 @@ void main()
 )";
 
 // Fragment shader: auto-ranged grayscale of the single-band value. NoData (0,
-// reserved by the mosaicker; real returns are floored to >= 1) is discarded so
-// empty cells are transparent. Premultiplied-alpha output to composite under
-// Qt's GL paint engine. Band-select + real colormap are Slice 3 (camp#63).
+// reserved by the mosaicker; real returns floored to >= 1) is discarded so empty
+// cells are transparent. Premultiplied-alpha output. Band-select + real colormap
+// are Slice 3 (camp#63).
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;
@@ -82,24 +83,6 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
 GggsTileLayer::~GggsTileLayer()
 {
   releaseGL();
-}
-
-void GggsTileLayer::releaseGL()
-{
-  // GL objects must be freed with their context current. If the viewport widget
-  // is still alive, make its context current; otherwise the objects fall to
-  // their destructors (a QOpenGLTexture with no current context warns + leaks,
-  // which only happens at app teardown when the context is gone anyway).
-  if(!program_ && tiles_.empty())
-    return;
-  const bool have_ctx = gl_widget_ && gl_widget_->context();
-  if(have_ctx)
-    gl_widget_->makeCurrent();
-  program_.reset();
-  for(auto& tile : tiles_)
-    tile->releaseGL();
-  if(have_ctx)
-    gl_widget_->doneCurrent();
 }
 
 void GggsTileLayer::loadDirectory(const QString& directory)
@@ -138,6 +121,27 @@ QRectF GggsTileLayer::boundingRect() const
   return scene_bounds_;
 }
 
+bool GggsTileLayer::ensureGL()
+{
+  if(gl_context_)
+    return true;
+  if(gl_failed_)
+    return false;
+
+  gl_surface_ = new QOffscreenSurface();
+  gl_surface_->create();
+  gl_context_ = new QOpenGLContext();
+  if(!gl_surface_->isValid() || !gl_context_->create())
+  {
+    qWarning("GggsTileLayer: offscreen GL unavailable; tiles not rendered");
+    gl_failed_ = true;
+    delete gl_context_; gl_context_ = nullptr;
+    delete gl_surface_; gl_surface_ = nullptr;
+    return false;
+  }
+  return true;
+}
+
 bool GggsTileLayer::ensureProgram()
 {
   if(program_)
@@ -147,51 +151,54 @@ bool GggsTileLayer::ensureProgram()
   program_->addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader);
   if(!program_->link())
   {
+    qWarning("GggsTileLayer: shader link failed: %s",
+             program_->log().toUtf8().constData());
     setStatus("(shader error)");
     return false;
   }
   return true;
 }
 
-void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget* widget)
+QImage GggsTileLayer::renderImage(const QSize& size)
 {
-  if(tiles_.empty())
-    return;
-  // Auto-range needs valid samples; a fully-NoData mosaic has nothing to draw.
-  if(data_min_ > data_max_)
-    return;
-
-  painter->beginNativePainting();
-
-  if(!gl_ready_)
+  if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
+    return QImage();
+  if(!ensureGL())
+    return QImage();
+  if(!gl_context_->makeCurrent(gl_surface_))
   {
-    initializeOpenGLFunctions();
-    gl_ready_ = true;
+    qWarning("GggsTileLayer: makeCurrent failed; tiles not rendered");
+    gl_failed_ = true;
+    return QImage();
   }
-  if(!gl_widget_)
-    gl_widget_ = qobject_cast<QOpenGLWidget*>(widget);
+
+  QOpenGLFunctions* f = gl_context_->functions();
+  if(!fbo_ || fbo_->size() != size)
+    fbo_ = std::make_unique<QOpenGLFramebufferObject>(size);
+
+  fbo_->bind();
+  f->glViewport(0, 0, size.width(), size.height());
+  f->glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+  f->glClear(GL_COLOR_BUFFER_BIT);
+  f->glDisable(GL_DEPTH_TEST);
+  f->glEnable(GL_BLEND);
+  f->glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
   if(ensureProgram())
   {
-    // MVP: scene(Web-Mercator) -> viewport logical px (the live QPainter world
-    // transform, which carries MapView's negative-Y flip + pan/zoom) -> NDC. The
-    // GL viewport covers the full framebuffer, so normalizing by logical size is
-    // device-pixel-ratio independent.
-    const QTransform w = painter->worldTransform();
-    const QMatrix4x4 world(
-      w.m11(), w.m21(), 0.0f, w.dx(),
-      w.m12(), w.m22(), 0.0f, w.dy(),
-      0.0f, 0.0f, 1.0f, 0.0f,
-      0.0f, 0.0f, 0.0f, 1.0f);
-    const double vw = widget ? widget->width() : painter->device()->width();
-    const double vh = widget ? widget->height() : painter->device()->height();
-    QMatrix4x4 ortho;
-    ortho.ortho(0.0f, float(vw), float(vh), 0.0f, -1.0f, 1.0f);
-    const QMatrix4x4 mvp = ortho * world;
-
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    // Map the layer's Web-Mercator extent to NDC. scene_bounds_ is normalised,
+    // so top() is the smaller mercator-y (south) and bottom() the larger
+    // (north). We want the offscreen QImage's row 0 to be the SOUTH edge, so
+    // that drawImage(boundingRect, image) — boundingRect.top() == south — is
+    // upright once MapView's negative-Y view flip puts north up on screen. So
+    // place south at NDC top (ortho 'top' param = south_y).
+    const double west_x = scene_bounds_.left();
+    const double east_x = scene_bounds_.right();
+    const double south_y = scene_bounds_.top();
+    const double north_y = scene_bounds_.bottom();
+    QMatrix4x4 mvp;
+    mvp.ortho(float(west_x), float(east_x), float(north_y), float(south_y),
+              -1.0f, 1.0f);
 
     program_->bind();
     program_->setUniformValue("u_mvp", mvp);
@@ -206,8 +213,8 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     program_->enableAttributeArray(lonlat_loc);
     program_->enableAttributeArray(texcoord_loc);
 
-    // Per-tile triangle strip, subdivided in latitude only (longitude is the
-    // linear axis of the warp). Interleaved [lon, lat, u, v] per vertex.
+    // Per-tile triangle strip, subdivided in latitude only. Interleaved
+    // [lon, lat, u, v] per vertex.
     const int rows = kLatSubdivisions + 1;
     std::vector<float> verts;
     verts.reserve(rows * 2 * 4);
@@ -223,7 +230,6 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
         const double frac = double(r) / kLatSubdivisions;
         const double lat = max_lat + (min_lat - max_lat) * frac;   // north -> south
         const float v = float(frac);                               // tex row 0 = north
-        // left edge (u = 0), then right edge (u = 1)
         verts.insert(verts.end(), {float(min_lon), float(lat), 0.0f, v});
         verts.insert(verts.end(), {float(max_lon), float(lat), 1.0f, v});
       }
@@ -236,7 +242,7 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
                                   4 * sizeof(float));
       program_->setAttributeArray(texcoord_loc, GL_FLOAT, verts.data() + 2, 2,
                                   4 * sizeof(float));
-      glDrawArrays(GL_TRIANGLE_STRIP, 0, rows * 2);
+      f->glDrawArrays(GL_TRIANGLE_STRIP, 0, rows * 2);
       texture->release(0);
     }
 
@@ -245,7 +251,53 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     program_->release();
   }
 
-  painter->endNativePainting();
+  fbo_->release();
+  QImage image = fbo_->toImage();   // top-down ARGB32 (premultiplied)
+  gl_context_->doneCurrent();
+  return image;
+}
+
+void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
+{
+  if(tiles_.empty() || data_min_ > data_max_)
+    return;
+
+  // Target the offscreen render at the extent's on-screen size, so the image is
+  // crisp at the current zoom. Re-render only when that size changes (zoom);
+  // pan reuses the cached image (drawImage repositions it via the world xform).
+  const QRectF dev = painter->worldTransform().mapRect(boundingRect());
+  const int w = std::min(kMaxImageEdge,
+                         std::max(1, int(std::ceil(std::abs(dev.width())))));
+  const int h = std::min(kMaxImageEdge,
+                         std::max(1, int(std::ceil(std::abs(dev.height())))));
+  const QSize size(w, h);
+
+  if(cached_image_.isNull() || cached_size_ != size)
+  {
+    cached_image_ = renderImage(size);
+    cached_size_ = size;
+  }
+  if(cached_image_.isNull())
+    return;
+
+  painter->save();
+  painter->setRenderHint(QPainter::SmoothPixmapTransform);
+  painter->drawImage(boundingRect(), cached_image_);
+  painter->restore();
+}
+
+void GggsTileLayer::releaseGL()
+{
+  if(gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_))
+  {
+    fbo_.reset();
+    program_.reset();
+    for(auto& tile : tiles_)
+      tile->releaseGL();
+    gl_context_->doneCurrent();
+  }
+  delete gl_context_; gl_context_ = nullptr;
+  delete gl_surface_; gl_surface_ = nullptr;
 }
 
 }  // namespace raster
