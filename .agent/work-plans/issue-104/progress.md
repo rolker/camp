@@ -423,3 +423,41 @@ per the brief). Not pushed (host performs pushes).
 ### Next step
 Branch `feature/issue-104` at `97a9214`, three atomic commits + this entry. Ready for
 a pre-push `review-code` of the browse-seed addition. Not pushed.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-21 15:02 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-104 at `067f671`
+**Mode**: pre-push
+**Depth**: Deep (reason: new cross-cutting persistence record + QAbstractItemModel removal protocol + MainWindow startup lifecycle wiring; whole branch carries the Round-1/2/3 Deep signal)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 4 | **Ship**: recommended — no must-fix; the browse-seed addition is correct and the `seeds_`↔model-row alignment invariant holds across add / bulk-restore / mid-list removal. Two optional test-coverage suggestions only.
+
+### Findings
+- [ ] (suggestion) Mid-list removal alignment (the headline `seeds_[i]`↔row-`i` invariant) is not directly tested — `RemoveDePersists` only removes index 0; add a 3-seed test removing the *middle* and asserting the survivors restore to the correct roots — `test/test_catalog_browser_seeds.cpp`
+- [ ] (suggestion) Malformed-entry prune branch (`tab < 0` → skip) untested — `RestoreSkipsMissingRoot` uses a well-formed entry; a no-tab/empty entry would exercise the decode-robustness path cheaply — `src/camp2/catalog/catalog_browser.cpp:126`
+
+### Round-4 scope — browse-seed persistence (`7981d61`, `12dc994`, `97a9214`)
+Re-review focused on the three browse-seed commits, with whole-branch re-confirmation. Every scrutiny point verified:
+- **`seeds_`↔top-level-row alignment holds across ALL paths.** `seedRoot` (add): `addTopLevel` appends at `childCount` and `seeds_.push_back` at the same index; dedup re-selects without touching either. `restoreSeeds` (bulk): each survivor does `addTopLevel` + `push_back` together; every skip path (`tab<0`, unknown source, vanished root, duplicate, empty `discover`) adds to **neither**. `removeSeed` (mid-list): `removeTopLevel(row)` and `seeds_.erase(begin()+row)` use the **same** index, both lists shift down identically (`[A,B,C]` remove 1 → `[A,C]` ↔ rows `[A,C]`); the context menu feeds `index.row()` (top-level row = seeds index) straight in. No drift reachable.
+- **Encoding round-trip safe** — decode uses `indexOf`+`left`/`mid` (split on the *first* tab), more robust than `split("\t")` (tolerant even of a tab inside the root); malformed/empty → `tab<0` → skipped, no crash/mis-key; empty list → `remove(key)`, restore reads a missing key as empty list and early-returns (`@Invalid()` avoided both ways).
+- **`restoreSeeds()` idempotent + orthogonal** — wired after `addSource`; a second call finds every entry `present` so nothing double-adds; clean restore leaves `pruned=false` → no rewrite → key byte-for-byte untouched; valid roots never dropped (the rewrite persists `seeds_`, which holds every survivor). Touches `GggsTileLayers/dirs` **nowhere** (only filesystem reads + `CatalogBrowser/seeds`).
+- **Removal model protocol intact** — `removeTopLevel`/`removeChild` proper `begin/endRemoveRows` bracketing; `removeChild` frees the owning `unique_ptr` (no leak/dangling); siblings' `row()` recomputed dynamically; context menu offers "Remove from browser" **only** on a top-level node (`!index.parent().isValid()`), stack `QMenu`/parented action — lifetime clean; Round-1 `QAbstractItemModelTester` still valid.
+- **Orthogonality audit clean** — `discover()`/`seedRoot()`/`restoreSeeds()`/`removeSeed()` touch only the seeds key + filesystem; `instantiate()` is the sole writer of `GggsTileLayers/dirs`; seeding spawns no layer; `GggsStoreLayer` is genuinely deleted (every mention is a comment about the retired class — no resurrection).
+- **Tests** scoped to org `camp_test`/app (no real-config pollution, `clear()` per case), offscreen + empty-placeholder `.tif` (non-GL/GDAL, deterministic); 4 cases cover persist/restore, skip-missing, dedup, remove-de-persist.
+- **ADR-0005 §5** "orthogonal to §4, not a reversal — repopulates the browse tree only, spawns no layers, doesn't resurrect `GggsStoreLayer`" is accurate to the code.
+
+### By-design note — transient-empty de-persist
+A seeded root whose directory still exists but currently holds zero tiles → `discover()` returns `nullptr` → the seed is dropped and rewritten out of persistence (`catalog_browser.cpp:157-162`). Accepted: this is the invariant-preserving choice (a persisted-but-unshown seed would force `seeds_` to diverge from model rows), consistent with the documented skip-missing parallel. Worth awareness only if transient store emptiness is plausible in the field.
+
+### Environment / verification note
+Could not re-run `./ui_ws/build.sh camp` — the dependency-layer installs (`core_ws/install`) are empty in this fresh worktree (same condition as Rounds 2-3). Findings are structural/logic, independent of compilation; relying on the Implementation entry's documented clean build + **94 tests / 0 fail** (4 new `CatalogBrowserSeeds` cases). cppcheck on the new C++ surfaced only sub-threshold `constVariablePointer` style nits + Qt `slots` parser noise; cpplint unavailable.
+
+### Scope note
+The three Round-4 commits disturb no Round-1/2/3 clear (retirement, persistence reset, tab integration, `rescan()` reorder, model tester); none were re-litigated.
+
+### Next step
+Verdict is **approved** (0 must-fix). Lifecycle: push / open PR → triage-reviews. The 2 suggestions are optional test-coverage hardening. Not pushed (host performs pushes).
