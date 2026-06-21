@@ -234,6 +234,8 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 set(CAMP_MAP_SOURCES
     src/camp2/background/background_manager.cpp
+    src/camp2/catalog/catalog_model.cpp
+    src/camp2/catalog/catalog_browser.cpp
     src/camp2/map/map.cpp
     src/camp2/map/map_item.cpp
     src/camp2/map/map_item_mime_data.cpp
@@ -254,6 +256,7 @@ set(CAMP_MAP_SOURCES
     src/camp2/raster/gggs_tile.cpp
     src/camp2/raster/gggs_tile_layer.cpp
     src/camp2/raster/gggs_store_layer.cpp
+    src/camp2/raster/gggs_store_source.cpp
     src/camp2/tools/layer_manager.cpp
     src/camp2/tools/map_tool.cpp
     src/camp2/tools/tools_manager.cpp
