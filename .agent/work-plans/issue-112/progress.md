@@ -69,3 +69,27 @@ The two stale sites from the original issue body (`gggs_store_layer.cpp:21` / `:
 ### Open questions
 - [ ] Header placement: new `gggs_tile_util.h` (shared, one definition site) vs. static lambda duplicated in each `.cpp` — recommendation is shared header per the issue's "one place" requirement.
 - [ ] New test file (`test_gggs_companion_filter.cpp`) vs. adding cases to existing `test_gggs_rescan.cpp` and `test_catalog_source.cpp` — recommendation is add to existing tests where fixture already covers the relevant class.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-21 16:04 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-112/plan.md` at `1251ab7`
+**PR**: PR-less (`--issue` mode; `gh` unauthenticated — issue substance cross-checked against the `## Issue Review` entry above)
+**Verdict**: approve-with-suggestions
+
+Independent review (fresh-context Opus dispatch; the `## Plan Authored` entry is a
+separate Sonnet dispatch under the shared `Claude Code Agent` name — not author
+self-review). Core approach validated against HEAD: three scan sites confirmed
+(`gggs_tile_layer.cpp:122`, `:170`; `gggs_store_source.cpp:23`); positive pattern
+`\d+_\d+_\d+\.tiff?` matches every legitimate value tile (all tiles/tests use
+`<level>_<row>_<col>.tif`) and excludes `_time`/`_source` companions without
+dropping real tiles. Consequences map and test obligation are complete. All
+findings below are suggestions; none block implementation.
+
+### Findings
+- [ ] (suggestion) ADR-0005 mislabeled "Layered enforcement" (workspace title); camp ADR-0005 is "Catalog browser + flat selectable display layers" — fix title, substance is correct — `plan.md:85`
+- [ ] (suggestion) Spurious "ADR-0006-D7" citation — camp has no ADR-0006 (only 0001–0005); drop or correct, the "companion set may grow" rationale stands alone — `plan.md:28`
+- [ ] (suggestion) Specify anchored/full regex match (`anchoredPattern`/`^…$`) for `isValueTile()` so partial matches can't admit malformed names — `plan.md:27`
+- [ ] (suggestion) Resolve test-structure inconsistency: "Files to Change" adds new `test_gggs_companion_filter.cpp` while Approach/Open-Questions recommend extending existing `test_catalog_source.cpp`/`test_gggs_rescan.cpp` (which already have reusable fixtures) — pick one; extending is recommended — `plan.md:56,66,104`
