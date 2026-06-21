@@ -19,8 +19,9 @@ class GggsTileLayer;
 /// directory it recursively builds the layer tree: any directory that directly
 /// contains `*.tif` becomes a renderable GggsTileLayer leaf; directories above
 /// those become grouping GggsStoreLayer nodes (e.g. a store root with
-/// `bathymetry/` and `sidescan_backscatter/<epoch>/` products). The node itself
-/// draws nothing — it only groups children in the Layers tree.
+/// `bathymetry/`, `sidescan/` and `backscatter/` modality dirs, each holding
+/// `draft/`/`processed/` maturity subdirs). The node itself draws nothing — it
+/// only groups children in the Layers tree.
 class GggsStoreLayer: public map::Layer
 {
   Q_OBJECT
