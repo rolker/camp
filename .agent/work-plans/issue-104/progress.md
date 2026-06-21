@@ -222,3 +222,91 @@ Could not re-run `./ui_ws/build.sh camp` in this worktree — the dependency-lay
 
 ### Next step
 Verdict is **changes-requested** (1 must-fix). Host (`/run-issue`) should dispatch **address-findings** to work the open must-fix from this entry, then re-dispatch `review-code` for Round 3 — the diff is not pushed until a pre-push review comes back approved. Not pushed (host performs pushes).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 13:35 +0000
+**By**: Claude Opus
+
+**Branch**: `feature/issue-104`
+**Build**: `./ui_ws/build.sh camp` — clean (only pre-existing `-Wunused-parameter`/
+`-Wsign-compare`/`-Wlogical-not-parentheses` warnings in unrelated files; none in
+the changed code).
+**Tests**: `./ui_ws/test.sh camp` — **89 tests, 0 failures, 2 skipped**. The 2
+skips are the pre-existing GL render self-skips; +2 over the suite at HEAD are the
+new `GggsRescanTest` cases (both verified passing by running the target directly).
+
+Addressed the single Round-2 `## Local Review (Pre-Push)` must-fix: `rescan()`
+abandoned an in-flight initial async load. Two atomic commits + this entry.
+
+### The fix — `rescan()` computes the new-tile set BEFORE disturbing the worker — `src/camp2/raster/gggs_tile_layer.cpp`
+The old order was: abort+join any in-flight load UP FRONT, then only re-kick it
+`if(added && load_started_)`. A manual Rescan that landed during the camp#102
+initial load and found **no** new tiles therefore aborted the worker (whole-tile
+granularity) and never restarted it — stranding those tiles at
+`pixelsLoaded()==false` forever (silently half-blank, status reads loaded).
+
+Reordered exactly as the reviewer specified:
+1. Build the `known` set and construct the candidate `GggsTile`s into a local
+   `new_tiles` vector FIRST. This only **reads** `tiles_` (paths are immutable
+   post-construction) and reads tile metadata off disk — it never mutates
+   `tiles_`, so it races nothing the worker does and needs no abort.
+2. If `new_tiles` is empty → `return false` **without** touching the worker — the
+   in-flight load runs on untouched. (This is the bug being fixed.)
+3. Only when there is ≥1 tile to add: abort+join the worker under
+   `abort_flag_mutex_` (so the subsequent `push_back` can't reallocate `tiles_`
+   under the worker that captures `this` and iterates it), then do the
+   extent merge + `push_back` (the previously-reviewed-clean has-new path,
+   unchanged), then re-kick via `loadTiles()` if `load_started_`.
+
+Idempotency (the `known` set), the under-mutex vector mutation, and the
+`pixelsLoaded()` acquire/release ordering are all intact. Corner cases:
+- New tiles while load in flight → still aborts+joins+pushes+re-kicks (unchanged).
+- **No** new tiles while load in flight → leaves the worker running (fixed).
+- Rescan after the load finished → adds new tiles + kicks a load for them; no-op
+  when nothing new (`return false`).
+- Concurrency: worker/`load_started_` state is only consulted after the no-op
+  early-return, and the abort+join still happens under the existing mutex before
+  any `tiles_` mutation — no new race.
+
+The leading comment block + the abort comment were rewritten to describe the new
+"compute first, abort only if adding" ordering and to record the camp#104 Round-2
+rationale.
+
+### Regression test — `test/test_gggs_rescan.cpp` (+ `CMakeLists.txt`)
+Added a deterministic, **non-GL / non-async** `GggsRescanTest` (2 cases) pinning
+down rescan's add/no-op contract via the public API (`rescan()` return value +
+`sceneBounds()`):
+- `NoNewTilesIsNoOp` — nothing new → `rescan()==false`, extent untouched, idempotent.
+- `PicksUpNewlyLandedTile` — a tile landing after load → `rescan()==true`, extent
+  grows eastward (west edge unchanged), then nothing-new → `false`.
+It writes tiny real GeoTIFFs with GDAL (no GL); the scan/merge runs synchronously
+on the calling thread, so it is non-flaky. New `ament_add_gtest` target modeled on
+`test_gggs_visibility` (camp_map + Qt + GDAL).
+
+**What the test does NOT cover, and why (per the task's allowance):** the *exact*
+in-flight-abort race — "rescan-finds-nothing must leave a still-RUNNING pixel-load
+worker alone" — is **not deterministically unit-testable here**. Distinguishing
+the old vs new behavior requires the load worker to be genuinely in-flight at the
+moment `rescan()` is called AND a way to observe per-tile `pixelsLoaded()`. The
+production class deliberately exposes neither a worker-pause seam nor a
+`pixelsLoaded()` accessor, and there is no public "start load without joining"
+(only `paint()`/`waitForLoad()`, which join). A timing-based variant would only
+detect the bug on runs where tiles happen to load slowly — it passes on the buggy
+code whenever they load fast (false assurance), so it was **not** added rather than
+ship a flaky-detecting test. Adding the pause/observability plumbing would exceed
+the "minimal and local" scope of this fix and introduce its own concurrency
+surface. The race itself is covered by the code-level reasoning above + review; the
+committed test guards the contract the fix preserves.
+
+### Environment note
+Same as prior phases: the dependency-layer installs (`core_ws/install`,
+`underlay_ws/install`) were empty in this fresh worktree, so `build.sh camp` first
+failed on missing `marine_ais_msgs`. Rebuilt the three core_ws packages camp needs
+(`marine_ais_msgs`, `marine_interfaces`, `marine_autonomy`) into the shared
+`layers/main/core_ws/install`, then camp built clean. No source changes in those
+layers.
+
+### Next step
+Round-2 must-fix resolved; build clean, suite green (89/0/2). Ready for a Round-3
+pre-push `review-code`. Not pushed (host performs pushes).
