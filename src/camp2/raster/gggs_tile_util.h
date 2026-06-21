@@ -18,10 +18,17 @@ namespace raster
 /// any future companion suffix is excluded for free by not matching, without a
 /// denylist to maintain. Match @p filename only (what QDir::entryList returns),
 /// never a full path.
+///
+/// [camp#112] Case-insensitive: the scan-site globs (`*.tif`/`*.tiff`) can admit
+/// an upper/mixed-case extension (`.TIF`/`.TIFF`), so the pattern matches case-
+/// insensitively too — otherwise such a value tile would pass the glob but be
+/// silently dropped here. (Producers emit lowercase today; this keeps the filter
+/// from diverging from the globs if that ever changes.)
 inline bool isValueTile(const QString& filename)
 {
   static const QRegularExpression re(
-    QRegularExpression::anchoredPattern(QStringLiteral("\\d+_\\d+_\\d+\\.tiff?")));
+    QRegularExpression::anchoredPattern(QStringLiteral("\\d+_\\d+_\\d+\\.tiff?")),
+    QRegularExpression::CaseInsensitiveOption);
   return re.match(filename).hasMatch();
 }
 
