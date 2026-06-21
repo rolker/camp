@@ -76,7 +76,41 @@ TEST(GggsTileTest, ExtentFromGeotransform)
   EXPECT_NEAR(tile.minLat(), max_lat - h * dlat, 1e-12);
 }
 
-// NoData (0) is excluded from the data range; real samples set min/max.
+// [camp#102] The constructor reads extent/dimensions ONLY — valid() and the
+// geographic extent are known before any pixel read. The data range stays at the
+// crossed sentinel until loadPixels() runs, which then populates it.
+TEST(GggsTileTest, ExtentKnownBeforePixelsLoad)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  std::vector<uint16_t> samples = {0, 5, 12345, 50000};
+  const QString path = writeTile(dir, "13_2_2.tif", w, h, geo, samples);
+
+  GggsTile tile(path);
+  // Extent + dimensions are valid synchronously, before any RasterIO.
+  ASSERT_TRUE(tile.valid());
+  EXPECT_FALSE(tile.pixelsLoaded());
+  EXPECT_EQ(tile.width(), w);
+  EXPECT_EQ(tile.height(), h);
+  EXPECT_NEAR(tile.maxLat(), 43.0, 1e-12);
+  // The range is crossed (unknown) until pixels load.
+  EXPECT_GT(tile.dataMin(), tile.dataMax());
+
+  // loadPixels() reads the band and populates the range.
+  EXPECT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.pixelsLoaded());
+  EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
+
+  // Idempotent: a second call is a no-op and stays loaded.
+  EXPECT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.pixelsLoaded());
+}
+
+// NoData (0) is excluded from the data range; real samples set min/max
+// (post loadPixels()).
 TEST(GggsTileTest, NoDataExcludedFromRange)
 {
   QTemporaryDir dir;
@@ -91,6 +125,7 @@ TEST(GggsTileTest, NoDataExcludedFromRange)
   ASSERT_TRUE(tile.valid());
   EXPECT_TRUE(tile.hasNoData());
   EXPECT_DOUBLE_EQ(tile.noData(), 0.0);
+  ASSERT_TRUE(tile.loadPixels());
   EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
 }
@@ -107,6 +142,7 @@ TEST(GggsTileTest, AllNoDataHasCrossedRange)
 
   GggsTile tile(path);
   ASSERT_TRUE(tile.valid());           // dimensions known
+  ASSERT_TRUE(tile.loadPixels());      // pixels read (all NoData)
   EXPECT_GT(tile.dataMin(), tile.dataMax());   // no valid samples
 }
 
