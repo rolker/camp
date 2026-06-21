@@ -93,3 +93,68 @@ findings below are suggestions; none block implementation.
 - [ ] (suggestion) Spurious "ADR-0006-D7" citation — camp has no ADR-0006 (only 0001–0005); drop or correct, the "companion set may grow" rationale stands alone — `plan.md:28`
 - [ ] (suggestion) Specify anchored/full regex match (`anchoredPattern`/`^…$`) for `isValueTile()` so partial matches can't admit malformed names — `plan.md:27`
 - [ ] (suggestion) Resolve test-structure inconsistency: "Files to Change" adds new `test_gggs_companion_filter.cpp` while Approach/Open-Questions recommend extending existing `test_catalog_source.cpp`/`test_gggs_rescan.cpp` (which already have reusable fixtures) — pick one; extending is recommended — `plan.md:56,66,104`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 17:30 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-112 at `4e46fb1`
+**Commits**:
+- `6f4070d` fix(gggs): filter `_time`/`_source` companion tiles from value-tile scans — helper + 3 sites + plan sync
+- `4e46fb1` test(gggs): cover companion-tile filtering — extend existing targets
+
+### What was built
+
+**Shared helper** — new `src/camp2/raster/gggs_tile_util.h` with an inline
+`camp::raster::isValueTile(const QString& filename)`. It matches the filename
+(never a full path) against an anchored, full-match positive pattern
+`^\d+_\d+_\d+\.tiff?$` via `QRegularExpression::anchoredPattern(...)` with a
+function-local `static const QRegularExpression` (compiled once). Exactly three
+underscore-separated digit groups then `.tif`/`.tiff` → the base value tile;
+companions (a 4th `_time`/`_source` component) and malformed names fail to
+match. A header comment records the positive-pattern decision and that future
+companion suffixes are excluded for free.
+
+**Three patched scan sites** (each now skips non-value tiles), both `.cpp`s
+include `gggs_tile_util.h`:
+- `gggs_tile_layer.cpp` `loadDirectory()` — `if(!isValueTile(name)) continue;`
+  before constructing the `GggsTile`.
+- `gggs_tile_layer.cpp` `rescan()` — same skip before the `known.contains()`
+  check, so a rescan never adds a companion as a new tile.
+- `gggs_store_source.cpp` `dirHasTifs()` — iterate the `*.tif` entryList and
+  return true only if at least one entry `isValueTile()`, so a directory of
+  companions alone is not counted as a tile-set.
+
+**Tests** (extended existing targets — no new file, no CMakeLists change):
+- `test_catalog_source.cpp` → `CompanionTilesDoNotBreakDiscovery`: a tile-set
+  dir with `0_0_0.tif` + `0_0_0_time.tif` + `0_0_0_source.tif` discovers as a
+  leaf keyed to the dir; a sibling dir holding ONLY companions is pruned (not a
+  tile-set).
+- `test_gggs_rescan.cpp` → `CompanionTilesAreNotLoaded`: a `GggsTileLayer` over
+  base + companions (companions written at a disjoint *eastward* extent, so they
+  would widen `sceneBounds()` if loaded) has `valid()==true` and `sceneBounds()`
+  equal to a base-only layer's — exactly one tile loaded.
+- `test_gggs_rescan.cpp` → `RescanIgnoresCompanionTiles`: companions landing
+  after the initial load make `rescan()` return `false` with the extent
+  untouched.
+- No tile-count accessor was added; the existing public `sceneBounds()`/`valid()`
+  surface (with disjoint-extent companions) distinguishes one-tile from
+  three-tile loads, per the plan.
+
+### Doc fixes (Plan Review findings, applied to `plan.md`)
+- ADR-0005 retitled "Catalog browser + flat selectable display layers".
+- Spurious "ADR-0006-D7" citation removed (camp has no ADR-0006).
+- `isValueTile()` spec updated to anchored/full-match + filename-only.
+- Both Open Questions resolved (shared header; extend existing tests); Files-to-
+  Change / Consequences tables updated to drop the new-test-file + CMakeLists rows.
+
+### Build / test
+Camp deps were absent (empty `core_ws/install`): built `marine_ais_msgs`,
+`marine_interfaces`, `marine_autonomy` via `colcon build --packages-up-to` in
+`core_ws` first (warnings only). Then:
+- Build: `./ui_ws/build.sh camp` → 1 package finished (pre-existing warnings only).
+- Test: `./ui_ws/test.sh camp` → **99 tests, 0 errors, 0 failures, 2 skipped**.
+The three new cases were confirmed run and passing (direct binary runs).
+
+Not pushed.
