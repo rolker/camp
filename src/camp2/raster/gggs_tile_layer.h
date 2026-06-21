@@ -128,10 +128,13 @@ private:
   // single QtConcurrent worker driven by this watcher and kicked lazily from the
   // first paint(). The abort flag + waitForFinished() dtor/re-launch join is
   // ported verbatim from RasterLayer so a layer destroyed mid-load can't outlive
-  // `this`. The worker mutates each GggsTile's pixel buffer off-thread; the paint
-  // path only ever reads a tile whose pixelsLoaded() flag is set, and that flag
-  // is set ONLY in tilesReady() (GUI thread) after the worker has finished — so
-  // no tile is read mid-write.
+  // `this`. The worker mutates each GggsTile's pixel buffer off-thread and then
+  // publishes it by storing the tile's atomic pixelsLoaded() flag with RELEASE
+  // ordering (gggs_tile.cpp). The paint path only ever reads a tile's data_/
+  // texture() after an ACQUIRE load of that flag returns true (gggs_tile_layer.cpp
+  // renderImage). That release/acquire pair establishes happens-before, so the
+  // paint thread never observes a half-written buffer — even on the rescan()
+  // re-kick, where the layer's crossed-range gate is already open.
   QFutureWatcher<void> future_watcher_;
   bool abort_flag_ = false;
   QMutex abort_flag_mutex_;

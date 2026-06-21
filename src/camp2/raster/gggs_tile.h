@@ -2,6 +2,7 @@
 #define RASTER_GGGS_TILE_H
 
 #include <QString>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -39,7 +40,17 @@ public:
 
   /// True once `loadPixels()` has read the band into CPU memory (or freed it into
   /// the GL texture). dataMin/dataMax and texture() are only meaningful once true.
-  bool pixelsLoaded() const { return pixels_loaded_; }
+  ///
+  /// [camp#102] `pixels_loaded_` is `std::atomic<bool>` and this is an ACQUIRE
+  /// load. It pairs with the RELEASE store in `loadPixels()` (issued AFTER the
+  /// `data_` move) to establish happens-before: when the paint thread observes
+  /// `pixelsLoaded() == true` it is guaranteed to see the worker's completed
+  /// `data_`/range writes. No other path may read `data_`/`texture()` without
+  /// first passing this acquire check (see `texture()`, gated below).
+  bool pixelsLoaded() const
+  {
+    return pixels_loaded_.load(std::memory_order_acquire);
+  }
 
   const QString& path() const { return path_; }
   int width() const { return width_; }
@@ -74,7 +85,12 @@ private:
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;
   double nodata_ = 0.0;
-  bool pixels_loaded_ = false;               // set once loadPixels() has run
+  // [camp#102] Cross-thread publication flag: stored with release in loadPixels()
+  // (worker thread) AFTER data_/range are written, loaded with acquire in
+  // pixelsLoaded() (paint thread) before data_/texture() are read. Atomic so the
+  // rescan() re-kick (range already valid → paint's crossed-range gate is open)
+  // can't race the worker's mid-write.
+  std::atomic<bool> pixels_loaded_{false};   // set once loadPixels() has run
   double data_min_ = 1.0, data_max_ = 0.0;   // crossed => no valid samples
   std::vector<float> data_;                  // row-major, height_ * width_
   std::unique_ptr<QOpenGLTexture> texture_;

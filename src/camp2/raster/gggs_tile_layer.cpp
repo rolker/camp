@@ -156,6 +156,11 @@ bool GggsTileLayer::rescan()
   // already loaded so the new tiles' pixels stream in too.
   if(future_watcher_.isRunning())
   {
+    // [camp#102] Abort granularity is WHOLE-TILE (the worker checks abort_flag_
+    // only between tiles, not mid-RasterIO like RasterLayer's per-scanline check).
+    // A large in-flight tile's RasterIO therefore blocks this GUI-thread join
+    // until that one tile finishes. Acceptable at the Massabesic store scale this
+    // lands against; finer (sub-tile) abort is a follow-up if tiles grow large.
     abort_flag_mutex_.lock();
     abort_flag_ = true;
     abort_flag_mutex_.unlock();
@@ -215,6 +220,11 @@ void GggsTileLayer::loadTiles()
   // tiles_, and — if the layer is destroyed first — outlive `this`. A paint()
   // lazy-kick + a tilesReady() fold therefore cannot launch a second concurrent
   // load.
+  //
+  // [camp#102] Abort granularity is WHOLE-TILE: the worker honors abort_flag_ only
+  // between tiles, so a large in-flight tile's RasterIO blocks this GUI-thread join
+  // until that tile finishes (vs RasterLayer's per-scanline abort). Acceptable at
+  // current store scale; finer sub-tile abort is a follow-up if tiles grow large.
   if(future_watcher_.isRunning())
   {
     abort_flag_mutex_.lock();
@@ -235,10 +245,12 @@ void GggsTileLayer::loadTilesWorker()
   // [camp#102] Off-thread: GDAL RasterIO only — NEVER touch GL here (texture()/
   // allocateStorage stay on the paint path). The abort check is between tiles
   // (whole-tile granularity, vs RasterLayer's scanline granularity). loadPixels()
-  // writes each tile's data_/range; the pixelsLoaded() flag those reads set is
-  // only OBSERVED by the paint path after tilesReady() runs on the GUI thread
-  // (the watcher's finished->tilesReady join is the barrier), so the paint path
-  // never reads a tile mid-write.
+  // writes each tile's data_/range and then publishes it with a RELEASE store to
+  // the tile's atomic pixelsLoaded() flag. The paint path reads that flag with an
+  // ACQUIRE load before touching data_/texture(), so the release/acquire pair —
+  // not the tilesReady() join — is what guarantees the paint thread never reads a
+  // tile mid-write. (tilesReady() still runs post-join to fold the range +
+  // repaint, but a paint() that races an in-flight worker is already safe.)
   for(auto& tile : tiles_)
   {
     {
@@ -266,7 +278,14 @@ void GggsTileLayer::tilesReady()
     first_range = false;
   }
   cached_image_ = QImage();   // re-render now that pixels (and the range) exist
-  setStatus("");
+  // [camp#102] If the range is still crossed after the fold, every loaded tile was
+  // all-NoData (or failed to read): there is nothing to draw and clearing the
+  // status would leave a silently-blank enabled layer. Signal "(no data)" so the
+  // operator can tell an empty tile-set from one that simply hasn't loaded yet.
+  if(data_min_ > data_max_)
+    setStatus("(no data)");
+  else
+    setStatus("");
   update(boundingRect());
 }
 
@@ -425,9 +444,12 @@ QImage GggsTileLayer::renderImage(const QSize& size)
     for(auto& tile : tiles_)
     {
       // [camp#102] Skip a tile whose pixels haven't loaded yet (in-flight or not
-      // yet kicked). pixelsLoaded() is only set by tilesReady() after the worker
-      // joins, so reading it here on the paint path never races the worker's
-      // mid-write. The layer repaints on tilesReady() once the load completes.
+      // yet kicked). pixelsLoaded() is an ACQUIRE load that pairs with the worker's
+      // RELEASE store in loadPixels() (issued after the data_ move), so once it
+      // reads true the subsequent data_/texture() reads are guaranteed to see the
+      // worker's completed writes — no race even while a worker is mid-flight on
+      // another tile. The layer also repaints on tilesReady() once the load
+      // completes (to fold the range).
       if(!tile->pixelsLoaded())
         continue;
 

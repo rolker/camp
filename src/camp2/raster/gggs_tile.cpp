@@ -62,7 +62,7 @@ bool GggsTile::loadPixels()
 {
   if(!valid())
     return false;
-  if(pixels_loaded_)
+  if(pixels_loaded_.load(std::memory_order_acquire))
     return true;
 
   // [camp#102] Pure GDAL read — safe off the GUI thread (no GL touched here).
@@ -99,7 +99,11 @@ bool GggsTile::loadPixels()
   data_max_ = max_value;
 
   data_ = std::move(values);
-  pixels_loaded_ = true;
+  // [camp#102] RELEASE store AFTER all of data_/data_min_/data_max_ are written.
+  // Pairs with the ACQUIRE load in pixelsLoaded() so the paint thread, once it
+  // sees this flag true, is guaranteed to observe the completed buffer/range —
+  // closing the worker-vs-paint race on both first load and the rescan() re-kick.
+  pixels_loaded_.store(true, std::memory_order_release);
   return true;
 }
 
