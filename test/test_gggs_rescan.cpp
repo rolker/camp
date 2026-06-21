@@ -109,6 +109,62 @@ TEST(GggsRescanTest, PicksUpNewlyLandedTile)
   EXPECT_FALSE(layer->rescan());                  // now nothing new
 }
 
+// [camp#112] loadDirectory() filters companion tiles (`_time`/`_source`): a tile
+// directory holding the base value tile plus its companions enumerates EXACTLY
+// the base tile. The companions are written at a disjoint (eastward) extent, so
+// if they were (wrongly) loaded as tiles the layer's sceneBounds would widen —
+// the layer instead matches a base-only layer's extent exactly.
+TEST(GggsRescanTest, CompanionTilesAreNotLoaded)
+{
+  QTemporaryDir base_only;
+  ASSERT_TRUE(base_only.isValid());
+  ASSERT_FALSE(writeTile(base_only, "13_0_0.tif", -71.40, 43.00).isEmpty());
+
+  camp::map::Map base_map;
+  auto* base_layer =
+    new camp::raster::GggsTileLayer(base_map.topLevelLayers(), base_only.path());
+  ASSERT_TRUE(base_layer->valid());
+  const QRectF base_bounds = base_layer->sceneBounds();
+
+  QTemporaryDir with_companions;
+  ASSERT_TRUE(with_companions.isValid());
+  ASSERT_FALSE(writeTile(with_companions, "13_0_0.tif", -71.40, 43.00).isEmpty());
+  // Companions at a disjoint eastward extent: a real GeoTIFF, excluded by NAME.
+  ASSERT_FALSE(writeTile(with_companions, "13_0_0_time.tif", -71.39, 43.00).isEmpty());
+  ASSERT_FALSE(writeTile(with_companions, "13_0_0_source.tif", -71.38, 43.00).isEmpty());
+
+  camp::map::Map map;
+  auto* layer =
+    new camp::raster::GggsTileLayer(map.topLevelLayers(), with_companions.path());
+  ASSERT_TRUE(layer->valid());
+  // Only the base tile counted: same extent as the base-only layer (companions'
+  // eastward extents did not widen it).
+  EXPECT_EQ(layer->sceneBounds(), base_bounds)
+      << "companion tiles must not be loaded as renderable tiles";
+}
+
+// [camp#112] rescan() filters companion tiles too: companions landing after the
+// initial load are not treated as new renderable tiles, so rescan() no-ops
+// (returns false) and leaves the extent untouched.
+TEST(GggsRescanTest, RescanIgnoresCompanionTiles)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  const QRectF bounds_before = layer->sceneBounds();
+
+  // Companions for the existing tile land afterward (disjoint eastward extents).
+  ASSERT_FALSE(writeTile(dir, "13_0_0_time.tif", -71.39, 43.00).isEmpty());
+  ASSERT_FALSE(writeTile(dir, "13_0_0_source.tif", -71.38, 43.00).isEmpty());
+
+  EXPECT_FALSE(layer->rescan());                  // companions are not new tiles
+  EXPECT_EQ(layer->sceneBounds(), bounds_before); // extent untouched
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");
