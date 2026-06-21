@@ -149,24 +149,19 @@ void GggsTileLayer::loadDirectory(const QString& directory)
 
 bool GggsTileLayer::rescan()
 {
-  // [camp#102] Incremental add of newly-landed tiles (QFileSystemWatcher fired).
-  // Abort + join any in-flight load first so we don't mutate tiles_ under the
-  // worker (it captures `this` and iterates tiles_). Then append extent-only
-  // entries for any path not already held; re-kick the load if the layer was
-  // already loaded so the new tiles' pixels stream in too.
-  if(future_watcher_.isRunning())
-  {
-    // [camp#102] Abort granularity is WHOLE-TILE (the worker checks abort_flag_
-    // only between tiles, not mid-RasterIO like RasterLayer's per-scanline check).
-    // A large in-flight tile's RasterIO therefore blocks this GUI-thread join
-    // until that one tile finishes. Acceptable at the Massabesic store scale this
-    // lands against; finer (sub-tile) abort is a follow-up if tiles grow large.
-    abort_flag_mutex_.lock();
-    abort_flag_ = true;
-    abort_flag_mutex_.unlock();
-    future_watcher_.waitForFinished();
-  }
-
+  // [camp#102] Incremental add of newly-landed tiles. [camp#104] Invoked by the
+  // "Rescan" context-menu action — the manual stopgap for the live pickup lost
+  // with the retired GggsStoreLayer's QFileSystemWatcher (ADR-0005).
+  //
+  // [camp#104] Compute the new-tile set FIRST, before disturbing any in-flight
+  // load. Building `known` and constructing the candidate GggsTiles only READS
+  // tiles_ (paths are immutable post-construction) and reads tile metadata off
+  // disk — neither mutates tiles_, so it races nothing the worker does. We abort +
+  // join the worker ONLY when there is at least one tile to add. A Rescan that
+  // finds nothing new must leave the in-flight initial load running untouched:
+  // aborting it here (whole-tile granularity, never re-kicked because there is
+  // nothing to add) would strand those tiles at pixelsLoaded()==false forever —
+  // a silently half-blank layer with no recovery, even though status reads loaded.
   QSet<QString> known;
   for(const auto& tile : tiles_)
     known.insert(tile->path());
@@ -174,18 +169,42 @@ bool GggsTileLayer::rescan()
   QDir dir(directory_);
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
                                           QDir::Files, QDir::Name);
-  bool added = false;
+  std::vector<std::unique_ptr<GggsTile>> new_tiles;
   for(const QString& name : files)
   {
     const QString path = dir.filePath(name);
     if(known.contains(path))
       continue;
     // A half-written tile degrades to valid()==false here and is skipped — the
-    // next watcher fire (or a manual rescan) re-tries it once the producer's
-    // write completes. Producer-side atomic-write safety is uma#189.
+    // next Rescan re-tries it once the producer's write completes.
+    // Producer-side atomic-write safety is uma#189.
     auto tile = std::make_unique<GggsTile>(path);
     if(!tile->valid())
       continue;
+    new_tiles.push_back(std::move(tile));
+  }
+
+  if(new_tiles.empty())
+    return false;   // nothing new — leave any in-flight load running untouched
+
+  // [camp#102] Now that there IS something to add, abort + join any in-flight load
+  // before mutating tiles_ (the worker captures `this` and iterates tiles_, so a
+  // push_back reallocation under it would be a use-after-free). Abort granularity
+  // is WHOLE-TILE (the worker checks abort_flag_ only between tiles, not mid-
+  // RasterIO like RasterLayer's per-scanline check), so a large in-flight tile's
+  // RasterIO blocks this GUI-thread join until that one tile finishes. Acceptable
+  // at the Massabesic store scale this lands against; finer (sub-tile) abort is a
+  // follow-up if tiles grow large. The new tiles' pixels are re-kicked below.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+
+  for(auto& tile : new_tiles)
+  {
     const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
     const QPointF lo = web_mercator::geoToMap(
       QGeoCoordinate(tile->minLat(), tile->minLon()));
@@ -200,15 +219,14 @@ bool GggsTileLayer::rescan()
       setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
     }
     tiles_.push_back(std::move(tile));
-    added = true;
   }
 
-  if(added && load_started_)
+  if(load_started_)
   {
     cached_image_ = QImage();   // force a re-render once the new pixels arrive
     loadTiles();                // stream the new tiles' pixels in
   }
-  return added;
+  return true;
 }
 
 void GggsTileLayer::loadTiles()
@@ -568,6 +586,18 @@ void GggsTileLayer::setColormap(map::ColorMap::Type type)
 void GggsTileLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
+
+  // [camp#104] Manual refresh affordance. The retired GggsStoreLayer's
+  // QFileSystemWatcher (camp#102 live tile/epoch pickup) was dropped with it
+  // (ADR-0005), so a flat layer no longer auto-picks-up tiles that land after it
+  // loaded. This action is the stopgap: re-enumerate the tile-set directory for
+  // newly-landed `*.tif` tiles on demand — right-click → Rescan instead of
+  // restarting CAMP. Safe to invoke repeatedly / when nothing changed (rescan()
+  // adds only paths not already held and no-ops otherwise). A per-layer watcher
+  // (live auto-pickup) remains a follow-up.
+  QAction* rescan_action = menu->addAction("Rescan");
+  connect(rescan_action, &QAction::triggered, this, [this]() { rescan(); });
+
   QMenu* colormap_menu = menu->addMenu("Colormap");
   for(auto type : map::ColorMap::allTypes())
   {
@@ -590,7 +620,7 @@ void GggsTileLayer::readSettings()
   // itemConstructed() runs readSettings() via QTimer::singleShot(0,...) AFTER the
   // ctor, which would clobber a ctor call (map_item.cpp:26,180-183). A persisted
   // `visible` value still wins (the operator's on/off choice round-trips); only
-  // the first-run default flips. Grouping GggsStoreLayer nodes are NOT affected.
+  // the first-run default flips.
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
@@ -613,6 +643,17 @@ void GggsTileLayer::writeSettings()
   settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
   settings.endGroup();
   settings.endGroup();
+}
+
+void GggsTileLayer::onRemovedFromMap()
+{
+  // [camp#104] Drop this tile-set directory from the BackgroundManager restore
+  // list (GggsTileLayers/dirs) so a user-removed flat layer stays gone next
+  // session — the flat-layer analogue of the retired GggsStoreLayer root drop.
+  QSettings settings;
+  QStringList dirs = settings.value("GggsTileLayers/dirs").toStringList();
+  if(dirs.removeAll(directory_) > 0)
+    settings.setValue("GggsTileLayers/dirs", dirs);
 }
 
 }  // namespace raster

@@ -234,6 +234,8 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 set(CAMP_MAP_SOURCES
     src/camp2/background/background_manager.cpp
+    src/camp2/catalog/catalog_model.cpp
+    src/camp2/catalog/catalog_browser.cpp
     src/camp2/map/map.cpp
     src/camp2/map/map_item.cpp
     src/camp2/map/map_item_mime_data.cpp
@@ -253,7 +255,7 @@ set(CAMP_MAP_SOURCES
     src/camp2/raster/raster_layer.cpp
     src/camp2/raster/gggs_tile.cpp
     src/camp2/raster/gggs_tile_layer.cpp
-    src/camp2/raster/gggs_store_layer.cpp
+    src/camp2/raster/gggs_store_source.cpp
     src/camp2/tools/layer_manager.cpp
     src/camp2/tools/map_tool.cpp
     src/camp2/tools/tools_manager.cpp
@@ -564,6 +566,94 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
   )
   target_link_libraries(test_gggs_visibility
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#104] GggsStoreSource folder-scan discovery builds the expected generic
+  # CatalogItem tree from a temp store (groups/leaves, tile-free subtrees pruned).
+  # Pure directory scan — no GL/GDAL.
+  ament_add_gtest(test_catalog_source
+    test/test_catalog_source.cpp
+  )
+  target_include_directories(test_catalog_source PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_catalog_source
+    camp_map
+    Qt5::Core
+  )
+
+  # [camp#104] GggsStoreSource::instantiate() adds exactly one flat top-level
+  # GggsTileLayer (model stays valid; dedup-on-select prevents duplicates).
+  ament_add_gtest(test_gggs_flat_layer_spawn
+    test/test_gggs_flat_layer_spawn.cpp
+  )
+  target_include_directories(test_gggs_flat_layer_spawn PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_flat_layer_spawn
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    Qt5::Test
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#104] Flat-layer persistence reset (ADR-0005): select persists the dir,
+  # createDefaultLayers() restores (deduped, skips missing), remove de-persists,
+  # and the retired GggsStores/roots key is ignored + cleared once on startup.
+  ament_add_gtest(test_gggs_persistence
+    test/test_gggs_persistence.cpp
+  )
+  target_include_directories(test_gggs_persistence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_persistence
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#104] CatalogBrowser seed (browsed store root) persistence (ADR-0005
+  # browser-seed amendment): seedRoot persists under CatalogBrowser/seeds and a
+  # fresh browser + restoreSeeds rebuilds the top-level node; restore skips a
+  # missing root; seeding dedups; removeSeed de-persists. Widget/model level —
+  # discovery only stats `*.tif` filenames, so no GL/GDAL.
+  ament_add_gtest(test_catalog_browser_seeds
+    test/test_catalog_browser_seeds.cpp
+  )
+  target_include_directories(test_catalog_browser_seeds PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_catalog_browser_seeds
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#104] GggsTileLayer::rescan() add/no-op contract (the surface reshaped by
+  # the Round-2 must-fix): nothing-new -> false + extent untouched; a newly-landed
+  # tile -> true + extent grows. Synchronous scan/merge — no GL, no load worker.
+  ament_add_gtest(test_gggs_rescan
+    test/test_gggs_rescan.cpp
+  )
+  target_include_directories(test_gggs_rescan PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_rescan
     camp_map
     Qt5::Core
     Qt5::Gui
