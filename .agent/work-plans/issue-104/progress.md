@@ -310,3 +310,39 @@ layers.
 ### Next step
 Round-2 must-fix resolved; build clean, suite green (89/0/2). Ready for a Round-3
 pre-push `review-code`. Not pushed (host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-21 13:42 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-104 at `982aab5`
+**Mode**: pre-push
+**Depth**: Deep (reason: concurrency/lifecycle of the `rescan()`↔load-worker interaction; whole branch carries the Round-1/2 Deep signal)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 3 | **Ship**: recommended — the single Round-2 must-fix is correctly and completely resolved by `3a304f1`; no new findings, suite green.
+
+### Findings
+- [ ] No issues found. LGTM.
+
+### Round-3 verification — `3a304f1` (`rescan()` reorder) closes the Round-2 defect
+Re-review focused on the must-fix commit + its regression test, with whole-branch re-confirmation. Every claim traced and verified:
+- **No-new early return leaves the in-flight load untouched** (the exact Round-2 defect). Between entry and `return false` (`gggs_tile_layer.cpp:165–188`), the code only builds `known`, scans the dir, and constructs candidates into a local `new_tiles` — **nothing reads/writes `future_watcher_`, `abort_flag_`, or `load_started_`** before the return. Provably no abort/join/disturb.
+- **Candidate construction (step a) is read-only on `tiles_` and race-free.** `known` reads `tile->path()` (returns immutable `path_`); the worker (`loadTilesWorker`) writes only `data_`/range/`pixels_loaded_`/`texture_`, never `path_` — different-member, no data race. No `tiles_.push_back` before the abort+join, so no reallocation/iterator invalidation under the worker. The sole `push_back` is the post-join loop (`:206–222`).
+- **Has-new path unchanged-clean**: abort+join under `abort_flag_mutex_` (`:198–204`) still precedes every `push_back`; the previously-reviewed mutation/extent-merge/re-kick path is byte-for-byte preserved, just gated on `!new_tiles.empty()`. `abort_flag_` left true is harmless — the re-kick `loadTiles()` re-arms it (`:253–255`).
+- **`pixelsLoaded()` acquire/release + `known`-set idempotency intact**; no new race on `load_started_` (GUI-thread-only, read-only here) or `abort_flag_`. Edge cases (first-extent gating; empty `GggsTile` dtor → candidate/invalid tiles destroy safely with no GL context) check out.
+- **Comments rewritten accurately** to the "compute first, abort only if adding" ordering with the camp#104 rationale; no stale "abort first" text.
+
+### Test assessment — `test/test_gggs_rescan.cpp` (+ CMake)
+- 2 cases (`NoNewTilesIsNoOp`, `PicksUpNewlyLandedTile`) are deterministic, non-GL, non-async (no `paint()`/`waitForLoad()` → no worker kicked; synchronous scan/merge on the test thread), asserting via the public API (`rescan()` return + `sceneBounds()`). Real tiny GeoTIFFs via GDAL; non-flaky. CMake target matches `test_gggs_visibility` exactly and is wired once.
+- **The exact in-flight-abort race is acceptably NOT unit-tested.** Deterministic coverage would need BOTH a worker-pause seam AND a layer-level `pixelsLoaded()`/`loadInFlight()` accessor — neither exists, and `waitForLoad()` only kicks+joins. A timing test false-passes on fast loads. No cheap deterministic seam exists that isn't production-only test surface (virtual worker hook / controllable thread pool / test accessor), which exceeds this local reorder's scope. The race is closed *structurally* by the early return touching no worker state (review-verifiable); the committed contract test guards the add/no-op surface. Omission is the right call.
+
+### Environment / verification note
+Could not re-run `./ui_ws/build.sh camp` — the dependency-layer installs (`core_ws/install`) are empty in this fresh worktree (same condition as prior rounds). The finding-set is structural/logic, independent of compilation; relying on the Implementation entry's documented clean build + **89 tests/0 fail** (the 2 new rescan cases verified by running the target directly). Static analysis (cppcheck) on `gggs_tile_layer.cpp` surfaced only pre-existing Qt `slots`/parser noise; cpplint unavailable.
+
+### Scope note
+`3a304f1` touches only `rescan()` + the new test + CMake; it disturbs no Round-1/2 clear (retirement, persistence reset, tab integration, model tester, QAction ownership, docs), so none were re-litigated.
+
+### Next step
+Verdict is **approved** (0 must-fix). Lifecycle: push / open PR → triage-reviews. Round-2 → Round-3 converged. Not pushed (host performs pushes).
