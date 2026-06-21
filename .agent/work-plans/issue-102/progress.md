@@ -53,3 +53,20 @@ that to GggsTile.
 - [ ] Record the GL-upload-vs-async-GDAL split decision (ADR addendum or PR/issue note)
       and note whether default-off-for-tile-sets departs from ADR-0003 §4's implied
       default-on visibility.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-20 21:20 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Plan**: `.agent/work-plans/issue-102/plan.md` at `5369945`
+**Branch**: feature/issue-102 at `5369945`
+**Phases**: single PR (~6 atomic commits)
+
+### Open questions
+- [ ] OQ-A — `QFileSystemWatcher` scale: per-dir non-recursive watches over a deep
+      multi-epoch store could hit OS inotify limits; cap watch count now (root +
+      active epochs) or defer until stores get big?
+- [ ] OQ-B — Headless gtest for "skip in-flight tile, repaint on completion" may
+      need GL/event-loop scaffolding the current harness lacks; is asserting the
+      non-GL load state machine + range folding sufficient instead?
