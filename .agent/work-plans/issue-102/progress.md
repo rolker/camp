@@ -109,3 +109,25 @@ that to GggsTile.
       incremental-add, per-discovered-dir design is sound for the Massabesic-scale store
       this lands against; a root+active-epoch cap is premature until stores grow. Note
       the deferral in the PR so it isn't lost. — `plan.md:132-135`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-20 23:06 -0400
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-102 at `267e7ea`
+**Mode**: pre-push
+**Depth**: Deep (reason: async/threading refactor, ~804 lines)
+**Round**: 1
+**Verdict**: changes-requested
+**Ship**: continue (must-fix data race in the target rescan/streaming path)
+**Static analysis**: limited (cpplint not installed; clean compile) | **Claude Adversarial**: 2 passes (Lens A logic + Lens B concurrency) — both cross-confirmed the race | **Copilot**: off
+**Must-fix**: 2 | **Suggestions**: 2
+
+### Findings
+- [ ] (must-fix) Worker-vs-paint **data race** on `GggsTile::pixels_loaded_` + `data_`: `loadPixels()` writes them on the QtConcurrent worker (gggs_tile.cpp:101-102) with no barrier; the GUI paint reads `pixelsLoaded()`/`texture()`/`data_` (gggs_tile_layer.cpp:431,452). Safe on first load only via the incidental crossed-range gate (line 493); **races on the `rescan()` re-kick** (range already valid → gate open) = the live-streaming case. Fix: make `pixels_loaded_` `std::atomic<bool>` with release(after data_ move)/acquire(paint read), OR make `tilesReady()` (post-join, GUI) the sole writer of a layer-side paintable set. — `gggs_tile.cpp:101-102` / `gggs_tile_layer.cpp:431,452,493`
+- [ ] (must-fix) Comments assert a barrier that doesn't exist ("flag set ONLY in tilesReady() on the GUI thread after the worker finished") — it's set on the worker in `loadPixels()`. Correct the comments AND make the invariant real (pairs with #1). — `gggs_tile_layer.h:131-134`, `gggs_tile_layer.cpp:238-241,428-430`
+- [ ] (suggestion) All-failed / all-NoData enabled tile-set → silent blank (range stays crossed, status cleared); show "(no data)"/error so the operator gets a signal. — `gggs_tile_layer.cpp:269`
+- [ ] (suggestion) `rescan()`/`loadTiles()` `waitForFinished()` blocks the GUI thread for a full large-tile `RasterIO` (whole-tile abort granularity vs RasterLayer's scanline); fine at current scale, note/finer-abort for large tiles. — `gggs_tile_layer.cpp:162,223`
+
+Lifecycle/teardown confirmed solid by both lenses (dtor abort+join, tiles_-mutation guarding, QFileSystemWatcher parented/serial, single finished connect).
