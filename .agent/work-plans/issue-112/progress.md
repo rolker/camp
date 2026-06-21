@@ -172,11 +172,36 @@ Not pushed.
 **Round**: 1 | **Ship**: recommended — no must-fix; only optional case-sensitivity/test-coverage suggestions
 
 ### Findings
-- [ ] (suggestion) Case mismatch: `*.tif`/`*.tiff` glob may admit `.TIF`/`.TIFF` but regex `\.tiff?` is case-sensitive → uppercase-ext value tile silently dropped; theoretical (producer emits lowercase), optional `CaseInsensitiveOption` — `src/camp2/raster/gggs_tile_util.h:24`
-- [ ] (suggestion) No test for a 4-group name (`13_0_0_0.tif`); correctly rejected by the anchored regex but unexercised — `src/camp2/raster/gggs_tile_util.h:24`
+- [x] (suggestion) Case mismatch: `*.tif`/`*.tiff` glob may admit `.TIF`/`.TIFF` but regex `\.tiff?` is case-sensitive → uppercase-ext value tile silently dropped; theoretical (producer emits lowercase), optional `CaseInsensitiveOption` — `src/camp2/raster/gggs_tile_util.h:24`
+- [x] (suggestion) No test for a 4-group name (`13_0_0_0.tif`); correctly rejected by the anchored regex but unexercised — `src/camp2/raster/gggs_tile_util.h:24`
 
 ### Notes
 - Two fresh-context Claude adversarial passes (Lens A logic / Lens B systemic) both verdict the fix correct: regex accepts all legitimate `<level>_<row>_<col>.tif` value tiles and rejects all companions; the three patched sites (`loadDirectory`, `rescan`, `dirHasTifs`) are the complete `*.tif` scan set (no missed site); `GggsTile` is constructed only at the two filtered layer sites; the async worker/ctor need no guard (companions never enter `tiles_`). The case-sensitivity suggestion was cross-pass confirmed.
 - Static analysis: no actionable findings. `ament_cpplint` copyright/header-guard/C-cast hits dropped — camp does not enforce ament_cpplint (no CI/pre-commit/CMake hook), cast hits are on untouched lines, and the new header matches every sibling's guard style and no-copyright convention.
 - Plan adherence: exact — files and approach match `plan.md` as written; no drift/scope creep.
 - Doc-citation nit (not code): earlier lifecycle entries cite ADR-0008/ADR-0013, which are workspace ADRs; camp's own ADR set is 0001–0005.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 16:52 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-112 at `fce9fd8`
+**Addressed**: `## Local Review (Pre-Push)` (When 2026-06-21 16:29 +00:00, branch `feature/issue-112` at `37981cb`) — both unchecked suggestions
+**Commits**: `c5b907a`, `fce9fd8`
+
+### Actions
+- [x] (suggestion) Make `isValueTile()` extension match case-insensitive so an upper/mixed-case-extension value tile that passes the `*.tif`/`*.tiff` glob isn't silently dropped — added `QRegularExpression::CaseInsensitiveOption` + a comment recording the glob-alignment rationale — `src/camp2/raster/gggs_tile_util.h:21`
+- [x] (suggestion) Add a test exercising a 4-group name (`13_0_0_0.tif`) rejection — new `GggsTileUtilTest.IsValueTileNameGrammar` direct unit test in `test_gggs_tile.cpp` pins the predicate: accepts 3-group `.tif`/`.tiff` (incl. upper-case ext), rejects `_time`/`_source` companions, 4-group names, too-few-groups, non-digit groups, wrong/extra extension, and leading/trailing junk — `test/test_gggs_tile.cpp:259`
+
+### Build / test
+- `test_gggs_tile.cpp` already builds with `${CMAKE_CURRENT_SOURCE_DIR}/src/camp2` on its include path and links `Qt5::Core`, so the header-only `isValueTile()` test needed **no CMakeLists change**.
+- Built core_ws deps first (`marine_ais_msgs`, `marine_interfaces`, `marine_autonomy` via `colcon build --packages-up-to`), then `./ui_ws/build.sh camp` → 1 package finished (pre-existing warnings only).
+- `./ui_ws/test.sh camp` → **100 tests, 0 errors, 0 failures, 2 skipped** (was 99; the new case is the +1). The new case was confirmed run+passing via a direct `--gtest_filter='GggsTileUtilTest.*'` run.
+
+Not pushed.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 112 --skill review-code
