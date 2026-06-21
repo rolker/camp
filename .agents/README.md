@@ -67,6 +67,19 @@ Map-owned `camp::raster::RasterLayer` (GDAL-warped to EPSG:3857) plus a
 nodes. (`BackgroundRaster` was the old single-foundation chart object; it has
 been retired.)
 
+**Browse vs. compose for GGGS stores (ADR-0005):** a GGGS tile *store* is
+**browsed** through the generic catalog browser (`src/camp2/catalog/` — a
+ROS-free `CatalogModel`/`CatalogSource`/`CatalogBrowser` seam, shown as the
+"Stores" tab beside the Layers tab), not mounted into the Layers tree. Selecting
+a tile-set spawns an independent **flat top-level `GggsTileLayer`** the operator
+composes in the Layers tree (visibility/opacity/draw-order are free). Selected
+layers persist under `QSettings GggsTileLayers/dirs` (the dirs to recreate;
+per-layer visibility/opacity persist via the layer's own settings). This
+**replaced** camp#90's nested `GggsStoreLayer` (store folders straight into the
+tree, persisted as store *roots*), which is retired. `GggsStoreSource` is the
+first and only `CatalogSource`; the seam is reusable for future layer-manager
+items (cf. topic discovery #44/#68/#69).
+
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,
 via `AutonomousVehicleProject::originAnchor()`) or to a dedicated Map `Layer`, so
@@ -130,6 +143,9 @@ coverage of the Map model's insert/remove/reorder paths).
   Layers-tab Remove action can't delete them out from under the owner.
 - **No back-compat for old project files:** ADR-0003 dropped the old on-disk
   `BackgroundRaster` chart format; legacy `.json` chart nodes are ignored on load.
+  Likewise ADR-0005 reset GGGS store persistence: the old `GggsStores/roots` key
+  is ignored and cleared once on startup (not migrated) — stores re-added through
+  the Stores tab persist as flat `GggsTileLayers/dirs`.
 - **No CI / no pre-commit** — local build + gtest are the gate.
 
 ## Instructions for Use

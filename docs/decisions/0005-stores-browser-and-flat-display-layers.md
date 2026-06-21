@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 Extends [ADR-0003](0003-backgrounds-as-layers-and-depth-tree.md) §4
 (split persistence). Reverses part of camp#90's store-layer design.
@@ -59,11 +59,14 @@ The browser is source-agnostic:
 - **`catalog::CatalogSource`** (abstract) — the plug-point. A source `discover()`s
   its hierarchy into the model and, given a selected leaf payload,
   `instantiate(map::LayerList*)`s the corresponding flat layer.
-- **`catalog::CatalogBrowser`** — a generic tree view over a `CatalogModel` with
-  an "add selected to map" affordance, presented (in this pass) as a modal dialog.
+- **`catalog::CatalogBrowser`** — a generic, **embeddable `QWidget`** (tree view
+  + "Open store…" seed + "Add to map") shown as a **tab in the Layers panel**
+  next to the layer tree: browse in the "Stores" tab, compose in the "Layers"
+  tab. It owns the `CatalogSource`s and routes a selected leaf back to its source.
 - **`raster::GggsStoreSource`** — the first and only concrete source: folder-scan
   discovery (modality → maturity → tile-set, salvaged from `GggsStoreLayer::scan`)
-  and `instantiate()` = `new raster::GggsTileLayer(layers, tilesetDir)`.
+  and `instantiate()` = a flat `raster::GggsTileLayer(layers, tilesetDir)`, with
+  dedup-on-select and `GggsTileLayers/dirs` persistence owned by the source.
 
 No other `CatalogSource` is implemented in this pass — the seam exists so future
 layer-manager items can adopt it without re-deriving a browser.
@@ -88,9 +91,12 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
   /`MapItem` settings keyed by `itemID()` — this key only records *which* layers
   to recreate.
 - `createDefaultLayers()` restores a flat `GggsTileLayer` per still-existing dir.
-- Selecting a tile-set appends its dir; removing a flat layer drops it
+- Selecting a tile-set appends its dir (dir-unique, in `GggsStoreSource::
+  instantiate()`, which also dedups-on-select by reusing an already-displayed
+  layer on that dir); removing a flat layer drops it
   (`GggsTileLayer::onRemovedFromMap()` — the flat-layer analogue of the retired
-  `GggsStoreLayer::onRemovedFromMap()`).
+  `GggsStoreLayer::onRemovedFromMap()`). The restore loop dedups against itself
+  and against already-live layers so a repeated dir can't double-spawn.
 - The old `GggsStores/roots` key is **dropped, not migrated**: it is not read, and
   is cleared once on startup so a stale value can't resurrect a nested store tree.
   This follows ADR-0003 §4's "no compatibility shim for old on-disk state" — and
@@ -100,13 +106,19 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
 ## Consequences
 
 - `GggsStoreLayer` and its `GggsStoreLayerType` enum entry are removed; its scan
-  logic moves into `GggsStoreSource::discover()`, and the `*.tif` discovery
-  helpers are shared rather than anon-namespace-local.
+  logic moves into `GggsStoreSource::discover()` as a recursive `buildNode` using
+  a file-scope `dirHasTifs` (the old `subtreeHasTifs` prune is unnecessary — the
+  recursion's `nullptr` return for a tile-free subtree subsumes it).
 - New `src/camp2/catalog/` module (model + source seam + browser) is net-new code
   in the `camp_map` shared lib (ROS-free, per `.agents/README.md`).
-- `BackgroundManager`'s "Open tile store" context action becomes "Browse tile
-  stores…"; its `createDefaultLayers` restore path and per-selection persist are
-  reworked in lockstep.
+- `BackgroundManager`'s "Open tile store" context action is **retired** (stores
+  are browsed via the catalog tab); its `createDefaultLayers` restore path is
+  reworked in lockstep. The browser is wired as a "Stores" tab in the deployed
+  `MainWindow` (`src/camp/mainwindow.cpp`).
+- The retired `GggsStoreLayer`'s `QFileSystemWatcher` (camp#102 live tile/epoch
+  pickup) is dropped with it; a flat `GggsTileLayer` does not auto-refresh on
+  newly-landed tiles without a restart (or a manual `rescan()`). A per-layer
+  watcher is a deferred follow-up.
 - Operators upgrading lose their persisted nested store trees once (the old
   `GggsStores/roots` is reset); they re-select tile-sets through the browser,
   which then persist as flat layers. This is a deliberate one-time reset.
@@ -127,9 +139,11 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
   ADR-0003 §4 already established no back-compat for old persisted state; a
   migration shim is unwarranted for app state, and a clean reset is simpler and
   unambiguous.
-- **Docked browser panel instead of a modal dialog.** Deferred, not rejected — a
-  persistent panel is a reasonable later refinement; the modal dialog is the
-  lowest-risk first cut.
+- **Modal dialog for the browser.** Rejected in favour of an **embedded tabbed
+  widget** (a "Stores" tab beside the layer tree): browse and compose sit
+  side-by-side in the same panel, so the operator picks a tile-set and sees it
+  appear in the adjacent Layers tab without a dialog round-trip. A fully docked
+  (detachable) panel remains a possible later refinement.
 
 ## References
 

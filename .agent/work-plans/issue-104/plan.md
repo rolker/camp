@@ -58,21 +58,26 @@ concrete source.
    3a ships exactly one implementation and does **not** add others.
 
 3. **`raster::GggsStoreSource : catalog::CatalogSource`** — the first consumer.
-   `discover()` reuses the folder-scan logic currently in
-   `GggsStoreLayer::scan()` (modality → maturity → tile-set, "a dir with `*.tif`
-   is a leaf; a dir with tifs deeper is a group") to build `CatalogModel` nodes
-   instead of `Layer` objects. `instantiate()` does
-   `new raster::GggsTileLayer(layers, tilesetDir)`. The `*.tif` discovery helpers
-   (`dirHasTifs` / `subtreeHasTifs`) move out of the anonymous namespace into a
-   small reusable spot (e.g. `gggs_store_source.cpp` file-scope or a tiny
-   `gggs_scan.h`) so both old code paths and the source share one definition.
+   `discover()` reuses the folder-scan logic from `GggsStoreLayer::scan()`
+   (modality → maturity → tile-set, "a dir with `*.tif` is a leaf; a dir with
+   tifs deeper is a group") to build `CatalogItem` nodes instead of `Layer`
+   objects. `instantiate()` does `new raster::GggsTileLayer(layers, tilesetDir)`
+   (with dedup-on-select + persistence — see Persistence rework). **As-built:**
+   the scan is a single recursive `buildNode()` at `gggs_store_source.cpp`
+   file-scope using `dirHasTifs`; the old `subtreeHasTifs` prune is dropped — the
+   recursion returns `nullptr` for a tile-free subtree, which subsumes the prune,
+   so only `dirHasTifs` needed extracting.
 
-4. **`catalog::CatalogBrowser` (`QDialog` or dockable `QWidget`)** — a generic
-   tree view over a `CatalogModel` with an "Add to map" affordance
-   (double-click-leaf or select+button). It is wired to a `CatalogSource` set;
-   on `itemActivated` it calls the owning source's `instantiate(topLevelLayers)`.
-   3a presents it as a **modal dialog** launched from the manager context menu
-   (simplest, lowest-risk; a docked panel is a later refinement, not 3a).
+4. **`catalog::CatalogBrowser` (embeddable `QWidget`)** — a generic tree view
+   over a `CatalogModel` with a seed ("Open store…") affordance and an "Add to
+   map" button (also double-click-leaf). It owns a set of `CatalogSource`s and a
+   target `LayerList`; on activation it routes the selected leaf back to its
+   source's `instantiate(target)`. **As-built decision (supersedes the earlier
+   modal-dialog plan): the browser is shown as a tab in the Layers panel**, next
+   to the layer tree — browse in the "Stores" tab, compose in the "Layers" tab.
+   The `CatalogModel` stays a pure tree model (no `itemActivated` signal — the
+   browser owns the add affordance and emits `layerAdded` after a spawn), keeping
+   the generic seam unchanged.
 
 ### Repurpose / retire `GggsStoreLayer`
 
@@ -85,17 +90,18 @@ stale persisted root, and there's no consumer once persistence is reset). The
 
 ### Wire the browser into the deployed UI
 
-`BackgroundManager` is the host (it already owns the "Open tile store" action and
-`topLevelLayers()`). In `background_manager.cpp`:
+**As-built (supersedes the context-menu plan):** the `CatalogBrowser` is added
+as a **"Stores" tab** in the deployed `MainWindow`'s left tree-tab widget
+(`src/camp/mainwindow.cpp`, the `QTabWidget` that already holds Mission + Layers),
+seeded with a `GggsStoreSource` and targeting `project->map()->topLevelLayers()`.
+The operator clicks **"Open store…"** in the tab (the existing
+`QFileDialog::getExistingDirectory`, seed-then-browse), browses the tile-set
+catalog, and "Add to map" spawns a flat `GggsTileLayer` into the Layers tree
+(persisted below).
 
-- `contextMenu()`: "Open tile store" → **"Browse tile stores…"** which opens the
-  `CatalogBrowser` over a `GggsStoreSource`. The operator still picks a store-root
-  directory first (a `QFileDialog::getExistingDirectory`, as today) to seed the
-  source's scan root — *or* the dialog's own "Add store root…" button; 3a keeps
-  the existing pick-a-root entry to minimize UI surface. Selecting a tile-set in
-  the browser spawns a flat `GggsTileLayer` and persists it (below).
-- The browser is a `camp_map`-level widget (ROS-free), consistent with the
-  `camp_map` shared-lib boundary (.agents/README.md: keep `camp_map` ROS-free).
+`BackgroundManager`'s **"Open tile store" context action is retired** (the tab is
+the entry point now); "Open raster" is unchanged. The browser is a `camp_map`
+widget (ROS-free), consistent with the shared-lib boundary.
 
 ### Persistence rework (reset)
 
@@ -111,9 +117,16 @@ Replace `GggsStores/roots` with a **selected-flat-layers** record:
   persistence — re-persisting tree order is a #109/follow-up nicety, not 3a.)
 - `createDefaultLayers()`: drop the `GggsStores/roots` loop
   (`background_manager.cpp:77-81`); add a loop over `GggsTileLayers/dirs` that
-  `new raster::GggsTileLayer(layers, dir)` for each still-existing dir.
-- On selection in the browser: append the tile-set dir to `GggsTileLayers/dirs`
-  (dedup), mirroring today's `openTileStore` persist.
+  `new raster::GggsTileLayer(layers, dir)` for each still-existing dir. **As-built:
+  the loop dedups against itself (a `QSet` of restored dirs) AND skips a dir
+  already live as a flat layer** (Plan Review #1), so a repeated entry / a second
+  `createDefaultLayers` can't double-spawn.
+- On selection: **as-built, the persist lives in `GggsStoreSource::instantiate()`**
+  (not `BackgroundManager`) — it appends the tile-set dir to `GggsTileLayers/dirs`
+  (dir-unique) right where it spawns the layer, and **dedups-on-select** by
+  returning the existing flat layer if one is already displayed on that dir (Plan
+  Review #2). This keeps the browser generic (it knows nothing about the key) and
+  the source owns its layer type's persistence.
 - **Drop-on-remove:** `GggsTileLayer` gains an `onRemovedFromMap()` override that
   removes its `directory()` from `GggsTileLayers/dirs` — the flat-layer analogue
   of the old `GggsStoreLayer::onRemovedFromMap()`. (This is the only behavioral
@@ -140,17 +153,19 @@ with this plan.
 | `src/camp2/catalog/catalog_item.h` | **New** — `CatalogItem` (group/leaf + opaque payload: source id + key) |
 | `src/camp2/catalog/catalog_model.{h,cpp}` | **New** — generic `QAbstractItemModel` over a `CatalogItem` tree; `itemActivated` signal |
 | `src/camp2/catalog/catalog_source.h` | **New** — abstract `CatalogSource`: `discover()` + `instantiate(LayerList*)` seam |
-| `src/camp2/catalog/catalog_browser.{h,cpp}` | **New** — generic tree dialog/widget; "Add to map" → source `instantiate` |
-| `src/camp2/raster/gggs_store_source.{h,cpp}` | **New** — `GggsStoreSource : CatalogSource`; folder-scan discovery + spawns flat `GggsTileLayer` |
-| `src/camp2/raster/gggs_scan.h` (or file-scope in source) | **New** — shared `dirHasTifs`/`subtreeHasTifs` extracted from `gggs_store_layer.cpp`'s anon namespace |
+| `src/camp2/catalog/catalog_browser.{h,cpp}` | **New** — generic embeddable widget (tree + "Open store…" seed + "Add to map"); routes to source `instantiate` |
+| `src/camp2/raster/gggs_store_source.{h,cpp}` | **New** — `GggsStoreSource : CatalogSource`; folder-scan discovery + spawns flat `GggsTileLayer` (dedup-on-select + persist) |
+| ~~`src/camp2/raster/gggs_scan.h`~~ | **Dropped** — only `dirHasTifs` needed; lives at `gggs_store_source.cpp` file-scope. `subtreeHasTifs` unnecessary (recursive `buildNode` nullptr-return subsumes the prune) |
 | `src/camp2/raster/gggs_store_layer.{h,cpp}` | **Remove** — nested in-tree store node retired (scan logic salvaged into the source) |
-| `src/camp2/raster/gggs_tile_layer.{h,cpp}` | Add `onRemovedFromMap()` override → drop `directory()` from `GggsTileLayers/dirs` |
+| `src/camp2/raster/gggs_tile_layer.{h,cpp}` | Add `onRemovedFromMap()` override → drop `directory()` from `GggsTileLayers/dirs`; clean stale `GggsStoreLayer` comments |
 | `src/camp2/map/item_types.h` | Remove `GggsStoreLayerType` enum entry |
-| `src/camp2/background/background_manager.{h,cpp}` | `contextMenu` → "Browse tile stores…"; `createDefaultLayers` restores from `GggsTileLayers/dirs` (drop `GggsStores/roots`, one-time `remove`); browser launch + per-selection persist replaces `openTileStore` |
+| `src/camp2/map/layer.h` | Clean stale `GggsStoreLayer` doc comment (→ `GggsTileLayer`) |
+| `src/camp2/background/background_manager.{h,cpp}` | Retire "Open tile store" action + `openTileStore`; `createDefaultLayers` restores from `GggsTileLayers/dirs` (drop `GggsStores/roots`, one-time `remove`, dedup vs self + live) |
+| `src/camp/mainwindow.cpp` | **As-built** — add the "Stores" `CatalogBrowser` tab (seeded with `GggsStoreSource`, targeting the Map's top-level layers) next to Mission + Layers |
 | `CMakeLists.txt` | Add `catalog/*.cpp` + `gggs_store_source.cpp` to `camp_map` sources; drop `gggs_store_layer.cpp`; register new gtests |
-| `test/test_catalog_source.cpp` | **New** — discovery model: a temp store tree → `CatalogModel` has expected groups/leaves; non-tif dirs excluded |
-| `test/test_gggs_flat_layer_spawn.cpp` | **New** — `GggsStoreSource::instantiate()` adds exactly one flat `GggsTileLayer` to `topLevelLayers` (model stays valid) |
-| `test/test_gggs_persistence.cpp` | **New** — select → `GggsTileLayers/dirs` written; `createDefaultLayers`-style restore recreates the flat layer; remove → dir dropped; old `GggsStores/roots` ignored |
+| `test/test_catalog_source.cpp` | **New** — discovery: a temp store tree → expected `CatalogItem` groups/leaves; tile-free dirs excluded; root-is-tile-set leaf; empty/missing roots yield nothing |
+| `test/test_gggs_flat_layer_spawn.cpp` | **New** — `GggsStoreSource::instantiate()` adds exactly one flat `GggsTileLayer` to `topLevelLayers` (model stays valid via `QAbstractItemModelTester`); dedup-on-select |
+| `test/test_gggs_persistence.cpp` | **New** — select → `GggsTileLayers/dirs` written (dir-unique); `Map`-ctor restore recreates the flat layer deduped + skips missing; remove → dir dropped; old `GggsStores/roots` ignored + cleared |
 | `.agents/README.md` | Update persistence notes (roots → selected flat layers; reset; browse/compose split); note new `catalog/` module + ADR-0005 |
 
 ## Principles Self-Check
@@ -185,17 +200,28 @@ with this plan.
 | Band-select still band-1 | #108 (separate) | No — out of 3a scope by decision |
 | Compositing z-order/opacity test | #109 (separate) | No — out of 3a scope by decision |
 
-## Open Questions
+## Open Questions — RESOLVED (operator-confirmed 2026-06-21)
 
-- **Browser entry point UX**: 3a plan keeps the existing "pick a store-root
-  directory" `QFileDialog` to seed the source, then opens the catalog browser
-  over that root. Alternative: the browser owns root management ("Add store
-  root…" inside the dialog, persisted set of roots). The plan chooses the
-  minimal seed-then-browse path; confirm that's acceptable vs. a roots-managing
-  browser (the latter is more work and edges toward #68/#69 territory).
-- **Modal dialog vs. docked panel**: plan ships a modal `QDialog`. A persistent
-  docked panel reads better long-term but is more UI plumbing; deferred unless
-  the operator wants it in 3a.
+- **Browser entry point UX** → **Seed-then-browse** confirmed: the "Open store…"
+  button in the browser reuses `QFileDialog::getExistingDirectory` to seed the
+  `GggsStoreSource`, then browses that root's catalog. No roots-management UI
+  (that edges into #68/#69 territory and is out of 3a scope).
+- **Modal dialog vs. docked panel** → **Embedded tabbed widget** (neither): the
+  `CatalogBrowser` is an embeddable `QWidget` shown as a **"Stores" tab** in the
+  Layers panel next to the layer tree — browse in the Stores tab, compose in the
+  Layers tab. This supersedes the plan's earlier modal `QDialog`; the generic
+  `CatalogModel`/`CatalogSource` seam is unchanged.
+
+### Known limitations (deferred)
+
+- The retired `GggsStoreLayer` carried a `QFileSystemWatcher` (camp#102) that
+  auto-picked-up tiles/epochs landing after open. A flat `GggsTileLayer` has no
+  such watcher, so newly-landed tiles need a restart (or a manual `rescan()`
+  call) to appear. Re-adding a per-layer watcher is a follow-up, not 3a.
+- The seed affordance is directory-based (`getExistingDirectory`), which suits
+  all 3a sources (GGGS). A future non-directory `CatalogSource` would need its
+  own seed path — the seam allows it (`CatalogSource::seedLabel/discover`), but
+  the browser's file-dialog seed is GGGS-shaped for now.
 
 ## Estimated Scope
 
