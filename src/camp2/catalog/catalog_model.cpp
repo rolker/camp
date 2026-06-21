@@ -88,6 +88,15 @@ void CatalogModel::addTopLevel(std::unique_ptr<CatalogItem> item)
   endInsertRows();
 }
 
+void CatalogModel::removeTopLevel(int row)
+{
+  if(row < 0 || row >= root_->childCount())
+    return;
+  beginRemoveRows(QModelIndex(), row, row);
+  root_->removeChild(row);
+  endRemoveRows();
+}
+
 void CatalogModel::clear()
 {
   if(root_->childCount() == 0)

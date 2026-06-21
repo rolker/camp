@@ -34,6 +34,11 @@ public:
   /// ownership. Wrapped in begin/endInsertRows so attached views update.
   void addTopLevel(std::unique_ptr<CatalogItem> item);
 
+  /// Remove the top-level node at @p row (e.g. an operator-removed browsed
+  /// root). Wrapped in begin/endRemoveRows so attached views update. No-op for
+  /// an out-of-range row.
+  void removeTopLevel(int row);
+
   /// Remove all catalog nodes (e.g. before re-browsing).
   void clear();
 

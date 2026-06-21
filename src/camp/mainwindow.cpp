@@ -76,6 +76,11 @@ MainWindow::MainWindow(QWidget *parent) :
     auto catalogBrowser = new camp::catalog::CatalogBrowser(treeTabs);
     catalogBrowser->setTarget(project->map()->topLevelLayers());
     catalogBrowser->addSource(std::make_unique<camp::raster::GggsStoreSource>());
+    // [camp#104] Repopulate the browse tree from persisted seed roots
+    // (CatalogBrowser/seeds) — must run after addSource so the seeds' sources
+    // exist. Orthogonal to flat-layer persistence (ADR-0005): this only rebuilds
+    // the Stores-tab tree; it spawns no layers.
+    catalogBrowser->restoreSeeds();
     treeTabs->addTab(catalogBrowser, "Stores");
 
     m_ui->missionElementsSplitter->insertWidget(treeSlot, treeTabs);

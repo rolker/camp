@@ -53,6 +53,15 @@ public:
     return children_[static_cast<size_t>(row)].get();
   }
 
+  /// Remove (and destroy) the child at @p row. No-op for an out-of-range row.
+  /// Used by CatalogModel::removeTopLevel to drop an operator-removed root.
+  void removeChild(int row)
+  {
+    if(row < 0 || row >= childCount())
+      return;
+    children_.erase(children_.begin() + row);
+  }
+
   CatalogItem* parent() const { return parent_; }
 
   /// Index of this node within its parent's child list (0 for a parentless
