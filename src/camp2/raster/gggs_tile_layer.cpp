@@ -590,7 +590,7 @@ void GggsTileLayer::readSettings()
   // itemConstructed() runs readSettings() via QTimer::singleShot(0,...) AFTER the
   // ctor, which would clobber a ctor call (map_item.cpp:26,180-183). A persisted
   // `visible` value still wins (the operator's on/off choice round-trips); only
-  // the first-run default flips. Grouping GggsStoreLayer nodes are NOT affected.
+  // the first-run default flips.
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
@@ -613,6 +613,17 @@ void GggsTileLayer::writeSettings()
   settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
   settings.endGroup();
   settings.endGroup();
+}
+
+void GggsTileLayer::onRemovedFromMap()
+{
+  // [camp#104] Drop this tile-set directory from the BackgroundManager restore
+  // list (GggsTileLayers/dirs) so a user-removed flat layer stays gone next
+  // session — the flat-layer analogue of the retired GggsStoreLayer root drop.
+  QSettings settings;
+  QStringList dirs = settings.value("GggsTileLayers/dirs").toStringList();
+  if(dirs.removeAll(directory_) > 0)
+    settings.setValue("GggsTileLayers/dirs", dirs);
 }
 
 }  // namespace raster

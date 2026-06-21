@@ -26,7 +26,10 @@
 #include "map/layer_list.h"
 #include "ros/node.h"          // camp2's camp::ros::Node (src/camp2/ros/node.h)
 #include "map_tree_view/map_tree_view.h"
+#include "catalog/catalog_browser.h"
+#include "raster/gggs_store_source.h"
 #include <QTabWidget>
+#include <memory>
 
 #include <QCloseEvent>
 #include <QSettings>
@@ -64,6 +67,17 @@ MainWindow::MainWindow(QWidget *parent) :
     mapTreeView->setMap(project->map());
     treeTabs->addTab(m_ui->treeView, "Mission");   // reparents treeView out of the splitter
     treeTabs->addTab(mapTreeView, "Layers");
+
+    // [camp#104] Browse-vs-compose split (ADR-0005): a catalog browser tab sits
+    // next to the layer tree. The operator seeds it with a GGGS store root, browses
+    // the tile-set catalog, and "Add to map" spawns a flat top-level GggsTileLayer
+    // into the Layers tree (composed there). Generic CatalogSource seam — GGGS is
+    // the only source in piece 3a. ROS-free camp_map widget.
+    auto catalogBrowser = new camp::catalog::CatalogBrowser(treeTabs);
+    catalogBrowser->setTarget(project->map()->topLevelLayers());
+    catalogBrowser->addSource(std::make_unique<camp::raster::GggsStoreSource>());
+    treeTabs->addTab(catalogBrowser, "Stores");
+
     m_ui->missionElementsSplitter->insertWidget(treeSlot, treeTabs);
     connect(treeTabs, &QTabWidget::currentChanged, this, [this, treeTabs](int)
     {

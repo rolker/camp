@@ -40,9 +40,6 @@ public:
 
 private slots:
   void openRaster();
-  /// [camp#90 / I4] Open a directory of GGGS raster tiles (sidescan / bathy
-  /// `<level>_<row>_<col>.tif`) as a GPU-warped GggsTileLayer.
-  void openTileStore();
 };
 
 } // namespace background

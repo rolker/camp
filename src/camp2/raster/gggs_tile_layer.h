@@ -80,8 +80,8 @@ public:
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
   void waitForLoad();
 
-  /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files (e.g.
-  /// the GggsStoreLayer's QFileSystemWatcher fired). Adds extent-only entries for
+  /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files (for
+  /// a caller watching the directory). Adds extent-only entries for
   /// any tile not already held and re-kicks the async pixel load if the layer is
   /// already loaded. A half-written tile that fails to open degrades to
   /// valid()==false and is skipped — never crashes. Returns true if any tile was
@@ -92,6 +92,12 @@ protected:
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
   void writeSettings() override;
+  /// [camp#104] Drop this layer's tile-set directory from the persisted
+  /// `GggsTileLayers/dirs` restore list on user removal — the flat-layer
+  /// analogue of the retired GggsStoreLayer's root drop. Dedup-on-select
+  /// (GggsStoreSource::instantiate) guarantees at most one flat layer per
+  /// directory, so this can't orphan a second layer on the same dir.
+  void onRemovedFromMap() override;
 
 private slots:
   /// [camp#102] Launch the async pixel read over not-yet-loaded tiles.
