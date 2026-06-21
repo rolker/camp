@@ -461,3 +461,54 @@ The three Round-4 commits disturb no Round-1/2/3 clear (retirement, persistence 
 
 ### Next step
 Verdict is **approved** (0 must-fix). Lifecycle: push / open PR → triage-reviews. The 2 suggestions are optional test-coverage hardening. Not pushed (host performs pushes).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 15:20 +0000
+**By**: Claude Opus
+**Commits**: this entry's test commit on `feature/issue-104`
+
+### What & why
+Addressed the **2 optional test-coverage suggestions** from the Round-4
+`## Local Review (Pre-Push)` entry. **Test-only** — no production code changed.
+
+1. **Mid-list removal alignment** (suggestion 1) — the headline `seeds_[i]`↔
+   top-level-row-`i` invariant under a *middle* removal was only exercised at
+   index 0 (`RemoveDePersists`). New **`MidListRemovalKeepsAlignment`**: seeds
+   three distinct store roots A, B, C (`topLevelCount()==3`), `removeSeed(1)`
+   (the middle / index-1 row), then asserts `topLevelCount()==2` and that the
+   survivors are A and C **in order** two ways — (a) directly against the model
+   rows' `DisplayRole` (each top-level node's name is its root basename, read via
+   `browser.findChild<QTreeView*>()->model()`), which catches a drift where
+   `seeds_` erases index 1 but the model erases a different row; and (b) the
+   persisted `CatalogBrowser/seeds` list is exactly `gggs\tA`, `gggs\tC` in order.
+
+2. **Malformed-entry decode-skip** (suggestion 2) — the `tab < 0` branch
+   (`catalog_browser.cpp:126`) was untested (`RestoreSkipsMissingRoot` uses a
+   well-formed entry). New **`RestoreSkipsMalformedEntry`**: writes
+   `CatalogBrowser/seeds` with a no-tab `"garbage"` entry **and** an empty entry
+   (both `tab < 0`) alongside one valid `gggs\t<root>`, then `restoreSeeds()` on a
+   fresh browser. Asserts no crash and `topLevelCount()==1` — only the well-formed
+   seed rebuilds a node; the malformed entries add none.
+
+### Design notes
+Both cases match the existing four `CatalogBrowserSeeds` fixtures: scoped QSettings
+org/app (set in `main()`), `QSettings().clear()` per case, empty-placeholder `.tif`
+stores (discovery only stats `*.tif` filenames), offscreen QPA — deterministic and
+GL/GDAL-free. **No production code edited and no accessor widened**: model-row
+identity is asserted through existing public surface (`QObject::findChild` for the
+browser's `QTreeView`, then its `model()`), per the brief's "assert through the
+existing public API" preference. Added `#include`s for `<QAbstractItemModel>`,
+`<QFileInfo>`, `<QTreeView>`; updated the file-header pinned-behavior comment.
+
+### Build / test
+Fresh worktree had empty `core_ws/install`, so I first built the camp deps
+(`colcon build --packages-up-to marine_ais_msgs marine_interfaces marine_autonomy`
+in `core_ws` — succeeded, warnings only), then `./ui_ws/build.sh camp` (clean, only
+pre-existing `-Wunused-parameter` warnings). `./ui_ws/test.sh camp` →
+**96 tests, 0 errors, 0 failures, 2 skipped** (was 94; +2 new `CatalogBrowserSeeds`
+cases). Ran the target directly: 6/6 OK, both new cases pass.
+
+### Next step
+One atomic test-only commit on `feature/issue-104`. The two Round-4 suggestions are
+now covered. Not pushed (host performs pushes).
