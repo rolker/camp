@@ -106,3 +106,32 @@ The dependency layer installs (`underlay_ws`/`core_ws/...`) were empty in this w
 
 ### Next step
 3a is complete and green. Follow-ups are the carved-out stacked issues: **#108** (band-select + per-band colormap) and **#109** (compositing z-order/opacity render test). Not pushed (host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-21 06:40 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-104 at `6333700`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + cross-cutting persistence/lifecycle + deployed-MainWindow UI integration + layer-type retirement)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix; clean build, 85 tests/0 fail (10 new); retirement, persistence reset, and tab integration all verified against the scrutiny list.
+
+### Findings
+- [ ] (suggestion) No direct `QAbstractItemModelTester` over `CatalogModel` — its index/parent/rowCount protocol is only exercised indirectly (spawn test wraps the Map model; discover test checks the CatalogItem tree). Model reads as correct; a direct tester is cheap insurance — `test/test_gggs_flat_layer_spawn.cpp` / `src/camp2/catalog/catalog_model.cpp`
+- [ ] (suggestion) Watcher-loss escape hatch unreachable: `rescan()` lost its only caller (the retired `QFileSystemWatcher`) and has no UI affordance, yet ADR/plan/comments cite "(or a manual `rescan()`)". Add a "Rescan" context-menu action (restores a manual refresh + gives `rescan()` a caller) or reword — `src/camp2/raster/gggs_tile_layer.cpp:150`
+
+### Regression assessment — QFileSystemWatcher loss
+**Acceptable deferral.** #104 scopes live refresh out; the loss is documented in lockstep in ADR-0005 Consequences, plan Known Limitations, and `.agents/README.md`, with a per-layer-watcher follow-up acknowledged. The real behavior change (a loaded layer no longer auto-picking up even static new tiles) is low-impact at current store scale (restart recovers). Only residual is suggestion #2 (the "manual rescan" claim has no UI path).
+
+### Notes
+- Retirement clean: no dangling `GggsStoreLayer*` casts/includes; `GggsStoreLayerType` removed and `ItemType` is compared by symbolic value (not persisted by ordinal), so removal is safe.
+- Persistence reset correct: restore dedups vs self (QSet) + live layers; `instantiate()` dedups-on-select; `directory_` stored verbatim so `removeAll` matches the persisted key; one-time `GggsStores/roots` clear is read-free and idempotent (no old+new collision/data loss).
+- Tab integration sound: `CatalogBrowser` parented to `treeTabs`; `currentChanged` lambda's `else` branch handles the 3rd tab without breaking Mission/Layers.
+- Generic seam right-sized (operator-mandated reusability, not speculative).
+- Static analysis: cppcheck flagged 2 sub-threshold const-pointer nits + Qt `slots` false positives; cpplint unavailable. Nothing actionable.
+
+### Next step
+Approved pre-push. Lifecycle: address the 2 suggestions if desired (both optional) → push / open PR → triage-reviews. Not pushed (host performs pushes).
