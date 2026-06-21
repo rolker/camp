@@ -80,12 +80,14 @@ public:
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
   void waitForLoad();
 
-  /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files (for
-  /// a caller watching the directory). Adds extent-only entries for
-  /// any tile not already held and re-kicks the async pixel load if the layer is
-  /// already loaded. A half-written tile that fails to open degrades to
-  /// valid()==false and is skipped — never crashes. Returns true if any tile was
-  /// added.
+  /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds
+  /// extent-only entries for any tile not already held and re-kicks the async
+  /// pixel load if the layer is already loaded. A half-written tile that fails to
+  /// open degrades to valid()==false and is skipped — never crashes. Returns true
+  /// if any tile was added; safe to call repeatedly / when nothing changed.
+  /// [camp#104] Wired to the "Rescan" context-menu action — the manual stopgap
+  /// for the live pickup lost with the retired GggsStoreLayer QFileSystemWatcher
+  /// (ADR-0005); a per-layer watcher is a follow-up.
   bool rescan();
 
 protected:

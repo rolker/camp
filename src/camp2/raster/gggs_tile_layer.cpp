@@ -149,7 +149,9 @@ void GggsTileLayer::loadDirectory(const QString& directory)
 
 bool GggsTileLayer::rescan()
 {
-  // [camp#102] Incremental add of newly-landed tiles (QFileSystemWatcher fired).
+  // [camp#102] Incremental add of newly-landed tiles. [camp#104] Invoked by the
+  // "Rescan" context-menu action — the manual stopgap for the live pickup lost
+  // with the retired GggsStoreLayer's QFileSystemWatcher (ADR-0005).
   // Abort + join any in-flight load first so we don't mutate tiles_ under the
   // worker (it captures `this` and iterates tiles_). Then append extent-only
   // entries for any path not already held; re-kick the load if the layer was
@@ -181,8 +183,8 @@ bool GggsTileLayer::rescan()
     if(known.contains(path))
       continue;
     // A half-written tile degrades to valid()==false here and is skipped — the
-    // next watcher fire (or a manual rescan) re-tries it once the producer's
-    // write completes. Producer-side atomic-write safety is uma#189.
+    // next Rescan re-tries it once the producer's write completes.
+    // Producer-side atomic-write safety is uma#189.
     auto tile = std::make_unique<GggsTile>(path);
     if(!tile->valid())
       continue;
@@ -568,6 +570,18 @@ void GggsTileLayer::setColormap(map::ColorMap::Type type)
 void GggsTileLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
+
+  // [camp#104] Manual refresh affordance. The retired GggsStoreLayer's
+  // QFileSystemWatcher (camp#102 live tile/epoch pickup) was dropped with it
+  // (ADR-0005), so a flat layer no longer auto-picks-up tiles that land after it
+  // loaded. This action is the stopgap: re-enumerate the tile-set directory for
+  // newly-landed `*.tif` tiles on demand — right-click → Rescan instead of
+  // restarting CAMP. Safe to invoke repeatedly / when nothing changed (rescan()
+  // adds only paths not already held and no-ops otherwise). A per-layer watcher
+  // (live auto-pickup) remains a follow-up.
+  QAction* rescan_action = menu->addAction("Rescan");
+  connect(rescan_action, &QAction::triggered, this, [this]() { rescan(); });
+
   QMenu* colormap_menu = menu->addMenu("Colormap");
   for(auto type : map::ColorMap::allTypes())
   {

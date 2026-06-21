@@ -216,8 +216,10 @@ with this plan.
 
 - The retired `GggsStoreLayer` carried a `QFileSystemWatcher` (camp#102) that
   auto-picked-up tiles/epochs landing after open. A flat `GggsTileLayer` has no
-  such watcher, so newly-landed tiles need a restart (or a manual `rescan()`
-  call) to appear. Re-adding a per-layer watcher is a follow-up, not 3a.
+  such watcher. This is **mitigated by a manual "Rescan" context-menu action**
+  (right-click the flat layer → Rescan re-enumerates the tile-set directory and
+  adds newly-landed tiles), so the operator can refresh without restarting CAMP.
+  Live auto-pickup (re-adding a per-layer watcher) remains a follow-up, not 3a.
 - The seed affordance is directory-based (`getExistingDirectory`), which suits
   all 3a sources (GGGS). A future non-directory `CatalogSource` would need its
   own seed path — the seam allows it (`CatalogSource::seedLabel/discover`), but

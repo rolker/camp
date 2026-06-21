@@ -117,8 +117,11 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
   `MainWindow` (`src/camp/mainwindow.cpp`).
 - The retired `GggsStoreLayer`'s `QFileSystemWatcher` (camp#102 live tile/epoch
   pickup) is dropped with it; a flat `GggsTileLayer` does not auto-refresh on
-  newly-landed tiles without a restart (or a manual `rescan()`). A per-layer
-  watcher is a deferred follow-up.
+  newly-landed tiles. This is **mitigated by a manual "Rescan" context-menu
+  action** on the flat layer (right-click → Rescan re-enumerates the tile-set
+  directory and adds any newly-landed tiles), which gives the operator a refresh
+  path without restarting CAMP. Live auto-pickup (a per-layer watcher) remains a
+  deferred follow-up.
 - Operators upgrading lose their persisted nested store trees once (the old
   `GggsStores/roots` is reset); they re-select tile-sets through the browser,
   which then persist as flat layers. This is a deliberate one-time reset.

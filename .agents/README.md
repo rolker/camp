@@ -78,7 +78,11 @@ per-layer visibility/opacity persist via the layer's own settings). This
 **replaced** camp#90's nested `GggsStoreLayer` (store folders straight into the
 tree, persisted as store *roots*), which is retired. `GggsStoreSource` is the
 first and only `CatalogSource`; the seam is reusable for future layer-manager
-items (cf. topic discovery #44/#68/#69).
+items (cf. topic discovery #44/#68/#69). The retired store node also carried a
+`QFileSystemWatcher` (camp#102 live tile pickup); a flat layer instead exposes a
+**manual "Rescan" context-menu action** (right-click → Rescan re-enumerates the
+tile-set directory for newly-landed tiles). Live auto-pickup (a per-layer
+watcher) is a follow-up.
 
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,
