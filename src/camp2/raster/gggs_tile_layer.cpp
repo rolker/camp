@@ -10,6 +10,7 @@
 #include <QFileInfo>
 #include <QGeoCoordinate>
 #include <QMenu>
+#include <QSet>
 #include <QSettings>
 #include <QMatrix4x4>
 #include <QOffscreenSurface>
@@ -20,6 +21,7 @@
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QTransform>
+#include <QtConcurrent>
 
 #include <cmath>
 #include <vector>
@@ -79,6 +81,10 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   map::Layer(parentItem, QFileInfo(directory).fileName()),
   directory_(directory)
 {
+  // [camp#102] tilesReady() folds completed tiles' ranges + repaints on the GUI
+  // thread when the async pixel load finishes.
+  connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
+          &GggsTileLayer::tilesReady);
   loadDirectory(directory);
   if(!tiles_.empty())
   {
@@ -99,6 +105,14 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
 
 GggsTileLayer::~GggsTileLayer()
 {
+  // [camp#102] Abort + join any in-flight pixel load BEFORE tearing down GL or
+  // dropping the tiles the worker is reading — verbatim from RasterLayer's dtor
+  // contract (raster_layer.cpp:38-44), so a layer destroyed mid-load can't
+  // outlive `this` (the worker captures `this` and mutates tiles_).
+  abort_flag_mutex_.lock();
+  abort_flag_ = true;
+  abort_flag_mutex_.unlock();
+  future_watcher_.waitForFinished();
   releaseGL();
 }
 
@@ -108,9 +122,13 @@ void GggsTileLayer::loadDirectory(const QString& directory)
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
                                           QDir::Files, QDir::Name);
   bool first_extent = true;   // first geometrically-valid tile (scene_bounds_)
-  bool first_range = true;    // first tile WITH valid samples (data range)
   for(const QString& name : files)
   {
+    // [camp#102] Extent/metadata only — the GggsTile ctor no longer reads pixels.
+    // boundingRect()/sceneBounds() are valid immediately (fit-to-extent works at
+    // load time); the band reads (and therefore the data range) are deferred to
+    // the async loadTiles() worker, so data_min_/data_max_ accumulate
+    // incrementally in tilesReady() rather than here.
     auto tile = std::make_unique<GggsTile>(dir.filePath(name));
     if(!tile->valid())
       continue;
@@ -125,17 +143,144 @@ void GggsTileLayer::loadDirectory(const QString& directory)
     scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
     first_extent = false;
 
-    // Data range tracks the first tile that actually HAS samples — separately
-    // from the extent, or an all-NoData first tile would leave data_min_ stuck
-    // at the sentinel (its default 1.0 is never < a floored-to->=1 sample).
-    if(tile->dataMin() <= tile->dataMax())
-    {
-      if(first_range || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
-      if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
-      first_range = false;
-    }
     tiles_.push_back(std::move(tile));
   }
+}
+
+bool GggsTileLayer::rescan()
+{
+  // [camp#102] Incremental add of newly-landed tiles (QFileSystemWatcher fired).
+  // Abort + join any in-flight load first so we don't mutate tiles_ under the
+  // worker (it captures `this` and iterates tiles_). Then append extent-only
+  // entries for any path not already held; re-kick the load if the layer was
+  // already loaded so the new tiles' pixels stream in too.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+
+  QSet<QString> known;
+  for(const auto& tile : tiles_)
+    known.insert(tile->path());
+
+  QDir dir(directory_);
+  const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
+                                          QDir::Files, QDir::Name);
+  bool added = false;
+  for(const QString& name : files)
+  {
+    const QString path = dir.filePath(name);
+    if(known.contains(path))
+      continue;
+    // A half-written tile degrades to valid()==false here and is skipped — the
+    // next watcher fire (or a manual rescan) re-tries it once the producer's
+    // write completes. Producer-side atomic-write safety is uma#189.
+    auto tile = std::make_unique<GggsTile>(path);
+    if(!tile->valid())
+      continue;
+    const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
+    const QPointF lo = web_mercator::geoToMap(
+      QGeoCoordinate(tile->minLat(), tile->minLon()));
+    const QPointF hi = web_mercator::geoToMap(
+      QGeoCoordinate(tile->maxLat(), tile->maxLon()));
+    const QRectF tile_rect = QRectF(lo, hi).normalized();
+    prepareGeometryChange();
+    scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
+    if(first_extent)
+    {
+      setTransform(QTransform::fromScale(1.0, -1.0));
+      setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
+    }
+    tiles_.push_back(std::move(tile));
+    added = true;
+  }
+
+  if(added && load_started_)
+  {
+    cached_image_ = QImage();   // force a re-render once the new pixels arrive
+    loadTiles();                // stream the new tiles' pixels in
+  }
+  return added;
+}
+
+void GggsTileLayer::loadTiles()
+{
+  // [camp#102] Abort + join any in-flight load before launching a new one, then
+  // re-arm — verbatim from RasterLayer::loadFile's re-launch guard
+  // (raster_layer.cpp:103-123). setFuture() only tracks the latest future, so a
+  // replaced job would otherwise keep running untracked, race the new job on
+  // tiles_, and — if the layer is destroyed first — outlive `this`. A paint()
+  // lazy-kick + a tilesReady() fold therefore cannot launch a second concurrent
+  // load.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+  abort_flag_mutex_.lock();
+  abort_flag_ = false;   // re-arm for the new job
+  abort_flag_mutex_.unlock();
+
+  setStatus("(loading...)");
+  future_watcher_.setFuture(QtConcurrent::run(this, &GggsTileLayer::loadTilesWorker));
+}
+
+void GggsTileLayer::loadTilesWorker()
+{
+  // [camp#102] Off-thread: GDAL RasterIO only — NEVER touch GL here (texture()/
+  // allocateStorage stay on the paint path). The abort check is between tiles
+  // (whole-tile granularity, vs RasterLayer's scanline granularity). loadPixels()
+  // writes each tile's data_/range; the pixelsLoaded() flag those reads set is
+  // only OBSERVED by the paint path after tilesReady() runs on the GUI thread
+  // (the watcher's finished->tilesReady join is the barrier), so the paint path
+  // never reads a tile mid-write.
+  for(auto& tile : tiles_)
+  {
+    {
+      QMutexLocker lock(&abort_flag_mutex_);
+      if(abort_flag_)
+        return;
+    }
+    if(!tile->pixelsLoaded())
+      tile->loadPixels();
+  }
+}
+
+void GggsTileLayer::tilesReady()
+{
+  // [camp#102] GUI thread, after the worker's join. Fold each loaded tile's range
+  // into the layer auto-range incrementally (the range is unknown until a tile's
+  // pixels load — an all-NoData tile reports a crossed range and is skipped).
+  bool first_range = (data_min_ > data_max_);
+  for(auto& tile : tiles_)
+  {
+    if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
+      continue;
+    if(first_range || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
+    if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
+    first_range = false;
+  }
+  cached_image_ = QImage();   // re-render now that pixels (and the range) exist
+  setStatus("");
+  update(boundingRect());
+}
+
+void GggsTileLayer::waitForLoad()
+{
+  // [camp#102] Test/headless seam: kick the load if it hasn't started, then join
+  // and run the ready-fold so renderImage() sees loaded pixels + a valid range.
+  if(!load_started_)
+  {
+    load_started_ = true;
+    loadTiles();
+  }
+  future_watcher_.waitForFinished();
+  tilesReady();
 }
 
 QRectF GggsTileLayer::boundingRect() const
@@ -279,6 +424,13 @@ QImage GggsTileLayer::renderImage(const QSize& size)
     verts.reserve(rows * 2 * 4);
     for(auto& tile : tiles_)
     {
+      // [camp#102] Skip a tile whose pixels haven't loaded yet (in-flight or not
+      // yet kicked). pixelsLoaded() is only set by tilesReady() after the worker
+      // joins, so reading it here on the paint path never races the worker's
+      // mid-write. The layer repaints on tilesReady() once the load completes.
+      if(!tile->pixelsLoaded())
+        continue;
+
       verts.clear();
       const double min_lon = tile->minLon();
       const double max_lon = tile->maxLon();
@@ -324,7 +476,21 @@ QImage GggsTileLayer::renderImage(const QSize& size)
 
 void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
 {
-  if(tiles_.empty() || data_min_ > data_max_)
+  if(tiles_.empty())
+    return;
+
+  // [camp#102] Lazily kick the async pixel load on the first paint — QGraphicsView
+  // only paints visible items, so this defers band reads to layers the operator
+  // turns on (default-off tile-sets never load). Kick exactly once; tilesReady()
+  // folds the range + repaints when the worker finishes. Until then the range is
+  // still crossed and there is nothing to draw, so fall through and return.
+  if(!load_started_)
+  {
+    load_started_ = true;
+    loadTiles();
+  }
+
+  if(data_min_ > data_max_)   // no tile's pixels/range folded yet
     return;
 
   // Target the offscreen render at the extent's on-screen size, so the image is
@@ -396,6 +562,14 @@ void GggsTileLayer::readSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
+  // [camp#102] Default GGGS tile-set leaves OFF: re-read `visible` with a FALSE
+  // fallback (Layer::readSettings just applied it with a TRUE default). This has
+  // to live in the leaf override, not a ctor setVisible(false) — MapItem::
+  // itemConstructed() runs readSettings() via QTimer::singleShot(0,...) AFTER the
+  // ctor, which would clobber a ctor call (map_item.cpp:26,180-183). A persisted
+  // `visible` value still wins (the operator's on/off choice round-trips); only
+  // the first-run default flips. Grouping GggsStoreLayer nodes are NOT affected.
+  setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
   settings.endGroup();

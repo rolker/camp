@@ -80,6 +80,9 @@ TEST(GggsRenderTest, OffscreenWarpProducesOrientedImage)
   ASSERT_NE(layers, nullptr);
   auto* layer = new camp::raster::GggsTileLayer(layers, dir.path());
   ASSERT_TRUE(layer->valid());
+  // [camp#102] Pixel loads are async + lazily kicked from paint(); this headless
+  // test calls renderImage() directly, so drive + await the load explicitly.
+  layer->waitForLoad();
 
   const QImage img = layer->renderImage(QSize(200, 200));
   ASSERT_FALSE(img.isNull());
@@ -117,6 +120,7 @@ TEST(GggsRenderTest, RealStoreRendersWhenProvided)
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(),
                                                 QString::fromLocal8Bit(store));
   ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
   const QImage img = layer->renderImage(QSize(900, 900));
   ASSERT_FALSE(img.isNull());
   img.save("/tmp/gggs_real.png");
