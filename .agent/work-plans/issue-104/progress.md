@@ -20,3 +20,16 @@ issue: 104
 - [ ] Band selection (item 3): GggsTile/loadPixels hardwire GetRasterBand(1) (gggs_tile.cpp:34,77); add a band index param plumbed through loadPixels + auto-range; reuse the existing camp#90 colormap LUT (setColormap). Add coverage rendering a non-1 band of a ≥2-band GeoTIFF. (Principle: Test what breaks)
 - [ ] Reuse, don't rebuild: keep each flat layer a GggsTileLayer so camp#90 colormap + camp#102 lazy/async/default-off/visibility-persist carry over; add only the band-index parameter.
 - [ ] State the persistence migration explicitly in the PR: old QSettings GggsStores/roots (+ per-layer visible) honored vs reset; update background_manager.cpp createDefaultLayers restore path (lines 77-86) and the onRemovedFromMap drop-on-remove analogue for selected layers; update .agents/README.md persistence notes. (Principle: A change includes its consequences)
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-21 01:38 -0400
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Plan**: `.agent/work-plans/issue-104/plan.md` at `8262e2f`
+**Branch**: feature/issue-104 at `8262e2f`
+**Phases**: single (piece 3a; band-select #108 + compositing test #109 are separate follow-ups)
+
+### Open questions
+- [ ] Browser entry-point UX: seed via existing "pick store-root" QFileDialog then browse (plan's choice), vs. a roots-managing browser ("Add store root…" inside the dialog) — confirm minimal seed-then-browse is acceptable.
+- [ ] Browser presentation: modal QDialog (plan's choice) vs. a persistent docked panel — defer the panel unless wanted in 3a.
