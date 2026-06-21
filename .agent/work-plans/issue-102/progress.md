@@ -178,3 +178,26 @@ contract without GL/event-loop scaffolding:
   thread spins on `pixelsLoaded()` exactly as the paint gate does; asserts the released
   range is fully visible/consistent the moment the acquire flag reads true (a
   non-atomic/no-barrier flag could let the observer see a torn/stale range).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-20 23:22 -0400
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Branch**: feature/issue-102 at `fbb2bb4`
+**Mode**: pre-push
+**Depth**: Deep (re-review of the round-1 race fix)
+**Round**: 2
+**Verdict**: approved
+**Ship**: recommended
+**Claude Adversarial**: 1 focused concurrency re-review (traced the atomic release/acquire publication end-to-end)
+**Must-fix**: 0 | **Suggestions**: 2 (nits)
+
+### Findings
+- [x] (round-1 must-fix) Worker-vs-paint data race — CLOSED: `pixels_loaded_` is `std::atomic<bool>`, release-store after the `data_`/range writes, acquire-load gating every paint-path read of pixel state (`renderImage`→`texture()`, `tilesReady`→dataMin/Max); no bypass exists (grep-confirmed). First-load path + auto-range + default-off unchanged.
+- [x] (round-1 must-fix) Misleading "set only on GUI thread" comments — corrected to the real acquire/release invariant.
+- [x] (round-1 suggestions) "(no data)" status on all-crossed fold + whole-tile abort-granularity comments — applied.
+- [ ] (nit) `PixelsLoadedFalseUntilLoadCompletes` is single-threaded — pins the API contract but would pass on a plain bool; comment overstates what it guards.
+- [ ] (nit) `PixelsPublishedToObserverThread` is a probabilistic cross-thread test — real teeth only under TSan; document that.
+
+Tests: 72, 0 failures, 1 skipped (GL self-skip). Production fix is correct + complete; safe to push.
