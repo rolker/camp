@@ -21,14 +21,18 @@ depth/intensity tiles, producing garbage renders.
 
 ## Approach
 
-1. **Add `isValueTile(const QString&)` free function** (anonymous namespace) in
-   `gggs_tile_layer.cpp` — returns `true` iff the basename matches the positive
-   pattern `\d+_\d+_\d+\.tiff?` (digits-underscore-digits-underscore-digits, then
-   `.tif` or `.tiff`). Positive-match is preferred over a denylist because the
-   companion-suffix set may grow (ADR-0006-D7 mentions future sidescan time
-   tiles); the pattern is the canonical definition shared by the stores' own tile
-   naming convention. Add a one-line comment explaining the pattern so future
-   companion additions know where to look.
+1. **Add `isValueTile(const QString&)` inline free function** in a new shared
+   header `src/camp2/raster/gggs_tile_util.h` (namespace `camp::raster`) —
+   returns `true` iff the **filename** (what `QDir::entryList` returns, never a
+   full path) matches the **anchored, full-match** positive pattern
+   `^\d+_\d+_\d+\.tiff?$` via `QRegularExpression::anchoredPattern(...)` with a
+   function-local `static const QRegularExpression` (compiled once). Exactly three
+   underscore-separated digit groups then `.tif`/`.tiff`. Positive-match is
+   preferred over a denylist because the companion-suffix set may grow; the
+   pattern is the canonical value-tile name shared with the stores' own tile-
+   naming convention, and a 4th `_time`/`_source` component (or any future
+   companion suffix) is excluded for free by not matching. A one-line comment in
+   the header explains this so future companion additions know where to look.
 
 2. **Apply `isValueTile()` in `loadDirectory()`** — filter the entryList result
    before constructing `GggsTile` objects (lines 122–147).
@@ -36,25 +40,25 @@ depth/intensity tiles, producing garbage renders.
 3. **Apply `isValueTile()` in `rescan()`** — filter the entryList result before
    the `known.contains()` check (lines 170–185).
 
-4. **Move `isValueTile()` to a shared location visible to both compilation units**
-   OR duplicate the lambda in `gggs_store_source.cpp`. Because the function is
-   tiny (one QRegularExpression match) and both files are in the same directory,
-   add it to `gggs_tile_layer.h` as an inline free function in the anonymous
-   implementation detail namespace — OR declare it in a new `gggs_tile_util.h`
-   if reviewers prefer. The simplest option is a static helper in a new
-   `gggs_tile_util.h` (one-line inline) included by both `.cpp` files.
+4. **Share `isValueTile()` via the new `gggs_tile_util.h`** (resolved: shared
+   header, not a duplicated lambda) — included by both `gggs_tile_layer.cpp` and
+   `gggs_store_source.cpp` so the value-tile definition lives in exactly one
+   place, per the issue's "one place" requirement.
 
 5. **Apply `isValueTile()` in `dirHasTifs()`** in `gggs_store_source.cpp` — filter
    after the `entryList` call so the helper sees only value tiles when deciding
    whether a directory holds a tile-set.
 
-6. **Add a test** — extend `test_catalog_source.cpp` with a case that places
-   `0_0_0.tif`, `0_0_0_time.tif`, and `0_0_0_source.tif` in a store directory and
-   asserts `discover()` returns a leaf (the companions don't trip the tile-free
-   pruning path) and the leaf key points to the directory. Add a parallel case to
-   `test_gggs_rescan.cpp` (or a new `test_gggs_companion_filter.cpp`) that creates
-   a tile directory with base + companion files, constructs a `GggsTileLayer`, and
-   asserts `valid() == true` with exactly one tile (not three).
+6. **Extend the existing tests** (resolved: extend, no new test file). In
+   `test_catalog_source.cpp` add a case that places `0_0_0.tif`, `0_0_0_time.tif`,
+   and `0_0_0_source.tif` in a store directory and asserts `discover()` returns a
+   leaf keyed to the directory, plus a negative case that a directory holding ONLY
+   companions is not a tile-set (pruned). In `test_gggs_rescan.cpp` add a case
+   that constructs a `GggsTileLayer` over a directory with base + companions
+   (companions written at a disjoint eastward extent) and asserts `valid()==true`
+   with `sceneBounds()` equal to a base-only layer's bounds (companions excluded —
+   only one tile loaded), plus a case that companions landing after load make
+   `rescan()` no-op (`false`, extent untouched).
 
 ## Files to Change
 
@@ -63,16 +67,16 @@ depth/intensity tiles, producing garbage renders.
 | `src/camp2/raster/gggs_tile_util.h` | New header: `isValueTile(const QString&)` inline function |
 | `src/camp2/raster/gggs_tile_layer.cpp` | Include `gggs_tile_util.h`; filter `entryList` result in `loadDirectory()` and `rescan()` |
 | `src/camp2/raster/gggs_store_source.cpp` | Include `gggs_tile_util.h`; filter `entryList` result in `dirHasTifs()` |
-| `test/test_gggs_companion_filter.cpp` | New test: store dir with base + `_time` + `_source` companions; assert only base tile is enumerated by `GggsTileLayer` and by `GggsStoreSource::discover()` |
-| `CMakeLists.txt` | Register `test_gggs_companion_filter` with `ament_add_gtest` (same pattern as `test_catalog_source` / `test_gggs_rescan`) |
+| `test/test_catalog_source.cpp` | Add: tile-set dir with base + `_time` + `_source` companions discovers as a leaf; companions-only dir is not a tile-set |
+| `test/test_gggs_rescan.cpp` | Add: `GggsTileLayer` over base + companions loads only the base tile; companions landing after load make `rescan()` no-op |
 
 ## Principles Self-Check
 
 | Principle | Consideration |
 |---|---|
-| A change includes its consequences | New test file + CMakeLists registration included in this plan. |
-| Test what breaks | Test explicitly covers the bug path: companions in directory → only base tile enumerated. |
-| Only what's needed | Narrow 3-site fix + shared helper + one test; no scope beyond issue description. |
+| A change includes its consequences | Companion-filter cases added to the existing `test_catalog_source.cpp` and `test_gggs_rescan.cpp` targets (no new target/CMakeLists change). |
+| Test what breaks | Tests explicitly cover the bug path: companions in directory → only base tile enumerated. |
+| Only what's needed | Narrow 3-site fix + shared helper + extended tests; no scope beyond issue description. |
 | Capture decisions, not just implementations | Positive-pattern vs. denylist choice documented via inline comment in `gggs_tile_util.h`. |
 | Improve incrementally | Single PR, no architectural change. |
 
@@ -82,7 +86,7 @@ depth/intensity tiles, producing garbage renders.
 |---|---|---|
 | ADR-0001 (Adopt ADRs) | No | Pattern choice (positive vs. denylist) is a code-comment decision, not ADR-worthy. |
 | ADR-0002 (Worktree isolation) | Yes | Worktree `issue-camp-112` already in place; all changes land here. |
-| ADR-0005 (Layered enforcement) | Context | `dirHasTifs()` in `gggs_store_source.cpp` is the post-#104 successor to `GggsStoreLayer`'s subtree scan; the filter applies identically. |
+| ADR-0005 (Catalog browser + flat selectable display layers) | Context | `dirHasTifs()` in `gggs_store_source.cpp` is the post-#104 successor to `GggsStoreLayer`'s subtree scan; the filter applies identically. |
 | ADR-0008 (ROS 2 conventions) | Yes | C++ changes in a ROS 2 ament_cmake package; no convention violations. |
 | ADR-0013 (progress.md vocabulary) | Yes | `progress.md` has an `## Issue Review` entry; `## Plan Authored` will be appended. |
 
@@ -90,22 +94,20 @@ depth/intensity tiles, producing garbage renders.
 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
-| `dirHasTifs()` in `gggs_store_source.cpp` | `test_catalog_source.cpp` (companion-in-dir case) | Yes — new test file covers both `GggsTileLayer` and `GggsStoreSource` |
-| `loadDirectory()` / `rescan()` glob filter | `test_gggs_rescan.cpp` or new test | Yes — `test_gggs_companion_filter.cpp` covers this |
+| `dirHasTifs()` in `gggs_store_source.cpp` | `test_catalog_source.cpp` (companion-in-dir case) | Yes — companion + companions-only cases added |
+| `loadDirectory()` / `rescan()` glob filter | `test_gggs_rescan.cpp` | Yes — load + rescan companion cases added |
 | Add `gggs_tile_util.h` | `CMakeLists.txt` (install headers if needed) | No install target needed — internal header, not exported |
 
-## Open Questions
+## Open Questions (resolved)
 
-- **Header placement**: `gggs_tile_util.h` (new shared header) vs. a static lambda
-  duplicated in each `.cpp` (avoids an extra file). The shared header is cleaner for
-  future companion types; the duplicate lambda is simpler if no other callers are
-  expected. Recommendation: shared header, given the issue's explicit callout that
-  the excluded-suffix list must live in one place.
-- **New test file vs. extending existing tests**: `test_gggs_companion_filter.cpp`
-  (dedicated) vs. adding cases to `test_gggs_rescan.cpp` and `test_catalog_source.cpp`.
-  Recommendation: add to existing tests where the fixture already covers the relevant
-  class, rather than creating a new file — unless the test logic is orthogonal enough
-  to warrant its own setup.
+- **Header placement** — RESOLVED: shared header `src/camp2/raster/gggs_tile_util.h`
+  with an inline `isValueTile()`, included by both `gggs_tile_layer.cpp` and
+  `gggs_store_source.cpp`. The excluded-suffix logic lives in exactly one place,
+  per the issue's explicit callout.
+- **New test file vs. extending existing tests** — RESOLVED: extend the existing
+  `test_catalog_source.cpp` and `test_gggs_rescan.cpp` targets (their `touchTif`/
+  `writeTile` fixtures already cover the relevant classes); no new test file or
+  CMakeLists change.
 
 ## Estimated Scope
 

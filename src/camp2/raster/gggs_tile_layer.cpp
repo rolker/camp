@@ -1,6 +1,7 @@
 #include "gggs_tile_layer.h"
 
 #include "gggs_tile.h"
+#include "gggs_tile_util.h"
 #include "../map_view/web_mercator.h"
 
 #include <QAction>
@@ -124,6 +125,10 @@ void GggsTileLayer::loadDirectory(const QString& directory)
   bool first_extent = true;   // first geometrically-valid tile (scene_bounds_)
   for(const QString& name : files)
   {
+    // [camp#112] Skip companion tiles (`_time`/`_source`): the `*.tif` glob also
+    // matches them, but only the base value tile is renderable.
+    if(!isValueTile(name))
+      continue;
     // [camp#102] Extent/metadata only — the GggsTile ctor no longer reads pixels.
     // boundingRect()/sceneBounds() are valid immediately (fit-to-extent works at
     // load time); the band reads (and therefore the data range) are deferred to
@@ -172,6 +177,10 @@ bool GggsTileLayer::rescan()
   std::vector<std::unique_ptr<GggsTile>> new_tiles;
   for(const QString& name : files)
   {
+    // [camp#112] Skip companion tiles (`_time`/`_source`) before the known check
+    // so a rescan never adds them as renderable tiles.
+    if(!isValueTile(name))
+      continue;
     const QString path = dir.filePath(name);
     if(known.contains(path))
       continue;
