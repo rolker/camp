@@ -152,23 +152,16 @@ bool GggsTileLayer::rescan()
   // [camp#102] Incremental add of newly-landed tiles. [camp#104] Invoked by the
   // "Rescan" context-menu action — the manual stopgap for the live pickup lost
   // with the retired GggsStoreLayer's QFileSystemWatcher (ADR-0005).
-  // Abort + join any in-flight load first so we don't mutate tiles_ under the
-  // worker (it captures `this` and iterates tiles_). Then append extent-only
-  // entries for any path not already held; re-kick the load if the layer was
-  // already loaded so the new tiles' pixels stream in too.
-  if(future_watcher_.isRunning())
-  {
-    // [camp#102] Abort granularity is WHOLE-TILE (the worker checks abort_flag_
-    // only between tiles, not mid-RasterIO like RasterLayer's per-scanline check).
-    // A large in-flight tile's RasterIO therefore blocks this GUI-thread join
-    // until that one tile finishes. Acceptable at the Massabesic store scale this
-    // lands against; finer (sub-tile) abort is a follow-up if tiles grow large.
-    abort_flag_mutex_.lock();
-    abort_flag_ = true;
-    abort_flag_mutex_.unlock();
-    future_watcher_.waitForFinished();
-  }
-
+  //
+  // [camp#104] Compute the new-tile set FIRST, before disturbing any in-flight
+  // load. Building `known` and constructing the candidate GggsTiles only READS
+  // tiles_ (paths are immutable post-construction) and reads tile metadata off
+  // disk — neither mutates tiles_, so it races nothing the worker does. We abort +
+  // join the worker ONLY when there is at least one tile to add. A Rescan that
+  // finds nothing new must leave the in-flight initial load running untouched:
+  // aborting it here (whole-tile granularity, never re-kicked because there is
+  // nothing to add) would strand those tiles at pixelsLoaded()==false forever —
+  // a silently half-blank layer with no recovery, even though status reads loaded.
   QSet<QString> known;
   for(const auto& tile : tiles_)
     known.insert(tile->path());
@@ -176,7 +169,7 @@ bool GggsTileLayer::rescan()
   QDir dir(directory_);
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
                                           QDir::Files, QDir::Name);
-  bool added = false;
+  std::vector<std::unique_ptr<GggsTile>> new_tiles;
   for(const QString& name : files)
   {
     const QString path = dir.filePath(name);
@@ -188,6 +181,30 @@ bool GggsTileLayer::rescan()
     auto tile = std::make_unique<GggsTile>(path);
     if(!tile->valid())
       continue;
+    new_tiles.push_back(std::move(tile));
+  }
+
+  if(new_tiles.empty())
+    return false;   // nothing new — leave any in-flight load running untouched
+
+  // [camp#102] Now that there IS something to add, abort + join any in-flight load
+  // before mutating tiles_ (the worker captures `this` and iterates tiles_, so a
+  // push_back reallocation under it would be a use-after-free). Abort granularity
+  // is WHOLE-TILE (the worker checks abort_flag_ only between tiles, not mid-
+  // RasterIO like RasterLayer's per-scanline check), so a large in-flight tile's
+  // RasterIO blocks this GUI-thread join until that one tile finishes. Acceptable
+  // at the Massabesic store scale this lands against; finer (sub-tile) abort is a
+  // follow-up if tiles grow large. The new tiles' pixels are re-kicked below.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+
+  for(auto& tile : new_tiles)
+  {
     const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
     const QPointF lo = web_mercator::geoToMap(
       QGeoCoordinate(tile->minLat(), tile->minLon()));
@@ -202,15 +219,14 @@ bool GggsTileLayer::rescan()
       setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
     }
     tiles_.push_back(std::move(tile));
-    added = true;
   }
 
-  if(added && load_started_)
+  if(load_started_)
   {
     cached_image_ = QImage();   // force a re-render once the new pixels arrive
     loadTiles();                // stream the new tiles' pixels in
   }
-  return added;
+  return true;
 }
 
 void GggsTileLayer::loadTiles()

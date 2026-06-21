@@ -623,6 +623,24 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # [camp#104] GggsTileLayer::rescan() add/no-op contract (the surface reshaped by
+  # the Round-2 must-fix): nothing-new -> false + extent untouched; a newly-landed
+  # tile -> true + extent grows. Synchronous scan/merge — no GL, no load worker.
+  ament_add_gtest(test_gggs_rescan
+    test/test_gggs_rescan.cpp
+  )
+  target_include_directories(test_gggs_rescan PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_rescan
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
 endif()
 
 
