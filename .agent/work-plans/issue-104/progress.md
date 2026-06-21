@@ -135,3 +135,63 @@ The dependency layer installs (`underlay_ws`/`core_ws/...`) were empty in this w
 
 ### Next step
 Approved pre-push. Lifecycle: address the 2 suggestions if desired (both optional) → push / open PR → triage-reviews. Not pushed (host performs pushes).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 06:55 +0000
+**By**: Claude Opus
+
+**Branch**: `feature/issue-104` at `94816b7`
+**Build**: `./ui_ws/build.sh camp` — clean (only pre-existing `-Wunused-parameter`/
+`-Wsign-compare`/`-Wlogical-not-parentheses` warnings in unrelated files; none in
+the changed code).
+**Tests**: `./ui_ws/test.sh camp` — **86 tests, 0 failures, 2 skipped** (was 85;
++1 is the new model-tester case. The 2 skips are the pre-existing GL render tests
+that self-skip without offscreen GL).
+
+Both Local Review (Pre-Push) suggestions addressed before push (operator elected
+BOTH). Two atomic commits + this progress entry.
+
+### Suggestion #2 — Rescan action (implemented as an action, not a doc-reword) — `0a0505e`
+- Added a **"Rescan" context-menu action** to the flat `GggsTileLayer`
+  (`gggs_tile_layer.cpp` `contextMenu()`, alongside the base Opacity/Remove menu
+  and the Colormap submenu). It calls the existing `rescan()`, which re-enumerates
+  the tile-set dir and appends any newly-landed `<level>_<row>_<col>.tif` not
+  already held (and is safe to call repeatedly / when nothing changed — it builds
+  a `known` set and no-ops when there's nothing new).
+- This restores a manual refresh path **and** gives `rescan()` a live caller (it
+  had been dead code since the `QFileSystemWatcher` retirement). It is the chosen
+  lightweight mitigation for the deferred watcher loss: "restart CAMP to pick up
+  newly-landed tiles" → "right-click → Rescan."
+- **Docs synced to the new reality** — the previously-aspirational "(or a manual
+  `rescan()`)" claims now reference the Rescan action and read "mitigated by a
+  manual Rescan context-menu action; live auto-pickup (a per-layer watcher)
+  remains a follow-up": ADR-0005 Consequences, `plan.md` Known Limitations,
+  `.agents/README.md` (ADR-0005 paragraph), the `gggs_tile_layer.cpp` comments
+  near `rescan()` (incl. the half-written-tile retry note), and the `rescan()`
+  header doc. The per-layer-watcher follow-up stays acknowledged as the live
+  solution; Rescan is the stopgap. (`src/camp2/map/layer.h` had no
+  watcher/rescan comment to update — its `RasterLayer, GggsTileLayer` note is
+  already correct.)
+
+### Suggestion #1 — direct model test — `94816b7`
+- Added `GggsCatalogModel.SatisfiesItemModelProtocol` to
+  `test/test_gggs_flat_layer_spawn.cpp`: a `CatalogModel` populated by
+  `raster::GggsStoreSource::discover()` from a temp store fixture, with a
+  `QAbstractItemModelTester` attached **before** population (so it validates the
+  `begin/endInsertRows` insertion path of `addTopLevel` too) plus an explicit
+  index round-trip (root → child → `parent()`). This exercises the
+  index/parent/rowCount/columnCount protocol **directly** — the prior tests only
+  hit it indirectly (spawn tests wrap the Map model; the discovery test checks the
+  `CatalogItem` tree). Reuses the file's existing `WarningTrap` so any protocol
+  violation fails the test.
+- Kept non-GL/GDAL (discovery only stats `*.tif` filenames; empty placeholder
+  tiles suffice). `QAbstractItemModelTester` is from `QtTest`; the
+  `test_gggs_flat_layer_spawn` target already links `Qt5::Test` and includes the
+  tester, so **no `CMakeLists.txt` change was needed**.
+
+### Notes
+- No behavior regression to undo (review verdict was `approved`, 0 must-fix);
+  these are quality polish. `rescan()` semantics are unchanged — it gained a UI
+  caller and accurate docs.
+- Not pushed (host performs pushes).
