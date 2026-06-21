@@ -2,6 +2,7 @@
 #define RASTER_GGGS_TILE_H
 
 #include <QString>
+#include <atomic>
 #include <memory>
 #include <vector>
 
@@ -12,21 +13,44 @@ namespace camp
 namespace raster
 {
 
-/// [camp#90 / I4] One native-geographic GGGS raster tile loaded from a WGS84
-/// GeoTIFF (`<level>_<row>_<col>.tif`). Holds the CPU sample data + geographic
-/// extent (from the GDAL geotransform) and lazily uploads a single-channel
-/// float (R32F) GL texture for the GPU display-time warp. Unlike RasterLayer,
-/// the tile is NOT reprojected on load — it stays in lat/lon and is warped to
-/// Web-Mercator in the shader at display time (unh_marine_autonomy ADR-0002 §D2).
+/// [camp#90 / I4 / camp#102] One native-geographic GGGS raster tile loaded from a
+/// WGS84 GeoTIFF (`<level>_<row>_<col>.tif`). The constructor reads only the
+/// geographic extent + dimensions + NoData from the GDAL geotransform/metadata
+/// (no `RasterIO`) so `valid()` becomes true cheaply on the GUI thread; the band
+/// pixels are read later by `loadPixels()` (typically off-thread, per camp#102 /
+/// ADR-0003 §3) and then lazily uploaded as a single-channel float (R32F) GL
+/// texture for the GPU display-time warp. Unlike RasterLayer, the tile is NOT
+/// reprojected on load — it stays in lat/lon and is warped to Web-Mercator in the
+/// shader at display time (unh_marine_autonomy ADR-0002 §D2).
 class GggsTile
 {
 public:
-  /// Open a single-band-or-more north-up WGS84 GeoTIFF and read band 1 as
-  /// Float32. valid() is false if the file can't be opened / has no geotransform.
+  /// Open a north-up WGS84 GeoTIFF and read its geotransform → extent, dimensions
+  /// and NoData ONLY (no pixel `RasterIO` — that is deferred to `loadPixels()`).
+  /// valid() is false if the file can't be opened / has no geotransform.
   explicit GggsTile(const QString& path);
   ~GggsTile();
 
   bool valid() const { return width_ > 0 && height_ > 0; }
+
+  /// Read band 1 as Float32 and compute the data range. Safe to call off the GUI
+  /// thread (pure GDAL `RasterIO`, no GL). No-op if the tile is invalid or pixels
+  /// are already loaded. Returns true if pixels are present after the call.
+  bool loadPixels();
+
+  /// True once `loadPixels()` has read the band into CPU memory (or freed it into
+  /// the GL texture). dataMin/dataMax and texture() are only meaningful once true.
+  ///
+  /// [camp#102] `pixels_loaded_` is `std::atomic<bool>` and this is an ACQUIRE
+  /// load. It pairs with the RELEASE store in `loadPixels()` (issued AFTER the
+  /// `data_` move) to establish happens-before: when the paint thread observes
+  /// `pixelsLoaded() == true` it is guaranteed to see the worker's completed
+  /// `data_`/range writes. No other path may read `data_`/`texture()` without
+  /// first passing this acquire check (see `texture()`, gated below).
+  bool pixelsLoaded() const
+  {
+    return pixels_loaded_.load(std::memory_order_acquire);
+  }
 
   const QString& path() const { return path_; }
   int width() const { return width_; }
@@ -61,6 +85,12 @@ private:
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;
   double nodata_ = 0.0;
+  // [camp#102] Cross-thread publication flag: stored with release in loadPixels()
+  // (worker thread) AFTER data_/range are written, loaded with acquire in
+  // pixelsLoaded() (paint thread) before data_/texture() are read. Atomic so the
+  // rescan() re-kick (range already valid → paint's crossed-range gate is open)
+  // can't race the worker's mid-write.
+  std::atomic<bool> pixels_loaded_{false};   // set once loadPixels() has run
   double data_min_ = 1.0, data_max_ = 0.0;   // crossed => no valid samples
   std::vector<float> data_;                  // row-major, height_ * width_
   std::unique_ptr<QOpenGLTexture> texture_;

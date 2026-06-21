@@ -67,10 +67,13 @@ void BackgroundManager::createDefaultLayers()
     // [camp#90] Re-create persisted GGGS tile stores + plain rasters so they
     // auto-load each session (persisted in openTileStore / openRaster). Skip
     // entries that no longer exist on disk.
-    // Slice-2 follow-up: GggsStoreLayer/GggsTile load every tile synchronously
-    // (GDAL RasterIO on the GUI thread), so a large multi-epoch store blocks
-    // startup. Bound this with lazy/visible-region loading like RasterLayer's
-    // async QtConcurrent path before stores get big.
+    // [camp#102] GggsTile now reads only extent/metadata in its ctor; the band
+    // pixels load lazily off a QtConcurrent worker, kicked from the first paint()
+    // of a *visible* tile-set (tile-sets default OFF). So opening a large
+    // multi-epoch store no longer blocks startup — only layers the operator turns
+    // on read pixels. A QFileSystemWatcher on each store picks up tiles/epochs
+    // that land after open. Visible-region LOD render is still future work
+    // (separate issue).
     QSettings settings;
     const QStringList store_roots = settings.value("GggsStores/roots").toStringList();
     for(const QString& root : store_roots)

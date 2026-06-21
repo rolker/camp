@@ -4,7 +4,9 @@
 #include "../map/layer.h"
 #include "../map/color_map.h"
 
+#include <QFutureWatcher>
 #include <QImage>
+#include <QMutex>
 #include <QSize>
 #include <memory>
 #include <vector>
@@ -73,13 +75,36 @@ public:
   /// a GPU LUT). Persists and re-renders.
   void setColormap(map::ColorMap::Type type);
 
+  /// [camp#102] Block until this layer's async pixel load (if any) has completed.
+  /// Exposed for headless tests that call renderImage() directly without the
+  /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
+  void waitForLoad();
+
+  /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files (e.g.
+  /// the GggsStoreLayer's QFileSystemWatcher fired). Adds extent-only entries for
+  /// any tile not already held and re-kicks the async pixel load if the layer is
+  /// already loaded. A half-written tile that fails to open degrades to
+  /// valid()==false and is skipped — never crashes. Returns true if any tile was
+  /// added.
+  bool rescan();
+
 protected:
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
   void writeSettings() override;
 
+private slots:
+  /// [camp#102] Launch the async pixel read over not-yet-loaded tiles.
+  void loadTiles();
+  /// [camp#102] Fold completed tiles' ranges into data_min_/data_max_, mark them
+  /// pixelsLoaded(), invalidate the cache, and repaint.
+  void tilesReady();
+
 private:
   void loadDirectory(const QString& directory);
+  /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
+  /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.
+  void loadTilesWorker();
   bool ensureGL();
   bool ensureProgram();
   QOpenGLTexture* ensureLut();
@@ -97,6 +122,23 @@ private:
   QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)
   double data_max_ = 0.0;
+
+  // [camp#102] Async pixel load mirroring RasterLayer (ADR-0003 §3): the cheap
+  // extent list is built in loadDirectory(); the band reads are deferred to a
+  // single QtConcurrent worker driven by this watcher and kicked lazily from the
+  // first paint(). The abort flag + waitForFinished() dtor/re-launch join is
+  // ported verbatim from RasterLayer so a layer destroyed mid-load can't outlive
+  // `this`. The worker mutates each GggsTile's pixel buffer off-thread and then
+  // publishes it by storing the tile's atomic pixelsLoaded() flag with RELEASE
+  // ordering (gggs_tile.cpp). The paint path only ever reads a tile's data_/
+  // texture() after an ACQUIRE load of that flag returns true (gggs_tile_layer.cpp
+  // renderImage). That release/acquire pair establishes happens-before, so the
+  // paint thread never observes a half-written buffer — even on the rescan()
+  // re-kick, where the layer's crossed-range gate is already open.
+  QFutureWatcher<void> future_watcher_;
+  bool abort_flag_ = false;
+  QMutex abort_flag_mutex_;
+  bool load_started_ = false;  // first paint() kicks the load exactly once
 
   // The layer's own offscreen GL context — created lazily, used only for the
   // FBO render; never touches the GUI's context.

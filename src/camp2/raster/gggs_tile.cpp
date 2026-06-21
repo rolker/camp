@@ -48,12 +48,40 @@ GggsTile::GggsTile(const QString& path):
   nodata_ = band->GetNoDataValue(&has_nodata);
   has_nodata_ = has_nodata != 0;
 
-  std::vector<float> values(static_cast<size_t>(width) * height);
-  if(band->RasterIO(GF_Read, 0, 0, width, height, values.data(),
-                    width, height, GDT_Float32, 0, 0) != CE_None)
+  GDALClose(dataset);
+
+  // [camp#102] Extent/metadata only — NO band RasterIO here. The pixel read is
+  // deferred to loadPixels() so a large store opens without blocking the GUI
+  // thread (the layer drives loadPixels() off a QtConcurrent worker). dataMin/
+  // dataMax stay at the crossed sentinel until loadPixels() runs.
+  width_ = width;
+  height_ = height;
+}
+
+bool GggsTile::loadPixels()
+{
+  if(!valid())
+    return false;
+  if(pixels_loaded_.load(std::memory_order_acquire))
+    return true;
+
+  // [camp#102] Pure GDAL read — safe off the GUI thread (no GL touched here).
+  auto dataset = GDALDataset::FromHandle(GDALOpen(path_.toUtf8().constData(), GA_ReadOnly));
+  if(!dataset)
+    return false;
+  if(dataset->GetRasterCount() < 1)
   {
     GDALClose(dataset);
-    return;
+    return false;
+  }
+  auto band = dataset->GetRasterBand(1);
+
+  std::vector<float> values(static_cast<size_t>(width_) * height_);
+  if(band->RasterIO(GF_Read, 0, 0, width_, height_, values.data(),
+                    width_, height_, GDT_Float32, 0, 0) != CE_None)
+  {
+    GDALClose(dataset);
+    return false;
   }
   GDALClose(dataset);
 
@@ -71,8 +99,12 @@ GggsTile::GggsTile(const QString& path):
   data_max_ = max_value;
 
   data_ = std::move(values);
-  width_ = width;
-  height_ = height;
+  // [camp#102] RELEASE store AFTER all of data_/data_min_/data_max_ are written.
+  // Pairs with the ACQUIRE load in pixelsLoaded() so the paint thread, once it
+  // sees this flag true, is guaranteed to observe the completed buffer/range —
+  // closing the worker-vs-paint race on both first load and the rescan() re-kick.
+  pixels_loaded_.store(true, std::memory_order_release);
+  return true;
 }
 
 GggsTile::~GggsTile()

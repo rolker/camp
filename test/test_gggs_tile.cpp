@@ -10,7 +10,9 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include <gdal_priv.h>
@@ -76,7 +78,41 @@ TEST(GggsTileTest, ExtentFromGeotransform)
   EXPECT_NEAR(tile.minLat(), max_lat - h * dlat, 1e-12);
 }
 
-// NoData (0) is excluded from the data range; real samples set min/max.
+// [camp#102] The constructor reads extent/dimensions ONLY — valid() and the
+// geographic extent are known before any pixel read. The data range stays at the
+// crossed sentinel until loadPixels() runs, which then populates it.
+TEST(GggsTileTest, ExtentKnownBeforePixelsLoad)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  std::vector<uint16_t> samples = {0, 5, 12345, 50000};
+  const QString path = writeTile(dir, "13_2_2.tif", w, h, geo, samples);
+
+  GggsTile tile(path);
+  // Extent + dimensions are valid synchronously, before any RasterIO.
+  ASSERT_TRUE(tile.valid());
+  EXPECT_FALSE(tile.pixelsLoaded());
+  EXPECT_EQ(tile.width(), w);
+  EXPECT_EQ(tile.height(), h);
+  EXPECT_NEAR(tile.maxLat(), 43.0, 1e-12);
+  // The range is crossed (unknown) until pixels load.
+  EXPECT_GT(tile.dataMin(), tile.dataMax());
+
+  // loadPixels() reads the band and populates the range.
+  EXPECT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.pixelsLoaded());
+  EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
+
+  // Idempotent: a second call is a no-op and stays loaded.
+  EXPECT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.pixelsLoaded());
+}
+
+// NoData (0) is excluded from the data range; real samples set min/max
+// (post loadPixels()).
 TEST(GggsTileTest, NoDataExcludedFromRange)
 {
   QTemporaryDir dir;
@@ -91,6 +127,7 @@ TEST(GggsTileTest, NoDataExcludedFromRange)
   ASSERT_TRUE(tile.valid());
   EXPECT_TRUE(tile.hasNoData());
   EXPECT_DOUBLE_EQ(tile.noData(), 0.0);
+  ASSERT_TRUE(tile.loadPixels());
   EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
 }
@@ -107,7 +144,83 @@ TEST(GggsTileTest, AllNoDataHasCrossedRange)
 
   GggsTile tile(path);
   ASSERT_TRUE(tile.valid());           // dimensions known
+  ASSERT_TRUE(tile.loadPixels());      // pixels read (all NoData)
   EXPECT_GT(tile.dataMin(), tile.dataMax());   // no valid samples
+}
+
+// [camp#102] Publication-contract regression: pixelsLoaded() must stay false
+// until loadPixels() has fully populated the buffer + range. The layer's paint
+// path gates every data_/texture() read on this flag (an acquire load that pairs
+// with the worker's release store), so this flag flipping early — or the range
+// being observable before the flag — would reopen the worker-vs-paint race the
+// rescan() re-kick exposes. Pins the contract without GL/event-loop scaffolding.
+TEST(GggsTileTest, PixelsLoadedFalseUntilLoadCompletes)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  std::vector<uint16_t> samples = {0, 5, 12345, 50000};
+  const QString path = writeTile(dir, "13_3_3.tif", w, h, geo, samples);
+
+  GggsTile tile(path);
+  ASSERT_TRUE(tile.valid());
+  // Before any load: flag false and the range is still the crossed sentinel.
+  EXPECT_FALSE(tile.pixelsLoaded());
+  EXPECT_GT(tile.dataMin(), tile.dataMax());
+
+  ASSERT_TRUE(tile.loadPixels());
+  // After load: flag true AND the range is consistent (the flag must not become
+  // observable before the range it advertises).
+  EXPECT_TRUE(tile.pixelsLoaded());
+  EXPECT_LE(tile.dataMin(), tile.dataMax());
+}
+
+// [camp#102] Cross-thread publication: a worker thread loads the pixels while a
+// second thread spins on pixelsLoaded() exactly as the paint path does. The
+// moment the spinner observes the (acquire) flag true, the released data_ range
+// MUST already be visible and consistent — that is the happens-before the
+// release/acquire pair provides. A plain (non-atomic, no-barrier) flag could let
+// the spinner see true with a torn/stale range; this guards that regression.
+TEST(GggsTileTest, PixelsPublishedToObserverThread)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 4, h = 4;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  std::vector<uint16_t> samples(w * h);
+  for(int i = 0; i < w * h; ++i)
+    samples[i] = uint16_t(i + 1);   // 1..16, no NoData → range [1, 16]
+  const QString path = writeTile(dir, "13_4_4.tif", w, h, geo, samples);
+
+  GggsTile tile(path);
+  ASSERT_TRUE(tile.valid());
+
+  std::atomic<bool> go{false};
+  std::atomic<bool> saw_inconsistent{false};
+
+  // Observer mirrors renderImage()'s gate: only read the range once the flag
+  // (acquire) reads true, then assert it is the fully-populated value.
+  std::thread observer([&]() {
+    while(!go.load(std::memory_order_acquire)) { /* spin to start */ }
+    while(!tile.pixelsLoaded()) { /* spin until published */ }
+    if(tile.dataMin() != 1.0 || tile.dataMax() != 16.0)
+      saw_inconsistent.store(true, std::memory_order_relaxed);
+  });
+
+  std::thread worker([&]() {
+    while(!go.load(std::memory_order_acquire)) { /* spin to start */ }
+    tile.loadPixels();
+  });
+
+  go.store(true, std::memory_order_release);
+  worker.join();
+  observer.join();
+
+  EXPECT_FALSE(saw_inconsistent.load(std::memory_order_relaxed));
+  EXPECT_TRUE(tile.pixelsLoaded());
+  EXPECT_DOUBLE_EQ(tile.dataMin(), 1.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 16.0);
 }
 
 // A missing file degrades to invalid (no crash), like RasterLayer.
