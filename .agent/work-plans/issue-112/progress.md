@@ -158,3 +158,25 @@ Camp deps were absent (empty `core_ws/install`): built `marine_ais_msgs`,
 The three new cases were confirmed run and passing (direct binary runs).
 
 Not pushed.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-21 16:29 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-112 at `37981cb`
+**Mode**: pre-push
+**Depth**: Standard (reason: 5 reviewable code files / ~149 lines; raster-render path)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix; only optional case-sensitivity/test-coverage suggestions
+
+### Findings
+- [ ] (suggestion) Case mismatch: `*.tif`/`*.tiff` glob may admit `.TIF`/`.TIFF` but regex `\.tiff?` is case-sensitive → uppercase-ext value tile silently dropped; theoretical (producer emits lowercase), optional `CaseInsensitiveOption` — `src/camp2/raster/gggs_tile_util.h:24`
+- [ ] (suggestion) No test for a 4-group name (`13_0_0_0.tif`); correctly rejected by the anchored regex but unexercised — `src/camp2/raster/gggs_tile_util.h:24`
+
+### Notes
+- Two fresh-context Claude adversarial passes (Lens A logic / Lens B systemic) both verdict the fix correct: regex accepts all legitimate `<level>_<row>_<col>.tif` value tiles and rejects all companions; the three patched sites (`loadDirectory`, `rescan`, `dirHasTifs`) are the complete `*.tif` scan set (no missed site); `GggsTile` is constructed only at the two filtered layer sites; the async worker/ctor need no guard (companions never enter `tiles_`). The case-sensitivity suggestion was cross-pass confirmed.
+- Static analysis: no actionable findings. `ament_cpplint` copyright/header-guard/C-cast hits dropped — camp does not enforce ament_cpplint (no CI/pre-commit/CMake hook), cast hits are on untouched lines, and the new header matches every sibling's guard style and no-copyright convention.
+- Plan adherence: exact — files and approach match `plan.md` as written; no drift/scope creep.
+- Doc-citation nit (not code): earlier lifecycle entries cite ADR-0008/ADR-0013, which are workspace ADRs; camp's own ADR set is 0001–0005.
