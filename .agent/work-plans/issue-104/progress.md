@@ -346,3 +346,80 @@ Could not re-run `./ui_ws/build.sh camp` — the dependency-layer installs (`cor
 
 ### Next step
 Verdict is **approved** (0 must-fix). Lifecycle: push / open PR → triage-reviews. Round-2 → Round-3 converged. Not pushed (host performs pushes).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-21 14:54 +0000
+**By**: Claude Opus
+**Commits**: `7981d61` (browser seed persistence + restore + removal), `12dc994` (seed-persistence tests), `97a9214` (docs)
+
+### What & why
+Operator GUI testing surfaced that the **browsed store root** in the Stores tab
+did not persist: flat layers stick (ADR-0005 §4 `GggsTileLayers/dirs`), but a
+relaunch left the Stores browse tree empty ("the store I added didn't stick"), so
+the operator had to "Open store…" again each session. Added a `CatalogBrowser`-
+level convenience that remembers which store ROOT(s) were opened and re-`discover()`s
+them at startup.
+
+**Orthogonal to the §4 flat-layer persistence, not a reversal of the reset**
+(framed in ADR-0005 §5): it repopulates the **browse tree only** — it spawns no
+layers and does **not** resurrect the retired nested `GggsStoreLayer`. The two
+persistence records (browser seeds = browse state; `GggsTileLayers/dirs` =
+display state) are separate and never interact. `GggsTileLayers`/dirs untouched.
+
+### Design (as-built)
+- **Parallel `seeds_` vector.** `CatalogBrowser` holds `std::vector<Seed>` where
+  `struct Seed { QString sourceId; QString root; }`, kept strictly parallel to the
+  model's top-level rows (each `addTopLevel` appends exactly one top-level node per
+  seed, in order).
+- **`seedRoot()` refactor.** Extracted the discover+add out of `openStore()` into a
+  non-dialog `bool seedRoot(CatalogSource*, const QString& root)`: `discover(root)`;
+  if it yields a node, `addTopLevel`, append to `seeds_`, **persist**, select/expand.
+  Dedup-on-select: an already-present (sourceId, root) re-selects the existing row
+  instead of re-adding (mirrors the flat-layer dedup). `openStore()` now = file
+  dialog → `seedRoot(front_source, dir)`.
+- **Generic persistence key.** `seeds_` persist under `QSettings CatalogBrowser/seeds`
+  as a `QStringList` of `sourceId + "\t" + root` (tab delimiter — store paths may
+  contain commas but not tabs). Whole list rewritten on every change; empty list →
+  key removed (avoids the `@Invalid()` round-trip).
+- **`restoreSeeds()` (public).** Wired into `MainWindow` right **after**
+  `addSource(...)` so the seeds' sources exist. Skips a seed whose source is unknown
+  or whose `QDir(root)` doesn't exist (skip-missing, like the flat-layer restore),
+  dedups against already-present seeds, and rewrites the persisted list once only if
+  it pruned a stale/duplicate/malformed entry (a clean restore leaves the key
+  byte-for-byte untouched — restoring isn't a user change).
+- **Removal affordance.** `CatalogModel::removeTopLevel(int)` (proper
+  begin/endRemoveRows) + `CatalogItem::removeChild(int)` back a tree context menu
+  ("Remove from browser" on a top-level node → `CatalogBrowser::removeSeed(int)`:
+  drop the model row, erase the matching seed, re-persist), so a mis-picked folder
+  isn't stuck forever. Seeds↔rows index alignment preserved across removal.
+
+### Tests
+`test/test_catalog_browser_seeds.cpp` — new `CatalogBrowserSeeds` gtest, widget/model
+level and GL/GDAL-free (discovery only stats `*.tif` filenames; QSettings scoped to a
+test org/app in `main()`), 4 cases all green:
+- **PersistRoundTrip** — `seedRoot()` writes `CatalogBrowser/seeds`; a fresh browser +
+  `restoreSeeds()` rebuilds the top-level node (`topLevelCount()==1`).
+- **RestoreSkipsMissingRoot** — a bogus persisted root → `restoreSeeds()` adds nothing,
+  no crash.
+- **SeedDedup** — seeding the same root twice → one top-level node, one persisted seed.
+- **RemoveDePersists** — seed → `removeSeed(0)` → key no longer contains it; fresh
+  restore yields no node.
+Registered in `CMakeLists.txt` mirroring `test_gggs_persistence`.
+
+### Build / test
+Clean. A fresh worktree had empty `core_ws/install`, so I first built the camp deps
+(`colcon build --packages-up-to marine_ais_msgs marine_interfaces marine_autonomy`
+in `core_ws` — succeeded, warnings only), then `./ui_ws/build.sh camp` (clean, only
+pre-existing `-Wunused-parameter` warnings). `./ui_ws/test.sh camp` → **94 tests,
+0 errors, 0 failures, 2 skipped** (was 89; +4 new `CatalogBrowserSeeds` cases; the
+new target verified running directly: 4/4 OK). Docs (ADR-0005 §5 + Consequences,
+`.agents/README.md` two-orthogonal-records note, `plan.md` as-built) in sync.
+
+### Deviations
+None material. seedRoot/restoreSeeds/removeSeed/topLevelCount are public (testability,
+per the brief). Not pushed (host performs pushes).
+
+### Next step
+Branch `feature/issue-104` at `97a9214`, three atomic commits + this entry. Ready for
+a pre-push `review-code` of the browse-seed addition. Not pushed.
