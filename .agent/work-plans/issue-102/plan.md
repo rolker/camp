@@ -92,14 +92,15 @@ producer pyramids, and live ROS transport stay out of scope (separate issues).
 |------|--------|
 | `src/camp2/raster/gggs_tile.h` | Add `loadPixels()`; `pixelsLoaded()`; ctor reads extent/metadata only; fix class doc comment |
 | `src/camp2/raster/gggs_tile.cpp` | Move band `RasterIO` + range computation from ctor into `loadPixels()`; ctor stops at geotransform/dimensions/NoData |
-| `src/camp2/raster/gggs_tile_layer.h` | Add `QFutureWatcher` + abort flag/mutex, `loadTiles()`/`tilesReady()` slots, `loaded_/loading_` state, `readSettings()` already present (extend), dtor contract |
-| `src/camp2/raster/gggs_tile_layer.cpp` | `loadDirectory` extent-only; async `loadTiles` worker (RasterIO only, abort-aware); incremental `data_min_/data_max_`; lazy kick from `paint`; skip in-flight tiles in `renderImage`; `readSettings` `visible` false fallback; verbatim abort/join dtor |
-| `src/camp2/raster/gggs_store_layer.h` | Add `QFileSystemWatcher` member + `onDirectoryChanged()` slot; `Q_OBJECT` already present |
-| `src/camp2/raster/gggs_store_layer.cpp` | Install watches per directory in `build`; on change, discover new children (default-off) + signal existing leaves to re-scan; incremental, not rebuild |
-| `src/camp2/background/background_manager.cpp` | Update the stale Slice-2 TODO comment (`:70-73`) now that lazy/async lands |
-| `test/test_gggs_tile.cpp` | Add: ctor yields valid extent/`boundingRect` *before* `loadPixels()`; `data_min_/data_max_` only valid after `loadPixels()` |
-| `test/test_gggs_render.cpp` (or new `test_gggs_visibility.cpp`) | Add: default-off visibility persistence round-trip on a tile-set leaf; in-flight tile skip/repaint behavior if feasible headless |
-| `CMakeLists.txt` | Wire any new test target; existing gggs tests already link Qt5::Concurrent |
+| `src/camp2/raster/gggs_tile_layer.h` | Add `QFutureWatcher<void>` + `abort_flag_`/mutex, `loadTiles()`/`tilesReady()` slots + `loadTilesWorker()`, `load_started_` state, `readSettings()` extend (false `visible` fallback), verbatim abort/join dtor. Also added `waitForLoad()` (test seam) and `rescan()` (watcher hook) — see Deviations |
+| `src/camp2/raster/gggs_tile_layer.cpp` | `loadDirectory` extent-only (range fold removed — now incremental); async `loadTiles`/`loadTilesWorker` (RasterIO only, abort between tiles); `tilesReady` incremental `data_min_/data_max_` fold + `pixelsLoaded()` gate; lazy kick from `paint`; skip not-`pixelsLoaded()` tiles in `renderImage`; `readSettings` `visible` false fallback; verbatim abort/join dtor + re-launch guard in `loadTiles`; `rescan()` for new tiles |
+| `src/camp2/raster/gggs_store_layer.h` | Add `QFileSystemWatcher*` + `onDirectoryChanged()` slot + `scan()`; `tileset_children_`/`group_children_` sets to make re-scan incremental |
+| `src/camp2/raster/gggs_store_layer.cpp` | `build`→`scan`; install one watch per visited directory; on change, discover new children (default-off) + call `rescan()` on the changed existing leaf; incremental, not rebuild; watch-count cap deferred (review #4) |
+| `src/camp2/background/background_manager.cpp` | Update the stale Slice-2 TODO comment now that lazy/async lands |
+| `test/test_gggs_tile.cpp` | Add `ExtentKnownBeforePixelsLoad` (ctor valid extent + crossed range *before* `loadPixels()`; range populated after); update `NoDataExcludedFromRange`/`AllNoDataHasCrossedRange` to call `loadPixels()` first |
+| `test/test_gggs_visibility.cpp` (new) | Default-off + persisted-visibility round-trip on a tile-set leaf (non-GL state machine per review #3; render path covered by existing `test_gggs_render`, now driven via `waitForLoad()`) |
+| `test/test_gggs_render.cpp` | Drive + await the async load (`waitForLoad()`) before `renderImage` (pixels are no longer synchronous) |
+| `CMakeLists.txt` | Wire `test_gggs_visibility`; gggs tests already link `camp_map` (Qt5::Concurrent is PUBLIC on it) |
 
 ## Principles Self-Check
 
@@ -144,3 +145,28 @@ producer pyramids, and live ROS transport stay out of scope (separate issues).
 Single PR, ~6 atomic commits (tile split, layer async+dtor, lazy-on-visible,
 default-off+test, watcher, doc cleanup). Self-contained within `src/camp2/raster/`
 plus one TODO-comment touch in `background_manager.cpp` and test additions.
+
+## Deviations (recorded during implementation)
+
+- **`GggsTileLayer::waitForLoad()` added** (not in the original Files-to-Change).
+  The existing `test_gggs_render` calls `renderImage()` directly, outside the
+  QGraphicsView paint loop that normally kicks + awaits the load via signals. A
+  small public test seam (`load if not started → waitForFinished → tilesReady`)
+  keeps that test valid without GL/event-loop scaffolding (review #3 intent).
+- **`GggsTileLayer::rescan()` added.** The plan said "signal the leaf to re-scan
+  and re-read changed tiles"; this is the concrete API the store's
+  `onDirectoryChanged` calls — it aborts/joins any in-flight load, appends
+  extent-only entries for newly-landed tiles (a half-written tile degrades to
+  `valid()==false` and is skipped), and re-kicks the load if already loaded.
+- **`QFutureWatcher<void>`** (not `<LoadResult>`): the worker mutates each shared
+  `GggsTile` in place (`loadPixels()`), so there is no per-future result struct
+  to marshal — the watcher only signals completion; `tilesReady()` reads the
+  tiles. This still ports RasterLayer's abort/join + re-launch contract verbatim.
+- **New test file `test_gggs_visibility.cpp`** (vs. extending `test_gggs_render`)
+  — the visibility round-trip needs only `QApplication` + `QSettings`, no GL, so
+  a dedicated file is cleaner. Uses a tiny subclass to reach the protected
+  `readSettings()`/`writeSettings()` without the deferred `itemConstructed()` timer.
+- **Watcher inotify watch-count cap DEFERRED** (review #4 / OQ-A): per-directory
+  non-recursive watches with incremental-add semantics, sized for the
+  Massabesic-scale store; a root+active-epoch ceiling is premature. Noted in a
+  code comment in `gggs_store_layer.h` and the PR.
