@@ -573,6 +573,56 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # [camp#104] GggsStoreSource folder-scan discovery builds the expected generic
+  # CatalogItem tree from a temp store (groups/leaves, tile-free subtrees pruned).
+  # Pure directory scan — no GL/GDAL.
+  ament_add_gtest(test_catalog_source
+    test/test_catalog_source.cpp
+  )
+  target_include_directories(test_catalog_source PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_catalog_source
+    camp_map
+    Qt5::Core
+  )
+
+  # [camp#104] GggsStoreSource::instantiate() adds exactly one flat top-level
+  # GggsTileLayer (model stays valid; dedup-on-select prevents duplicates).
+  ament_add_gtest(test_gggs_flat_layer_spawn
+    test/test_gggs_flat_layer_spawn.cpp
+  )
+  target_include_directories(test_gggs_flat_layer_spawn PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_flat_layer_spawn
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    Qt5::Test
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#104] Flat-layer persistence reset (ADR-0005): select persists the dir,
+  # createDefaultLayers() restores (deduped, skips missing), remove de-persists,
+  # and the retired GggsStores/roots key is ignored + cleared once on startup.
+  ament_add_gtest(test_gggs_persistence
+    test/test_gggs_persistence.cpp
+  )
+  target_include_directories(test_gggs_persistence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_persistence
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
 endif()
 
 
