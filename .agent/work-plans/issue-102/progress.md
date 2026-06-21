@@ -131,3 +131,50 @@ that to GggsTile.
 - [ ] (suggestion) `rescan()`/`loadTiles()` `waitForFinished()` blocks the GUI thread for a full large-tile `RasterIO` (whole-tile abort granularity vs RasterLayer's scanline); fine at current scale, note/finer-abort for large tiles. — `gggs_tile_layer.cpp:162,223`
 
 Lifecycle/teardown confirmed solid by both lenses (dtor abort+join, tiles_-mutation guarding, QFileSystemWatcher parented/serial, single finished connect).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-20 23:45 -0400
+**By**: Claude Code Agent (Claude Opus 4.8)
+
+**Branch**: feature/issue-102
+**Addresses**: the latest Local Review (Pre-Push) round 1 (2 must-fix + 2 suggestions)
+**Build**: `./ui_ws/build.sh camp` — clean (only pre-existing Qt `setData` deprecation warnings)
+**Test**: `./ui_ws/test.sh camp` — 72 tests, 0 failures, 1 skipped (GL render self-skip, no offscreen GL)
+
+### Findings addressed
+- [x] (must-fix #1) **Worker-vs-paint data race** on `GggsTile::pixels_loaded_`/`data_`.
+      Made `pixels_loaded_` a `std::atomic<bool>` (added `<atomic>` to `gggs_tile.h`).
+      `loadPixels()` now stores `true` with `memory_order_release` AFTER the `data_`
+      move (and the load-guard read uses acquire); `pixelsLoaded()` loads with
+      `memory_order_acquire`. This establishes happens-before (worker `data_`/range
+      write → release store → acquire load → paint `data_`/`texture()` read), closing
+      the race on both first load and the `rescan()` re-kick (where the crossed-range
+      gate is already open). Confirmed the only paint-path reads of tile pixel state
+      (`renderImage` `pixelsLoaded()`→`texture()`) go through the acquire check;
+      `tilesReady()` reads `dataMin/Max` post-join (already safe). — `gggs_tile.h`,
+      `gggs_tile.cpp`
+- [x] (must-fix #2) Corrected the three comments that wrongly claimed the flag is set
+      "ONLY in tilesReady() on the GUI thread" — it is set on the worker. They now
+      describe the real atomic release/acquire publication invariant. —
+      `gggs_tile_layer.h` (~131-138), `gggs_tile_layer.cpp` `loadTilesWorker` (~239-248),
+      `renderImage` skip-gate (~431-437)
+- [x] (suggestion #3) `tilesReady()` now calls `setStatus("(no data)")` when the
+      folded range is still crossed (every loaded tile all-NoData/failed) instead of
+      clearing the status, so an enabled-but-empty tile-set signals the operator. —
+      `gggs_tile_layer.cpp` `tilesReady`
+- [x] (suggestion #4) Added a comment at both `waitForFinished()` joins
+      (`rescan()` + `loadTiles()`) noting the abort granularity is whole-tile (a large
+      in-flight `RasterIO` blocks the GUI thread until that tile finishes), acceptable
+      at current scale, finer sub-tile abort is a follow-up. — `gggs_tile_layer.cpp`
+
+### Tests
+Added two non-GL regression tests to `test/test_gggs_tile.cpp` pinning the race's
+contract without GL/event-loop scaffolding:
+- `PixelsLoadedFalseUntilLoadCompletes` — `pixelsLoaded()` stays false (and the range
+  stays the crossed sentinel) until `loadPixels()` completes; after, flag true AND
+  range consistent.
+- `PixelsPublishedToObserverThread` — a worker thread `loadPixels()` while an observer
+  thread spins on `pixelsLoaded()` exactly as the paint gate does; asserts the released
+  range is fully visible/consistent the moment the acquire flag reads true (a
+  non-atomic/no-barrier flag could let the observer see a torn/stale range).
