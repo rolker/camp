@@ -70,3 +70,42 @@ that to GggsTile.
 - [ ] OQ-B — Headless gtest for "skip in-flight tile, repaint on completion" may
       need GL/event-loop scaffolding the current harness lacks; is asserting the
       non-GL load state machine + range folding sufficient instead?
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-20 21:44 -04:00
+**By**: Claude Code Agent (Claude Opus 4.8)
+
+**Plan**: `.agent/work-plans/issue-102/plan.md` at `5369945`
+**PR**: PR-less
+**Branch**: feature/issue-102
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (suggestion) Per-layer single-`QFutureWatcher` over a multi-tile `QtConcurrent::run`
+      is a faithful structural port of `RasterLayer` (one watcher / one future /
+      abort-between-units / dtor join + re-launch guard), but the unit of abort shifts
+      from scanline (RasterLayer) to whole-tile. Spell out in the layer worker that the
+      abort check is between tiles AND that a `tilesReady()` fold + a `paint()` lazy-kick
+      cannot launch a second `loadTiles()` while one is in flight — port `loadFile`'s
+      `isRunning() → abort+join` re-launch guard verbatim, not just the dtor join. The
+      plan states this (Approach 2) but the Files-to-Change row for `gggs_tile_layer.cpp`
+      omits the re-launch guard from its checklist — add it. — `plan.md:42-45,96`
+- [ ] (suggestion) The worker mutates each shared `GggsTile`'s pixel buffer
+      (`loadPixels()`) off-thread while `tilesReady()` reads `dataMin/Max` and
+      `texture()` runs on the paint thread. The dtor/re-launch join is the only barrier
+      — confirm in implementation that no tile touched by an in-flight worker is read on
+      the paint path before `tilesReady()` fires (the "in-flight tile → `texture()`
+      returns null → skip in `renderImage`" path, Approach 3, must gate on a per-tile
+      `pixelsLoaded()` flag set only after the worker completes and the fold runs, never
+      mid-write). — `plan.md:50-53`
+- [ ] (suggestion) OQ-B is the right call: the non-GL load state machine
+      (loading/loaded flags + incremental range fold) is headless-testable and is the
+      highest-risk logic; the GL skip/repaint path is already covered by the existing
+      self-skipping `test_gggs_render` harness. Recommend asserting the state machine in
+      a gtest and documenting the render path as manually verified — don't block on
+      GL/event-loop scaffolding. — `plan.md:101,136-140`
+- [ ] (suggestion) OQ-A (watcher inotify scale): defer the watch-count ceiling. The
+      incremental-add, per-discovered-dir design is sound for the Massabesic-scale store
+      this lands against; a root+active-epoch cap is premature until stores grow. Note
+      the deferral in the PR so it isn't lost. — `plan.md:132-135`
