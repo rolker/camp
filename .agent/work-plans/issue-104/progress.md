@@ -195,3 +195,30 @@ BOTH). Two atomic commits + this progress entry.
   these are quality polish. `rescan()` semantics are unchanged — it gained a UI
   caller and accurate docs.
 - Not pushed (host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-21 13:20 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-104 at `3cb8738`
+**Mode**: pre-push
+**Depth**: Deep (reason: concurrency/lifecycle in the new `rescan()` caller; whole branch carries Round-1 Deep signal)
+**Must-fix**: 1 | **Suggestions**: 0
+**Round**: 2 | **Ship**: continue — one must-fix introduced by `0a0505e` (rescan abandons an in-flight load), but it is a single precise mechanical fix, so the next round should converge fast.
+
+### Findings
+- [ ] (must-fix) `rescan()` cancels an in-flight initial load and only resumes it when new tiles were found (`if(added && load_started_)`): a manual Rescan during the async load that finds nothing new aborts the worker (whole-tile granularity) and never restarts it, leaving tiles permanently `pixelsLoaded()==false` → silently half-blank layer, no recovery, status reads loaded. Reachable only because `0a0505e` gave `rescan()` its first live caller. Fix: compute the new-tile set before aborting; only abort+join+push+re-kick when there is something to add (else return false without disturbing the live load) — `src/camp2/raster/gggs_tile_layer.cpp:159`
+
+### Re-review scope (Round 2)
+Focused on the two new commits, with whole-branch re-confirmation:
+- `0a0505e` (Rescan context-menu action): **no tile-list / atomic-flag corruption** — `rescan()` aborts+joins the worker under mutex before any `push_back`, so the vector is never mutated under the worker; `pixelsLoaded()` acquire/release untouched. Idempotent (no double-add via the `known` set); half-written tiles degrade to `valid()==false` and are skipped/retried. QAction ownership clean (parented to menu; `connect(..., this, ...)` auto-disconnects on destroy; matches the Opacity/Remove + Colormap pattern). Docs (ADR-0005, plan.md, .agents/README.md, inline comments) consistently describe the Rescan action + deferred per-layer watcher — no lingering "dead rescan()"/"(or a manual rescan())" contradiction in live docs (only in historical progress.md entries, correctly untouched). The **only** gap is the resume-logic must-fix above.
+- `94816b7` (direct `QAbstractItemModelTester` over `CatalogModel`): tester attached before `addTopLevel` (validates the `begin/endInsertRows` insertion path); meaningful root→child→`parent()` round-trip with `rowCount`/`columnCount` asserts; genuinely non-GL/GDAL (`discover()` only `entryList`s `*.tif` filenames; empty placeholders suffice); deterministic, no flake. Cleared.
+- Round-1 clears (retirement completeness, persistence reset, tab integration) untouched by these commits and still hold. Both Round-1 suggestions resolved (#1 by `94816b7`, #2 by `0a0505e` — the latter introducing the new must-fix).
+
+### Environment / verification note
+Could not re-run `./ui_ws/build.sh camp` in this worktree — the dependency-layer installs (`core_ws/install`, `underlay_ws/install`) are empty (same condition flagged in the Implementation entry; the deps built there have since been cleaned). The finding is a logic defect independent of compilation; relying on the impl phase's documented clean build + 86 tests/0 fail. Static analysis (cppcheck) on the changed C++ surfaced only the pre-existing Qt `slots`/namespace parser noise.
+
+### Next step
+Verdict is **changes-requested** (1 must-fix). Host (`/run-issue`) should dispatch **address-findings** to work the open must-fix from this entry, then re-dispatch `review-code` for Round 3 — the diff is not pushed until a pre-push review comes back approved. Not pushed (host performs pushes).
