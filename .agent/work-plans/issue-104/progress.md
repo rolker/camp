@@ -33,3 +33,19 @@ issue: 104
 ### Open questions
 - [ ] Browser entry-point UX: seed via existing "pick store-root" QFileDialog then browse (plan's choice), vs. a roots-managing browser ("Add store root…" inside the dialog) — confirm minimal seed-then-browse is acceptable.
 - [ ] Browser presentation: modal QDialog (plan's choice) vs. a persistent docked panel — defer the panel unless wanted in 3a.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-21 01:51 -0400
+**By**: Claude Code Agent (Claude Opus 4.8 (1M context))
+
+**Plan**: `.agent/work-plans/issue-104/plan.md` at `8262e2f`
+**PR**: PR-less
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (suggestion) Restore loop must dedup `GggsTileLayers/dirs` against itself AND skip a dir already live as a flat layer, or a re-selected dir spawns a duplicate layer on restart — `plan.md:114`
+- [ ] (suggestion) `GggsTileLayer::onRemovedFromMap()` drop-on-remove keys on `directory()`; if the same dir is selected twice (two flat layers), removing one drops the dir and the other no longer re-persists. Plan should state dedup-on-select prevents duplicates (matches the existing `openTileStore` `!roots.contains` guard) — `plan.md:106,117`
+- [ ] (suggestion) Resolve OQ1 (seed-then-browse) before implementing — seed-then-browse is the right minimal call and is consistent with the existing `QFileDialog::getExistingDirectory` entry; recommend confirming and proceeding, not building roots-management (edges into #68/#69) — `plan.md:190`
+- [ ] (suggestion) Resolve OQ2 (modal dialog) — modal `QDialog` is the correct lowest-risk first cut; docked panel rightly deferred. Recommend confirming — `plan.md:196`
+- [ ] (suggestion) `item_types.h` removes `GggsStoreLayerType`; the enum is positional (UserType+offset) and other entries follow it, but values are not persisted by index, so removal is safe — confirm no `qgraphicsitem_cast<GggsStoreLayer*>` survives (grep shows none) — `plan.md:148`
