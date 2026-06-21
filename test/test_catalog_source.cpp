@@ -106,6 +106,43 @@ TEST(CatalogSourceTest, RootThatIsATileSetIsALeaf)
   EXPECT_EQ(tree->key(), store.path());
 }
 
+// [camp#112] A tile-set directory that also holds `_time`/`_source` companion
+// tiles still discovers as a leaf: the companions don't break discovery, and a
+// dir whose only `*.tif` entries are companions is NOT a tile-set.
+TEST(CatalogSourceTest, CompanionTilesDoNotBreakDiscovery)
+{
+  QTemporaryDir store;
+  ASSERT_TRUE(store.isValid());
+  const QString root = store.path();
+
+  // A real tile-set: base value tile plus its Int64 `_time` and uint16 `_source`
+  // companions, all in the same directory (the bathy/MBES store layout).
+  const QString tileset = root + "/bathymetry/tileset";
+  touchTif(tileset, "0_0_0.tif");
+  touchTif(tileset, "0_0_0_time.tif");
+  touchTif(tileset, "0_0_0_source.tif");
+
+  // A directory holding ONLY companions (no base value tile) is not a tile-set.
+  const QString companions_only = root + "/orphan_companions";
+  touchTif(companions_only, "0_0_0_time.tif");
+  touchTif(companions_only, "0_0_0_source.tif");
+
+  GggsStoreSource source;
+  std::unique_ptr<CatalogItem> tree = source.discover(root);
+  ASSERT_NE(tree, nullptr);
+
+  // Only the real tile-set's modality survives; the companions-only branch prunes.
+  EXPECT_EQ(childNamed(tree.get(), "orphan_companions"), nullptr)
+      << "a dir of only companion tiles must not count as a tile-set";
+
+  const CatalogItem* bathy = childNamed(tree.get(), "bathymetry");
+  ASSERT_NE(bathy, nullptr);
+  const CatalogItem* leaf = childNamed(bathy, "tileset");
+  ASSERT_NE(leaf, nullptr);
+  EXPECT_TRUE(leaf->isLeaf());
+  EXPECT_EQ(leaf->key(), tileset);
+}
+
 // A root with no tiles anywhere (and a non-existent path) yields no catalog.
 TEST(CatalogSourceTest, EmptyOrMissingRootYieldsNothing)
 {

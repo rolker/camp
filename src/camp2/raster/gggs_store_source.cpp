@@ -1,6 +1,7 @@
 #include "gggs_store_source.h"
 
 #include "gggs_tile_layer.h"
+#include "gggs_tile_util.h"
 #include "../catalog/catalog_item.h"
 #include "../map/layer_list.h"
 
@@ -16,12 +17,19 @@ namespace raster
 namespace
 {
 
-// A directory holds a tile-set if it contains GeoTIFF tiles directly. Salvaged
-// from the retired GggsStoreLayer's anonymous-namespace helper.
+// A directory holds a tile-set if it contains a base value GeoTIFF tile
+// directly. Salvaged from the retired GggsStoreLayer's anonymous-namespace
+// helper. [camp#112] The `*.tif` glob also matches `_time`/`_source` companion
+// tiles, so a directory of companions alone is NOT a tile-set — filter to base
+// value tiles (isValueTile) before deciding.
 bool dirHasTifs(const QString& path)
 {
-  return !QDir(path).entryList(QStringList() << "*.tif" << "*.tiff",
-                               QDir::Files).isEmpty();
+  const QStringList tifs = QDir(path).entryList(
+    QStringList() << "*.tif" << "*.tiff", QDir::Files);
+  for(const QString& name : tifs)
+    if(isValueTile(name))
+      return true;
+  return false;
 }
 
 // Build a CatalogItem subtree for `path`: a leaf if it holds tiles directly, a

@@ -22,9 +22,11 @@
 #include <QTemporaryDir>
 
 #include "raster/gggs_tile.h"
+#include "raster/gggs_tile_util.h"
 #include "map_view/web_mercator.h"
 
 using camp::raster::GggsTile;
+using camp::raster::isValueTile;
 
 namespace
 {
@@ -254,6 +256,40 @@ TEST(GggsTileTest, GeoToMapMatchesWebMercator)
       EXPECT_NEAR(y, ref.y(), 1e-6 * scale) << "lat=" << lat;
     }
   }
+}
+
+// [camp#112] isValueTile() is the single companion-filter predicate applied at
+// every `*.tif` scan site. Pin its name grammar directly (the layer/discovery
+// tests cover it behaviorally; this exercises the boundary cases cheaply):
+//  - exactly three underscore-separated digit groups + .tif/.tiff are accepted;
+//  - a 4-group name (a `_time`/`_source` companion, or an extra component like
+//    `13_0_0_0.tif`) is rejected by the anchored full match;
+//  - the extension match is case-insensitive (mirrors the `*.tif` glob, which
+//    can admit `.TIF`/`.TIFF`).
+TEST(GggsTileUtilTest, IsValueTileNameGrammar)
+{
+  // Base value tiles: three digit groups, .tif or .tiff.
+  EXPECT_TRUE(isValueTile("0_0_0.tif"));
+  EXPECT_TRUE(isValueTile("13_10_20.tif"));
+  EXPECT_TRUE(isValueTile("13_10_20.tiff"));
+
+  // Companions carry a 4th component -> rejected.
+  EXPECT_FALSE(isValueTile("13_10_20_time.tif"));
+  EXPECT_FALSE(isValueTile("13_10_20_source.tif"));
+
+  // A 4-group all-digit name is also rejected by the anchored 3-group match.
+  EXPECT_FALSE(isValueTile("13_0_0_0.tif"));
+
+  // Malformed / non-value names are rejected (anchored full match).
+  EXPECT_FALSE(isValueTile("13_0.tif"));        // too few groups
+  EXPECT_FALSE(isValueTile("a_0_0.tif"));       // non-digit group
+  EXPECT_FALSE(isValueTile("13_0_0.png"));      // wrong extension
+  EXPECT_FALSE(isValueTile("x13_0_0.tif"));     // leading junk (anchored)
+  EXPECT_FALSE(isValueTile("13_0_0.tif.bak"));  // trailing junk (anchored)
+
+  // Extension match is case-insensitive (the glob admits upper/mixed case).
+  EXPECT_TRUE(isValueTile("13_0_0.TIF"));
+  EXPECT_TRUE(isValueTile("13_0_0.Tiff"));
 }
 
 int main(int argc, char** argv)
