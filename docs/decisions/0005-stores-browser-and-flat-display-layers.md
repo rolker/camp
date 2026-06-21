@@ -103,6 +103,40 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
   QSettings layer-restore is app state, not a project file, so a one-time reset is
   acceptable.
 
+### 5. Browse-seed persistence (Stores-tab roots) — amendment, orthogonal to §4
+
+Operator GUI testing surfaced a gap: the *flat layers* persist fine (§4), but the
+**browsed store root** in the Stores tab does not — relaunching CAMP left the
+Stores tree empty, so the operator had to "Open store…" again every session ("the
+store I added didn't stick"). This amendment **re-introduces persistence of the
+browsed root(s)** as a `CatalogBrowser`-level convenience:
+
+- `CatalogBrowser` keeps a `std::vector<Seed>` (`{sourceId, root}`) **parallel to
+  the model's top-level rows** (each `addTopLevel` appends exactly one top-level
+  node per seed, in order). `seedRoot()` — the non-dialog core extracted from
+  `openStore()` — discovers a root, adds the node, records the seed, and persists.
+- Seeds persist under a **generic** `QSettings CatalogBrowser/seeds` key (a
+  `QStringList` of `sourceId<TAB>root` entries; a tab delimiter since store paths
+  may contain commas but not tabs). The key is browser-level and source-agnostic,
+  not GGGS-specific.
+- `restoreSeeds()` runs once from `MainWindow` right after `addSource()` (so the
+  seeds' sources exist): it re-`discover()`s each persisted root, **skipping a
+  seed whose source is unknown or whose root no longer exists on disk**
+  (skip-missing, mirroring the flat-layer restore), dedups, and rewrites the
+  persisted list once if any stale/duplicate entry was dropped.
+- A "**Remove from browser**" context action on a top-level node drops the model
+  row, erases the matching seed, and re-persists (so a mis-picked folder is not
+  stuck forever), keeping the seeds↔rows index alignment correct.
+
+This is deliberately **orthogonal to §4, not a reversal of it**. It persists only
+**which store root(s) to re-browse**, so the Stores *tree* repopulates; it does
+**not** spawn display layers and does **not** resurrect the retired nested
+`GggsStoreLayer` (a browsed root is still just a catalog tree — adding a tile-set
+to the map remains an explicit operator action that spawns a flat `GggsTileLayer`,
+persisted independently via `GggsTileLayers/dirs`). The two persistence records —
+browser seeds (browse state) and flat-layer dirs (display state) — are separate
+and do not interact.
+
 ## Consequences
 
 - `GggsStoreLayer` and its `GggsStoreLayerType` enum entry are removed; its scan
@@ -125,6 +159,9 @@ ADR-0003 §4 (background/display layers persist as app/Map state):
 - Operators upgrading lose their persisted nested store trees once (the old
   `GggsStores/roots` is reset); they re-select tile-sets through the browser,
   which then persist as flat layers. This is a deliberate one-time reset.
+- Browsed store roots now persist under `CatalogBrowser/seeds` (§5) so the Stores
+  tab repopulates its tree on launch — orthogonal to the `GggsTileLayers/dirs`
+  flat-layer persistence; it rebuilds the browse tree only and spawns no layers.
 - `.agents/README.md` persistence/layer-model notes are updated.
 - Band selection (#108) and a compositing z-order/opacity render test (#109) build
   on this structural change as separate follow-ups.

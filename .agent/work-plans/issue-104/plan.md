@@ -231,3 +231,42 @@ Single PR for 3a. Moderately sized (new `catalog/` module = ~4 small files +
 GGGS source + manager rewire + persistence reset + 3 gtests + ADR + README).
 No GL/render changes. Band-select (#108) and compositing test (#109) are separate
 stacked follow-ups.
+
+## As-built amendment — browse-seed (Stores-tab root) persistence
+
+Operator GUI testing (2026-06-21) found that while flat layers persist (the §4
+reset), the **browsed store root in the Stores tab did not** — relaunch left the
+tree empty. Added a `CatalogBrowser`-level convenience that persists the browsed
+root(s) and re-`discover()`s them at startup. **Orthogonal to the flat-layer
+persistence, not a reversal of the §4 reset** (ADR-0005 §5): it repopulates the
+browse tree only, spawns no layers, and does not resurrect the nested
+`GggsStoreLayer`. As-built:
+
+- `CatalogBrowser` holds a `std::vector<Seed>` (`{sourceId, root}`) kept parallel
+  to the model's top-level rows. `openStore()` is refactored to delegate to a new
+  non-dialog `bool seedRoot(CatalogSource*, const QString&)` (discover + add +
+  record + persist, dedup-on-select) so the dialog path and restore share one
+  seam and `seedRoot` is unit-testable.
+- Seeds persist under a generic `QSettings CatalogBrowser/seeds` key (a
+  `QStringList` of tab-delimited `sourceId\troot`; tab, not comma, since paths may
+  contain commas). Whole list rewritten on every change; empty → key removed.
+- `restoreSeeds()` (public) is called from `MainWindow` right after `addSource()`;
+  it skips unknown-source / vanished-root seeds (skip-missing like the flat-layer
+  restore), dedups, and rewrites the list once if it pruned anything.
+- `CatalogModel::removeTopLevel(int)` + `CatalogItem::removeChild(int)` back a
+  "Remove from browser" tree context action (`removeSeed(int)` on the browser):
+  drop the top-level row, erase the matching seed, re-persist — index alignment
+  preserved.
+- Tests: new `test/test_catalog_browser_seeds.cpp` (`CatalogBrowserSeeds`,
+  4 cases — persist round-trip, restore-skips-missing-root, seed dedup, remove
+  de-persists), registered in `CMakeLists.txt` mirroring `test_gggs_persistence`.
+
+| File | Change |
+|------|--------|
+| `src/camp2/catalog/catalog_item.h` | Add `removeChild(int)` |
+| `src/camp2/catalog/catalog_model.{h,cpp}` | Add `removeTopLevel(int)` (begin/endRemoveRows) |
+| `src/camp2/catalog/catalog_browser.{h,cpp}` | `Seed` + `seeds_` parallel vector; `seedRoot`/`restoreSeeds`/`removeSeed`/`topLevelCount` + `persistSeeds`/`selectTopLevel`; "Remove from browser" context menu; `openStore` delegates to `seedRoot` |
+| `src/camp/mainwindow.cpp` | `catalogBrowser->restoreSeeds()` right after `addSource(...)` |
+| `test/test_catalog_browser_seeds.cpp` | **New** — seed persistence round-trip / skip-missing / dedup / remove de-persist |
+| `CMakeLists.txt` | Register `test_catalog_browser_seeds` |
+| `docs/decisions/0005-...md`, `.agents/README.md` | Browser-seed persistence documented as orthogonal to §4 |

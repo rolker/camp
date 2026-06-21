@@ -74,7 +74,15 @@ ROS-free `CatalogModel`/`CatalogSource`/`CatalogBrowser` seam, shown as the
 a tile-set spawns an independent **flat top-level `GggsTileLayer`** the operator
 composes in the Layers tree (visibility/opacity/draw-order are free). Selected
 layers persist under `QSettings GggsTileLayers/dirs` (the dirs to recreate;
-per-layer visibility/opacity persist via the layer's own settings). This
+per-layer visibility/opacity persist via the layer's own settings).
+**Two orthogonal persistence records** (ADR-0005 §5): the *browsed store root(s)*
+also persist, under the generic `QSettings CatalogBrowser/seeds` key
+(`sourceId<TAB>root` entries), so the Stores tab repopulates its **browse tree**
+on launch (`CatalogBrowser::restoreSeeds()`, run after `addSource`, skip-missing
+on a vanished root; a "Remove from browser" context action de-persists a
+mis-picked root). This seed persistence rebuilds the tree **only** — it spawns no
+layers and does not resurrect the retired nested store node; it is independent of
+the `GggsTileLayers/dirs` flat-layer (display) persistence above. This
 **replaced** camp#90's nested `GggsStoreLayer` (store folders straight into the
 tree, persisted as store *roots*), which is retired. `GggsStoreSource` is the
 first and only `CatalogSource`; the seam is reusable for future layer-manager
