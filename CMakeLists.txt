@@ -624,6 +624,26 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#104] CatalogBrowser seed (browsed store root) persistence (ADR-0005
+  # browser-seed amendment): seedRoot persists under CatalogBrowser/seeds and a
+  # fresh browser + restoreSeeds rebuilds the top-level node; restore skips a
+  # missing root; seeding dedups; removeSeed de-persists. Widget/model level —
+  # discovery only stats `*.tif` filenames, so no GL/GDAL.
+  ament_add_gtest(test_catalog_browser_seeds
+    test/test_catalog_browser_seeds.cpp
+  )
+  target_include_directories(test_catalog_browser_seeds PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_catalog_browser_seeds
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#104] GggsTileLayer::rescan() add/no-op contract (the surface reshaped by
   # the Round-2 must-fix): nothing-new -> false + extent untouched; a newly-landed
   # tile -> true + extent grows. Synchronous scan/merge — no GL, no load worker.
