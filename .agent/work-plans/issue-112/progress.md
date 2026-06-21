@@ -56,3 +56,16 @@ The two stale sites from the original issue body (`gggs_store_layer.cpp:21` / `:
 - [ ] Apply the filter at all three current scan sites: `loadDirectory()`, `rescan()`, `dirHasTifs()`.
 - [ ] Add a test: construct a store dir with base + `_time` + `_source` companions; assert only the base tile is listed/loaded/rendered.
 - [ ] Document the positive-vs.-denylist choice in an inline comment so future companion bands know which approach to extend.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-21 12:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-112/plan.md` at `1251ab7`
+**Branch**: feature/issue-112 at `1251ab7`
+**Phases**: single
+
+### Open questions
+- [ ] Header placement: new `gggs_tile_util.h` (shared, one definition site) vs. static lambda duplicated in each `.cpp` — recommendation is shared header per the issue's "one place" requirement.
+- [ ] New test file (`test_gggs_companion_filter.cpp`) vs. adding cases to existing `test_gggs_rescan.cpp` and `test_catalog_source.cpp` — recommendation is add to existing tests where fixture already covers the relevant class.
