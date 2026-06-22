@@ -162,3 +162,24 @@ tests pass. So the test is a genuine regression gate, not a tautology.
   (`colcon build --packages-up-to marine_ais_msgs marine_interfaces marine_autonomy` in
   `core_ws`, ROS Jazzy supplying the message deps) before `build.sh camp` succeeded.
 - Not pushed, per the handoff contract.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-22 05:43 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-98 at `75f0035`
+**Mode**: pre-push
+**Depth**: Deep (reason: 661 changed lines ≥ 200, plus Qt object-lifecycle / deferred-deletion dimension)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 1 | **Ship**: recommended — no Must-fix; only an optional eviction-determinism suggestion, diff is shippable
+
+### Findings
+- [ ] (suggestion) `evictIfNeeded()` sort has no tie-breaker for same-generation tiles — harmless to the memory bound & visible-tile safety; affects only eviction determinism — `src/camp2/map_tiles/map_tiles.cpp:164`
+
+### Notes
+- Static analysis (ament_cpplint + cppcheck): no PR-introduced defects. cpplint output was all whole-file ament-style conventions this Qt codebase deliberately doesn't adopt (copyright headers, header-guard style, namespace indentation, C-style `int(...)` casts, for-colon spacing); new code matches surrounding idiom. cppcheck `slots`-macro errors are Qt parse noise, not bugs.
+- Both Claude Adversarial passes concur the deferred-eviction logic and Qt lifecycle are sound: in-flight pixmap for an evicted tile is dropped by `tileLoaded`'s `tiles_.find` guard; a queued `evictIfNeeded()` surviving a `setLayout()` is benign (rebuilds candidates from current state); no repaint busy-loop; visible tiles never evicted (`cap >= visible_count`).
+- Plan adherence: matches `plan.md` step-for-step (deferred slot as primary deletion path per Plan Review must-fix; multi-zoom test; consequence comment updates). No scope creep.
+- Build/test not re-run this round; relied on the Implementation entry's documented clean build + 105 tests (0 failures) and the empirically-verified non-vacuity check (401 without fix → test fails).
