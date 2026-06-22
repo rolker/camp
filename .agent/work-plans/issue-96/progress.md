@@ -66,3 +66,22 @@ separate phenomena with separate causes.
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-22 02:45 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-96/plan.md` at `c327fe2`
+**PR**: PR-less (reviewed via worktree; `gh` unauthenticated in this environment)
+**Verdict**: approve-with-suggestions
+
+Independence note: the `## Plan Authored` entry shares the workspace agent name
+("Claude Code Agent") but was a separate Sonnet sub-agent invocation; this review
+is a fresh-context Opus sub-agent, so it is genuinely independent — the
+`(in-context — author self-review)` annotation is omitted as it would be inaccurate.
+
+### Findings
+- [ ] (suggestion) Assert load success, not just zero open handles — if the synthetic raster fails to load/reproject, every early-return path leaks nothing, so a `GetOpenDatasets()==0` assertion passes vacuously even if `loadAndReprojectFile` never reached the warp path. Add an assertion that the load produced a non-empty image/mipmaps (e.g. via `imageReady`/`boundingRect`) so the test is a meaningful regression guard. — `plan.md:34`
+- [ ] (suggestion) Prefer a baseline-delta over `EXPECT_EQ(n, 0)` — `GDALDataset::GetOpenDatasets()` counts *all* process-wide open handles, not just the layer's. Capture the count before constructing `RasterLayer` and assert equality after destruction, so the test won't flake if `Map`/GDAL internals hold an unrelated handle. — `plan.md:39`
+- [ ] (suggestion) Preserve declaration order to keep close order = reprojected-then-source — `initExtent()` deliberately `GDALClose(reprojected)` before `GDALClose(dataset)` (the warped VRT references the source). Local `unique_ptr`s destruct in reverse declaration order, so keep `dataset` declared before `reprojected_dataset` (as the current code already does); a note in the implementation avoids an accidental reorder. — `plan.md:29`
