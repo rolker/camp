@@ -94,3 +94,71 @@ Diagnosis is correct; LRU-eviction approach is sound, minimal, and well-scoped w
 - [ ] Defer eviction out of `paint()`; make `evictIfNeeded` the primary deletion path.
 - [ ] Use a multi-zoom-level test layout; `processEvents()` after `render()` when eviction is deferred.
 - [ ] Comment the shared `TileAddress` comparator semantics on `tile_last_visible_gen_`.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-22 05:30 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-98
+**Commits**: `0b99bc8` (eviction logic), `9ba8ded` (test + CMake + comment/plan sync)
+**Build/test**: clean build; `./ui_ws/test.sh camp` → 105 tests, 0 failures, 2 skipped (the new test included)
+
+### What was built
+Deferred LRU eviction that bounds `MapTiles::tiles_`, fixing the unbounded pan/zoom
+growth behind the #98 OOM (the OSM/WMTS basemap never refreshes, so `setLayout()` — the
+only prior deletion path — was never reached after construction).
+
+- **Cap** = `max(kTileEvictionMinCap, kTileEvictionMultiplier * visible_count)` =
+  `max(256, 4 * visible)`. Constants are file-private in `map_tiles.cpp` with the
+  ~256 KB/tile → ~64 MB floor rationale documented at the definition site (operator-confirmed).
+- **Deferred, never synchronous (Plan Review must-fix).** `paint()` does NOT delete any
+  `Tile`. After the existing visibility loop it records `tile_last_visible_gen_[addr] =
+  paint_generation_` for each visible tile, bumps `paint_generation_`, and — if
+  `tiles_.size() > cap` and no eviction is already pending — sets `eviction_pending_ =
+  true` and queues `evictIfNeeded()` via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`.
+  The `eviction_pending_` flag debounces so at most one eviction is queued at a time.
+- **`evictIfNeeded()` private slot** (the primary deletion path, runs in the event loop
+  where deleting scene children is safe): clears `eviction_pending_`; recomputes the cap
+  from the live visible count; collects candidates guarded on `tile->isVisible()` (a tile
+  visible *now* is never evicted, even if it was off-screen when scheduled); sorts ascending
+  by `tile_last_visible_gen_` (missing → 0 = oldest); deletes oldest-first
+  (`delete` + `tiles_.erase` + erase the gen entry) until `tiles_.size() <= cap`. Since
+  `cap >= visible_count`, there are always enough non-visible candidates to reach the cap.
+- **`setLayout()`** clears `tile_last_visible_gen_` and resets `eviction_pending_`;
+  `paint_generation_` stays monotonic (not reset).
+- `tile_last_visible_gen_` is keyed by `TileAddress` so it shares `tiles_`' comparator
+  (`operator<` ignores the refresh epoch); a header comment records this so the shared
+  semantics aren't silently broken.
+
+### Test (`test_map_tiles_eviction.cpp`)
+Multi-zoom layout (1×1 front + 20×20 deep) — required because `setLayout()` pre-seeds the
+whole front grid at construction, so a single-zoom layout would mint nothing in `paint()`
+and not reproduce the bug. `paint()` is driven directly with a hand-built `QPainter` world
+transform (`QTransform(8,0,0,-8,tx,ty)`: uniform scale 8 with a web-mercator y-flip), chosen
+so all index arithmetic lands on exact integers — deterministic under offscreen QPA, so the
+plan's `QGraphicsScene::render()` fallback was unnecessary. A one-tile viewport is panned
+across every position of the 20×20 grid with `QApplication::processEvents()` after each
+paint (eviction is deferred); the test asserts `tileChildCount()` stays ≤ the 256 cap
+throughout and after the sweep. A second test (`DeepLevelTilesAreMintedByPaint`) confirms
+the deep tiles really are minted by `paint()`. Registered in `CMakeLists.txt` mirroring the
+`test_map_tiles_refresh` block; the latter's SCOPE comment now points here.
+
+### Non-vacuity check (without-fix-fails)
+Verified empirically: with `evictIfNeeded()` stubbed to an early `return` (eviction
+disabled) and camp rebuilt, the pan drives `tiles_` to **401** (1 front + 400 deep) and the
+test fails (`actual: 401 vs 256`). The stub was reverted, camp rebuilt, and both eviction
+tests pass. So the test is a genuine regression gate, not a tautology.
+
+### Consequence updates
+- `onRefreshTimer` comment in `map_tiles.cpp` updated: it no longer claims paint() "only
+  hides (not deletes) tiles"; it now notes the [#98] eviction bounds within-cycle accumulation.
+- `test_map_tiles_refresh.cpp` SCOPE comment updated to point at the new eviction test.
+- `plan.md` synced to the as-built deferred design, chosen constants, multi-zoom test, and
+  resolved Open Questions.
+
+### Notes for the host
+- A fresh container had empty `core_ws`/underlay installs. I built camp's deps first
+  (`colcon build --packages-up-to marine_ais_msgs marine_interfaces marine_autonomy` in
+  `core_ws`, ROS Jazzy supplying the message deps) before `build.sh camp` succeeded.
+- Not pushed, per the handoff contract.
