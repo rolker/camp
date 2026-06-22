@@ -54,3 +54,15 @@ separate phenomena with separate causes.
 ### Actions
 - [ ] Implement RAII fix for both GDAL handles in `loadAndReprojectFile`, covering all return paths (including the `if(!reprojected_dataset)` early return that also leaks `dataset`).
 - [ ] Add a regression test (automated or documented manual) for the resource leak.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-22 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-96/plan.md` at `c327fe2`
+**Branch**: feature/issue-96 at `c327fe2`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
