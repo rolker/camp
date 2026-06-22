@@ -29,16 +29,32 @@ two handles per flip.
 1. **Wrap both handles in RAII `unique_ptr`s** in `loadAndReprojectFile`.  
    Use a lambda deleter `[](GDALDataset* d){ if(d) GDALClose(d); }` so all
    return paths (normal, early, abort) are covered automatically — no manual
-   `GDALClose` call needed.
+   `GDALClose` call needed. **(Plan Review #3 — close order)** Keep `dataset`
+   declared *before* `reprojected_dataset` (as the current code does): local
+   `unique_ptr`s destruct in reverse declaration order, so the warped VRT closes
+   first, then the source — matching `initExtent()`'s deliberate
+   `GDALClose(reprojected)` then `GDALClose(dataset)` (the VRT references the
+   source). A comment on the declarations records why the order matters so a
+   future refactor doesn't reorder them.
 
 2. **Add a regression test** `test/test_raster_layer_gdal_cleanup.cpp`:  
    Create a minimal WGS84 single-band Float32 GeoTIFF in a `QTemporaryDir`,
    construct `RasterLayer` with it, trigger `setColormap()` with two additional
    ramp types (each call re-invokes `loadAndReprojectFile`), destroy the layer
-   (dtor calls `future_watcher_.waitForFinished()`), then assert
-   `GDALDataset::GetOpenDatasets(&n); EXPECT_EQ(n, 0)` — zero leaked handles.
+   (dtor calls `future_watcher_.waitForFinished()`), then assert the
+   process-wide open-dataset count is unchanged.
    Follow the `test_gggs_render.cpp` pattern: `QApplication` + `camp::map::Map`
    + `map.topLevelLayers()` as the `MapItem*` parent.
+   **(Plan Review #2 — baseline-delta)** `GDALDataset::GetOpenDatasets()` counts
+   *all* process-wide handles, so capture the count *before* constructing the
+   layer and assert it returns to that baseline after destruction (delta == 0),
+   rather than assuming zero.
+   **(Plan Review #1 — no vacuous pass)** Assert each load actually reached the
+   warp path and succeeded — `RasterLayer::status() == ""` (the `imageReady()`
+   slot only clears the status after the warp produced non-empty mipmaps; a
+   null/unwarpable load leaves `"(load failed)"`). A load that never warps never
+   opens the handles, so without this guard a silently-failing load could pass
+   the leak check vacuously.
 
 3. **Wire the test in `CMakeLists.txt`** — `ament_add_gtest` linking `camp_map`,
    `Qt5::Core`, `Qt5::Widgets`, `Qt5::Concurrent`, and `${GDAL_LIBRARY}`.
@@ -47,8 +63,8 @@ two handles per flip.
 
 | File | Change |
 |------|--------|
-| `src/camp2/raster/raster_layer.cpp` | Replace bare `auto dataset` / `auto reprojected_dataset` pointers with `unique_ptr` + lambda-`GDALClose` deleter; change `GDALAutoCreateWarpedVRT(dataset, ...)` to `GDALAutoCreateWarpedVRT(dataset.get(), ...)` |
-| `test/test_raster_layer_gdal_cleanup.cpp` | New: regression test — synthetic WGS84 GeoTIFF, `setColormap` stress, `GetOpenDatasets` assertion |
+| `src/camp2/raster/raster_layer.cpp` | Add `#include <memory>`; replace bare `auto dataset` / `auto reprojected_dataset` pointers with `unique_ptr` + lambda-`GDALClose` deleter (declaration order preserved + commented per #3); change `GDALAutoCreateWarpedVRT(dataset, ...)` to `GDALAutoCreateWarpedVRT(dataset.get(), ...)` |
+| `test/test_raster_layer_gdal_cleanup.cpp` | New: regression test — synthetic WGS84 GeoTIFF, `setColormap` stress, baseline-delta `GetOpenDatasets` assertion (#2) + `status()`-based load-success guard (#1) |
 | `CMakeLists.txt` | Add `ament_add_gtest(test_raster_layer_gdal_cleanup ...)` after the existing GDAL-linked tests |
 
 ## Principles Self-Check
@@ -77,7 +93,9 @@ two handles per flip.
 
 ## Open Questions
 
-- [ ] No open questions — plan is review-plan-ready.
+- [x] No open questions. The three Plan Review suggestions (close order,
+  baseline-delta, no-vacuous-pass) were folded into the approach above and
+  implemented as-built.
 
 ## Estimated Scope
 

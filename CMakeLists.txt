@@ -557,6 +557,25 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#96] RasterLayer GDAL handle-leak regression: a load + two colormap
+  # re-renders must return the process-wide open-dataset count to its baseline,
+  # proving loadAndReprojectFile RAII-closes its source dataset + warped VRT.
+  ament_add_gtest(test_raster_layer_gdal_cleanup
+    test/test_raster_layer_gdal_cleanup.cpp
+  )
+  target_include_directories(test_raster_layer_gdal_cleanup PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_raster_layer_gdal_cleanup
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Concurrent
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#102] GGGS tile-set default-off visibility + persistence round-trip
   # (non-GL state machine — the highest-risk logic of the lazy/async change).
   ament_add_gtest(test_gggs_visibility
