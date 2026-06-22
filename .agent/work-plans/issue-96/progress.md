@@ -163,11 +163,31 @@ None. All three folded Plan Review resolutions implemented as specified. Did not
 **Round**: 1 | **Ship**: recommended — no must-fix findings; clean, well-tested, plan-adherent fix
 
 ### Findings
-- [ ] (suggestion) `LoadResult` double members lack default initializers — pre-existing, not touched by this diff, never read on the failure path (`imageReady` returns on empty mipmaps); optional `= 0.0` hardening — `src/camp2/raster/raster_layer.h:60`
-- [ ] (suggestion) Add a comment noting the deliberate raw `delete layer` (synchronous dtor join before the open-dataset count; `removeFromMap()` would defer and break the guarantee) — `test/test_raster_layer_gdal_cleanup.cpp:129`
+- [x] (suggestion) `LoadResult` double members lack default initializers — pre-existing, not touched by this diff, never read on the failure path (`imageReady` returns on empty mipmaps); optional `= 0.0` hardening — `src/camp2/raster/raster_layer.h:60`
+- [x] (suggestion) Add a comment noting the deliberate raw `delete layer` (synchronous dtor join before the open-dataset count; `removeFromMap()` would defer and break the guarantee) — `test/test_raster_layer_gdal_cleanup.cpp:129`
 
 ### Notes
 - Static analysis clean (cppcheck: no findings on the test; `raster_layer.cpp` hit a Qt `slots`-macro parser limitation, not a code issue). cpplint not installed on this host.
 - Two fresh-context Claude Adversarial passes (Lens A logic, Lens B systemic, Deep prompt) independently confirmed: reverse-declaration destruction closes the warped VRT before its source per `[stmt.dcl]/3`; all five return paths (normal + two early + two abort) now free both handles; test is non-vacuous (asserts each load reached the warp path via `status()`) and race-free (dtor abort+`waitForFinished()` joins the worker before the process-wide `GetOpenDatasets()` baseline-delta check).
 - Plan adherence: full — exactly the three planned files changed; all three Plan Review resolutions present in code. No scope creep.
 - Build/test not re-run here (offline container); implementation entry records `./ui_ws/test.sh camp` green (102 tests, 0 failures, 2 pre-existing GL-gated skips) with a verified non-vacuous-pass check (neutered deleter → delta == 6 failure).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-22 04:03 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-96 at `11452ab`
+**Addressed**: `## Local Review (Pre-Push)` (When 2026-06-22 03:52 +00:00, at `7016b91`)
+**Commits**: `8121162` (finding 1), `11452ab` (finding 2)
+
+### Actions
+- [x] (suggestion) Default-init `LoadResult` double members — added `= 0.0` to `world_x`/`world_y`/`scale_x`/`scale_y` so a failure-path `LoadResult` carries deterministic values (matches the existing `is_scalar = false`) — `src/camp2/raster/raster_layer.h:60` (`8121162`)
+- [x] (suggestion) Documented the deliberate raw `delete layer` — added a comment explaining that `removeFromMap()` defers via `deleteLater()` (verified at `src/camp2/map/layer.cpp:67`), which would run the open-dataset count before the dtor's join completes and flake; the direct `delete` keeps the join synchronous — `test/test_raster_layer_gdal_cleanup.cpp:129` (`11452ab`)
+
+### Build / test
+- Built core deps (`colcon build --packages-up-to marine_ais_msgs marine_interfaces marine_autonomy` in `core_ws` — empty `install` on this container) then `./ui_ws/build.sh camp` — clean.
+- `./ui_ws/test.sh camp`: **102 tests, 0 failures, 2 skipped** (the pre-existing offscreen-GL-gated `test_gggs_render` cases). `test_raster_layer_gdal_cleanup` green.
+
+### Deferred
+None — both pre-push suggestions actioned.
