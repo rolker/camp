@@ -522,6 +522,23 @@ if(BUILD_TESTING)
     Qt5::Test
   )
 
+  # MapTiles bounded-memory LRU eviction (#98). The within-cycle regression gate:
+  # panning a small viewport across a large deeper zoom level mints tiles via
+  # paint(); deferred evictIfNeeded() must keep tiles_ bounded by the cap rather
+  # than growing until OOM. Links the shared camp_map library where MapTiles/Tile
+  # live.
+  ament_add_gtest(test_map_tiles_eviction
+    test/test_map_tiles_eviction.cpp
+  )
+  target_include_directories(test_map_tiles_eviction PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_map_tiles_eviction
+    camp_map
+    Qt5::Widgets
+    Qt5::Test
+  )
+
   # GGGS GPU-warp tile layer (camp#90 / I4): GggsTile extent-from-geotransform +
   # NoData/range handling, and the shader-warp == web_mercator::geoToMap parity
   # anchor. Links camp_map (GggsTile + web_mercator) and GDAL (synthetic tiles).
