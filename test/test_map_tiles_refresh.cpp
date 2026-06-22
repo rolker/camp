@@ -148,12 +148,12 @@ TEST(MapTilesRefresh, RefreshRepopulatesTiles)
 // the per-layout count, never N*count.
 //
 // SCOPE (honest): this guards ONLY the refresh-boundary reset — that a refresh
-// does not leave the previous cycle's tiles behind. It does NOT cover the
-// within-cycle growth that the #98 OOM is about: between refreshes, paint() still
-// only hides (never deletes) tiles as the viewport pans/zooms, so tiles_ can still
-// grow within a single cycle exactly as in the existing layers. This test is the
-// #98-coordination artifact (the refresh path doesn't make the boundary leak),
-// not a fix for the within-cycle accumulation.
+// does not leave the previous cycle's tiles behind. The within-cycle growth that
+// the #98 OOM is actually about — between refreshes, paint() minting new tiles as
+// the viewport pans/zooms — is now bounded by the [#98] LRU eviction and is
+// covered by test_map_tiles_eviction.cpp (which pans across a deeper zoom level
+// and asserts tiles_ stays under the cap). This test remains the refresh-boundary
+// regression gate; the two together close the #98 tile-lifecycle risk.
 TEST(MapTilesRefresh, RefreshBoundaryResetsTileSet)
 {
   Map map;
