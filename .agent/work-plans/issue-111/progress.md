@@ -134,3 +134,77 @@ opt-in invariants; no live-network test).
   (`cached_file_loader.cpp:102`) before implementing.
 - [ ] Verify IEM `tile.py` accepts and ignores an unknown `?t=` query param
   (returns the tile, not 4xx/blank) against the live endpoint.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-22 23:52 +00:00
+**By**: Claude Code Agent (Claude Opus)
+<!-- Independent: fresh-context sub-agent dispatched by the host for the review-plan
+phase. The name-based self-review heuristic (compare $AGENT_NAME to the Plan Authored
+By prefix) matches only because every workspace agent shares the name "Claude Code
+Agent"; it is a false positive here, so the self-review annotation is intentionally
+omitted. -->
+
+**Plan**: `.agent/work-plans/issue-111/plan.md` at `5b45a72`
+**PR**: PR-less (`--issue` / file-path mode; no draft PR)
+**Verdict**: changes-requested
+
+### Findings
+- [ ] (must-fix) Plan cites workspace ADR-0012 as permitting an in-place
+  **Consequences** edit to camp ADR-0004, but ADR-0012 lists "Adding or removing
+  Consequences that weren't previously recorded" and "Reversing or softening the
+  position" as substantive changes that **still require a new/superseding ADR**.
+  Correcting the now-false "Refresh yields a genuinely fresh frame" bullet
+  (ADR-0004:100-105) and adding the CDN-caching consequence is exactly that. Fix:
+  record the corrected reasoning + cache-buster decision in a NEW camp ADR (e.g.
+  ADR-0006) and give ADR-0004 only a permitted cross-reference addendum (Status
+  note / References pointer) — or get explicit sign-off to edit ADR-0004 in place.
+  — `plan.md:64-66`, `plan.md:104`, `plan.md:113`
+- [ ] (suggestion) Empirical confirmation of cause #1 remains an open question, yet
+  the plan commits to coding the cache-buster before confirming. Causes #2/#3 are
+  disproven by code-reading (solid), but recommend either running the `.json`
+  sidecar header/byte diff across two cycles, or explicitly framing the cache-buster
+  as a low-risk defensive fix that is correct regardless of whether CDN caching is
+  the sole mechanism. — `plan.md:119-126`
+- [ ] (suggestion) Open question #2 (does IEM `tile.py` accept an unknown `?t=`
+  param, or 4xx/blank?) is load-bearing: if the endpoint rejects unknown params the
+  fix backfires into blank radar. Recommend a one-shot live `curl` check against the
+  endpoint during implementation. — `plan.md:124-126`
+- [ ] (suggestion) Minor citation: the Context section references
+  `cached_file_loader.cpp:55` / `:102` without a path; the file lives at
+  `src/camp2/util/cached_file_loader.cpp`, not under `map_tiles/`. Diagnostic-only
+  (not a file-to-change), but fix for accuracy. — `plan.md:22-26`
+
+### Verified (no action)
+- File targeting: all 5 files-to-change exist; line refs (`cached_tile_loader.cpp:36`
+  for `url_str`, `:38` for the disk path; `map_tiles.cpp:229`/`:248`/`:260-266`;
+  ADR-0004:100-105) are accurate.
+- "No CMake change" holds: `cached_tile_loader.cpp` is already in `CAMP_MAP_SOURCES`
+  (CMakeLists.txt:245) → compiled into `camp_map`, which `test_map_tiles_refresh`
+  already links (CMakeLists.txt:519-523) along with `Qt5::Test`.
+- Test approach is feasible: `tile_loader_` is parented to `MapTiles`
+  (`map_tiles.cpp:43`), so `findChild<CachedTileLoader*>()` works like the existing
+  `findChild<QTimer*>()` pattern; the `+1` monotonic guard makes the per-cycle token
+  assertion deterministic (no wall-clock flakiness).
+- Opt-in design is sound: only the radar layer calls `setRefreshInterval`
+  (`background_manager.cpp:62`; confirmed by `map_tiles.h:64`), so tying
+  `enableCacheBusting()` to it leaves every static OSM/WMTS layer's URL unchanged.
+- Scope (single PR, one subsystem, ~80-120 lines), consequences table (complete),
+  and ROS conventions (N/A — pure Qt/C++) all check out.
+
+### Summary
+Diagnosis and fix are well-reasoned and the plan is implementation-ready on the code
+side — file targeting, the test strategy, and the opt-in design are all verified
+against source. The one must-fix is governance, not code: the ADR-0004 update must go
+through a new/superseding ADR (ADR-0012 does **not** sanction the in-place Consequences
+edit the plan describes). Resolve that and address the cache-buster empirical/endpoint
+caveats and the plan is good to implement.
+
+### Recommended Actions
+- [ ] Re-route the ADR-0004 update: new camp ADR for the corrected freshness decision
+  + cache-buster, with ADR-0004 receiving only a cross-reference addendum (per
+  ADR-0012). Amend `plan.md` step 5 and the ADR Compliance / Consequences tables.
+- [ ] Decide on empirical confirmation of cause #1 (run the sidecar diff, or accept
+  the cache-buster as a defensive fix) and note the decision in the plan.
+- [ ] Verify the live IEM endpoint tolerates `?t=<token>` before relying on it.
+- [ ] Fix the `cached_file_loader.cpp` path citation in the Context section.
