@@ -126,6 +126,10 @@ TEST(RasterLayerGdalCleanupTest, LoadAndColormapFlipsLeakNoDatasets)
 
   // Dtor aborts + joins the in-flight load (waitForFinished), so every
   // loadAndReprojectFile invocation has returned and closed its handles.
+  // Deliberately a raw `delete` rather than removeFromMap(): removeFromMap()
+  // defers destruction (deleteLater) to a later event-loop turn, so the
+  // open-dataset count below could run before the dtor's join completes and
+  // flake. The direct delete makes the join synchronous and the guarantee firm.
   delete layer;
 
   // [#2] Every load + colormap flip closed its source dataset and warped VRT.
