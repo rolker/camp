@@ -8,7 +8,10 @@
 #include <QDir>
 #include <QStyleOptionGraphicsItem>
 #include <QTimer>
+#include <algorithm>
 #include <set>
+#include <utility>
+#include <vector>
 #include "wmts/capabilities.h"
 
 namespace camp
@@ -16,6 +19,23 @@ namespace camp
 
 namespace map_tiles
 {
+
+namespace
+{
+
+// [#98] Eviction cap for MapTiles::tiles_, computed as
+// max(kTileEvictionMinCap, kTileEvictionMultiplier * visible_tile_count).
+//
+// OSM tiles decode to ~256x256 ARGB (~256 KB each), so the 256-tile floor caps
+// the basemap tile buffer at roughly 64 MB — a generous pan buffer sized for the
+// salmon operator workstation, large enough that normal pan/zoom never blanks a
+// tile that's about to be revisited, yet bounded so an all-afternoon survey can't
+// OOM-kill CAMP (issue #98). The multiplier keeps the cap comfortably above the
+// working set at high zoom, where the viewport can show many small tiles at once.
+constexpr int kTileEvictionMinCap = 256;
+constexpr int kTileEvictionMultiplier = 4;
+
+} // namespace
 
 MapTiles::MapTiles(map::MapItem* parentItem, const QString& label, const TileLayout& tile_layout):
   map::Layer(parentItem, label), tile_layout_(tile_layout)
@@ -86,6 +106,80 @@ void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
   for(auto tile: tiles_)
     if(visible_tiles.find(tile.first) == visible_tiles.end())
       tile.second->setVisible(false);
+
+  // [#98] Record the paint generation in which each visible tile was seen, then
+  // advance the generation. This is the LRU bookkeeping consumed by
+  // evictIfNeeded(): tiles not visited recently have the smallest generation and
+  // are evicted first.
+  for(const auto& address: visible_tiles)
+    tile_last_visible_gen_[address] = paint_generation_;
+  ++paint_generation_;
+
+  // [#98] If tiles_ has outgrown the cap, schedule a DEFERRED eviction. Eviction
+  // must not happen here: deleting a Tile (a QGraphicsObject scene child) inside
+  // paint() removes a scene item mid-paint, a use-after-free risk. Instead queue
+  // evictIfNeeded() onto the event loop, where deleting scene items is safe. The
+  // eviction_pending_ flag debounces this so we don't post a fresh invocation on
+  // every paint while one is already queued.
+  const int cap = std::max(kTileEvictionMinCap,
+                           kTileEvictionMultiplier * int(visible_tiles.size()));
+  if(int(tiles_.size()) > cap && !eviction_pending_)
+  {
+    eviction_pending_ = true;
+    QMetaObject::invokeMethod(this, "evictIfNeeded", Qt::QueuedConnection);
+  }
+}
+
+void MapTiles::evictIfNeeded()
+{
+  eviction_pending_ = false;
+
+  // Recompute the cap from the CURRENT visible set and collect eviction
+  // candidates: tiles that are not visible right now. A tile that became visible
+  // again between scheduling and now must never be evicted, so we guard on the
+  // live isVisible() rather than the visible set captured at schedule time.
+  int visible_count = 0;
+  std::vector<std::pair<quint64, TileAddress>> candidates;
+  candidates.reserve(tiles_.size());
+  for(const auto& entry: tiles_)
+  {
+    if(entry.second && entry.second->isVisible())
+    {
+      ++visible_count;
+      continue;
+    }
+    auto gen_it = tile_last_visible_gen_.find(entry.first);
+    quint64 gen = (gen_it != tile_last_visible_gen_.end()) ? gen_it->second : 0;
+    candidates.emplace_back(gen, entry.first);
+  }
+
+  const int cap = std::max(kTileEvictionMinCap,
+                           kTileEvictionMultiplier * visible_count);
+  if(int(tiles_.size()) <= cap)
+    return;
+
+  // Oldest last-visible generation first (a missing entry sorts as 0 == oldest).
+  // cap >= visible_count, so there are always enough non-visible candidates to
+  // bring tiles_ down to the cap without touching a visible tile.
+  std::sort(candidates.begin(), candidates.end(),
+            [](const std::pair<quint64, TileAddress>& a,
+               const std::pair<quint64, TileAddress>& b)
+            { return a.first < b.first; });
+
+  size_t to_evict = tiles_.size() - cap;
+  for(const auto& candidate: candidates)
+  {
+    if(to_evict == 0)
+      break;
+    auto tile_it = tiles_.find(candidate.second);
+    if(tile_it != tiles_.end())
+    {
+      delete tile_it->second;
+      tiles_.erase(tile_it);
+    }
+    tile_last_visible_gen_.erase(candidate.second);
+    --to_evict;
+  }
 }
 
 void MapTiles::setLayout(const TileLayout& tile_layout)
@@ -94,6 +188,13 @@ void MapTiles::setLayout(const TileLayout& tile_layout)
     if(tile.second)
       delete tile.second;
   tiles_.clear();
+  // [#98] Drop the LRU eviction bookkeeping for the now-deleted tile set, and
+  // cancel any queued eviction (its candidate addresses are gone). Note
+  // paint_generation_ is deliberately NOT reset — it stays monotonic; entries for
+  // the freshly seeded tiles simply start accumulating again from the current
+  // generation on the next paint.
+  tile_last_visible_gen_.clear();
+  eviction_pending_ = false;
   // [#99] Bump the layout generation so any in-flight pixmap requested under the
   // previous layout (same tile_layout_ pointer across a refresh) is rejected by
   // tileLoaded once it lands on the rebuilt tile set.
@@ -149,10 +250,12 @@ void MapTiles::onRefreshTimer()
   // Drop disk-cached PNGs first so the re-fetch hits the network rather than
   // re-serving stale tiles, then reset the layout. setLayout() deletes every
   // current Tile* (each holds a QGraphicsPixmapItem child) and rebuilds the
-  // zoom-0 tiles, so memory is bounded AT each refresh boundary. NOTE: this does
-  // not change within-cycle accumulation — paint() still only hides (not
-  // deletes) tiles as the viewport pans/zooms between refreshes, exactly as
-  // before. The refresh resets periodically; it is not an eviction policy.
+  // zoom-0 tiles, so memory is reset to the seed set AT each refresh boundary.
+  // Within a cycle, paint() no longer grows tiles_ without bound: the [#98] LRU
+  // eviction (see evictIfNeeded) caps off-screen tile accumulation as the
+  // viewport pans/zooms, which is what actually bounds the never-refreshing
+  // OSM/WMTS basemap. This refresh reset and the eviction cap are complementary —
+  // the refresh exists for radar freshness, not as the memory bound.
   //
   // FRESHNESS (#99): re-fetching each cycle yields a genuinely *fresh* radar frame
   // because the configured IEM "nexrad-n0q" tile product always serves the latest

@@ -59,6 +59,22 @@ private:
   TileLayout tile_layout_;
   std::map<TileAddress, Tile*> tiles_;
 
+  // [#98] LRU eviction bookkeeping that bounds tiles_ against the unbounded
+  // pan/zoom growth behind the #98 OOM. The OSM/WMTS basemap never refreshes
+  // (only the radar overlay calls setRefreshInterval -> setLayout), so without a
+  // cap tiles_ grows for every newly-visited tile area until the process is
+  // OOM-killed. paint_generation_ is a monotonically increasing paint-call
+  // counter; tile_last_visible_gen_ records, per tile, the most recent paint
+  // generation in which it was visible — the LRU key used to pick eviction
+  // victims (oldest first). tile_last_visible_gen_ is keyed by TileAddress and
+  // therefore shares tiles_' ordering: TileAddress::operator< ignores the
+  // refresh epoch (tile_address.cpp), which is exactly what we want so the two
+  // maps stay in lock-step. eviction_pending_ debounces the deferred eviction so
+  // paint() schedules at most one evictIfNeeded() at a time.
+  quint64 paint_generation_ = 0;
+  std::map<TileAddress, quint64> tile_last_visible_gen_;
+  bool eviction_pending_ = false;
+
   CachedTileLoader* tile_loader_;
 
   const wmts::Capabilities* wmts_capabilites_ = nullptr;
@@ -77,6 +93,15 @@ private:
   quint64 layout_epoch_ = 0;
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
+
+  // [#98] Deferred LRU eviction of off-screen tiles. paint() only SCHEDULES this
+  // (via a queued invocation) — it never deletes Tile* itself, because deleting a
+  // scene child mid-paint is a use-after-free risk. Running in the event loop, this
+  // slot recomputes the cap from the CURRENT visible count, then deletes the
+  // least-recently-visible non-visible tiles until tiles_.size() <= cap. A tile
+  // visible at eviction time is never evicted, even if it was off-screen when the
+  // eviction was scheduled.
+  void evictIfNeeded();
 
   // [#99 Phase 2] Refresh slot — invoked by refresh_timer_ on timeout, and
   // directly (via QMetaObject::invokeMethod) by test_map_tiles_refresh for a
