@@ -71,3 +71,26 @@ currently-visible tiles.
 ### Open questions
 - [ ] Confirm `kTileEvictionMinCap` and `kTileEvictionMultiplier` constants are appropriate for deployment hardware (salmon) memory constraints — lower cap may be needed if RSS budget is tight.
 - [ ] Confirm that `QGraphicsScene::render()` with varying source rect reliably drives distinct `painter->worldTransform()` values inside `MapTiles::paint()` in offscreen CI; fall back to protected slot if not.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-22 05:10 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-98/plan.md` at `618c2f6`
+**PR**: PR-less (`--issue` dispatch)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (must-fix) Step 2 deletes `Tile` (a `QGraphicsObject` child of `MapTiles`) inside `paint()` — removing scene items mid-paint risks use-after-free per Qt; defer eviction to the event loop and promote the planned `evictIfNeeded` slot from test-fallback to the primary deletion path (`QMetaObject::invokeMethod(..., Qt::QueuedConnection)` / `QTimer::singleShot(0,...)`) — `plan.md:33`
+- [ ] (suggestion) Step 5 test reuses single-zoom-level `makeLayout`, but `setLayout()` pre-seeds the whole `zoom_levels.front()` grid at construction, so `paint()` mints no new tiles — the test won't reproduce the field mechanism (deeper-zoom tiles minted by `paint()`); use a multi-zoom-level layout and `processEvents()` after `render()` if eviction is deferred — `plan.md:51`
+- [ ] (suggestion) Confirm `tile_last_visible_gen_` keys identically to `tiles_` — `TileAddress::operator<` ignores `layout_epoch_` (`map_tiles.cpp:183`), which is the desired behavior; add a one-line comment so the shared comparator semantics aren't silently broken — `plan.md:30`
+- [ ] (noted, no action) Evicting a tile with an in-flight pixmap is already safe — `tileLoaded()`'s `tiles_.find` guard drops late pixmaps for evicted addresses (`map_tiles.cpp:182`)
+
+### Summary
+Diagnosis is correct; LRU-eviction approach is sound, minimal, and well-scoped with consequences and tests accounted for. The one structural concern — synchronous `Tile` deletion inside `paint()` — should be resolved by deferring eviction (the plan's own `evictIfNeeded` slot supports this) before implementation. With that addressed, the plan is ready.
+
+### Recommended Actions
+- [ ] Defer eviction out of `paint()`; make `evictIfNeeded` the primary deletion path.
+- [ ] Use a multi-zoom-level test layout; `processEvents()` after `render()` when eviction is deferred.
+- [ ] Comment the shared `TileAddress` comparator semantics on `tile_last_visible_gen_`.
