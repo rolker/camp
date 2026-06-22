@@ -149,3 +149,25 @@ destroys the layer, and asserts the open-dataset count.
 
 ### Deviations
 None. All three folded Plan Review resolutions implemented as specified. Did not push.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-22 03:52 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-96 at `7016b91`
+**Mode**: pre-push
+**Depth**: Deep (reason: 429 total diff lines ≥ 200; GDAL resource lifecycle + async worker-thread load)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix findings; clean, well-tested, plan-adherent fix
+
+### Findings
+- [ ] (suggestion) `LoadResult` double members lack default initializers — pre-existing, not touched by this diff, never read on the failure path (`imageReady` returns on empty mipmaps); optional `= 0.0` hardening — `src/camp2/raster/raster_layer.h:60`
+- [ ] (suggestion) Add a comment noting the deliberate raw `delete layer` (synchronous dtor join before the open-dataset count; `removeFromMap()` would defer and break the guarantee) — `test/test_raster_layer_gdal_cleanup.cpp:129`
+
+### Notes
+- Static analysis clean (cppcheck: no findings on the test; `raster_layer.cpp` hit a Qt `slots`-macro parser limitation, not a code issue). cpplint not installed on this host.
+- Two fresh-context Claude Adversarial passes (Lens A logic, Lens B systemic, Deep prompt) independently confirmed: reverse-declaration destruction closes the warped VRT before its source per `[stmt.dcl]/3`; all five return paths (normal + two early + two abort) now free both handles; test is non-vacuous (asserts each load reached the warp path via `status()`) and race-free (dtor abort+`waitForFinished()` joins the worker before the process-wide `GetOpenDatasets()` baseline-delta check).
+- Plan adherence: full — exactly the three planned files changed; all three Plan Review resolutions present in code. No scope creep.
+- Build/test not re-run here (offline container); implementation entry records `./ui_ws/test.sh camp` green (102 tests, 0 failures, 2 pre-existing GL-gated skips) with a verified non-vacuous-pass check (neutered deleter → delta == 6 failure).
