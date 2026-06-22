@@ -57,10 +57,10 @@ private:
   struct LoadResult
   {
     Mipmaps mipmaps;
-    double world_x;
-    double world_y;
-    double scale_x;
-    double scale_y;
+    double world_x = 0.0;
+    double world_y = 0.0;
+    double scale_x = 0.0;
+    double scale_y = 0.0;
     bool is_scalar = false;   // single-band Float32 (depth) -> ColorMap-shaded
   };
 
