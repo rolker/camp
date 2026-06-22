@@ -109,3 +109,28 @@ the fix targets the real layer.
 - [ ] Recommendation (project safety): consider a visible radar-staleness safeguard
   (e.g. surface frame age / dim on suspected-stale) as possible follow-up, given stale
   radar can mislead more than blank radar.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-22 23:26 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-111/plan.md` at `5b45a72`
+**Branch**: feature/issue-111 at `5b45a72`
+**Phases**: single
+
+Root cause confirmed by code reading: CDN/HTTP caching of the static IEM tile
+URL (cause #1); causes #2 and #3 disproven. Fix = opt-in per-refresh cache-buster
+on `CachedTileLoader` (`?t=<token>`), seeded from wall clock (cross-session
+freshness) with a monotonic guard (strict per-cycle distinctness), driven by
+`MapTiles::setRefreshInterval`/`onRefreshTimer`. Same PR corrects the
+`onRefreshTimer` freshness comment, adds an ADR-0004 Consequences addendum, and
+extends `test/test_map_tiles_refresh.cpp` (pure `withCacheBust` + token-bump +
+opt-in invariants; no live-network test).
+
+### Open questions
+- [ ] Empirical pre-coding confirmation of cause #1: diff served tile bytes /
+  reply-headers across two refresh cycles via the `.json` sidecar
+  (`cached_file_loader.cpp:102`) before implementing.
+- [ ] Verify IEM `tile.py` accepts and ignores an unknown `?t=` query param
+  (returns the tile, not 4xx/blank) against the live endpoint.
