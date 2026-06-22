@@ -58,3 +58,16 @@ currently-visible tiles.
 - [ ] Add test asserting `tiles_` size stays bounded across a simulated multi-area pan (follow `test_map_tiles_refresh.cpp` pattern)
 - [ ] Update `onRefreshTimer` comment in `map_tiles.cpp:150–155` to reflect that eviction now also bounds within-cycle accumulation
 - [ ] Document the eviction bound choice (N × visible tile count, or similar) in a comment near the eviction logic so future maintainers can trace the rationale
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-22 14:30 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-98/plan.md` at `618c2f6`
+**Branch**: feature/issue-98 at `618c2f6`
+**Phases**: single
+
+### Open questions
+- [ ] Confirm `kTileEvictionMinCap` and `kTileEvictionMultiplier` constants are appropriate for deployment hardware (salmon) memory constraints — lower cap may be needed if RSS budget is tight.
+- [ ] Confirm that `QGraphicsScene::render()` with varying source rect reliably drives distinct `painter->worldTransform()` values inside `MapTiles::paint()` in offscreen CI; fall back to protected slot if not.
