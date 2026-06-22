@@ -7,6 +7,7 @@
 #include <QtConcurrent>
 #include <cmath>
 #include <limits>
+#include <memory>
 #include <QMenu>
 #include <QAction>
 #include <QSettings>
@@ -126,7 +127,18 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
 {
   LoadResult result;
 
-  auto dataset = GDALDataset::FromHandle(GDALOpen(filename.toLatin1(), GA_ReadOnly));
+  // [#96] RAII-close both GDAL handles so every return path — normal, the
+  // !reprojected_dataset early return, and the abort-flag `return {}` paths in
+  // the scan loops below — frees them; previously they leaked on every call
+  // (ctor / setColormap / readSettings). Declaration order matters: local
+  // unique_ptrs destruct in reverse declaration order, so `dataset` MUST stay
+  // declared before `reprojected_dataset` — the warped VRT references the source
+  // dataset, so it has to close first, then the source. This mirrors
+  // initExtent()'s deliberate GDALClose(reprojected) then GDALClose(dataset).
+  // Do not reorder.
+  const auto gdal_closer = [](GDALDataset* d){ if(d) GDALClose(d); };
+  std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
+    GDALDataset::FromHandle(GDALOpen(filename.toLatin1(), GA_ReadOnly)), gdal_closer);
 
   if(!dataset)
   {
@@ -134,7 +146,9 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
     return result;
   }
 
-  auto reprojected_dataset = GDALDataset::FromHandle(GDALAutoCreateWarpedVRT(dataset, nullptr, web_mercator::wkt, GRA_Bilinear, 0.0, nullptr));
+  std::unique_ptr<GDALDataset, decltype(gdal_closer)> reprojected_dataset(
+    GDALDataset::FromHandle(GDALAutoCreateWarpedVRT(dataset.get(), nullptr, web_mercator::wkt, GRA_Bilinear, 0.0, nullptr)),
+    gdal_closer);
 
   if(!reprojected_dataset)
   {
