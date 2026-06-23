@@ -55,6 +55,15 @@ public slots:
   void updateViewScale(double view_scale);
   void wmtsCapabilitiesReady();
 
+protected:
+  // [#111] When a refreshing layer (radar) becomes visible, drop its disk cache
+  // and advance the cache-buster so the FIRST paint after the operator enables it
+  // fetches a fresh frame instead of serving a tile cached in a previous session
+  // (e.g. yesterday's radar). Static layers (cache-busting off) are untouched, so
+  // their disk cache is never dropped on show. The brief gap shows blank, never a
+  // stale frame.
+  QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+
 private:
   TileLayout tile_layout_;
   std::map<TileAddress, Tile*> tiles_;
@@ -75,7 +84,7 @@ private:
   std::map<TileAddress, quint64> tile_last_visible_gen_;
   bool eviction_pending_ = false;
 
-  CachedTileLoader* tile_loader_;
+  CachedTileLoader* tile_loader_ = nullptr;
 
   const wmts::Capabilities* wmts_capabilites_ = nullptr;
   QString wmts_layer_id_;
@@ -91,6 +100,14 @@ private:
   // pre-refresh pixmap would then satisfy the tileLoaded guard on the rebuilt
   // same-position tile and paint a stale radar frame for up to one cycle.
   quint64 layout_epoch_ = 0;
+
+  // [#111] Shared refresh path: bump the cache-buster, drop the disk cache, and
+  // rebuild the tile set (re-issuing the network loads). Called by the periodic
+  // onRefreshTimer() and by itemChange() when a refreshing layer becomes visible,
+  // so the two cannot drift — both deliver a genuinely fresh frame, never a stale
+  // one carried over in the already-built tiles.
+  void refreshTiles();
+
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
 
