@@ -243,6 +243,14 @@ void MapTiles::setRefreshInterval(int msec)
     connect(refresh_timer_, &QTimer::timeout, this, &MapTiles::onRefreshTimer);
   }
   refresh_timer_->start(msec);
+
+  // [#111] A refreshing layer (radar) is exactly where per-refresh URL cache-
+  // busting belongs: it re-fetches the same z/x/y URLs every cycle, so without a
+  // changing query token a CDN/proxy can re-serve a stale frame. Tying this to
+  // setRefreshInterval (and nothing else calls it for static layers) keeps the
+  // OSM/WMTS basemap URLs untouched.
+  if(tile_loader_)
+    tile_loader_->enableCacheBusting();
 }
 
 void MapTiles::onRefreshTimer()
@@ -257,15 +265,26 @@ void MapTiles::onRefreshTimer()
   // OSM/WMTS basemap. This refresh reset and the eviction cap are complementary —
   // the refresh exists for radar freshness, not as the memory bound.
   //
-  // FRESHNESS (#99): re-fetching each cycle yields a genuinely *fresh* radar frame
-  // because the configured IEM "nexrad-n0q" tile product always serves the latest
-  // mosaic (no timestamp pinning) — verified live 2026-06-18 (see ADR-0004). The
-  // disk-cache invalidation below is what forces the network re-fetch; without it
-  // the on-disk PNGs would re-serve the previous frame for this same z/x/y. A
-  // future timestamp-pinned source would break this assumption and re-serve a
-  // static frame — keep that in mind if the radar provider is ever changed.
+  // FRESHNESS (#99/#111): a fresh radar frame each cycle needs BOTH of the steps
+  // below, because there are two caches between us and the latest mosaic:
+  //   1. invalidateCache() drops this layer's *local* disk PNGs, so the next
+  //      load() actually goes to the network instead of re-serving the prior
+  //      frame for the same z/x/y.
+  //   2. bumpCacheBust() advances the per-refresh URL token, so the network GET
+  //      is a URL a *CDN/proxy* between CAMP and the origin cannot answer from
+  //      its own edge cache. Disk invalidation alone (#99) does NOT defeat that
+  //      intermediary cache — that gap is exactly the #111 stale-radar bug.
+  // The IEM "nexrad-n0q" product resolves to the latest mosaic (no timestamp
+  // pinning), so once both caches are bypassed the re-fetch is genuinely current.
+  // The cache-buster is a defensive fix: it is correct regardless of whether CDN
+  // caching is the sole mechanism (a no-op query param if no intermediary caches).
+  // IEM is an interim stopgap — the intended end state is NOAA nowCOAST via WMS
+  // (camp#118), at which point the provider's freshness contract is revisited.
   if(tile_loader_)
+  {
+    tile_loader_->bumpCacheBust();
     tile_loader_->invalidateCache();
+  }
   setLayout(tile_layout_);
   update();
 }

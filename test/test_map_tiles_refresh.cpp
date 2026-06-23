@@ -12,6 +12,13 @@
 // (isActive/interval/disabled) and verify one DETERMINISTIC refresh by invoking
 // the refresh slot directly.
 //
+// [#111] This file also covers the per-refresh URL cache-buster that defeats
+// CDN/proxy caching of the static radar tile URL: withCacheBust() pure-logic, the
+// strict per-cycle token advance on refresh, and that static layers never bust.
+// The invariant is URL/token DISTINCTNESS per cycle — asserted without any live
+// network (the IEM endpoint's tolerance of an unknown ?t= param was confirmed
+// out-of-band, HTTP 200 + identical bytes).
+//
 // Access mechanism (named per plan-review finding #2): MapTiles::tiles_,
 // setLayout, and onRefreshTimer are all private. Tests therefore:
 //   - count Tile children via the public QGraphicsItem::childItems() +
@@ -33,11 +40,13 @@
 #include "map_tiles/map_tiles.h"
 #include "map_tiles/tile.h"
 #include "map_tiles/tile_layout.h"
+#include "map_tiles/cached_tile_loader.h"
 
 using camp::map::Map;
 using camp::map_tiles::MapTiles;
 using camp::map_tiles::Tile;
 using camp::map_tiles::TileLayout;
+using camp::map_tiles::CachedTileLoader;
 
 namespace
 {
@@ -171,6 +180,62 @@ TEST(MapTilesRefresh, RefreshBoundaryResetsTileSet)
            "not deleted by setLayout). NOTE: this checks the refresh-boundary "
            "reset only, not within-cycle pan/zoom accumulation.";
   }
+}
+
+// [#111] withCacheBust is pure/static: a distinct token must yield a distinct URL,
+// joined with '?' when the URL has no query yet and '&' when it already does.
+TEST(MapTilesRefresh, CacheBustAppendsDistinctQueryToken)
+{
+  // No existing query → '?t='. XYZ tile URLs (e.g. IEM radar) take this path.
+  EXPECT_EQ(CachedTileLoader::withCacheBust("https://h/9/1/2.png", 42),
+            "https://h/9/1/2.png?t=42");
+  // Existing query → '&t=' so the URL stays well-formed.
+  EXPECT_EQ(CachedTileLoader::withCacheBust("https://h/wms?layer=x", 42),
+            "https://h/wms?layer=x&t=42");
+  // The whole point: different tokens produce different URLs (CDN-distinct).
+  EXPECT_NE(CachedTileLoader::withCacheBust("https://h/9/1/2.png", 1),
+            CachedTileLoader::withCacheBust("https://h/9/1/2.png", 2));
+}
+
+// Enabling refresh (setRefreshInterval > 0) turns cache-busting on with a non-zero
+// seed, and every refresh cycle advances the token STRICTLY — so each cycle's
+// request URL is one a CDN/proxy cannot satisfy from its edge cache (#111).
+TEST(MapTilesRefresh, RefreshAdvancesCacheBustTokenStrictly)
+{
+  Map map;
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_radar_bust", makeLayout(1, 1));
+
+  layer->setRefreshInterval(300000);  // enables busting (radar cadence)
+  CachedTileLoader* loader = layer->findChild<CachedTileLoader*>();
+  ASSERT_NE(loader, nullptr) << "MapTiles owns a CachedTileLoader child";
+
+  const quint64 t0 = loader->cacheBustToken();
+  EXPECT_NE(t0, quint64(0))
+      << "enableCacheBusting (via setRefreshInterval) should seed a non-zero token";
+
+  ASSERT_TRUE(invokeRefresh(layer));
+  const quint64 t1 = loader->cacheBustToken();
+  ASSERT_TRUE(invokeRefresh(layer));
+  const quint64 t2 = loader->cacheBustToken();
+
+  EXPECT_GT(t1, t0) << "a refresh must advance the cache-bust token";
+  EXPECT_GT(t2, t1)
+      << "each refresh must yield a STRICTLY greater token (a CDN-distinct URL), "
+         "even for back-to-back cycles within the same millisecond";
+}
+
+// Refresh (and therefore cache-busting) is strictly opt-in: a layer that never
+// calls setRefreshInterval — every existing static OSM/WMTS layer — keeps token 0,
+// so withCacheBust is never applied and its request URLs are unchanged.
+TEST(MapTilesRefresh, StaticLayerNeverBustsCache)
+{
+  Map map;
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_static_bust", makeLayout(1, 1));
+
+  CachedTileLoader* loader = layer->findChild<CachedTileLoader*>();
+  ASSERT_NE(loader, nullptr);
+  EXPECT_EQ(loader->cacheBustToken(), quint64(0))
+      << "a layer that never enables refresh must not cache-bust its URLs";
 }
 
 int main(int argc, char** argv)
