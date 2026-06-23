@@ -226,3 +226,22 @@ caveats and the plan is good to implement.
 - [ ] (suggestion) No end-to-end test that `load()` emits a `?t=`-busted network URL when busting is enabled; the `invalidateCache()`-before-`load()` ordering is unguarded — `test/test_map_tiles_refresh.cpp`
 - [ ] (suggestion) ADR-0004 hard-deleted rather than retained as `Status: Superseded (camp#118)` per supersede-don't-delete convention; camp#118 unverifiable from this host (gh unauthenticated) — `docs/decisions/0004-weather-radar-tile-provider.md`
 - [ ] (suggestion) Blank-on-`?t=`-rejection is a silent failure mode if IEM ever stops ignoring unknown query params — `src/camp2/map_tiles/cached_tile_loader.cpp:119`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-23 10:40 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-111 at `7c4233e`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR removal under docs/decisions/ — Deep promotion trigger; >200 lines)
+**Must-fix**: 1 | **Suggestions**: 4
+**Round**: 2 | **Ship**: continue — a genuine correctness gap in the new on-show feature (`itemChange`, added since Round 1) warrants a fix + one more read; the core 5-min refresh fix is sound.
+
+### Findings
+- [ ] (must-fix) `itemChange` invalidate-on-show wipes the disk cache + bumps the token but never rebuilds the tile set, so tiles already in `tiles_` (prior show, or the ctor-seeded zoom-0 tile loaded at token 0) are not re-fetched; toggling radar off→on re-shows the prior stale frame until the next 5-min refresh, missing the plan-step-7 "first paint fetches fresh, never stale" guarantee. Fix: call `setLayout(tile_layout_)` after bump+invalidate (mirror `onRefreshTimer`). Core `onRefreshTimer` path unaffected. — `src/camp2/map_tiles/map_tiles.cpp:304`
+- [ ] (suggestion) Test gap (ties to must-fix): no test exercises `load()`'s `cache_bust_!=0` branch (busted network URL) or that becoming visible re-fetches; on-show tests assert only token advance, so they pass even with the must-fix bug present (false confidence). — `test/test_map_tiles_refresh.cpp:245`
+- [ ] (suggestion) Operational (post-fix): forcing reload on show makes rapid visibility toggling re-download the whole layer (`removeRecursively` + per-tile guaranteed-miss GET); consider a freshness guard/debounce for marginal field connectivity. — `src/camp2/map_tiles/map_tiles.cpp:304`
+- [ ] (suggestion) ADR-0004 hard-deleted rather than `Status: Superseded`; decision still live in code; recorded operator decision (plan step 5, camp#118) — confirm camp#118/#119 exist (unverifiable offline). Cross-confirmed with Round-1 review. — `docs/decisions/0004-weather-radar-tile-provider.md`
+- [ ] (suggestion) `StaticLayerVisibilityDoesNotBust` comment claims it guards disk-cache-on-show but only asserts token==0; align comment or add a disk-state check. — `test/test_map_tiles_refresh.cpp:266`
