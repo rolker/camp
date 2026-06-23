@@ -43,6 +43,9 @@ void CachedTileLoader::load(TileAddress address)
   // The disk path below is built from `address` (z/x/y.png), so the buster never
   // touches the local cache layout — it just forces the GET to be a URL the CDN
   // cannot answer from its own cache. 0 == disabled (static layers append nothing).
+  // Safe degradation: a tile server that 4xx'd on the unknown ?t= param would just
+  // yield a blank tile (CachedFileLoader drops a failed reply without setting the
+  // pixmap) — never a stale frame. IEM tolerates ?t= today (verified, HTTP 200).
   if(cache_bust_ != 0)
     url_str = QString::fromStdString(withCacheBust(url_str.toStdString(), cache_bust_));
 
@@ -97,6 +100,13 @@ void CachedTileLoader::invalidateCache()
 
 void CachedTileLoader::enableCacheBusting()
 {
+  // Idempotent: if busting is already on, leave the token alone rather than
+  // re-seeding to the current clock — a fresh seed could regress BELOW a token
+  // already advanced by bumpCacheBust() (which can sit above wall-clock via its
+  // +1 guard), briefly re-exposing a CDN-cached URL. Unreachable today (one
+  // setRefreshInterval call per layer) but cheap to make robust.
+  if(cache_bust_ != 0)
+    return;
   // Seed from the wall clock so the token is distinct across sessions too (the
   // disk cache survives a restart, so a session-local counter starting at 0 each
   // launch could collide with a previously-cached busted URL). std::max with 1
