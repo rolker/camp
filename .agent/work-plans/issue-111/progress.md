@@ -208,3 +208,21 @@ caveats and the plan is good to implement.
   the cache-buster as a defensive fix) and note the decision in the plan.
 - [ ] Verify the live IEM endpoint tolerates `?t=<token>` before relying on it.
 - [ ] Fix the `cached_file_loader.cpp` path citation in the Context section.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-23 10:14 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-111 at `123d3ef`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR removal under docs/decisions/ — Deep promotion trigger; >200 lines)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 1 | **Ship**: recommended — no must-fix; cache-buster fix is correct and self-contained, remaining items are advisory.
+
+### Findings
+- [ ] (suggestion) `enableCacheBusting()` re-seeds to wall clock unconditionally — can regress below an already-bumped token if `setRefreshInterval(>0)` is called twice (unreachable today); harden to `cache_bust_==0`-only or `max(cache_bust_+1, now)` — `src/camp2/map_tiles/cached_tile_loader.cpp:98`
+- [ ] (suggestion) No end-to-end test that `load()` emits a `?t=`-busted network URL when busting is enabled; the `invalidateCache()`-before-`load()` ordering is unguarded — `test/test_map_tiles_refresh.cpp`
+- [ ] (suggestion) ADR-0004 hard-deleted rather than retained as `Status: Superseded (camp#118)` per supersede-don't-delete convention; camp#118 unverifiable from this host (gh unauthenticated) — `docs/decisions/0004-weather-radar-tile-provider.md`
+- [ ] (suggestion) Blank-on-`?t=`-rejection is a silent failure mode if IEM ever stops ignoring unknown query params — `src/camp2/map_tiles/cached_tile_loader.cpp:119`
