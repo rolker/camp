@@ -254,27 +254,25 @@ void MapTiles::setRefreshInterval(int msec)
     tile_loader_->enableCacheBusting();
 }
 
-void MapTiles::onRefreshTimer()
+void MapTiles::refreshTiles()
 {
-  // Drop disk-cached PNGs first so the re-fetch hits the network rather than
-  // re-serving stale tiles, then reset the layout. setLayout() deletes every
-  // current Tile* (each holds a QGraphicsPixmapItem child) and rebuilds the
-  // zoom-0 tiles, so memory is reset to the seed set AT each refresh boundary.
-  // Within a cycle, paint() no longer grows tiles_ without bound: the [#98] LRU
-  // eviction (see evictIfNeeded) caps off-screen tile accumulation as the
-  // viewport pans/zooms, which is what actually bounds the never-refreshing
-  // OSM/WMTS basemap. This refresh reset and the eviction cap are complementary —
-  // the refresh exists for radar freshness, not as the memory bound.
-  //
-  // FRESHNESS (#99/#111): a fresh radar frame each cycle needs BOTH of the steps
-  // below, because there are two caches between us and the latest mosaic:
-  //   1. invalidateCache() drops this layer's *local* disk PNGs, so the next
-  //      load() actually goes to the network instead of re-serving the prior
-  //      frame for the same z/x/y.
-  //   2. bumpCacheBust() advances the per-refresh URL token, so the network GET
+  // Force a genuinely fresh re-fetch of every tile. Three steps, all required:
+  //   1. bumpCacheBust() advances the per-refresh URL token, so the network GET
   //      is a URL a *CDN/proxy* between CAMP and the origin cannot answer from
   //      its own edge cache. Disk invalidation alone (#99) does NOT defeat that
   //      intermediary cache — that gap is exactly the #111 stale-radar bug.
+  //   2. invalidateCache() drops this layer's *local* disk PNGs, so the next
+  //      load() goes to the network instead of re-serving the prior frame for
+  //      the same z/x/y.
+  //   3. setLayout() deletes every current Tile* (each holds a QGraphicsPixmapItem
+  //      child) and rebuilds the zoom-0 tiles, which is what actually RE-ISSUES
+  //      the load() requests — without it, steps 1-2 only affect tiles fetched
+  //      *later*, leaving the already-built (stale) Tile objects on screen.
+  // setLayout() also resets memory to the seed set AT each refresh boundary;
+  // within a cycle, paint() growth is bounded separately by the [#98] LRU
+  // eviction (see evictIfNeeded), so this reset and the eviction cap are
+  // complementary — the refresh exists for radar freshness, not the memory bound.
+  //
   // The IEM "nexrad-n0q" product resolves to the latest mosaic (no timestamp
   // pinning), so once both caches are bypassed the re-fetch is genuinely current.
   // The cache-buster is a defensive fix: it is correct regardless of whether CDN
@@ -290,22 +288,34 @@ void MapTiles::onRefreshTimer()
   update();
 }
 
+void MapTiles::onRefreshTimer()
+{
+  // The 5-minute cadence (#99 Phase 2) for time-varying overlays (radar): each
+  // tick re-fetches a fresh frame via the shared refresh path.
+  refreshTiles();
+}
+
 QVariant MapTiles::itemChange(GraphicsItemChange change, const QVariant& value)
 {
   // [#111] Make the FIRST paint after the operator turns a refreshing layer on
-  // fetch fresh, not a frame cached in a previous session. invalidateCache()
-  // alone (in onRefreshTimer) only runs on the 5-minute timer, so enabling radar
-  // shortly after launch would otherwise serve yesterday's on-disk tiles until
-  // the next refresh. On the visible transition we drop the disk cache AND bump
-  // the cache-buster, so the load() triggered by the ensuing paint goes to the
-  // network with a CDN-distinct URL. Gated on cache-busting being enabled, which
-  // is true only for refreshing (radar) layers — static OSM/WMTS basemaps keep
-  // their cache on show.
+  // fetch fresh, not a frame cached in a previous session. The 5-minute timer is
+  // the only OTHER thing that refreshes, so enabling radar shortly after launch
+  // (or toggling it off→on) would otherwise re-show the previously-built tiles —
+  // yesterday's on-disk frame — until the next tick. On the visible transition we
+  // run the same full refresh (bump + invalidate + rebuild), so the ensuing paint
+  // re-fetches with a CDN-distinct URL. Gated on cache-busting being enabled,
+  // which is true only for refreshing (radar) layers — static OSM/WMTS basemaps
+  // keep their cache (and built tiles) on show.
+  //
+  // Tradeoff: rapidly toggling radar off→on re-downloads the layer each time (the
+  // "always fresh on show" guarantee is deliberate — never show a stale frame).
+  // A freshness guard (skip the reload if the last fetch is recent) would need
+  // per-fetch timestamps, which is the broader staleness-tracking work in camp#119;
+  // deferred there rather than added here.
   if(change == ItemVisibleHasChanged && value.toBool() && tile_loader_ &&
      tile_loader_->cacheBustToken() != 0)
   {
-    tile_loader_->bumpCacheBust();
-    tile_loader_->invalidateCache();
+    refreshTiles();
   }
   return Layer::itemChange(change, value);
 }

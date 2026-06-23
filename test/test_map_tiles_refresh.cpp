@@ -238,10 +238,8 @@ TEST(MapTilesRefresh, StaticLayerNeverBustsCache)
       << "a layer that never enables refresh must not cache-bust its URLs";
 }
 
-// [#111] A refreshing (radar) layer becoming visible must drop its disk cache and
-// advance the cache-bust token, so the FIRST paint after the operator enables it
-// fetches a fresh frame instead of serving a tile cached in a previous session
-// (e.g. yesterday's radar). Observable via the token strictly advancing on show.
+// [#111] A refreshing (radar) layer becoming visible must run the full refresh,
+// which advances the cache-bust token (the network URL becomes CDN-distinct).
 TEST(MapTilesRefresh, BecomingVisibleAdvancesCacheBustToken)
 {
   Map map;
@@ -255,18 +253,53 @@ TEST(MapTilesRefresh, BecomingVisibleAdvancesCacheBustToken)
   const quint64 hidden = loader->cacheBustToken();
   ASSERT_NE(hidden, quint64(0)) << "refreshing layer should have busting enabled";
 
-  layer->setVisible(true);  // show transition → invalidate + bump
+  layer->setVisible(true);  // show transition → full refresh (bump + invalidate + rebuild)
   EXPECT_GT(loader->cacheBustToken(), hidden)
       << "becoming visible must advance the token so the first paint fetches fresh, "
          "never a previous session's cached frame";
 }
 
-// A static (non-refreshing) layer toggling visibility never triggers cache-busting
-// — its disk cache must be preserved on show (only radar invalidates on show).
-TEST(MapTilesRefresh, StaticLayerVisibilityDoesNotBust)
+// [#111] Token advance alone is NOT enough — the already-built tiles must be
+// REBUILT on show, else they re-show the stale (e.g. yesterday's) frame until the
+// next 5-min refresh. This guards the must-fix: itemChange must run the full
+// refresh (setLayout rebuild), not just bump+invalidate. We count destruction of
+// the pre-show Tile objects (robust to allocator pointer reuse): a rebuild deletes
+// and re-creates them; a token-only path would leave them alive.
+TEST(MapTilesRefresh, BecomingVisibleRebuildsTilesNotJustToken)
 {
   Map map;
-  auto* layer = new MapTiles(map.topLevelLayers(), "test_static_show", makeLayout(1, 1));
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_radar_show_rebuild", makeLayout(2, 2));
+
+  layer->setRefreshInterval(300000);  // refreshing (radar) layer
+  layer->setVisible(false);
+  ASSERT_EQ(tileChildCount(layer), 4) << "ctor seeds 2x2 = 4 tiles";
+
+  int destroyed = 0;
+  for(QGraphicsItem* child : layer->childItems())
+    if(Tile* t = qgraphicsitem_cast<Tile*>(child))
+      QObject::connect(t, &QObject::destroyed, [&destroyed]{ ++destroyed; });
+
+  layer->setVisible(true);  // show → full refresh must DELETE + rebuild the tiles
+
+  EXPECT_EQ(destroyed, 4)
+      << "becoming visible must REBUILD the tile set (re-fetch), not merely advance "
+         "the token — otherwise the already-built stale tiles persist on screen";
+  EXPECT_EQ(tileChildCount(layer), 4) << "rebuilt back to the 2x2 layout";
+}
+
+// A static (non-refreshing) layer toggling visibility never enters the
+// invalidate-on-show branch: itemChange gates the whole bump/invalidate/rebuild on
+// cacheBustToken() != 0, and a static layer's token stays 0 — so its disk cache and
+// built tiles are preserved on show. token == 0 is the proxy for "branch not taken".
+TEST(MapTilesRefresh, StaticLayerVisibilityDoesNotRefresh)
+{
+  Map map;
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_static_show", makeLayout(2, 2));
+
+  int destroyed = 0;
+  for(QGraphicsItem* child : layer->childItems())
+    if(Tile* t = qgraphicsitem_cast<Tile*>(child))
+      QObject::connect(t, &QObject::destroyed, [&destroyed]{ ++destroyed; });
 
   layer->setVisible(false);
   layer->setVisible(true);
@@ -274,7 +307,10 @@ TEST(MapTilesRefresh, StaticLayerVisibilityDoesNotBust)
   CachedTileLoader* loader = layer->findChild<CachedTileLoader*>();
   ASSERT_NE(loader, nullptr);
   EXPECT_EQ(loader->cacheBustToken(), quint64(0))
-      << "a static layer must not cache-bust (or drop its disk cache) on show";
+      << "a static layer must never enable cache-busting (token stays 0)";
+  EXPECT_EQ(destroyed, 0)
+      << "a static layer must NOT rebuild its tiles on show — the invalidate-on-show "
+         "branch is gated on a non-zero token, which a static layer never has";
 }
 
 int main(int argc, char** argv)

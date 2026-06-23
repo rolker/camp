@@ -100,6 +100,14 @@ private:
   // pre-refresh pixmap would then satisfy the tileLoaded guard on the rebuilt
   // same-position tile and paint a stale radar frame for up to one cycle.
   quint64 layout_epoch_ = 0;
+
+  // [#111] Shared refresh path: bump the cache-buster, drop the disk cache, and
+  // rebuild the tile set (re-issuing the network loads). Called by the periodic
+  // onRefreshTimer() and by itemChange() when a refreshing layer becomes visible,
+  // so the two cannot drift — both deliver a genuinely fresh frame, never a stale
+  // one carried over in the already-built tiles.
+  void refreshTiles();
+
 private slots:
   void tileLoaded(QPixmap pixmap, TileAddress tile);
 

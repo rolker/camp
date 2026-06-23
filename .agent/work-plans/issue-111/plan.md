@@ -100,8 +100,8 @@ URL so each cycle's GET is a URL the CDN cannot answer from cache.
 |------|--------|
 | `src/camp2/map_tiles/cached_tile_loader.h` | Add `cache_bust_`, `enableCacheBusting()`, `bumpCacheBust()`, `cacheBustToken()`, static `withCacheBust()` |
 | `src/camp2/map_tiles/cached_tile_loader.cpp` | Implement the above; apply buster in `load()`; `enableCacheBusting()` idempotent (no token regression on re-enable, review #1) |
-| `src/camp2/map_tiles/map_tiles.h` | Declare the `itemChange` override (invalidate-on-show) |
-| `src/camp2/map_tiles/map_tiles.cpp` | `setRefreshInterval` → `enableCacheBusting`; `onRefreshTimer` → `bumpCacheBust`; correct freshness comment (`:260`), point at #118; `itemChange` invalidate-on-show |
+| `src/camp2/map_tiles/map_tiles.h` | Declare the `itemChange` override + shared `refreshTiles()` helper |
+| `src/camp2/map_tiles/map_tiles.cpp` | `setRefreshInterval` → `enableCacheBusting`; extract `refreshTiles()` (bump + invalidate + **setLayout rebuild**); `onRefreshTimer` and `itemChange`-on-show both call it (the on-show path must rebuild, not just bump — Round-2 must-fix); freshness comment points at #118 |
 | `docs/decisions/0004-weather-radar-tile-provider.md` | **Delete** — radar-provider decision retired from the ADR set; tracked forward as camp#118 (operator decision) |
 | `test/test_map_tiles_refresh.cpp` | Add `withCacheBust` + token-bump + opt-in + invalidate-on-show tests |
 
