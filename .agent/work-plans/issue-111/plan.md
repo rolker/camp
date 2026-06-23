@@ -83,16 +83,27 @@ URL so each cycle's GET is a URL the CDN cannot answer from cache.
      `cacheBustToken()`.
    - Opt-in: a layer that never calls `setRefreshInterval` keeps
      `cacheBustToken() == 0` (static layers unaffected). No live-network test.
+7. **Invalidate-on-show** (operator requirement, 2026-06-23 — "never show yesterday's
+   radar, not even briefly"). The 5-min refresh only invalidates the disk cache on
+   the timer; enabling radar shortly after launch would serve a previous session's
+   on-disk tiles until the next refresh. Override `MapTiles::itemChange` so that on
+   the `ItemVisibleHasChanged → true` transition a *refreshing* layer (gated on
+   `cacheBustToken() != 0`) drops its disk cache + bumps the buster, making the
+   first paint fetch fresh (brief blank, never stale). Static layers keep their
+   cache on show. Tests: token advances on show for a refreshing layer; a static
+   layer's visibility toggle does not bust. The broader mid-session "displayed
+   frame ages when fetches stop" safeguard is filed separately as **camp#119**.
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
 | `src/camp2/map_tiles/cached_tile_loader.h` | Add `cache_bust_`, `enableCacheBusting()`, `bumpCacheBust()`, `cacheBustToken()`, static `withCacheBust()` |
-| `src/camp2/map_tiles/cached_tile_loader.cpp` | Implement the above; apply buster in `load()` |
-| `src/camp2/map_tiles/map_tiles.cpp` | `setRefreshInterval` → `enableCacheBusting`; `onRefreshTimer` → `bumpCacheBust`; correct freshness comment (`:260`), point at #118 |
+| `src/camp2/map_tiles/cached_tile_loader.cpp` | Implement the above; apply buster in `load()`; `enableCacheBusting()` idempotent (no token regression on re-enable, review #1) |
+| `src/camp2/map_tiles/map_tiles.h` | Declare the `itemChange` override (invalidate-on-show) |
+| `src/camp2/map_tiles/map_tiles.cpp` | `setRefreshInterval` → `enableCacheBusting`; `onRefreshTimer` → `bumpCacheBust`; correct freshness comment (`:260`), point at #118; `itemChange` invalidate-on-show |
 | `docs/decisions/0004-weather-radar-tile-provider.md` | **Delete** — radar-provider decision retired from the ADR set; tracked forward as camp#118 (operator decision) |
-| `test/test_map_tiles_refresh.cpp` | Add `withCacheBust` + token-bump + opt-in tests |
+| `test/test_map_tiles_refresh.cpp` | Add `withCacheBust` + token-bump + opt-in + invalidate-on-show tests |
 
 ## Principles Self-Check
 

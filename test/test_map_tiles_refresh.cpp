@@ -238,6 +238,45 @@ TEST(MapTilesRefresh, StaticLayerNeverBustsCache)
       << "a layer that never enables refresh must not cache-bust its URLs";
 }
 
+// [#111] A refreshing (radar) layer becoming visible must drop its disk cache and
+// advance the cache-bust token, so the FIRST paint after the operator enables it
+// fetches a fresh frame instead of serving a tile cached in a previous session
+// (e.g. yesterday's radar). Observable via the token strictly advancing on show.
+TEST(MapTilesRefresh, BecomingVisibleAdvancesCacheBustToken)
+{
+  Map map;
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_radar_show", makeLayout(1, 1));
+
+  layer->setRefreshInterval(300000);  // enable cache-busting (radar)
+  layer->setVisible(false);
+  CachedTileLoader* loader = layer->findChild<CachedTileLoader*>();
+  ASSERT_NE(loader, nullptr);
+
+  const quint64 hidden = loader->cacheBustToken();
+  ASSERT_NE(hidden, quint64(0)) << "refreshing layer should have busting enabled";
+
+  layer->setVisible(true);  // show transition → invalidate + bump
+  EXPECT_GT(loader->cacheBustToken(), hidden)
+      << "becoming visible must advance the token so the first paint fetches fresh, "
+         "never a previous session's cached frame";
+}
+
+// A static (non-refreshing) layer toggling visibility never triggers cache-busting
+// — its disk cache must be preserved on show (only radar invalidates on show).
+TEST(MapTilesRefresh, StaticLayerVisibilityDoesNotBust)
+{
+  Map map;
+  auto* layer = new MapTiles(map.topLevelLayers(), "test_static_show", makeLayout(1, 1));
+
+  layer->setVisible(false);
+  layer->setVisible(true);
+
+  CachedTileLoader* loader = layer->findChild<CachedTileLoader*>();
+  ASSERT_NE(loader, nullptr);
+  EXPECT_EQ(loader->cacheBustToken(), quint64(0))
+      << "a static layer must not cache-bust (or drop its disk cache) on show";
+}
+
 int main(int argc, char** argv)
 {
   // MapTiles is a QGraphicsObject; Map builds a QGraphicsScene and MapItem ctors

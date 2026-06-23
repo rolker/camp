@@ -8,6 +8,7 @@
 #include <QDir>
 #include <QStyleOptionGraphicsItem>
 #include <QTimer>
+#include <QVariant>
 #include <algorithm>
 #include <set>
 #include <utility>
@@ -287,6 +288,26 @@ void MapTiles::onRefreshTimer()
   }
   setLayout(tile_layout_);
   update();
+}
+
+QVariant MapTiles::itemChange(GraphicsItemChange change, const QVariant& value)
+{
+  // [#111] Make the FIRST paint after the operator turns a refreshing layer on
+  // fetch fresh, not a frame cached in a previous session. invalidateCache()
+  // alone (in onRefreshTimer) only runs on the 5-minute timer, so enabling radar
+  // shortly after launch would otherwise serve yesterday's on-disk tiles until
+  // the next refresh. On the visible transition we drop the disk cache AND bump
+  // the cache-buster, so the load() triggered by the ensuing paint goes to the
+  // network with a CDN-distinct URL. Gated on cache-busting being enabled, which
+  // is true only for refreshing (radar) layers — static OSM/WMTS basemaps keep
+  // their cache on show.
+  if(change == ItemVisibleHasChanged && value.toBool() && tile_loader_ &&
+     tile_loader_->cacheBustToken() != 0)
+  {
+    tile_loader_->bumpCacheBust();
+    tile_loader_->invalidateCache();
+  }
+  return Layer::itemChange(change, value);
 }
 
 void MapTiles::updateViewScale(double view_scale)

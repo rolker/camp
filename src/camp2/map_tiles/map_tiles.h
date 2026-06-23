@@ -55,6 +55,15 @@ public slots:
   void updateViewScale(double view_scale);
   void wmtsCapabilitiesReady();
 
+protected:
+  // [#111] When a refreshing layer (radar) becomes visible, drop its disk cache
+  // and advance the cache-buster so the FIRST paint after the operator enables it
+  // fetches a fresh frame instead of serving a tile cached in a previous session
+  // (e.g. yesterday's radar). Static layers (cache-busting off) are untouched, so
+  // their disk cache is never dropped on show. The brief gap shows blank, never a
+  // stale frame.
+  QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+
 private:
   TileLayout tile_layout_;
   std::map<TileAddress, Tile*> tiles_;
