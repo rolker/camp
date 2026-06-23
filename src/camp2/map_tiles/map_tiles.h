@@ -84,7 +84,7 @@ private:
   std::map<TileAddress, quint64> tile_last_visible_gen_;
   bool eviction_pending_ = false;
 
-  CachedTileLoader* tile_loader_;
+  CachedTileLoader* tile_loader_ = nullptr;
 
   const wmts::Capabilities* wmts_capabilites_ = nullptr;
   QString wmts_layer_id_;
