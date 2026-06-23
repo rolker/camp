@@ -245,3 +245,24 @@ caveats and the plan is good to implement.
 - [ ] (suggestion) Operational (post-fix): forcing reload on show makes rapid visibility toggling re-download the whole layer (`removeRecursively` + per-tile guaranteed-miss GET); consider a freshness guard/debounce for marginal field connectivity. — `src/camp2/map_tiles/map_tiles.cpp:304`
 - [ ] (suggestion) ADR-0004 hard-deleted rather than `Status: Superseded`; decision still live in code; recorded operator decision (plan step 5, camp#118) — confirm camp#118/#119 exist (unverifiable offline). Cross-confirmed with Round-1 review. — `docs/decisions/0004-weather-radar-tile-provider.md`
 - [ ] (suggestion) `StaticLayerVisibilityDoesNotBust` comment claims it guards disk-cache-on-show but only asserts token==0; align comment or add a disk-state check. — `test/test_map_tiles_refresh.cpp:266`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-23 10:59 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-111 at `f518508`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR deletion under docs/decisions/ — Deep promotion trigger; >200 lines)
+**Must-fix**: 0 | **Suggestions**: 5
+**Round**: 3 | **Ship**: recommended — Round-2 must-fix resolved and guarded by a targeted regression test (`BecomingVisibleRebuildsTilesNotJustToken`); 0 new must-fix; remaining items advisory/deferred.
+
+### Findings
+- [ ] (suggestion) No end-to-end test exercises `load()`'s `cache_bust_!=0` branch — that the wiring actually emits a `?t=`-busted *network* URL; pure-logic + token tests cover the rest. (Recurring R1/R2.) — `test/test_map_tiles_refresh.cpp`
+- [ ] (suggestion) `tile_loader_` is an uninitialized raw pointer read by the `itemChange` guard; currently safe (virtual dispatch + ctor assigns it before `setLayout`), but initialize to `nullptr` to remove the latent risk. — `src/camp2/map_tiles/map_tiles.h:87`
+- [ ] (suggestion) Rapid radar off→on toggling forces a full re-download (`removeRecursively` + guaranteed-miss GETs); documented tradeoff, deferred to camp#119; a debounce would help marginal field links. (Recurring R2.) — `src/camp2/map_tiles/map_tiles.cpp:298`
+- [ ] (suggestion) ADR-0004 hard-deleted rather than `Status: Superseded`; operator-decided (plan step 5), tracked to camp#118/#119 — confirm those issues exist before push (unverifiable offline). (Recurring R1/R2.) — `docs/decisions/0004-weather-radar-tile-provider.md`
+- [ ] (suggestion) Silent blank-on-reject if a future provider 4xx's the unknown `?t=` param (`cached_file_loader.cpp:120` drops the failed reply, never stale — correct posture); surface fetch failures in field UI via camp#119. (Recurring R2.) — `src/camp2/map_tiles/cached_tile_loader.cpp:48`
+
+<!-- Note: could not compile/run the test here — layered underlay unbuilt, so camp's find_package(marine_ais_msgs) fails at configure. Test correctness reviewed by reading; build + colcon test recommended locally before push. -->
