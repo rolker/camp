@@ -36,7 +36,16 @@ QString writeTile(const QTemporaryDir& dir, int w, int h, const double geo[6],
     GDALAllRegister();
   const QString path = dir.filePath("13_0_0.tif");
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
+  // cleanly instead of dereferencing null. (These helpers return QString, so a
+  // void-returning ASSERT_* can't be used here — EXPECT_NE + early return.)
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), w, h, 1, GDT_UInt16, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(0);
@@ -57,7 +66,16 @@ QString writeFloatTile(const QTemporaryDir& dir, int w, int h, const double geo[
     GDALAllRegister();
   const QString path = dir.filePath("13_0_0.tif");
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
+  // cleanly instead of dereferencing null. (These helpers return QString, so a
+  // void-returning ASSERT_* can't be used here — EXPECT_NE + early return.)
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), w, h, 1, GDT_Float32, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(nodata);

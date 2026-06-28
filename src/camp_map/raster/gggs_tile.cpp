@@ -102,10 +102,15 @@ bool GggsTile::loadPixels()
   for(float v : values)
   {
     // [camp#122] Compare NoData in float to match the shader, which discards in
-    // float (v == float(u_nodata)). For a sentinel not exactly representable in
-    // float32, double(v) == nodata_ would diverge from the GPU (CPU keeps a value
-    // the shader discards, polluting the auto-range). v is already float, so
-    // float(nodata_) puts both sides on the same footing.
+    // float (v == float(u_nodata)). For a Float32 band GetNoDataValue() already
+    // returns the float-rounded sentinel, so float(nodata_) == nodata_ here and
+    // the two compares usually agree; the float cast just guarantees CPU and GPU
+    // stay on the same footing regardless of how the sentinel was stored.
+    // [camp#122] Known theoretical edge: a NaN NoData sentinel never matches
+    // v == u_nodata on the GPU (NaN != NaN), so the shader would discard nothing,
+    // while the !isfinite check below still excludes it from the CPU auto-range —
+    // the two paths diverge. In practice GGGS NoData is a finite sentinel (e.g.
+    // 9999 or 0), so this does not arise.
     if(!std::isfinite(v) || (has_nodata_ && v == float(nodata_)))
       continue;
     min_value = std::min(min_value, double(v));
