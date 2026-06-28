@@ -185,3 +185,37 @@ here (lower ROS layers unbuilt); model/test untouched since last 5/5 pass — re
 ### Next step
 Lifecycle: **Local Review (approved)** → push / open PR → **triage-reviews**.
 Branch is shippable; the 3 suggestions are optional and may be applied pre-push or tracked as follow-ups.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 17:43 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-129 at `16cd55f`
+**Mode**: pre-push
+**Depth**: Deep (reason: 923 lines / 16 files — both >200 lines and ≥10 files; cross-layer GUI+ROS)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 3 | **Ship**: recommended — 0 must-fix; round-2's 3 suggestions all verified resolved; only optional low-impact suggestions remain
+
+Round-2's 3 suggestions verified resolved in `4bc1b58` + `16cd55f`: dup-id leak guard added
+(`running_tasks_overlay.cpp:84`); `setSelected`→`setHighlighted` rename removes the non-virtual
+`QGraphicsItem::setSelected` shadow (consistent across header, paint, and both call sites);
+zoom-time geometry invalidation added via `updateMapScale` calling `prepareGeometryChange()` on
+every scene `GeoGraphicsItem` (`autonomousvehicleproject.cpp:1186`, through the pre-existing public
+wrapper at `geographicsitem.h:54`). cppcheck clean (only Qt `slots`-macro noise). Two fresh-context
+adversarial passes (Lens A logic/edge-cases, Lens B lifecycle/concurrency/cross-cutting) found no
+must-fix; Lens B confirmed the QPointer teardown, the GUI-thread-only `tasksUpdated`/`getGeoCoordinate`
+signal path, and the new prepareGeometryChange loop are all sound. Build/gtest not re-run here
+(lower ROS layers unbuilt in this worktree); model/test untouched since last 5/5 pass — re-run in a
+provisioned env before merge.
+
+### Findings
+- [ ] (suggestion) Selecting a no-pose group row leaves the previously-highlighted overlay item highlighted (tree shows the group row, map still shows the old task orange) — the `hasTaskPoses` early-return is the planned guard, but consider also emitting a deselect so the two panes don't drift — `src/camp/running_tasks/running_tasks_view.cpp:155`, `src/camp/running_tasks/running_tasks_overlay.cpp:30`
+- [ ] (suggestion) `onItemClicked` updates `selected_id_` only indirectly (via `setSelectedTask`→`taskSelected`); if `indexForId` ever fails to resolve the id the map click is silently dropped — set the highlight locally before delegating for robustness — `src/camp/running_tasks/running_tasks_overlay.cpp:40`
+- [ ] (suggestion) `sceneRadius` returns 0 if the projection collapses (`metresPerPixel`→0 or coincident probe pixels), yielding a zero-width hit stroke that makes a multi-pose item unclickable; add a small floor — `src/camp/running_tasks/task_overlay_item.cpp:32`
+- [ ] (suggestion, low) `updateMapScale` `dynamic_cast`s every scene item per zoom tick; negligible at current scene sizes, could pre-filter on `type() >= UserType` if scenes grow large — `src/camp/autonomousvehicleproject.cpp:1186`
+
+### Next step
+Lifecycle: **Local Review (approved)** → push / open PR → **triage-reviews**.
+Branch is shippable; all 4 findings are optional suggestions — apply pre-push or track as follow-ups.
