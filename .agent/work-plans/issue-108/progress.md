@@ -133,3 +133,50 @@ follow-up), ADR-0002/0003 — compliant.
 - [ ] (suggestion) Non-uniform band counts across tiles silently mishandled — a tile with fewer bands than `tiles_.front()` is dropped from the render with no status signal; guard if mixed dirs are possible — `gggs_tile_layer.cpp:646`
 - [ ] (suggestion) Constructor band-1 NoData read is now dead (re-queried in `loadPixels`); minor cleanup — `gggs_tile.cpp:49`
 - [ ] (suggestion) File a follow-up: shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable (documented/deferred) — `gggs_tile_layer.cpp:78`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 02:37 +0000
+**By**: Claude Opus
+
+**Summary**: Addressed local-review (pre-push) suggestions 1-3 in code; suggestion 4
+deferred to the camp#122 follow-up (shader not reworked). Commit `9adfd7d` on
+`feature/issue-108`.
+
+1. **applyBand decoupling** (suggestion 1) — added a private, non-persisting
+   `GggsTileLayer::applyBand(int)` carrying the band-switch body (validate →
+   abort+join load → null-guarded GL texture release → re-point tiles → reset
+   range/cache → re-kick load → repaint). Public `setBand()` now guards, calls
+   `applyBand()`, then `writeSettings()`; `readSettings()` calls `applyBand()`
+   directly, so the read path no longer triggers a settings write. Mirrors the
+   inline colormap apply. The "only apply if differs" guard is retained in both.
+2. **Non-uniform per-tile band-count guard** (suggestion 2) — `applyBand()` now
+   skips any tile whose own `bandCount()` is below the requested band (leaving it
+   on its prior band rather than letting `GggsTile::setBand()` silently no-op) and
+   emits a one-shot `qWarning` per switch reporting the dropped count, matching the
+   file's existing `qWarning("GggsTileLayer: ...")` idiom.
+3. **Dead band-1 NoData read cleanup** (suggestion 3) — removed the constructor
+   `GetNoDataValue()` read and the now-unused `GetRasterBand(band_)` handle in
+   `gggs_tile.cpp`; `loadPixels()` already re-queries NoData for the selected band.
+   `has_nodata_`/`nodata_` members and the `band_count_`/`GetRasterCount()` storage
+   are retained (members just stay at defaults until the first `loadPixels()`; no
+   path reads them earlier — `texture()`/range are gated on `pixelsLoaded()`).
+   Stale doc comments in `gggs_tile.{h}` updated; the `NoDataExcludedFromRange`
+   test now asserts `hasNoData()`/`noData()` after `loadPixels()`.
+4. **Shader `v<=0` discard** (suggestion 4) — NOT reworked, per instruction. The
+   code comment beside the discard now references the **camp#122** follow-up.
+
+Also synced `plan.md` (persistence step + Files-to-Change) to note the `applyBand`
+refactor and the band-count guard.
+
+**Build/test result** (verified in-container):
+- Build: `./ui_ws/build.sh camp` → `1 package finished` (camp), warnings only
+  (all pre-existing, e.g. Qt `HighQualityAntialiasing` deprecation), no errors.
+  Required building the shared `underlay_ws` (22 pkgs) and `core_ws` (35 pkgs)
+  symlink layers first; their installs were empty.
+- Test: `./ui_ws/test.sh camp` → **114 tests, 0 errors, 0 failures, 3 skipped**.
+  The 3 skips are the offscreen-GL tests (`test_gggs_band_select` etc.) that SKIP
+  in-container by design — expected, not a failure.
+
+**Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
+(the host performs pushes).
