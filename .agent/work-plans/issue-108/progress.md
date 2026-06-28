@@ -558,3 +558,25 @@ that SKIP-not-FAIL in-container by design).
 **Commit**: `675c6f1` refactor(camp#125): retire camp2 executable; rename
 src/camp2 -> src/camp_map (single atomic commit — git mv + CMake/path/doc edits;
 hooks ran, no `--no-verify`). Not pushed (handoff contract — the host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 14:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-108 at `568ca20`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change spanning the camp2->camp_map cross-layer rename)
+**Must-fix**: 1 | **Suggestions**: 2
+**Round**: 6 | **Ship**: continue — a new correctness/consequence must-fix surfaced from the camp#126 code (renaming the layer changes its QSettings itemID, silently resetting persisted visible/colormap/band on upgrade), cross-confirmed by both adversarial lenses and governance; it carries a migrate-vs-accept design choice so warrants resolution before push. Advisory — a single well-understood item Roland may also accept-and-ship with a comment fix; this review never blocks the ship.
+
+Branch now bundles three issues: camp#108 (band picker, 5 prior clean rounds), camp#126 (parent/leaf layer naming), camp#125 (retire camp2 exe + rename src/camp2 -> src/camp_map, 103 files at 100% similarity). Static analysis: cppcheck clean apart from pre-existing `shadowFunction` notes (locals width/height/band shadow accessors — predates this change) and the cppcheck C-parser `namespace`/Qt-`slots` false errors; line-length (<=100)/trailing-whitespace clean. CMake rename verified: only the CCOMAutonomousMissionPlanner executable target remains, `grep camp2 CMakeLists.txt/Doxyfile` clean, all three new tests wired. Claude Adversarial: 2 passes (Lens A logic + Lens B systemic/GL/concurrency, Deep horizon) — both independently cleared the worker abort/join at every tiles_ mutation site, the atomic pixels_loaded_ release/acquire pairing, GL-context lifecycle (create/makeCurrent-fail/releaseGL/destroy-mid-load), and band/rescan/range-fold logic with no race/leak/UAF, and both converged on the persistence-key regression below. Copilot: off (default). Plan adherence: the #108 plan is implemented faithfully; camp#126/#125 are separately-tracked issues bundled on the branch, not #108 scope creep. Governance: ADR-0005 (#108 is its scoped band-select follow-up), ADR-0002 (camp#125 completes the #59 adoption migration), ADR-0003 (async load contract preserved) — compliant; the one MISSING consequence is camp#126's itemID/persistence-stability (the must-fix).
+
+NOTE: did not run a fresh build/test this round (mature branch; relied on static analysis + two Deep adversarial reads). The last recorded build/test (camp#125 implementation entry) was `120 tests, 0 errors, 0 failures, 3 skipped` (the 3 are the offscreen-GL tests, SKIP-not-FAIL in-container by design).
+
+### Findings
+- [ ] (must-fix) camp#126 layer rename changes `objectName()` -> `itemID()` -> the per-layer QSettings key, so `visible`/`colormap`/`band` persisted on a prior (leaf-named) build are not found after upgrade and silently revert to defaults (layer comes back OFF/grayscale/band 1); the `GggsTileLayers/dirs` restore list is directory-keyed so the layer IS recreated, only its prefs are lost. Contradicts this branch's own main.cpp persistence-stability note. The test comment `test_gggs_layer_name.cpp:4-5` ("persistence stays keyed by the full directory") is wrong for the per-layer settings group. Fix: one-time migration of the old leaf-keyed group, OR consciously accept + document the reset and correct the comment — `src/camp_map/raster/gggs_tile_layer.cpp:419`
+- [ ] (suggestion) `setBand()` `pixels_loaded_.store(false, std::memory_order_release)` — release ordering on the false store pairs with no acquire-of-false; real sync is the worker join. `relaxed` + a note, or keeping it for symmetry, reads clearer — `src/camp_map/raster/gggs_tile.cpp:144`
+- [ ] (suggestion) Pre-existing idiom: locals `width`/`height`/`band` shadow accessor methods (`shadowFunction`); completeness only — `src/camp_map/raster/gggs_tile.cpp:34`
+- [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands -> camp#122; non-uniform-tile validation authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp_map/raster/gggs_tile_layer.cpp:62`
