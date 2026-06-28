@@ -418,3 +418,22 @@ suite: 7 tests, 0 failures, 0 skipped — including the 2 new band tests.
 
 **Commit**: `1d4251f` test(camp#108): cover band QSettings round-trip (hooks ran,
 no `--no-verify`). Not pushed; no PR opened (handoff contract — the host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 12:03 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `042f749`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 5 | **Ship**: recommended — no must-fix in diff scope; production code is unchanged since the Round-4 approval (already cleared by two Deep adversarial passes), and the only new surface — the band QSettings round-trip tests — was independently verified as a genuine, non-vacuous regression test by Lens A.
+
+Static analysis: cppcheck clean (the lone `unknownMacro` is the Qt `slots` parse limitation in a transitively-included header, not a finding in the changed code); line-length (<=100) and trailing-whitespace clean (cpplint binary unavailable — checked manually). Claude Adversarial: 2 passes (Lens A logic + Lens B systemic/GL/concurrency, Deep horizon). Lens A traced itemID coupling / readSettings→applyBand→writeSettings and confirmed `BandRoundTrips`/`BandDefaultRoundTrips` fail under a read- or write-side regression (non-vacuous); Lens B re-cleared the worker abort/join, atomic release/acquire pairing, and the readSettings→applyBand null-context path, and confirmed the band-switch makeCurrent-failure path correctly prevents stale-band rendering. Copilot: off (default). Plan adherence: exact, no scope creep (Round-4 finding closed; plan.md Tests synced). Governance: camp ADR-0005 (this is its scoped band-select follow-up), ADR-0002/0003 — compliant.
+
+### Findings
+- [ ] (suggestion) Pre-existing (byte-identical on `origin/jazzy`, out of this PR's diff): `releaseGL()` makeCurrent-failure branch skips the reset body then deletes the context, so the FBO/program/LUT/tile-textures destruct with no current context → leak + warnings; only fires on GL loss at process teardown (OS reclaims handles). Possible follow-up — `src/camp2/raster/gggs_tile_layer.cpp:594`
+- [ ] (suggestion) `applyBand()` makeCurrent-failure path clears tile pixels without releasing the old-band texture; stale-render is correctly prevented (sets `gl_failed_`), so this is a texture leak on the rare GL-failure path only — ties to the pre-existing teardown behavior above — `src/camp2/raster/gggs_tile_layer.cpp:701`
+- [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands → camp#122; non-uniform-tile validation authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp2/raster/gggs_tile_layer.cpp:62`
