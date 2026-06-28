@@ -102,6 +102,11 @@ QVariant RunningTasksModel::data(const QModelIndex& index, int role) const
       if (is_current)
         return QBrush(QColor(0xDD, 0xEE, 0xFF));
       return QVariant();
+    case Qt::ForegroundRole:
+      // Grey out completed tasks (they also sink to the bottom of each level).
+      if (msg.done)
+        return QBrush(QColor(0x90, 0x90, 0x90));
+      return QVariant();
     case Qt::ToolTipRole:
       return n->fullId;
     default:
