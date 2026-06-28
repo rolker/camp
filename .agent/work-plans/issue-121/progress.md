@@ -19,3 +19,17 @@ issue: 121
 - [ ] Write a camp project ADR for Part B's persistence contract: in-memory render + write-through to disk + anti-entropy reconcile + "display-grade preview vs. data of record" distinction. This is a significant design decision for the project.
 - [ ] Clarify how the live cache layer presents to the operator: does it appear in the Layers tree? How is its "live/preview" status visually distinguished? Align with ADR-0005's browse/compose split.
 - [ ] For Part B acceptance: add a test or documented scenario for the simulated-downtime gap (request + prune) that can run without a live boat connection.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-28 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-121/plan.md` at `edf9946`
+**Branch**: feature/issue-121 at `edf9946`
+**Phases**: single
+
+### Open questions
+- [ ] Discover vs. opt-in: camp#44/#68 not yet implemented; auto-spawn (GridManager pattern) proposed — confirm with operator before implementing.
+- [ ] Multi-band write-through: which bands to persist (all received vs. depth-only)? Propose: all received bands.
+- [ ] Cache size limits: no built-in eviction beyond prune-on-absence; flag if operator expects a bounded cache.
