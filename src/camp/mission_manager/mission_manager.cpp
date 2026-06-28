@@ -1,8 +1,6 @@
 #include "mission_manager.h"
 #include "ui_mission_manager.h"
-#include <QMenu>
 #include <QGeoCoordinate>
-#include "ros/ros_context.h"
 
 MissionManager::MissionManager(QWidget *parent)
   :camp_ros::ROSWidget(parent), m_ui(new Ui::MissionManager)
@@ -19,10 +17,8 @@ void MissionManager::updateRobotNamespace(QString robot_namespace)
 {
   if(node_)
   {
-    rclcpp::SubscriptionOptions realtime_options;
-    if (auto ctx = camp_ros::RosContext::instance())
-      realtime_options.callback_group = ctx->group(camp_ros::RosContext::Group::Realtime);
-    mission_status_subscription_ = node_->create_subscription<marine_interfaces::msg::Heartbeat>("/"+robot_namespace.toStdString()+"/marine/status/mission_manager" , 1, std::bind(&MissionManager::missionStatusCallback, this, std::placeholders::_1), realtime_options);
+    // Mission status is now shown by the structured RunningTasksView; this
+    // widget is a command panel and no longer subscribes to the Heartbeat.
     send_command_publisher_ = node_->create_publisher<std_msgs::msg::String>("/"+robot_namespace.toStdString()+"/marine/send_command",1);
 
     rclcpp::QoS qos(1);
@@ -30,11 +26,6 @@ void MissionManager::updateRobotNamespace(QString robot_namespace)
 
     send_avoidance_costmap_publisher_ = node_->create_publisher<marine_interfaces::msg::GeoOccupancyVectorMap>("/"+robot_namespace.toStdString()+"/marine/avoidance_map", qos);
   }
-}
-
-void MissionManager::updateMissionStatus(const QString& status)
-{
-    m_ui->missionStatusTextBrowser->setText(status);
 }
 
 void MissionManager::on_gotoLinePushButton_clicked(bool checked)
@@ -45,22 +36,6 @@ void MissionManager::on_gotoLinePushButton_clicked(bool checked)
 void MissionManager::on_startLinePushButton_clicked(bool checked)
 {
     //sendStartLine(m_ui->lineNumberSpinBox->value());
-}
-
-void MissionManager::on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos)
-{
-    QMenu menu(this);
-
-    QAction *nextItemAction = menu.addAction("Next Mission Item");
-    connect(nextItemAction, &QAction::triggered, this, &MissionManager::sendNextItem);
-
-    QAction *restartMissionAction = menu.addAction("Restart Mission");
-    connect(restartMissionAction, &QAction::triggered, this, &MissionManager::restartMission);
-
-    QAction *clearTasksAction = menu.addAction("Clear Tasks");
-    connect(clearTasksAction, &QAction::triggered, this, &MissionManager::clearTasks);
-
-    menu.exec(m_ui->missionStatusTextBrowser->mapToGlobal(pos));
 }
 
 void MissionManager::on_nextMissionItemPushButton_clicked(bool checked)
@@ -81,20 +56,6 @@ void MissionManager::on_clearTasksPushButton_clicked(bool checked)
 void MissionManager::on_cancelOverridePushButton_clicked(bool checked)
 {
   sendCancelOverride();
-}
-
-void MissionManager::missionStatusCallback(const marine_interfaces::msg::Heartbeat& message)
-{
-  QString status_string;
-  for(auto kv: message.values)
-  {
-    status_string += kv.key.c_str();
-    status_string += ": ";
-    status_string += kv.value.c_str();
-    status_string += "\n";
-  }
-  
-  QMetaObject::invokeMethod(this, "updateMissionStatus", Qt::QueuedConnection, Q_ARG(QString const&, status_string));
 }
 
 void MissionManager::sendMissionPlan(const QString& plan)
