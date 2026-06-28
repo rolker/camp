@@ -32,3 +32,21 @@ issue: 108
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-28 00:06 +00:00
+**By**: Claude Code Agent (Claude Opus) (in-context — author self-review)
+
+**Plan**: `.agent/work-plans/issue-108/plan.md` at `4d40d16`
+**PR**: PR-less (--issue mode)
+**Verdict**: changes-requested
+
+### Findings
+- [ ] (must-fix) New `test/test_gggs_band_select.cpp` not registered in `CMakeLists.txt` (`ament_add_gtest` + include/link, mirror `test_gggs_render` at `CMakeLists.txt:562`); without it the test never builds — `plan.md:57-65`
+- [ ] (must-fix) Per-band NoData not re-queried — `has_nodata_`/`nodata_` are read once for band 1 (`gggs_tile.cpp:47-49`, used in range filter at `:93`); `setBand` must refresh them so a switched band ranges correctly (review-issue finding) — `plan.md:21-24`
+- [ ] (suggestion) Stale doc comments at `gggs_tile.h:36` ("Read band 1") and `gggs_tile_layer.h:41-43` ("Slice 1: single-band… Band-select [follow-up]") not flagged for update (review-issue finding) — `plan.md:60-63`
+- [ ] (suggestion) Fragment shader discards `v <= 0.0` and auto-ranges (`gggs_tile_layer.cpp:71-73`) — a second band with 0/negative valid samples renders blank/mis-ranged; acknowledge in Open Questions — `plan.md:92-95`
+- [ ] (suggestion) Layer `setBand` must guard null `gl_context_` (not-yet-painted) before makeCurrent/texture release, as `releaseGL()` already does (`gggs_tile_layer.cpp:571`) — `plan.md:27-33`
+
+**Note**: independence annotation applied per the skill's name-based rule (the `## Plan Authored` entry shares the `Claude Code Agent` agent-name); this review was nonetheless a fresh-context dispatch on a different model (Sonnet authored, Opus reviewed).
