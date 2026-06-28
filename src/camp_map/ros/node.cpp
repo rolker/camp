@@ -5,6 +5,7 @@
 #include "../tools/tools_manager.h"
 #include "geometry/geometry_manager.h"
 #include "grids/grid_manager.h"
+#include "live_coverage/sonar_live_cache_manager.h"
 #include "markers/markers_manager.h"
 #include "names_manager.h"
 #include "graph_thread.h"
@@ -75,6 +76,7 @@ void Node::nodeStarted(rclcpp::Node::SharedPtr node, tf2_ros::Buffer::SharedPtr 
 
   new markers::MarkersManager(this);
   new grids::GridManager(this);
+  new live_coverage::SonarLiveCacheManager(this);
   if(create_geometry_manager_)
     new geometry::GeometryManager(this);
 

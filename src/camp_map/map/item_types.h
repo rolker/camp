@@ -35,6 +35,7 @@ enum ItemType
   MapToolType,
   RasterLayerType,
   GggsTileLayerType,
+  SonarLiveCacheLayerType,
   RosGeometryManagerType,
   RosNamesManagerType,
   RosNodeType,
