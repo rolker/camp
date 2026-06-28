@@ -20,3 +20,15 @@ issue: 108
 - [ ] Single-band graceful handling: disable or hide the band-picker context menu item when `GetRasterCount() == 1` — nothing to pick.
 - [ ] Update doc comments that will be stale after the change: `gggs_tile.h:36` ("Read band 1"), `gggs_tile_layer.h:41-42` ("Slice 1: single-band…  Band-select + colormap are [follow-up]").
 - [ ] Persist the selected band index via QSettings alongside colormap, consistent with how colormap is persisted in `GggsTileLayer`.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-28 00:10 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-108/plan.md` at `4d40d16`
+**Branch**: feature/issue-108 at `4d40d16`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
