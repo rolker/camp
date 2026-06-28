@@ -72,3 +72,15 @@ No open blockers. The `feature/issue-122` branch already exists.
 - [ ] Add shader uniforms `u_has_nodata` (int) and `u_nodata` (float); replace `if(v <= 0.0) discard` with `if(u_has_nodata != 0 && v == u_nodata) discard`.
 - [ ] Set uniforms per-tile in `renderImage()` from `tile->hasNoData()` / `tile->noData()`.
 - [ ] Verify uncertainty/quality bands (with valid 0 or negative values) render correctly end-to-end.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-28 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-122/plan.md` at `fe5c2a5`
+**Branch**: feature/issue-122 at `fe5c2a5`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
