@@ -41,7 +41,7 @@ RunningTasksView::RunningTasksView(QWidget* parent)
 RunningTasksView::~RunningTasksView()
 {
   // Stop new callback dispatch before the members the callback touches
-  // (pending_mutex_, pending_rows_) are torn down — they are declared after
+  // (pending_mutex_, pending_tasks_) are torn down — they are declared after
   // subscription_ and so are destroyed first under reverse-order destruction.
   // (Full safety on shutdown also relies on the CAMP executor being stopped
   // before these widgets are destroyed; this guards the local ordering.)

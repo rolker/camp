@@ -65,7 +65,11 @@ QVariant RunningTasksModel::data(const QModelIndex& index, int role) const
     return QVariant();
 
   const auto& msg = n->task->message();
-  const bool is_current = !current_task_.isEmpty() && n->fullId == current_task_;
+  // current_task_ is already normalized (in setTasks); normalize fullId the same
+  // way for the comparison so the highlight matches regardless of stray slashes.
+  const bool is_current =
+      !current_task_.isEmpty() &&
+      n->fullId.split('/', Qt::SkipEmptyParts).join('/') == current_task_;
 
   switch (role)
   {
