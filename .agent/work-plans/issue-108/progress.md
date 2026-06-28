@@ -206,3 +206,52 @@ Governance: camp ADR-0005 (this is its scoped band-select follow-up), ADR-0002/0
 ### Findings
 - [ ] (suggestion) Non-uniform tile-set: `applyBand()` releases every tile's texture but only reloads tiles that have the requested band; a dropped tile (data_ freed to GPU, pixels_loaded_ still true) renders BLANK rather than "left on their prior band" as the comment claims, and its stale prior-band range still pollutes the tilesReady() fold. Gated behind the store-uniformity invariant (never fires on a uniform store). Fix: skip releaseGL() for dropped tiles, and/or correct the comment — `src/camp2/raster/gggs_tile_layer.cpp:653`
 - [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; already documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 10:01 +0000
+**By**: Claude Opus
+
+**Summary**: Addressed the Round-2 local-review must-fix candidate (the non-uniform
+tile guard); the shader `v<=0` item stays deferred to camp#122 (untouched). Commit
+`0b62c24` on `feature/issue-108`.
+
+**The guard fix** (`gggs_tile_layer.cpp`) — `applyBand()` previously released
+*every* tile's GL texture but only `setBand()`-reloaded tiles carrying the requested
+band, so a tile lacking that band had its texture freed (`data_` already gone to the
+GPU) while `pixels_loaded_` stayed true → it rendered BLANK, and its stale prior-band
+range still folded into the layer auto-range. That contradicted the guard's own
+"left on their prior band" comment. Now:
+- `applyBand()` skips both `releaseGL()` and `setBand()` for any tile whose own
+  `bandCount()` is below the requested band, so it keeps its already-loaded
+  prior-band texture/pixels and renders normally. Merged the former two-pass
+  (release-all, then re-point) into a single loop under one `makeCurrent`, with a
+  `have_context` flag carrying the **unchanged** null `gl_context_`/`gl_surface_`
+  guard. Only tiles that DO carry the band are released + re-pointed.
+- `tilesReady()` now folds only tiles whose `band() == band_`, excluding a kept
+  prior-band tile so its stale min/max can't pollute the new band's auto-range.
+- The one-shot `qWarning` per switch and the in-flight abort+join are unchanged.
+- The guard comment now accurately states the behavior; `plan.md` step 4 synced.
+
+Invariant-gated: a real GGGS store has uniform band counts, so this path never fires
+in practice — but the defensive behavior now matches the comment, as Roland chose.
+
+**No forced test**: the dropped-tile behavior (range-fold exclusion + prior-band
+retention) has no non-offscreen-GL observable seam — the layer exposes neither
+`data_min_`/`data_max_` nor its individual tiles, so verifying it without GL would
+need test-only API outside this finding's scope. The existing GL-gated
+`test_gggs_band_select` (which SKIPs in-container) already exercises `applyBand`'s
+abort/reload/range-shift on the uniform path. Per the task's "otherwise don't force
+it", no test was added.
+
+**Build/test result** (verified in-container):
+- Build: `./ui_ws/build.sh camp` → `1 package finished` (camp), warnings only
+  (all pre-existing, e.g. `-Wunused-parameter` in mainwindow.cpp), no errors.
+  Required building the shared `underlay_ws` (22 pkgs) and `core_ws` (35 pkgs)
+  symlink layers first; their installs were empty.
+- Test: `./ui_ws/test.sh camp` → **114 tests, 0 errors, 0 failures, 3 skipped**.
+  The 3 skips are the offscreen-GL tests (`test_gggs_band_select` etc.) that SKIP
+  in-container by design — expected, not a failure.
+
+**Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
+(the host performs pushes).
