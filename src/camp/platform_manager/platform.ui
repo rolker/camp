@@ -20,8 +20,8 @@
       <enum>Qt::Vertical</enum>
      </property>
      <widget class="HelmManager" name="helmManager" native="true"/>
-     <widget class="MissionManager" name="missionManager" native="true"/>
      <widget class="RunningTasksView" name="runningTasksView" native="true"/>
+     <widget class="MissionManager" name="missionManager" native="true"/>
     </widget>
    </item>
    <item>
