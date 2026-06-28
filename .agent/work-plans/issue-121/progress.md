@@ -126,3 +126,71 @@ and minor convention/version-semantics points.
 - Governance clean: ADR-0006 well-formed (Deep ADR-add trigger); ADR-0001/0002/0005 + #117/#71 all Pass; consequence updates (`package.xml`, `CMakeLists.txt`, `item_types.h`, `node.cpp`) all done. Plan-review must-fixes resolved.
 - Unbounded in-memory/on-disk tile growth is a consciously deferred, ADR-0006-documented, TODO'd follow-up (eviction-by-area) — acceptable for a display-grade preview cache; not counted as a finding.
 - Static analysis: camp configures no `ament_lint`/`cpplint`; build + 129 tests reported clean at implementation. New files match camp conventions. No new lint findings.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 20:00 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: addressed all 3 Local Review (Pre-Push) Round 1 findings
+
+**Branch**: feature/issue-121 at `2115dfd`
+**Scope**: address-findings — the one must-fix + two suggestions from the pre-push review.
+
+### 1. (must-fix) Coalesced + joinable per-tile write-through — `sonar_live_cache_layer.{h,cpp}`
+Replaced the single `QFutureWatcher<void> write_watcher_` (which `setFuture`'d
+unconditionally on every patch — two patches for the SAME tile raced on the shared
+`<stem>.tif.tmp`, and the dtor joined only the latest future) with per-tile coalescing
+that matches the `GridMap` coalesce / `GggsTileLayer` guard convention:
+- New per-tile `WriteState{ bool in_flight; bool dirty; std::optional<SonarLiveTile> pending; }`
+  kept in `std::map<gggs::GridIndex, WriteState> write_states_` (GUI thread only).
+  `pending` is `std::optional` because `SonarLiveTile` has no default ctor.
+- `scheduleWriteThrough(tile)` snapshots the latest tile into `pending` and sets `dirty`;
+  it launches a worker via `startWriteThrough()` **only if the tile is idle**. If a worker
+  is already in flight for that tile, it just marks `dirty` — no second concurrent worker.
+- `startWriteThrough(index)` sets `in_flight`, clears `dirty`, and **moves** the snapshot
+  into a self-contained `QtConcurrent::run(writeTileToCache, …)` worker (no `this` deref).
+  Each launch gets its own `QFutureWatcher<void>` (child of the layer) tracked in
+  `write_watchers_`.
+- `onWriteThroughFinished(index, watcher)` (GUI thread, via the watcher's queued
+  `finished()`) untracks + `deleteLater`s the watcher; if the tile is `dirty` it re-launches
+  ONCE with the newest snapshot (coalescing intermediate patches), else drops the per-tile
+  state. So writes for a tile are strictly serialized — the atomic temp+rename is now safe
+  with the existing shared tmp path (no unique suffix needed; distinct tiles already use
+  distinct `<level>_<row>_<col>` stems).
+- Dtor now sets `shutting_down_` (suppresses coalesced relaunches) then **joins EVERY**
+  tracked watcher (`waitForFinished()` on each, not just the latest) before `releaseGL()`,
+  so no worker can outlive the object. All reconciler/tile/state mutation stays on the GUI
+  thread; only file serialization+rename runs in the worker (invariant preserved).
+- Removed the now-dead `writeThroughFinished()` no-op slot.
+
+### 2. (suggestion) Reset auto-range on prune — `sonar_live_cache_layer.cpp` handleCatalog
+The `if(pruned)` block now calls `resetAutoRange()` between `recomputeBounds()` and
+`foldAutoRange()`, mirroring the band-switch reset in `setBandName()`, so a pruned tile's
+extreme min/max can no longer linger in `data_min_`/`data_max_`; the range reflects only the
+surviving tiles.
+
+### 3. (suggestion) Reset subscriptions first in the dtor — `sonar_live_cache_layer.cpp`
+The dtor now `.reset()`s `tile_sub_` and `catalog_sub_` at the TOP (before the worker join),
+so no executor-thread callback can marshal a new handler onto the object mid-teardown
+(closes the TOCTOU window), matching the teardown-symmetry of the other ROS layers.
+
+### Test note
+No new automated test added: the existing `test_sonar_live_cache` suite deliberately exercises
+`SonarLiveTile`/reconciler at unit level and never constructs `SonarLiveCacheLayer` (which
+needs a ROS `Node`, a Qt event loop, and GL). The coalescing lives in private layer methods
+driven by `QFutureWatcher` signals that require an event loop, so a faithful write-through
+test is not cheap — skipped per the finding's own guidance ("otherwise don't force it").
+
+### Build + test (verbatim)
+- Deps first: `cd core_ws && colcon build --packages-up-to marine_tiled_raster_store
+  marine_ais_msgs marine_nav_interfaces marine_nav_tasks` → `Summary: 7 packages finished
+  [1min 10s]` (only pre-existing `marine_autonomy` warnings).
+- `./ui_ws/build.sh camp` → `Summary: 1 package finished [1min 2s]` (clean; only pre-existing
+  camp warnings).
+- `./ui_ws/test.sh camp` → `Summary: 129 tests, 0 errors, 0 failures, 4 skipped` (the 4 skips
+  are the offscreen-GL render tests that skip in-container by design).
+- `test_sonar_live_cache` → `[  PASSED  ] 4 tests.` (PatchApplyDequantize, WarmLoadRoundTrip,
+  DowntimeGapReconcile, PruneTimestampGate).
+
+### Next step
+Re-read by the reviewer (Round 2). Do NOT push — host performs pushes.
