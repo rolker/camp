@@ -159,3 +159,29 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 129 --skill review-code
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 17:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-129 at `c35c139`
+**Mode**: pre-push
+**Depth**: Deep (reason: 876 lines / 15 files — both >200 lines and ≥10 files; cross-layer GUI+ROS)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 2 | **Ship**: recommended — 0 must-fix; round-1's 3 must-fix all verified fixed; only low-impact suggestions remain
+
+Round-1 must-fixes verified correctly resolved (2 independent adversarial lenses + codebase-convention check):
+multi-pose `shape()` now stroked (clickable); teardown double-free fixed via `QPointer<QGraphicsScene>`;
+marker/hit radii zoom-scaled via `sceneRadius()`. Static analysis (cppcheck) clean. Build/gtest not re-run
+here (lower ROS layers unbuilt); model/test untouched since last 5/5 pass — re-run in a provisioned env before merge.
+
+### Findings
+- [ ] (suggestion) Duplicate task `id` in a republish overwrites `items_[id]` without removing the prior item from the scene → orphaned leak; add `if (items_.contains(id)) continue;` — `src/camp/running_tasks/running_tasks_overlay.cpp:81`
+- [ ] (suggestion) `TaskOverlayItem::setSelected(bool)` shadows non-virtual `QGraphicsItem::setSelected`; rename to `setHighlighted` to avoid the footgun (not a live bug — nothing calls `scene->selectedItems()`) — `src/camp/running_tasks/task_overlay_item.h:38`
+- [ ] (suggestion) `boundingRect()`/`shape()` are zoom-dependent but no `prepareGeometryChange()` on zoom → cached rect can briefly clip when zooming out; cosmetic, self-heals at ~1 Hz rebuild, matches existing `Waypoint` pattern — `src/camp/running_tasks/task_overlay_item.cpp:51-88`
+
+### Next step
+Lifecycle: **Local Review (approved)** → push / open PR → **triage-reviews**.
+Branch is shippable; the 3 suggestions are optional and may be applied pre-push or tracked as follow-ups.
