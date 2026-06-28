@@ -104,3 +104,25 @@ and minor convention/version-semantics points.
 ### Notes / deviations
 - New TUs live in `ros/live_coverage/` (not `raster/` as the plan first listed): they depend on `marine_interfaces` + `marine_tiled_raster_store`, so they belong in `camp_map_ros`; `camp_map` stays ROS-free (ADR-0002 / CMake layering). Recorded in ADR-0006 + plan.
 - Warm-load reads the multi-band GeoTIFF directly via GDAL (recovering band names from descriptions + GridIndex from the geotransform, the `marine_tiled_raster_store::loadTile` convention) rather than literally calling the single-band `GggsTile::loadPixels()`, since write-through-all-bands needs all bands + names in one pass.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 19:14 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-121 at `470d2c9`
+**Mode**: pre-push
+**Depth**: Deep (reason: ~1700 LOC new C++ + new ADR + concurrency/file-I/O across the ROS↔GUI boundary)
+**Must-fix**: 1 | **Suggestions**: 2
+**Round**: 1 | **Ship**: continue — one genuine concurrency-correctness must-fix (same-tile write-through race) warrants the fix + a re-read
+
+### Findings
+- [ ] (must-fix) Write-through launches uncoalesced concurrent `QtConcurrent` workers that race on a shared per-tile `<stem>.tif.tmp` (every patch calls `setFuture` unconditionally; deviates from the `GggsTileLayer` isRunning-guard / `GridMap` coalesce convention; defeats atomic temp+rename; dtor joins only the latest future) — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:380-384`
+- [ ] (suggestion) Stale auto-range after prune: prune path runs `recomputeBounds`+`foldAutoRange` but not `resetAutoRange`, so a pruned tile's extreme lingers in `data_min_/data_max_` — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:365-371`
+- [ ] (suggestion) Reset `tile_sub_`/`catalog_sub_` at the top of the dtor (before `waitForFinished`) for teardown symmetry / to close the executor-thread TOCTOU window — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:131-137`
+
+### Notes
+- Governance clean: ADR-0006 well-formed (Deep ADR-add trigger); ADR-0001/0002/0005 + #117/#71 all Pass; consequence updates (`package.xml`, `CMakeLists.txt`, `item_types.h`, `node.cpp`) all done. Plan-review must-fixes resolved.
+- Unbounded in-memory/on-disk tile growth is a consciously deferred, ADR-0006-documented, TODO'd follow-up (eviction-by-area) — acceptable for a display-grade preview cache; not counted as a finding.
+- Static analysis: camp configures no `ament_lint`/`cpplint`; build + 129 tests reported clean at implementation. New files match camp conventions. No new lint findings.
