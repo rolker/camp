@@ -5,6 +5,7 @@
 
 #include <QGraphicsScene>
 #include <QMap>
+#include <QPointer>
 #include <QString>
 
 #include "marine_nav_interfaces/msg/task_information.hpp"
@@ -50,7 +51,10 @@ private:
       const std::vector<marine_nav_interfaces::msg::TaskInformation>& tasks);
   void clearItems();
 
-  QGraphicsScene* scene_;
+  // QPointer so a QGraphicsScene destroyed before this overlay reads back as
+  // null instead of dangling — clearItems() then skips the (already-deleted)
+  // items rather than double-freeing them.
+  QPointer<QGraphicsScene> scene_;
   RunningTasksView* view_;
   QMap<QString, TaskOverlayItem*> items_;
   QString selected_id_;

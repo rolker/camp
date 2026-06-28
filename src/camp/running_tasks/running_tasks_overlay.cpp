@@ -40,8 +40,9 @@ void RunningTasksOverlay::onTaskSelected(const QString& id)
 void RunningTasksOverlay::onItemClicked(const QString& id)
 {
   // Guard the selection-sync loop so a map click doesn't trigger
-  // taskSelected → onTaskSelected → setSelected → redraw → re-click.
-  // Mirror the QSignalBlocker pattern in RunningTasksView::applyPendingTasks.
+  // taskSelected → onTaskSelected → setSelected → redraw → re-click. An
+  // id-equality short-circuit suffices here (the round-trip ends once the id
+  // already matches), so no QSignalBlocker is needed.
   if (id == selected_id_)
     return;
   view_->setSelectedTask(id);
@@ -51,7 +52,9 @@ void RunningTasksOverlay::rebuildItems(
     const QString& current_task,
     const std::vector<marine_nav_interfaces::msg::TaskInformation>& tasks)
 {
-  if (!scene_ || !transform_buffer_)
+  // getGeoCoordinate's stale-stamp fallback logs via node_->get_logger(), so
+  // node_ must be set too — not just the transform buffer.
+  if (!scene_ || !transform_buffer_ || !node_)
     return;
 
   clearItems();
@@ -88,15 +91,27 @@ void RunningTasksOverlay::rebuildItems(
     scene_->addItem(item);
     items_[id] = item;
   }
+
+  // Drop a stale selection: if the previously-selected task is gone from this
+  // republish, clear selected_id_ so the overlay and tree don't drift.
+  if (!selected_id_.isEmpty() && !items_.contains(selected_id_))
+    selected_id_.clear();
 }
 
 void RunningTasksOverlay::clearItems()
 {
-  for (auto* item : items_)
+  if (scene_)
   {
-    if (scene_)
+    // Scene still alive: addItem() left these items parentless, so the scene
+    // and this overlay co-own them. Reclaim each from the scene and delete it.
+    for (auto* item : items_)
+    {
       scene_->removeItem(item);
-    delete item;
+      delete item;
+    }
   }
+  // If scene_ is null the QGraphicsScene was destroyed first and already
+  // deleted its child items; the pointers in items_ now dangle, so drop our
+  // references without touching them (avoids the use-after-free / double-free).
   items_.clear();
 }
