@@ -99,7 +99,7 @@ void TaskOverlayItem::paint(QPainter* painter,
   QColor color;
   if (is_done_)
     color = QColor(0x80, 0x80, 0x80, 180);      // gray — completed
-  else if (is_selected_)
+  else if (is_highlighted_)
     color = QColor(0xFF, 0xA5, 0x00, 230);       // orange — selected
   else if (is_current_)
     color = QColor(0x00, 0xCC, 0x00, 220);       // green — active
@@ -108,7 +108,7 @@ void TaskOverlayItem::paint(QPainter* painter,
 
   QPen pen(color);
   pen.setCosmetic(true);
-  pen.setWidth(is_selected_ ? 3 : 2);
+  pen.setWidth(is_highlighted_ ? 3 : 2);
   painter->setPen(pen);
 
   if (geo_poses_.size() == 1)
@@ -135,9 +135,9 @@ void TaskOverlayItem::paint(QPainter* painter,
   painter->restore();
 }
 
-void TaskOverlayItem::setSelected(bool selected)
+void TaskOverlayItem::setHighlighted(bool highlighted)
 {
-  is_selected_ = selected;
+  is_highlighted_ = highlighted;
   update();
 }
 

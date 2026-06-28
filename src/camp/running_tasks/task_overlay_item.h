@@ -36,7 +36,9 @@ public:
              QWidget* widget) override;
   QPainterPath shape() const override;
 
-  void setSelected(bool selected);
+  /// Highlight this item as the map-selected task. Named to avoid shadowing the
+  /// non-virtual QGraphicsItem::setSelected (which drives scene->selectedItems()).
+  void setHighlighted(bool highlighted);
 
 signals:
   void clicked(QString id);
@@ -57,7 +59,7 @@ private:
   QList<QGeoCoordinate> geo_poses_;
   bool is_current_;
   bool is_done_;
-  bool is_selected_ = false;
+  bool is_highlighted_ = false;
 };
 
 #endif  // CAMP_RUNNING_TASKS_TASK_OVERLAY_ITEM_H

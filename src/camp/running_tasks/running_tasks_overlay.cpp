@@ -34,13 +34,13 @@ void RunningTasksOverlay::onTaskSelected(const QString& id)
 
   selected_id_ = id;
   for (auto it = items_.begin(); it != items_.end(); ++it)
-    it.value()->setSelected(it.key() == id);
+    it.value()->setHighlighted(it.key() == id);
 }
 
 void RunningTasksOverlay::onItemClicked(const QString& id)
 {
   // Guard the selection-sync loop so a map click doesn't trigger
-  // taskSelected → onTaskSelected → setSelected → redraw → re-click. An
+  // taskSelected → onTaskSelected → setHighlighted → redraw → re-click. An
   // id-equality short-circuit suffices here (the round-trip ends once the id
   // already matches), so no QSignalBlocker is needed.
   if (id == selected_id_)
@@ -78,12 +78,17 @@ void RunningTasksOverlay::rebuildItems(
       continue;
 
     const QString id = QString::fromStdString(task.id);
+    // A republish shouldn't carry duplicate ids, but guard anyway: a second
+    // item with the same id would overwrite items_[id] and orphan the first
+    // one in the scene (leak, since clearItems only tracks items_).
+    if (items_.contains(id))
+      continue;
     const bool is_current = !current_task.isEmpty() &&
         id.split('/', Qt::SkipEmptyParts).join('/') ==
         current_task.split('/', Qt::SkipEmptyParts).join('/');
 
     auto* item = new TaskOverlayItem(id, geo_poses, is_current, task.done);
-    item->setSelected(id == selected_id_);
+    item->setHighlighted(id == selected_id_);
 
     connect(item, &TaskOverlayItem::clicked,
             this, &RunningTasksOverlay::onItemClicked);
