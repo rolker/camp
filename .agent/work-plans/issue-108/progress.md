@@ -375,3 +375,46 @@ creep. Governance: ADR-0005 (this is its scoped band-select follow-up), ADR-0002
 - [ ] (suggestion) Band QSettings round-trip (`readSettings`→`applyBand`, `writeSettings` `setValue("band")`) is untested — `test_gggs_persistence.cpp` covers visibility/colormap but never band; a "persisted band reverts to 1" regression would be silent — `src/camp2/raster/gggs_tile_layer.cpp:808`
 - [ ] (suggestion) Non-uniform tile-set: `setBand`/`applyBand` validate against the front tile's `bandCount()` while the per-tile loop uses each tile's own count — the validation/application authorities diverge; invariant-gated (uniform stores never hit it), acknowledged in comments — tracking for the deferred non-uniform work — `src/camp2/raster/gggs_tile_layer.cpp:661`
 - [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 11:52 +0000
+**By**: Claude Opus
+**Round**: 4 address-findings (the single cheap actionable suggestion)
+
+Addressed the round-4 pre-push suggestion: the band QSettings round-trip was
+untested. Added two tests to `test/test_gggs_persistence.cpp` (TEST-ONLY; no
+production code changed; the two deferred items — non-uniform validation
+divergence and shader `v<=0` → camp#122 — left untouched):
+
+- `BandRoundTrips` — over a 2-band synthetic GeoTIFF tile-set, switch to band 2
+  via the public `setBand(2)`, persist with `writeSettings()`, then a fresh layer
+  over the SAME directory (same itemID) `readSettings()` restores band 2. This is
+  the regression a silent "band reverts to 1 on reload" would have slipped past.
+- `BandDefaultRoundTrips` — the default round-trips with no spurious change: a
+  layer that never sets a band writes/reads back band 1, and reading a cleared
+  settings group also defaults to 1.
+
+Mirrors the visibility round-trip pattern (a `TestableGggsTileLayer` subclass
+exposes the protected `readSettings()`/`writeSettings()` hooks, asserted
+synchronously without the deferred `itemConstructed()` timer) and reuses the
+2-band GeoTIFF helper from `test_gggs_band_select.cpp`. The band-integer
+round-trip is **GL-free** (`applyBand()` sets `band_` before any texture work and
+skips GL when no context exists), so both tests **RUN — not SKIP — in-container**
+(GDAL only, which is available in-container).
+
+**RUN vs SKIP in-container**: both new tests RUN (verified via the gtest XML:
+`status="run"`, `skipped="0"` for the `GggsPersistence` suite).
+
+**Build**: `./ui_ws/build.sh camp` → `Summary: 1 package finished [39.9s]` —
+clean (camp had only pre-existing `-Wunused-parameter`/deprecation warnings; the
+lower layers `underlay_ws` (22 pkgs) and `core_ws` (35 pkgs) had to be built
+first as their install spaces were empty in this worktree — both exit 0).
+
+**Test**: `./ui_ws/test.sh camp` →
+`Summary: 117 tests, 0 errors, 0 failures, 3 skipped` (the 3 skips are the
+offscreen-GL tests, SKIP-not-FAIL in-container by design). `test_gggs_persistence`
+suite: 7 tests, 0 failures, 0 skipped — including the 2 new band tests.
+
+**Commit**: `1d4251f` test(camp#108): cover band QSettings round-trip (hooks ran,
+no `--no-verify`). Not pushed; no PR opened (handoff contract — the host pushes).
