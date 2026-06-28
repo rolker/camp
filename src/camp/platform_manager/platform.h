@@ -56,6 +56,11 @@ private:
   void updateLabel();
   void setColor(QColor color);
   void subscribeToPathTopic();
+  /// Create the running-tasks overlay once both the ROS node and the scene are
+  /// available, then (re)bind it to the node. Idempotent — safe to call from
+  /// any hook (onNodeUpdated, periodic update()) so a scene that attaches after
+  /// the node still gets an overlay.
+  void ensureRunningTasksOverlay();
   void pathCallback(const nav_msgs::msg::Path::SharedPtr msg);
 
 
