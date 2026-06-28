@@ -672,3 +672,54 @@ Production code is UNCHANGED since `2fcfeb6` (HEAD `6d99daf` adds only progress.
 - [ ] (suggestion) camp#126 `settingsKey()` seam not applied to sibling persisting layers — `raster_layer.cpp` and `grid_map.cpp` still hand-roll `beginGroup(itemID())`; harmless today (`settingsKey()==itemID()` for them) but the re-keying is incomplete — `src/camp_map/raster/raster_layer.cpp:341` / `src/camp_map/ros/grids/grid_map.cpp:229`
 - [ ] (suggestion) Directory identity mismatch: dedup/de-persist compare the raw `directory_` string while `settingsKey()` normalizes via `QDir::absolutePath()`; a trailing-slash/relative variant would dedup as distinct yet collide on one settings group (low likelihood — only source is `QFileDialog`, absolute + no trailing slash) — `src/camp_map/raster/gggs_tile_layer.cpp:873`
 - [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable → camp#122; non-uniform-tile validation-authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp_map/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 15:06 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Round**: 7 (address-findings)
+**Commit**: `13ee218` fix(camp#126): canonicalize store directory so dedup and settingsKey agree
+
+Closes the round-7 edge suggestion: `GggsStoreSource::instantiate()` dedup'd on the
+raw `directory_` string while `GggsTileLayer::settingsKey()` normalized via
+`QDir::absolutePath()`, so two string variants of one path (trailing slash / relative)
+would dedup as DISTINCT layers yet collide on ONE settings group. Normalized the
+directory to a single canonical absolute form at the boundary and keyed every
+authority off it.
+
+**Canonicalization applied at**:
+- `src/camp_map/raster/gggs_store_source.cpp` `instantiate()`: compute
+  `const QString canonical = QDir(key).absolutePath();` up front, then use `canonical`
+  for (a) the dedup compare against `existing->directory()`, (b) `new GggsTileLayer(layers, canonical)`,
+  and (c) the persisted `GggsTileLayers/dirs` restore list (`contains`/`append`/`setValue`).
+- `src/camp_map/raster/gggs_tile_layer.cpp` ctor: `directory_(QDir(directory).absolutePath())`
+  so any other caller (e.g. `createDefaultLayers()` restoring from the dirs list) is
+  consistent. `loadDirectory()`/`rescan()` read `directory_` via `QDir(...)` which is
+  path-agnostic, so the absolute path works unchanged.
+- `settingsKey()`: dropped the now-redundant `QDir(directory_).absolutePath()` — keys
+  `directory_` directly since the ctor already canonicalizes it (idempotent).
+- `onRemovedFromMap()` de-persist (`dirs.removeAll(directory_)`) now matches because the
+  dirs list and `directory_` are both canonical.
+
+Scope: identity-normalization only. Band/colormap/persistence behavior otherwise
+unchanged; deferred items (shader v<=0 / camp#122, non-uniform tiles) and the sibling
+`settingsKey()` adoption (raster_layer/grid_map) left untouched per the task.
+
+**Test added**: `GggsPersistence.NonCanonicalDirNormalizes` (test_gggs_persistence.cpp) —
+a layer built from a trailing-slash variant yields the same `directory()`/`settingsKey()`
+as the canonical form; `instantiate(variant)` then `instantiate(canonical)` dedups to ONE
+layer; the persisted dirs list holds the canonical path. GL/GDAL-free (empty tile-set dir).
+Verified non-vacuous: ran (status="run" result="completed", time 0.028s), no failure child.
+
+**Build/test result** (verified in-container):
+- Lower-layer deps were empty in this worktree; rebuilt first:
+  `core_ws colcon build --packages-up-to marine_autonomy marine_interfaces marine_ais_msgs`
+  → `Summary: 3 packages finished` (only pre-existing warnings).
+- Build: `./ui_ws/build.sh camp` → `Summary: 1 package finished` — clean (only pre-existing
+  `-Wunused-parameter`/`-Wdeprecated`/`-Wsign-compare` warnings, no errors).
+- Test: `./ui_ws/test.sh camp` → **122 tests, 0 errors, 0 failures, 3 skipped** (was 121;
+  +1 from the new canonicalization test). The 3 skips are the offscreen-GL tests that
+  SKIP-not-FAIL in-container by design.
+
+**Commit**: `13ee218` (hooks ran, no `--no-verify`). Not pushed; no PR opened (handoff
+contract — the host pushes).
