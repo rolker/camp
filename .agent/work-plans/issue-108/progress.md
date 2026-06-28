@@ -484,3 +484,77 @@ SKIP-not-FAIL in-container by design).
 **Commit**: `c64f352` feat(camp#126): name store layers parent/leaf, not just the
 leaf folder (hooks ran, no `--no-verify`). Not pushed (handoff contract — the host
 pushes).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28
+**By**: Claude Code Agent (Claude Opus)
+**Scope**: camp#125 only — retire the camp2 executable + mechanically rename
+`src/camp2/` → `src/camp_map/`. No behavior change to the shared library code; the
+build + full test suite passing is the correctness gate.
+
+Implements **camp#125**, completing the #59 migration: the `camp2` dev-sandbox
+executable is retired now that `CCOMAutonomousMissionPlanner` runs entirely on the
+shared map framework.
+
+**Deleted**:
+- `src/camp2/main/` entirely (`main.cpp`, `main.qrc`, `main_window.{cpp,h,ui}`) —
+  the camp2 executable's app shell (`git rm -r`).
+- The `add_executable(camp2 …)` target block in `CMakeLists.txt` plus its
+  `target_include_directories` / `target_link_libraries(... Qt5::Test)` /
+  `ament_target_dependencies` / `install(TARGETS camp2 …)`. `Qt5::Test` stays in
+  the `find_package(Qt5 … Test …)` COMPONENTS list — still used by tests
+  (`test_topic_bridge`, `test_color_map`, `test_map_model`, `test_gggs_flat_layer_spawn`).
+
+**Renamed** (`git mv`, history preserved — 103 files renamed at 100% similarity):
+`src/camp2/` → `src/camp_map/`. `#include` lines are rooted at the include dir
+(e.g. `"map/map.h"`), so they were rename-safe; no source `#include` edits needed.
+
+**Updated `CMakeLists.txt`**: every `src/camp2` path string → `src/camp_map`
+(`CAMP_MAP_SOURCES`, `CAMP_MAP_ROS_SOURCES`, the `target_include_directories`
+PUBLIC include dir, and all 15 per-test `target_include_directories`), plus the
+narrative comments ("camp2's self-contained map core" → shared map core, "The
+camp2 ROS layer set" → "The camp_map ROS layer set", the camp2-sandbox
+QAbstractItemModelTester note). `grep -n camp2 CMakeLists.txt` → clean.
+
+**Doc/comment sweep**:
+- `.agents/README.md`: rewrote the Package Inventory (now **one** executable +
+  two shared libs — camp2 row removed), the adoption-strategy paragraph (states
+  the #59 migration is complete and the camp2 executable is **retired**), the
+  Repository Layout (`src/camp_map/`), the catalog/map path refs, and the
+  QSettings-org pitfall (dropped the live "camp2 sandbox" reference).
+- Source comments in `src/camp/` and `src/camp_map/` that referred to the app or
+  the old dir reworded `camp2` → `camp_map` (or "retired camp2 sandbox" where the
+  historical fact matters: `roslink.cpp`, `test/test_map_model.cpp`). The broken
+  `src/camp2/ros/node.h` path ref in `mainwindow.cpp` was fixed to `src/camp_map`.
+  Namespaces (`camp::map::` etc.) were **not** touched — they never contained
+  `camp2`.
+- `Doxyfile`: `INPUT = src/camp2` → `src/camp_map` (was a now-broken path).
+- `launch/camp_launch.py` confirmed to run `CCOMAutonomousMissionPlanner` with no
+  camp2 reference.
+
+**Final `grep -rn camp2` state**: the only live-tree hits remaining are deliberate
+historical references to the **retired** camp2 sandbox (`test/test_map_model.cpp`
+line 12 "(now-retired) camp2 sandbox app", `src/camp/roslink.cpp` "The retired
+camp2 sandbox wired the same"). Left ALONE as past records, per the task:
+`.agent/work-plans/issue-*/plan.md` historical entries, and `docs/decisions/`
+ADRs + `docs/parity/markers.md` (immutable architecture/parity records that
+describe camp2 as it was at decision time).
+
+**Build**: lower layers were unbuilt in this worktree (shared symlinks to
+`layers/main/{underlay,core}_ws`), so `underlay_ws` (`colcon build` → 22 packages
+finished) and `core_ws` (35 packages finished) were built first. Then
+`./ui_ws/build.sh camp` → `Summary: 1 package finished` — clean (only pre-existing
+`-Wsign-compare`/`-Wunused-parameter` warnings). Verified with a **from-scratch**
+rebuild (`rm -rf ui_ws/build/camp ui_ws/install/camp` then rebuild): produces
+`CCOMAutonomousMissionPlanner` and **zero** `camp2` artifacts;
+`grep -n 'add_executable(camp2' CMakeLists.txt` → none.
+
+**Test**: `./ui_ws/test.sh camp` →
+`Summary: 120 tests, 0 errors, 0 failures, 3 skipped` — identical to the pre-step
+baseline (this is a rename, not a feature; the 3 skips are the offscreen-GL tests
+that SKIP-not-FAIL in-container by design).
+
+**Commit**: `675c6f1` refactor(camp#125): retire camp2 executable; rename
+src/camp2 -> src/camp_map (single atomic commit — git mv + CMake/path/doc edits;
+hooks ran, no `--no-verify`). Not pushed (handoff contract — the host pushes).
