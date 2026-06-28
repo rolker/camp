@@ -82,6 +82,13 @@ treated as single-band only. The operator needs to pick which band a flat
      rescanned one, reads band 2. The per-tile band assertion needs no GL, so this
      test RUNS (not SKIPs) in-container and catches the must-fix; the render
      confirmation is `offscreenGLAvailable()`-guarded.
+   - `test_gggs_persistence.cpp` (round-4 add): `BandRoundTrips` —
+     `setBand(2)` on a 2-band tile-set → `writeSettings()` → a fresh layer over the
+     same directory `readSettings()` restores band 2; `BandDefaultRoundTrips` — a
+     layer that never sets a band writes/reads back band 1 (no spurious change), and
+     reading a cleared group defaults to 1. The band integer round-trip is GL-free
+     (a `TestableGggsTileLayer` exposes the protected hooks), so both tests RUN — not
+     SKIP — in-container.
 
 ## Files to Change
 
@@ -93,6 +100,7 @@ treated as single-band only. The operator needs to pick which band a flat
 | `src/camp2/raster/gggs_tile_layer.cpp` | Implement `applyBand`/`setBand` (read path non-persisting), update `contextMenu`, `readSettings`/`writeSettings`; `rescan()` propagates `band_` to new tiles; `applyBand()` marks GL failed on a makeCurrent failure |
 | `test/test_gggs_tile.cpp` | Add multi-band construction + band-switch tests |
 | `test/test_gggs_band_select.cpp` | New: layer-level band selection + reload test; rescan-after-switch band-inheritance regression test |
+| `test/test_gggs_persistence.cpp` | Add band QSettings round-trip tests (`BandRoundTrips`, `BandDefaultRoundTrips`); GL-free, RUN in-container |
 
 ## Principles Self-Check
 
