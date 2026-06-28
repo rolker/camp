@@ -653,3 +653,22 @@ invariant-gated), per the task — untouched.
 **Commit**: `2fcfeb6` fix(camp#126): key store-layer persistence on directory, not
 display name (hooks ran, no `--no-verify`). Not pushed; no PR opened (handoff
 contract — the host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 14:47 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `6d99daf`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change spanning the camp2->camp_map rename)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 7 | **Ship**: recommended — no must-fix; the only new production code since the round-6 approval is the camp#126 settingsKey() directory-keying fix (`2fcfeb6`), and both Deep adversarial passes independently cleared the concurrency (abort/join, atomic release/acquire), GL lifecycle (null/makeCurrent-fail/success paths), and the persistence re-keying, while the `SameDisplayNameDistinctPersistence` regression test was verified non-vacuous. Remaining items are low/deferred.
+
+Production code is UNCHANGED since `2fcfeb6` (HEAD `6d99daf` adds only progress.md), so no rebuild this round — the last recorded build/test (round-6 address-findings) stands: `121 tests, 0 errors, 0 failures, 3 skipped` (the 3 are offscreen-GL tests, SKIP-not-FAIL in-container by design). Static analysis: cppcheck clean apart from the known Qt `slots`/`unknownMacro` C-parser limitation; line-length (<=100) and trailing-whitespace clean on changed lines (the lone 101-col line and trailing-WS hits are pre-existing carried-over rename regions, not lines this change touches; cpplint binary unavailable — checked manually). Field-mode host: `git fetch origin/jazzy` failed (host-key); reviewed against the local `origin/jazzy` ref at `9840b89` (may be stale). Claude Adversarial: 2 passes (Lens A logic + Lens B systemic/GL/concurrency, Deep horizon) — both converged on 0 must-fix; Lens A and the lead independently flagged the incomplete settingsKey() seam adoption (cross-confirmed). Copilot: off (default). Plan adherence: exact; camp#126/#125 are separately-tracked issues bundled on the branch, not #108 scope creep. Governance: camp ADR-0005 (#108 is its scoped band-select follow-up), ADR-0002 (camp#125 completes the #59 adoption migration), ADR-0003 (async load contract preserved) — compliant; the camp#126 itemID/persistence-stability consequence (the round-6 must-fix) is now Done via settingsKey() + a genuine regression test.
+
+### Findings
+- [ ] (suggestion) camp#126 `settingsKey()` seam not applied to sibling persisting layers — `raster_layer.cpp` and `grid_map.cpp` still hand-roll `beginGroup(itemID())`; harmless today (`settingsKey()==itemID()` for them) but the re-keying is incomplete — `src/camp_map/raster/raster_layer.cpp:341` / `src/camp_map/ros/grids/grid_map.cpp:229`
+- [ ] (suggestion) Directory identity mismatch: dedup/de-persist compare the raw `directory_` string while `settingsKey()` normalizes via `QDir::absolutePath()`; a trailing-slash/relative variant would dedup as distinct yet collide on one settings group (low likelihood — only source is `QFileDialog`, absolute + no trailing slash) — `src/camp_map/raster/gggs_tile_layer.cpp:873`
+- [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable → camp#122; non-uniform-tile validation-authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp_map/raster/gggs_tile_layer.cpp:62`
