@@ -41,8 +41,17 @@ QString writeTile(const QTemporaryDir& dir, const QString& name,
     GDALAllRegister();
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
+  // cleanly instead of dereferencing null. (These helpers return QString, so a
+  // void-returning ASSERT_* can't be used here — EXPECT_NE + early return.)
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, 1,
                                    GDT_UInt16, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(0);
@@ -66,9 +75,15 @@ QString writeMultiBandTile(const QTemporaryDir& dir, const QString& name,
     GDALAllRegister();
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   const int bands = int(samples.size());
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, bands,
                                    GDT_UInt16, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   CPLErr err = CE_None;
   for(int b = 0; b < bands; ++b)
@@ -98,8 +113,14 @@ QString writeFloatTile(const QTemporaryDir& dir, const QString& name,
     GDALAllRegister();
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, 1,
                                    GDT_Float32, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(nodata);

@@ -101,7 +101,12 @@ bool GggsTile::loadPixels()
   double max_value = std::numeric_limits<double>::lowest();
   for(float v : values)
   {
-    if(!std::isfinite(v) || (has_nodata_ && v == nodata_))
+    // [camp#122] Compare NoData in float to match the shader, which discards in
+    // float (v == float(u_nodata)). For a sentinel not exactly representable in
+    // float32, double(v) == nodata_ would diverge from the GPU (CPU keeps a value
+    // the shader discards, polluting the auto-range). v is already float, so
+    // float(nodata_) puts both sides on the same footing.
+    if(!std::isfinite(v) || (has_nodata_ && v == float(nodata_)))
       continue;
     min_value = std::min(min_value, double(v));
     max_value = std::max(max_value, double(v));
@@ -159,7 +164,15 @@ QOpenGLTexture* GggsTile::texture()
     texture_->setMipLevels(1);
     texture_->allocateStorage(QOpenGLTexture::Red, QOpenGLTexture::Float32);
     texture_->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32, data_.data());
-    texture_->setMinMagFilters(QOpenGLTexture::Linear, QOpenGLTexture::Linear);
+    // [camp#122] Nearest (not Linear) on the value texture. The shader discards by
+    // exact equality (v == u_nodata); Linear filtering interpolates boundary texels
+    // between real data and the 9999 sentinel, so they neither equal the sentinel
+    // (no discard) nor a real value (clamp to u_max), producing a bright one-texel
+    // halo around NoData regions. Nearest never blends across the NoData boundary,
+    // removing the halo. Roland accepts the blocky (cell-accurate) raster tradeoff.
+    // NOTE: only the value texture is Nearest; the colormap LUT (in gggs_tile_layer)
+    // stays Linear for a smooth ramp.
+    texture_->setMinMagFilters(QOpenGLTexture::Nearest, QOpenGLTexture::Nearest);
     texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
     // Free the CPU copy once it's on the GPU — the texture persists for the
     // tile's lifetime, so we never re-upload (releaseGL = teardown). Halves

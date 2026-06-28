@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <vector>
 
@@ -129,11 +130,22 @@ TEST(GggsRenderTest, OffscreenWarpProducesOrientedImage)
 
 // [camp#122] The shader discards by the band's actual NoData sentinel (via the
 // per-tile u_has_nodata/u_nodata uniforms), not the old hardcoded `v <= 0.0`. A
-// Float32 tile whose valid samples are mostly 0.0 (plus two positive values), with
+// Float32 tile whose valid samples are mostly 0.0 (plus two positive stripes), with
 // a NoData (9999) block punched in the interior, must render: the 0.0 background
-// OPAQUE (previously discarded by `v <= 0`) and the NoData block TRANSPARENT — an
-// enclosed transparent hole surrounded by opaque pixels, which outside-footprint
-// background transparency cannot produce.
+// OPAQUE (previously discarded by `v <= 0`) and the NoData block TRANSPARENT.
+//
+// DISCRIMINATION (the must-fix): asserting only "some opaque + an enclosed
+// transparent hole" passes under BOTH the fix and the reverted `v <= 0.0` bug —
+// under the bug the positive stripes stay opaque and the discarded 0.0 background
+// supplies the transparent pixels, so a column still shows opaque/transparent/
+// opaque. The discriminating assertion is the DENSE column: under the fix the
+// valid 0.0 background fills a column edge-to-edge (away from the hole), so some
+// column is ~fully opaque over its footprint span; under the bug the 0.0
+// background is discarded and EVERY column is sparse (only the two thin stripes,
+// max fill ~0.44), so the dense-column assertion FAILS. Verified by reverting the
+// shader discard to `if(v <= 0.0)`: the EXPECT_GT(max_fill, 0.8) then fails while
+// it passes with the per-NoData discard. (Runs only where offscreen GL exists;
+// SKIPs in-container by design.)
 TEST(GggsRenderTest, NoDataDiscardHonorsUniform)
 {
   if(!offscreenGLAvailable())
@@ -171,30 +183,42 @@ TEST(GggsRenderTest, NoDataDiscardHonorsUniform)
   const QImage img = layer->renderImage(QSize(200, 200));
   ASSERT_FALSE(img.isNull());
 
-  // Per-column alpha scan: opaque pixels exist (valid 0.0 background renders), and
-  // there is at least one TRANSPARENT pixel with opaque pixels both above and below
-  // it in the same column — an interior hole only the discarded NoData block can
-  // make (the outside-footprint background is transparent but never enclosed).
+  // Per-column alpha scan collecting three signals:
+  //  - `opaque`: any opaque pixel exists at all,
+  //  - `max_fill`: the highest opaque fraction of any column's footprint span
+  //    (first..last opaque) — DENSE only if the valid 0.0 background renders,
+  //  - `enclosed_transparent`: a transparent pixel with opaque pixels both above
+  //    and below it in the same column — the interior NoData hole.
   int opaque = 0, enclosed_transparent = 0;
+  double max_fill = 0.0;
   for(int x = 0; x < img.width(); ++x)
   {
-    int first_opaque = -1, last_opaque = -1;
+    int first_opaque = -1, last_opaque = -1, col_opaque = 0;
     for(int y = 0; y < img.height(); ++y)
     {
       if(img.pixelColor(x, y).alpha() > 0)
       {
         ++opaque;
+        ++col_opaque;
         if(first_opaque < 0)
           first_opaque = y;
         last_opaque = y;
       }
     }
     if(first_opaque >= 0)
+    {
+      const int span = last_opaque - first_opaque + 1;
+      max_fill = std::max(max_fill, double(col_opaque) / span);
       for(int y = first_opaque + 1; y < last_opaque; ++y)
         if(img.pixelColor(x, y).alpha() == 0)
           ++enclosed_transparent;
+    }
   }
   EXPECT_GT(opaque, 0);                  // valid 0.0 samples render opaque
+  // Discriminator: a column of valid 0.0 background is densely opaque. Under the
+  // reverted `v <= 0.0` bug the background is discarded and no column exceeds
+  // ~0.44 fill (stripes + block only), so this fails; with the fix it is ~1.0.
+  EXPECT_GT(max_fill, 0.8);
   EXPECT_GT(enclosed_transparent, 0);    // NoData (9999) block discarded -> hole
 
   img.save("/tmp/gggs_nodata_render.png");
