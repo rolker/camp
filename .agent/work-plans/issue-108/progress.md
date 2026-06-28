@@ -580,3 +580,76 @@ NOTE: did not run a fresh build/test this round (mature branch; relied on static
 - [ ] (suggestion) `setBand()` `pixels_loaded_.store(false, std::memory_order_release)` — release ordering on the false store pairs with no acquire-of-false; real sync is the worker join. `relaxed` + a note, or keeping it for symmetry, reads clearer — `src/camp_map/raster/gggs_tile.cpp:144`
 - [ ] (suggestion) Pre-existing idiom: locals `width`/`height`/`band` shadow accessor methods (`shadowFunction`); completeness only — `src/camp_map/raster/gggs_tile.cpp:34`
 - [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands -> camp#122; non-uniform-tile validation authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp_map/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28
+**By**: Claude Code Agent (Claude Opus)
+**Round**: 6 address-findings (camp#126 must-fix: directory-keyed per-layer persistence)
+
+Addressed the Round-6 local-review **must-fix**: the camp#126 layer rename had
+moved the per-layer QSettings group, which keyed on `itemID()` (parent +
+`objectName()`). Two problems: (a) the leaf→parent/leaf rename reset persisted
+`visible`/`colormap`/`band` on upgrade, and (b) the deeper clash Roland raised —
+two stores whose directories resolve to the SAME parent/leaf display name (e.g.
+`survey_a/bathymetry/processed` and `survey_b/bathymetry/processed`, both shown as
+`bathymetry/processed`) collided on ONE settings group and clobbered each other's
+prefs. **Decision (Roland): key per-layer persistence on the DIRECTORY (unique +
+stable), NO migration** — a one-time reset of currently-saved prefs is accepted
+(pre-deployment). Display stays `parent/leaf`. Commit `2fcfeb6`.
+
+1. **`settingsKey()` seam** (`map/map_item.h`) — added
+   `virtual QString settingsKey() const { return itemID(); }` on `MapItem`.
+   Default-returns `itemID()`, so EVERY existing layer type is behavior-preserving.
+2. **Routed the settings group through it** — `map::Layer::readSettings()`/
+   `writeSettings()` (`map/layer.cpp`) and `GggsTileLayer::readSettings()`/
+   `writeSettings()` (`raster/gggs_tile_layer.cpp`) now `beginGroup(settingsKey())`
+   instead of `beginGroup(itemID())`, so the base (opacity/visible) and derived
+   (colormap/band) groups share one identity-stable key.
+3. **`GggsTileLayer::settingsKey()` override** (`raster/gggs_tile_layer.{h,cpp}`) —
+   returns `"dir:" + QUrl::toPercentEncoding(QDir(directory_).absolutePath())`: a
+   single FLAT key (every `/` → `%2F`, no deep nested group tree), readable and
+   collision-free across full paths. Documented why identity is the directory, not
+   the display name, and that no migration is done.
+4. **Display unchanged** — `displayName()`/`objectName()` stay `parent/leaf`; the
+   tree label is untouched. Only the persistence key moved off the name.
+
+**Tests** (the consequence — covered):
+- Fixed the now-wrong comment in `test/test_gggs_layer_name.cpp:1-9` (per-layer
+  persistence is keyed on the DIRECTORY via `settingsKey()`, decoupled from the
+  display name — not "keyed by the full directory" as a vague aside that conflated
+  it with the `GggsTileLayers/dirs` restore list).
+- Added `GggsPersistence.SameDisplayNameDistinctPersistence`
+  (`test/test_gggs_persistence.cpp`): two `GggsTileLayer`s over DIFFERENT
+  directories that resolve to the SAME `objectName()`/`itemID()` get DISTINCT
+  `settingsKey()`; set `visible`/`colormap`/`band` on one, persist, and confirm the
+  other's persisted `visible`/`band` are independent. **GL-free** (GDAL-only 2-band
+  synthetic tiles; `band_` is set before any texture work) so it **RUNS — not SKIPs
+  — in-container**. **Verified genuine**: with the routing reverted to `itemID()`,
+  the test FAILS (`a` reads `b`'s clobbered `visible=false`/`band=1`); with the fix
+  it PASSES, while `BandRoundTrips` (same dir → same key) still passes.
+- Existing `test_gggs_persistence` band/colormap/visible round-trips still pass
+  (same directory → same `settingsKey()` → round-trips correctly).
+
+**Minor review suggestions**: added a clarifying comment beside
+`gggs_tile.cpp` `setBand()`'s `pixels_loaded_.store(false, release)` (kept release
+for symmetry; noted the real cross-thread sync is the worker abort+join the caller
+performs, and that relaxed would be equally correct). The `shadowFunction` locals
+and the shader `v<=0` / non-uniform-tile divergence stay deferred (camp#122 /
+invariant-gated), per the task — untouched.
+
+**Build/test result** (verified in-container):
+- Build: `./ui_ws/build.sh camp` → `Summary: 1 package finished` — clean (only
+  pre-existing `-Wdeprecated`/`-Wsign-compare`/`-Wunused-parameter` warnings, no
+  errors). Lower-layer install spaces were empty in this worktree; only camp's core
+  deps needed building: `core_ws --packages-up-to marine_autonomy marine_interfaces
+  marine_ais_msgs` → `Summary: 3 packages finished` (exit 0).
+- Test: `./ui_ws/test.sh camp` → **121 tests, 0 errors, 0 failures, 3 skipped**
+  (was 120; +1 from the new clash test). The 3 skips are the offscreen-GL tests
+  that SKIP-not-FAIL in-container by design. The new
+  `SameDisplayNameDistinctPersistence` RAN and passed; the `GggsPersistence` suite
+  is 8 tests, all OK.
+
+**Commit**: `2fcfeb6` fix(camp#126): key store-layer persistence on directory, not
+display name (hooks ran, no `--no-verify`). Not pushed; no PR opened (handoff
+contract — the host pushes).
