@@ -32,7 +32,13 @@ public:
 
 signals:
   /// User selected a task row (full id). Map glue (P2) consumes this.
+  /// Only emitted for rows where hasTaskPoses() is true.
   void taskSelected(QString id);
+  /// Emitted on the GUI thread after every model update with the current
+  /// navigation task id and the full raw task list. The RunningTasksOverlay
+  /// consumes this to rebuild overlay geometry without a second ROS subscription.
+  void tasksUpdated(QString current_task,
+                    std::vector<marine_nav_interfaces::msg::TaskInformation> tasks);
 
 public slots:
   void updateRobotNamespace(QString robot_namespace);

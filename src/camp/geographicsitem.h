@@ -31,6 +31,7 @@ public:
         AvoidAreaType,
         CollisionMonitorType,
         FootprintType,
+        RunningTaskType,
     };
     
     GeoGraphicsItem(QGraphicsItem *parentItem = Q_NULLPTR);

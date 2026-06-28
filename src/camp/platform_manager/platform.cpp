@@ -3,6 +3,7 @@
 #include <QPainter>
 #include "nav_source.h"
 #include "ros/ros_context.h"
+#include "running_tasks/running_tasks_overlay.h"
 
 #include <QDebug>
 
@@ -109,6 +110,10 @@ void Platform::update(const marine_interfaces::msg::Platform& platform)
 
   path_topic_ = "/" + platformNamespace + "/received_global_plan";
   subscribeToPathTopic();
+
+  // Fallback: if the scene wasn't attached when the node first arrived, create
+  // the overlay now that the platform is (very likely) in the scene.
+  ensureRunningTasksOverlay();
 
   m_width = platform.width;
   m_length = platform.length;
@@ -236,6 +241,26 @@ void Platform::onNodeUpdated()
   m_ui->missionManager->nodeStarted(node_, transform_buffer_);
   m_ui->runningTasksView->setNode(node_);
   subscribeToPathTopic();
+
+  // Create the overlay if possible; otherwise rebind the existing one to the
+  // (possibly changed) node.
+  if (running_tasks_overlay_)
+    running_tasks_overlay_->nodeStarted(node_, transform_buffer_);
+  else
+    ensureRunningTasksOverlay();
+}
+
+void Platform::ensureRunningTasksOverlay()
+{
+  // Platform is a GeoGraphicsItem so scene() gives us the shared QGraphicsScene
+  // directly. The scene may not be attached yet on the first node update, so
+  // this is also called from the periodic update(): the overlay is created on
+  // whichever call first sees both node_ and scene() non-null.
+  if (running_tasks_overlay_ || !node_ || !scene())
+    return;
+  running_tasks_overlay_ = new RunningTasksOverlay(
+      scene(), m_ui->runningTasksView, this);
+  running_tasks_overlay_->nodeStarted(node_, transform_buffer_);
 }
 
 void Platform::subscribeToPathTopic()
