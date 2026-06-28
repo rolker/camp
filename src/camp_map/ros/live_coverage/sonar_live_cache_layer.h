@@ -107,8 +107,6 @@ private slots:
   void handleTile(const marine_interfaces::msg::SonarVisualizationTile& msg);
   /// GUI thread: a catalog arrived (reconcile -> request + prune).
   void handleCatalog(const marine_interfaces::msg::TileCatalog& msg);
-  /// GUI thread, after a write-through worker finishes (currently a no-op hook).
-  void writeThroughFinished();
 
 private:
   // [camp#121] One held tile plus its lazily-(re)uploaded GL texture for the
@@ -126,7 +124,17 @@ private:
   void unsubscribeTiles();
   void publishRequest(const std::vector<gggs::GridIndex>& tiles);
   void warmLoad();
+  // [camp#121] Coalesced, joinable per-tile write-through. scheduleWriteThrough()
+  // snapshots the latest tile state and either launches a worker (if the tile is
+  // idle) or marks it dirty (if a worker is already in flight for that tile);
+  // startWriteThrough() moves the snapshot into a self-contained worker;
+  // onWriteThroughFinished() (GUI thread) re-launches once more if a newer patch
+  // arrived during the write — so writes for a tile are serialized and never race
+  // on the shared <stem>.tif.tmp path.
   void scheduleWriteThrough(const SonarLiveTile& tile);
+  void startWriteThrough(const gggs::GridIndex& index);
+  void onWriteThroughFinished(const gggs::GridIndex& index,
+                              QFutureWatcher<void>* watcher);
 
   void recomputeBounds();
   void resetAutoRange();
@@ -172,8 +180,24 @@ private:
   rclcpp::Subscription<marine_interfaces::msg::TileCatalog>::SharedPtr catalog_sub_;
   rclcpp::Publisher<marine_interfaces::msg::TileRequest>::SharedPtr request_pub_;
 
-  // Write-through runs off the GUI thread; keep them tracked so the dtor joins.
-  QFutureWatcher<void> write_watcher_;
+  // [camp#121] Per-tile write-through state (GUI thread only). `in_flight` marks a
+  // worker is serializing this tile; `dirty` marks a newer patch arrived during
+  // that write (coalesced into one follow-up); `pending` holds the latest snapshot
+  // to write (moved into the worker on launch).
+  struct WriteState
+  {
+    bool in_flight = false;
+    bool dirty = false;
+    std::optional<SonarLiveTile> pending;   // SonarLiveTile has no default ctor
+  };
+  std::map<gggs::GridIndex, WriteState> write_states_;
+
+  // Every in-flight write worker is tracked here so the dtor joins ALL of them (not
+  // just the latest). Workers are self-contained (file serialization + rename only);
+  // they never touch this object. `shutting_down_` suppresses coalesced relaunches
+  // once teardown starts.
+  std::vector<QFutureWatcher<void>*> write_watchers_;
+  bool shutting_down_ = false;
 
   // Offscreen GL (the layer owns it; never touches the GUI context). Duplicated
   // from GggsTileLayer — unify via RasterFieldSource camp#134.

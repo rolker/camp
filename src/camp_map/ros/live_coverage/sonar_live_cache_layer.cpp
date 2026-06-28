@@ -130,9 +130,18 @@ SonarLiveCacheLayer::SonarLiveCacheLayer(MapItem* parent, Node* node,
 
 SonarLiveCacheLayer::~SonarLiveCacheLayer()
 {
-  // Join any in-flight write-through (each worker is self-contained, but joining
-  // matches the camp_map worker-lifetime convention). Then tear down GL.
-  write_watcher_.waitForFinished();
+  // Reset the subscriptions FIRST so no executor-thread callback can marshal a new
+  // handler onto this object mid-teardown (closes the TOCTOU window; matches the
+  // teardown-symmetry of the other ROS layers).
+  tile_sub_.reset();
+  catalog_sub_.reset();
+
+  // Stop coalesced relaunches, then JOIN every in-flight write worker (not just the
+  // latest) so none can outlive the object. Each worker is self-contained, so this
+  // is purely a lifetime join. Then tear down GL.
+  shutting_down_ = true;
+  for(QFutureWatcher<void>* watcher : write_watchers_)
+    watcher->waitForFinished();
   releaseGL();
 }
 
@@ -364,7 +373,11 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   }
   if(pruned)
   {
+    // Reset before re-folding so a pruned tile's extreme min/max can't linger in
+    // data_min_/data_max_ — the range reflects only the surviving tiles (mirrors
+    // the band-switch reset in setBandName()).
     recomputeBounds();
+    resetAutoRange();
     foldAutoRange();
     cached_image_ = QImage();
     update(boundingRect());
@@ -372,15 +385,53 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   updateDisplay();
 }
 
-void SonarLiveCacheLayer::writeThroughFinished()
-{
-  // Hook kept for symmetry; the worker is self-contained, so nothing to fold.
-}
-
 void SonarLiveCacheLayer::scheduleWriteThrough(const SonarLiveTile& tile)
 {
-  // Copy the tile + dir by value into a self-contained worker (no `this` deref).
-  write_watcher_.setFuture(QtConcurrent::run(writeTileToCache, tile, cache_dir_));
+  // GUI thread. Coalesce per tile: snapshot the latest state and launch a worker
+  // only if this tile is idle. If a worker is already in flight for this tile, mark
+  // it dirty — onWriteThroughFinished() re-launches once with the latest snapshot,
+  // so two workers never race on the shared <stem>.tif.tmp path (the prior bug),
+  // and intermediate patches are coalesced into a single follow-up write.
+  WriteState& ws = write_states_[tile.index()];
+  ws.pending = tile;   // latest wins
+  ws.dirty = true;
+  if(!ws.in_flight)
+    startWriteThrough(tile.index());
+}
+
+void SonarLiveCacheLayer::startWriteThrough(const gggs::GridIndex& index)
+{
+  // GUI thread. Move the latest snapshot into a self-contained worker (no `this`
+  // deref) and track its watcher so the dtor can join it. `pending` is repopulated
+  // by the next scheduleWriteThrough() before it is read again, so moving is safe.
+  WriteState& ws = write_states_[index];
+  ws.in_flight = true;
+  ws.dirty = false;
+  auto* watcher = new QFutureWatcher<void>(this);
+  write_watchers_.push_back(watcher);
+  connect(watcher, &QFutureWatcher<void>::finished, this,
+          [this, index, watcher]() { onWriteThroughFinished(index, watcher); });
+  watcher->setFuture(QtConcurrent::run(writeTileToCache, std::move(*ws.pending), cache_dir_));
+}
+
+void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
+                                                 QFutureWatcher<void>* watcher)
+{
+  // GUI thread. Untrack + delete the finished worker's watcher.
+  write_watchers_.erase(
+    std::remove(write_watchers_.begin(), write_watchers_.end(), watcher),
+    write_watchers_.end());
+  watcher->deleteLater();
+  if(shutting_down_)
+    return;
+  auto it = write_states_.find(index);
+  if(it == write_states_.end())
+    return;
+  it->second.in_flight = false;
+  if(it->second.dirty)
+    startWriteThrough(index);   // coalesced: write the newest patch that arrived
+  else
+    write_states_.erase(it);    // clean: drop the per-tile state
 }
 
 // ------------------------------ extent / range -------------------------------
