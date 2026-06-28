@@ -84,3 +84,17 @@ No open blockers. The `feature/issue-122` branch already exists.
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-28 15:49 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-122/plan.md` at `fe5c2a5`
+**PR**: PR-less (dispatched for issue #122; `gh` unauthenticated in this env — issue/review-issue context read from this progress.md)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (must-fix) Step 2's per-tile uniform placement is wrong: the `u_min`/`u_max` block is at lines 497-498, **before** the `for(auto& tile : tiles_)` loop (starts line 517), so `tile` is out of scope there. The `setUniformValue("u_has_nodata"/"u_nodata")` calls must go **inside** the loop before `glDrawArrays` (line 555 — e.g. right after `texture->bind(0)` at line 550) to be genuinely per-tile and reference `tile`. As written it would not compile. — `plan.md:35`
+- [ ] (suggestion) Step 3 / Files-to-Change name the comment to remove as "`[camp#122] LIMITATION`", but the actual block (`gggs_tile_layer.cpp:63-69`) is tagged `[camp#108] LIMITATION` and *references* the camp#122 follow-up. Remove that `[camp#108]` block; there is no `[camp#122]` comment to find. — `plan.md:44`
+- [ ] (suggestion) `u_min`/`u_max` are layer-global (`data_min_`/`data_max_`), set once outside the tile loop — the colormap range is shared across tiles, unlike the new per-tile NoData. Pre-existing and out of scope; worth a one-line note in the commit so the asymmetry is intentional, no plan change needed. — `plan.md:41`
