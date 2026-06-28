@@ -19,6 +19,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
+find_package(marine_nav_interfaces REQUIRED)
 
 find_package(qt_gui_cpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
@@ -106,6 +107,8 @@ set(SOURCES
     src/camp/ais/ais_contact.cpp
     src/camp/ais/ais_manager.cpp
     src/camp/helm_manager/helm_manager.cpp
+    src/camp/running_tasks/running_tasks_model.cpp
+    src/camp/running_tasks/running_tasks_view.cpp
     src/camp/roslink.cpp
     src/camp/nav_source.cpp
 )
@@ -146,6 +149,7 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     nav2_msgs
     marine_autonomy
     marine_interfaces
+    marine_nav_interfaces
 
     rclcpp
     tf2

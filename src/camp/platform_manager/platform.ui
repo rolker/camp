@@ -21,6 +21,7 @@
      </property>
      <widget class="HelmManager" name="helmManager" native="true"/>
      <widget class="MissionManager" name="missionManager" native="true"/>
+     <widget class="RunningTasksView" name="runningTasksView" native="true"/>
     </widget>
    </item>
    <item>
@@ -47,6 +48,12 @@
    <class>MissionManager</class>
    <extends>QWidget</extends>
    <header>mission_manager/mission_manager.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>RunningTasksView</class>
+   <extends>QWidget</extends>
+   <header>running_tasks/running_tasks_view.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>
