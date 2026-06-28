@@ -56,28 +56,28 @@ void main()
 )";
 
 // Fragment shader: auto-ranged value mapped through a colormap LUT (the shared
-// camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). NoData (0,
-// reserved by the mosaicker; real returns floored to >= 1) is discarded so empty
-// cells are transparent. Premultiplied-alpha output (opaque, so straight == premult).
+// camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). Each tile's
+// per-band NoData (plumbed in as u_has_nodata/u_nodata from GggsTile) is discarded
+// so empty cells are transparent; tiles without NoData discard nothing.
+// Premultiplied-alpha output (opaque, so straight == premult).
 //
-// [camp#108] LIMITATION: the `v <= 0.0` discard assumes the mosaicker's
-// floor-to-1 convention (true for the depth/sidescan band 1). A switched band
-// whose valid samples can be 0 or negative (e.g. an uncertainty or signed-offset
-// band) will have those samples discarded and the rest mis-ranged. Distinguishing
-// real NoData from valid 0/negative samples needs per-band NoData plumbed to the
-// shader (a uniform + a sentinel test) — deferred to the camp#122 follow-up (see
-// also plan Open Questions).
+// [camp#122] The discard now tests the band's actual NoData sentinel rather than
+// the old hardcoded `v <= 0.0` (which assumed the mosaicker's floor-to-1 depth
+// convention and wrongly discarded valid 0/negative samples in uncertainty,
+// quality, or signed-offset bands after #108 enabled arbitrary band selection).
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
 uniform sampler2D u_lut;     // unit 1: colormap LUT (256x1 RGBA)
 uniform float u_min;
 uniform float u_max;
+uniform int u_has_nodata;    // 0 = tile has no NoData; nonzero = discard v == u_nodata
+uniform float u_nodata;      // per-tile NoData sentinel (band-specific)
 varying vec2 v_texcoord;
 void main()
 {
   float v = texture2D(u_tex, v_texcoord).r;
-  if(v <= 0.0)
+  if(u_has_nodata != 0 && v == u_nodata)
     discard;
   float t = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
   vec4 c = texture2D(u_lut, vec2(t, 0.5));
@@ -548,6 +548,12 @@ QImage GggsTileLayer::renderImage(const QSize& size)
       if(!texture)
         continue;
       texture->bind(0);
+      // [camp#122] Per-tile NoData: a non-uniform store can carry different NoData
+      // values per tile/band, so these are set inside the loop (unlike u_min/u_max,
+      // which are a layer-global colormap range set once above).
+      program_->setUniformValue("u_has_nodata", tile->hasNoData() ? 1 : 0);
+      program_->setUniformValue("u_nodata",
+                                tile->hasNoData() ? float(tile->noData()) : 0.0f);
       program_->setAttributeArray(pos_loc, GL_FLOAT, verts.data(), 2,
                                   4 * sizeof(float));
       program_->setAttributeArray(texcoord_loc, GL_FLOAT, verts.data() + 2, 2,

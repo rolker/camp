@@ -46,6 +46,27 @@ QString writeTile(const QTemporaryDir& dir, int w, int h, const double geo[6],
   return err == CE_None ? path : QString();
 }
 
+// [camp#122] Float32 single-band tile writer with an arbitrary NoData sentinel —
+// the variant needed to exercise valid 0/negative samples and a non-zero NoData
+// that the UInt16 floor-to-1 writer above can't express.
+QString writeFloatTile(const QTemporaryDir& dir, int w, int h, const double geo[6],
+                       double nodata, const std::vector<float>& samples)
+{
+  if(GDALGetDriverCount() == 0)
+    GDALAllRegister();
+  const QString path = dir.filePath("13_0_0.tif");
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), w, h, 1, GDT_Float32, nullptr);
+  ds->SetGeoTransform(const_cast<double*>(geo));
+  GDALRasterBand* band = ds->GetRasterBand(1);
+  band->SetNoDataValue(nodata);
+  const CPLErr err = band->RasterIO(GF_Write, 0, 0, w, h,
+                                    const_cast<float*>(samples.data()),
+                                    w, h, GDT_Float32, 0, 0);
+  GDALClose(ds);
+  return err == CE_None ? path : QString();
+}
+
 bool offscreenGLAvailable()
 {
   QOffscreenSurface surface;
@@ -104,6 +125,79 @@ TEST(GggsRenderTest, OffscreenWarpProducesOrientedImage)
   EXPECT_GT(bright, 0);
 
   img.save("/tmp/gggs_render.png");
+}
+
+// [camp#122] The shader discards by the band's actual NoData sentinel (via the
+// per-tile u_has_nodata/u_nodata uniforms), not the old hardcoded `v <= 0.0`. A
+// Float32 tile whose valid samples are mostly 0.0 (plus two positive values), with
+// a NoData (9999) block punched in the interior, must render: the 0.0 background
+// OPAQUE (previously discarded by `v <= 0`) and the NoData block TRANSPARENT — an
+// enclosed transparent hole surrounded by opaque pixels, which outside-footprint
+// background transparency cannot produce.
+TEST(GggsRenderTest, NoDataDiscardHonorsUniform)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  const double geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  // Background is the valid zero sample everywhere; this is the regression case
+  // (the old `v <= 0` discard would have dropped the entire tile).
+  std::vector<float> samples(w * h, 0.0f);
+  // Two distinct positive values seed a real colormap range.
+  for(int c = 0; c < w; ++c)
+  {
+    samples[10 * w + c] = 5.0f;    // a positive stripe near the north
+    samples[20 * w + c] = 10.0f;   // a second, distinct positive stripe
+  }
+  // A NoData (9999) block punched into the INTERIOR -> discarded -> transparent
+  // hole enclosed by the opaque valid background.
+  for(int r = 40; r < 60; ++r)
+    for(int c = 40; c < 60; ++c)
+      samples[r * w + c] = 9999.0f;
+  const QString path = writeFloatTile(dir, w, h, geo, 9999.0, samples);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new camp::raster::GggsTileLayer(layers, dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QImage img = layer->renderImage(QSize(200, 200));
+  ASSERT_FALSE(img.isNull());
+
+  // Per-column alpha scan: opaque pixels exist (valid 0.0 background renders), and
+  // there is at least one TRANSPARENT pixel with opaque pixels both above and below
+  // it in the same column — an interior hole only the discarded NoData block can
+  // make (the outside-footprint background is transparent but never enclosed).
+  int opaque = 0, enclosed_transparent = 0;
+  for(int x = 0; x < img.width(); ++x)
+  {
+    int first_opaque = -1, last_opaque = -1;
+    for(int y = 0; y < img.height(); ++y)
+    {
+      if(img.pixelColor(x, y).alpha() > 0)
+      {
+        ++opaque;
+        if(first_opaque < 0)
+          first_opaque = y;
+        last_opaque = y;
+      }
+    }
+    if(first_opaque >= 0)
+      for(int y = first_opaque + 1; y < last_opaque; ++y)
+        if(img.pixelColor(x, y).alpha() == 0)
+          ++enclosed_transparent;
+  }
+  EXPECT_GT(opaque, 0);                  // valid 0.0 samples render opaque
+  EXPECT_GT(enclosed_transparent, 0);    // NoData (9999) block discarded -> hole
+
+  img.save("/tmp/gggs_nodata_render.png");
 }
 
 // Optional real-data smoke render: set GGGS_TEST_STORE to a tile directory to

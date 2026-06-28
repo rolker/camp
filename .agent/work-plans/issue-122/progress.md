@@ -98,3 +98,69 @@ No open blockers. The `feature/issue-122` branch already exists.
 - [ ] (must-fix) Step 2's per-tile uniform placement is wrong: the `u_min`/`u_max` block is at lines 497-498, **before** the `for(auto& tile : tiles_)` loop (starts line 517), so `tile` is out of scope there. The `setUniformValue("u_has_nodata"/"u_nodata")` calls must go **inside** the loop before `glDrawArrays` (line 555 — e.g. right after `texture->bind(0)` at line 550) to be genuinely per-tile and reference `tile`. As written it would not compile. — `plan.md:35`
 - [ ] (suggestion) Step 3 / Files-to-Change name the comment to remove as "`[camp#122] LIMITATION`", but the actual block (`gggs_tile_layer.cpp:63-69`) is tagged `[camp#108] LIMITATION` and *references* the camp#122 follow-up. Remove that `[camp#108]` block; there is no `[camp#122]` comment to find. — `plan.md:44`
 - [ ] (suggestion) `u_min`/`u_max` are layer-global (`data_min_`/`data_max_`), set once outside the tile loop — the colormap range is shared across tiles, unlike the new per-tile NoData. Pre-existing and out of scope; worth a one-line note in the commit so the asymmetry is intentional, no plan change needed. — `plan.md:41`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 16:30 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-122
+**Plan**: `.agent/work-plans/issue-122/plan.md`
+
+### What changed
+All in `src/camp_map/raster/gggs_tile_layer.cpp` plus two test files. All 3 Plan
+Review findings addressed.
+
+1. **Shader (`kFragmentShader`).** Added `uniform int u_has_nodata;` and
+   `uniform float u_nodata;` (int, not bool, for GLSL 1.20 portability). Replaced
+   `if(v <= 0.0) discard;` with `if(u_has_nodata != 0 && v == u_nodata) discard;`.
+   Tiles without NoData (`u_has_nodata == 0`) now discard nothing.
+
+2. **Per-tile uniforms (must-fix finding).** Placed the `setUniformValue` calls
+   **inside** the `for(auto& tile : tiles_)` loop, right after `texture->bind(0)`
+   and before the attribute-array setup / `glDrawArrays` — NOT next to the
+   `u_min`/`u_max` block (which is before the loop, where `tile` is out of scope and
+   would not compile, exactly as the review flagged):
+   ```cpp
+   program_->setUniformValue("u_has_nodata", tile->hasNoData() ? 1 : 0);
+   program_->setUniformValue("u_nodata",
+                             tile->hasNoData() ? float(tile->noData()) : 0.0f);
+   ```
+
+3. **Removed stale comment (suggestion finding).** Removed the
+   `[camp#108] LIMITATION` block above `kFragmentShader` (the one that *referenced*
+   the camp#122 follow-up — there was no `[camp#122]` comment to find), replacing it
+   with a short `[camp#122]` note describing the new NoData-sentinel discard.
+
+4. **Asymmetry note (suggestion finding).** Captured in the commit body: `u_min`/
+   `u_max` stay layer-global (set once, shared colormap range) while the NoData
+   uniform is per-tile (NoData can differ per tile/band). Intentional. An inline
+   comment at the per-tile call documents this too.
+
+### Tests added
+- `test/test_gggs_tile.cpp` — added a `writeFloatTile` Float32 helper and
+  `GggsTileTest.NegativeValidSamplesNonZeroNoData`: Float32 GeoTIFF, NoData=9999,
+  samples `[-3.0, 0.0, -1.5, 9999.0]`. Asserts `hasNoData()` true, `noData()==9999`,
+  `dataMin()==-3.0`, `dataMax()==0.0` (9999 excluded). **RUNS** in-container — PASSED.
+- `test/test_gggs_render.cpp` — added a `writeFloatTile` helper and
+  `GggsRenderTest.NoDataDiscardHonorsUniform`: Float32 tile, NoData=9999, mostly-0.0
+  valid background + two positive stripes (5.0, 10.0) + an interior 9999 block.
+  After `waitForLoad()`+`renderImage()`, asserts opaque pixels exist (valid 0.0
+  renders, previously discarded by `v<=0`) and an enclosed transparent hole exists
+  (NoData discarded). `GTEST_SKIP()` when offscreen GL is unavailable — **SKIPS**
+  in-container, as designed.
+
+### Build + test (verbatim)
+Dependency workspaces had empty installs, so I built the underlay → core chain
+first: `underlay_ws` (22 packages finished), `core_ws` (35 packages finished, includes
+`marine_ais_msgs`). Then:
+- `./ui_ws/build.sh camp` → `Summary: 1 package finished [1min 51s]`, 0 errors (only
+  pre-existing `-Wsign-compare` / `-Wunused-parameter` / `-Wdeprecated-declarations`
+  warnings).
+- `./ui_ws/test.sh camp` → `Summary: 124 tests, 0 errors, 0 failures, 4 skipped`.
+  Direct runs confirm `NegativeValidSamplesNonZeroNoData` PASSED and
+  `NoDataDiscardHonorsUniform` SKIPPED ("no offscreen GL context available").
+
+### Findings status
+All 3 Plan Review findings addressed (must-fix per-tile placement; removed
+`[camp#108]` comment; commit-body asymmetry note).
