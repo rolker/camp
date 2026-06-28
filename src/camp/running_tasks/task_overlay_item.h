@@ -47,6 +47,12 @@ protected:
 private:
   QPainterPath buildPath() const;
 
+  /// Scene-unit radius that renders as \p pixels display pixels at \p at,
+  /// following the ADR-0003 constant-pixel-footprint convention (mirrors
+  /// ShipTrack::drawTriangle's no-heading marker) so markers hold their
+  /// on-screen size regardless of zoom.
+  qreal sceneRadius(const QGeoCoordinate& at, qreal pixels) const;
+
   QString id_;
   QList<QGeoCoordinate> geo_poses_;
   bool is_current_;
