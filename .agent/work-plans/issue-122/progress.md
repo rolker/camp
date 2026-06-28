@@ -317,3 +317,30 @@ first (no `build.sh` for them — used `colcon build` directly):
 
 ### Findings status
 All 3 Round-2 suggestions resolved. No must-fix items remained. Ready to push/PR.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 17:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-122 at `31656d1`
+**Mode**: pre-push
+**Depth**: Standard (reason: ~258 changed code lines across 4 files; rendering-correctness change)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 3 | **Ship**: recommended — Round-2 suggestions all addressed; 0 must-fix; two independent adversarial passes (Lens A logic + Lens B systemic) and cppcheck surface nothing actionable
+
+### Findings
+- [ ] No issues found. LGTM.
+
+Notes:
+- Static analysis (cppcheck) reported only `shadowFunction` on context-only lines
+  (`gggs_tile.cpp:34,35,80`, untouched by this diff) and a cppcheck Qt-`slots`
+  `unknownMacro` config artifact in an unchanged header — both filtered out.
+- cpplint/clang-tidy unavailable on this host; cppcheck ran.
+- Lens A floated float-precision for non-float-representable NoData sentinels —
+  already covered by the `gggs_tile.cpp:104-113` float-compare comment (the
+  addressed Round-2 suggestion); not re-raised.
+- The strengthened render test `GggsRenderTest.NoDataDiscardHonorsUniform` SKIPs
+  in-container (no offscreen GL); fail-on-revert verified by analysis, not live.
+  A host with offscreen GL should run it to confirm the discriminator.
