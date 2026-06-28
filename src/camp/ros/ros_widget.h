@@ -15,7 +15,11 @@ public:
   ROSWidget(QWidget *parent = nullptr);
 
 protected:
-  QGeoCoordinate getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header);
+  // timeout_sec bounds the TF wait. The default keeps the original blocking
+  // behaviour for existing callers; pass 0.0 for a non-blocking lookup (e.g. on
+  // the GUI thread in a per-frame loop, where a 1.5 s block per pose freezes the
+  // UI — see camp#136).
+  QGeoCoordinate getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header, double timeout_sec = 1.5);
 
 
 };

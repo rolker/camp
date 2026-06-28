@@ -72,10 +72,15 @@ void RunningTasksOverlay::rebuildItems(
     // TaskInformation.poses is geometry_msgs/PoseStamped[] with per-pose headers.
     // getGeoCoordinate transforms each to earth frame with stale-stamp retry,
     // so the source frame (commonly map or earth) is handled transparently.
+    // Use a NON-BLOCKING lookup (0 s timeout): this runs on the GUI thread on
+    // every TaskFeedback rebuild, and the default 1.5 s blocking wait per pose
+    // freezes the whole UI when map->earth isn't yet available (camp#136). A
+    // pose that isn't transformable this cycle is simply skipped and reappears
+    // on the next rebuild once the (quasi-static) transform is available.
     QList<QGeoCoordinate> geo_poses;
     for (const auto& ps : task.poses)
     {
-      QGeoCoordinate gc = getGeoCoordinate(ps.pose, ps.header);
+      QGeoCoordinate gc = getGeoCoordinate(ps.pose, ps.header, 0.0);
       if (gc.isValid())
         geo_poses.append(gc);
     }
