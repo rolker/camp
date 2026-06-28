@@ -19,6 +19,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
+find_package(marine_tiled_raster_store REQUIRED)
 find_package(marine_nav_interfaces REQUIRED)
 find_package(marine_nav_tasks REQUIRED)
 
@@ -313,6 +314,9 @@ set(CAMP_MAP_ROS_SOURCES
     src/camp_map/ros/grids/grid_map.cpp
     src/camp_map/ros/grids/occupancy_grid.cpp
     src/camp_map/ros/layer.cpp
+    src/camp_map/ros/live_coverage/sonar_live_tile.cpp
+    src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp
+    src/camp_map/ros/live_coverage/sonar_live_cache_manager.cpp
     src/camp_map/ros/markers/marker.cpp
     src/camp_map/ros/markers/marker_namespace.cpp
     src/camp_map/ros/markers/markers.cpp
@@ -330,7 +334,10 @@ add_library(camp_map_ros SHARED ${CAMP_MAP_ROS_SOURCES})
 # plain target_link_libraries form, and CMake forbids mixing the two on one
 # target. The plain form still links camp_map transitively, so camp_map's
 # PUBLIC Qt + include-dir usage requirements propagate downstream.
-target_link_libraries(camp_map_ros camp_map)
+# [camp#121] GDAL is linked directly here (not just transitively via camp_map,
+# which links it PRIVATE): the live tile cache's write-through / warm-load
+# (sonar_live_tile.cpp) calls GDAL itself.
+target_link_libraries(camp_map_ros camp_map ${GDAL_LIBRARY})
 
 ament_target_dependencies(camp_map_ros
     geometry_msgs
@@ -338,6 +345,7 @@ ament_target_dependencies(camp_map_ros
     marine_ais_msgs
     marine_autonomy
     marine_interfaces
+    marine_tiled_raster_store
     rclcpp
     tf2
     tf2_ros
@@ -701,6 +709,29 @@ if(BUILD_TESTING)
     Qt5::Gui
     Qt5::Widgets
     Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#121] Live tile cache (Part B): warm-load + patch-apply/dequantize
+  # (SonarLiveTile, GDAL) and the downtime-gap reconcile + prune timestamp-gate
+  # (the node-boundary catalog conversion + TileCatalogReconciler). Headless: no
+  # Qt event loop, no ROS node, no boat — links camp_map_ros for SonarLiveTile +
+  # the conversions, and GDAL for the synthetic cached tiles.
+  ament_add_gtest(test_sonar_live_cache
+    test/test_sonar_live_cache.cpp
+  )
+  target_include_directories(test_sonar_live_cache PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_cache
+    marine_autonomy
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+  )
+  target_link_libraries(test_sonar_live_cache
+    camp_map_ros
+    Qt5::Core
     ${GDAL_LIBRARY}
   )
 endif()

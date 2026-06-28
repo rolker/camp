@@ -176,10 +176,17 @@ Persists active source namespaces under `QSettings LiveTileCache/sources`
 (a `QStringList`). `createDefaultLayers()` restores a layer per still-active source
 (mirrors `GggsStoreSource::instantiate` + `GggsTileLayers/dirs` pattern).
 
-**Discover vs. opt-in**: camp#44/#68 (shared discovery util / opt-in catalog
-integration) are not yet implemented. For this PR, auto-spawn follows the
-`GridManager` pattern (discover + immediately spawn). An open question flags
-whether operator opt-in is required (see Open Questions).
+**Discover vs. opt-in (operator-decided — opt-in tile stream).** Discovery is
+automatic (the `GridManager` pattern), but the *tile-stream subscription* is
+opt-in. `SonarLiveCacheManager` auto-detects the topic and spawns a layer in a
+**discovered-but-inactive** state; the layer MAY subscribe to the cheap
+`coverage_catalog` (transient-local) to advertise availability, but it does NOT
+subscribe to the best-effort `coverage_tiles` and does NOT publish `TileRequest`
+until the operator enables it (context-menu "Enable live coverage"). The per-source
+enabled flag persists via QSettings, so an enabled source re-subscribes on warm
+restart while a never-enabled one stays passive. This serves #71 (no surprise
+bandwidth on a slow link) and is recorded as a conscious ADR-0005 tension in
+ADR-0006 (D5), pending the generic #44/#68 `CatalogSource` seam.
 
 ### Step 5 — `CMakeLists.txt` additions
 
@@ -213,18 +220,26 @@ Runs headless (no Qt event loop, no ROS node, no live boat):
 
 ## Files to Change
 
+All three new translation units live under `ros/live_coverage/` (not `raster/`):
+they depend on `marine_interfaces` + `marine_tiled_raster_store`, so they compile
+into the ROS-dependent `camp_map_ros` library — `camp_map` stays ROS-free, the
+layering invariant ADR-0002 / the CMake comment relies on. (Refines the original
+`raster/` placement.)
+
 | File | Change |
 |------|--------|
-| `docs/decisions/0006-live-tile-cache-persistence.md` | New ADR |
-| `src/camp_map/raster/sonar_live_tile.h` | New in-memory tile type |
-| `src/camp_map/raster/sonar_live_tile.cpp` | Patch-apply, dequantize, auto-range |
-| `src/camp_map/raster/sonar_live_cache_layer.h` | New ROS layer |
-| `src/camp_map/raster/sonar_live_cache_layer.cpp` | GL render, subscribe, reconcile, write-through, warm-load |
-| `src/camp_map/ros/sonar_live_cache_manager.h` | New topic-discovery manager |
-| `src/camp_map/ros/sonar_live_cache_manager.cpp` | TopicsManager + layer lifecycle |
+| `docs/decisions/0006-live-tile-cache-persistence.md` | New ADR (opt-in activation + persistence contract) |
+| `src/camp_map/ros/live_coverage/sonar_live_tile.h` | New in-memory tile type + node-boundary conversions |
+| `src/camp_map/ros/live_coverage/sonar_live_tile.cpp` | Patch-apply/dequantize, auto-range, warm-load, write-through, wire↔gggs conversions |
+| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.h` | New ROS layer (opt-in toggle) |
+| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp` | GL render (duplicated), subscribe, reconcile, write-through, warm-load |
+| `src/camp_map/ros/live_coverage/sonar_live_cache_manager.h` | New topic-discovery manager |
+| `src/camp_map/ros/live_coverage/sonar_live_cache_manager.cpp` | TopicsManager + layer lifecycle (discover-only spawn) |
+| `src/camp_map/map/item_types.h` | Add `SonarLiveCacheLayerType` to `enum ItemType` (must-fix) |
 | `src/camp_map/ros/node.cpp` | Wire SonarLiveCacheManager (alongside GridManager) |
-| `CMakeLists.txt` | Add `marine_tiled_raster_store`, new sources, new test |
-| `test/test_sonar_live_cache.cpp` | Downtime-gap + reconcile tests |
+| `CMakeLists.txt` | Add `marine_tiled_raster_store` (find_package + camp_map_ros dep) + GDAL to camp_map_ros, new sources, new test |
+| `package.xml` | Add `<depend>marine_tiled_raster_store</depend>` (must-fix) |
+| `test/test_sonar_live_cache.cpp` | Warm-load, patch-apply, downtime-gap reconcile + prune-gate tests |
 
 ## Principles Self-Check
 
@@ -251,16 +266,26 @@ Runs headless (no Qt event loop, no ROS node, no live boat):
 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
-| Add `marine_tiled_raster_store` dep | `CMakeLists.txt` + `package.xml` | Yes |
-| New layer type in Layers tree | `item_types.h` (add `SonarLiveCacheLayerType`) | Yes (in `sonar_live_cache_layer.h`) |
-| `node.cpp` wires manager | `node.h` forward-declares the manager | Yes |
+| Add `marine_tiled_raster_store` dep | `CMakeLists.txt` (find_package + camp_map_ros) + `package.xml` | Yes (both) |
+| New layer type in Layers tree | `map/item_types.h` (add `SonarLiveCacheLayerType` to `enum ItemType`) | Yes |
+| `node.cpp` wires manager | (none — managers are `new XManager(this)` in node.cpp, not forward-declared in node.h, matching Markers/Grid) | n/a (row dropped per review) |
 | GggsTile shader duplicated | Comment pointing to camp#134 consolidation | Yes |
+| Live-cache .cpp uses GDAL directly | camp_map_ros links `${GDAL_LIBRARY}` (camp_map links it PRIVATE) | Yes |
 
-## Open Questions
+## Open Questions (resolved by operator before implementation)
 
-- [ ] **Discover vs. opt-in**: camp#44/#68 (shared topic-discovery + opt-in catalog) are not implemented. Should the live cache auto-spawn when the topic is detected (GridManager pattern), or require explicit operator opt-in (catalog browser entry)? Auto-spawn is proposed; confirm with operator before implementation.
-- [ ] **Multi-band write-through**: The write-through step must decide which bands to persist (depth only? all received bands?). Writing all bands is safest for warm-load fidelity; writing only depth keeps the cache small. Propose: write all received bands (one Float32 band per VisualizationBand), so warm-load can reconstruct any operator-selected band.
-- [ ] **Cache size limits**: `TileCatalogReconciler` has no built-in eviction; prune-on-absence handles normal shrinkage. A large survey could accumulate thousands of tiles. An eviction-by-area policy is possible follow-up. Flag if the operator expects this to be bounded.
+- [x] **Discover vs. opt-in** → **Discover automatically, subscribe to the tile
+  stream only on opt-in.** Discovery auto-spawns a discovered-but-inactive layer
+  (catalog sub allowed); `coverage_tiles` + `TileRequest` are gated behind a
+  context-menu "Enable live coverage" toggle, persisted per source. Serves #71.
+  Recorded as an ADR-0005 tension in ADR-0006 D5. (Implemented.)
+- [x] **Multi-band write-through** → **Write all received bands** (one Float32
+  GeoTIFF band per VisualizationBand, band name carried as the GDAL band
+  description) so warm-load can reconstruct any operator-selected band.
+  (Implemented.)
+- [x] **Cache size limits** → **No eviction beyond prune-on-absence** for this PR.
+  Eviction-by-area is a deferred follow-up (`// TODO(camp): eviction-by-area`),
+  not implemented. (Confirmed.)
 
 ## Estimated Scope
 
