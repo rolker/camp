@@ -437,3 +437,50 @@ Static analysis: cppcheck clean (the lone `unknownMacro` is the Qt `slots` parse
 - [ ] (suggestion) Pre-existing (byte-identical on `origin/jazzy`, out of this PR's diff): `releaseGL()` makeCurrent-failure branch skips the reset body then deletes the context, so the FBO/program/LUT/tile-textures destruct with no current context → leak + warnings; only fires on GL loss at process teardown (OS reclaims handles). Possible follow-up — `src/camp2/raster/gggs_tile_layer.cpp:594`
 - [ ] (suggestion) `applyBand()` makeCurrent-failure path clears tile pixels without releasing the old-band texture; stale-render is correctly prevented (sets `gl_failed_`), so this is a texture leak on the rare GL-failure path only — ties to the pre-existing teardown behavior above — `src/camp2/raster/gggs_tile_layer.cpp:701`
 - [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands → camp#122; non-uniform-tile validation authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp2/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28
+**By**: Claude Code Agent (Claude Opus)
+**Scope**: camp#126 only (parent/leaf store-layer naming). camp2/directory rename
+(#125) deliberately untouched — that is the separate later step.
+
+Implements **camp#126**: a flat store layer's tree-view name is now its last two
+path components ("parent/leaf", e.g. `sidescan/processed`) instead of just the leaf
+folder, so two stores that share a leaf (`.../sidescan/processed` vs
+`.../bathymetry/processed`) stay distinguishable in the tree.
+
+- Added a file-local helper `displayName(const QString&)` in the anonymous
+  namespace of `src/camp2/raster/gggs_tile_layer.cpp`: `QDir::dirName()` for the
+  leaf (which trims a trailing slash), `QFileInfo(dir.path()).dir().dirName()` for
+  the parent, returning `parent + '/' + leaf` — or just the leaf when the parent
+  component is empty (a root-level dir like `/processed`) or `.`.
+- The `GggsTileLayer` ctor now passes `displayName(directory)` to `map::Layer`
+  instead of `QFileInfo(directory).fileName()`.
+- **DISPLAY-name change only**: `directory_`, persistence (`GggsTileLayers/dirs`),
+  and dedup all remain keyed by the full directory — unchanged.
+
+**Test added** (`test/test_gggs_layer_name.cpp`, wired in CMakeLists mirroring the
+`test_gggs_persistence` gtest block): constructs a `GggsTileLayer` over an empty
+nested store path and asserts `objectName() == "sidescan/processed"`
+(`ParentSlashLeaf`), plus the root-level fallback `objectName() == "processed"`
+over `/processed` (`BareLeafFallback`). Both are **GL/GDAL-free** — an empty/absent
+tile-set dir yields no tiles, so the ctor takes the `(no tiles)` branch and never
+touches the offscreen GL path — so both **RUN — not SKIP — in-container** (verified
+by running the binary directly: `2 tests from GggsLayerName ... PASSED`).
+
+**Build**: lower-layer install spaces were empty in this worktree; only camp's
+core deps were needed (`marine_sensor_msgs`/`grid_map_ros`/`nav2_msgs` are apt
+packages in `/opt/ros/jazzy`), so `core_ws` was built `--packages-up-to
+marine_autonomy marine_interfaces marine_ais_msgs` → `Summary: 3 packages finished`
+(exit 0). Then `./ui_ws/build.sh camp` → `Summary: 1 package finished [2min 54s]` —
+clean (camp had only pre-existing `-Wsign-compare`/`-Wunused-parameter` warnings).
+
+**Test**: `./ui_ws/test.sh camp` →
+`Summary: 120 tests, 0 errors, 0 failures, 3 skipped` (includes the 2 new
+`GggsLayerName` tests, both RUN; the 3 skips are the offscreen-GL tests,
+SKIP-not-FAIL in-container by design).
+
+**Commit**: `c64f352` feat(camp#126): name store layers parent/leaf, not just the
+leaf folder (hooks ran, no `--no-verify`). Not pushed (handoff contract — the host
+pushes).
