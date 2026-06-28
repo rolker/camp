@@ -255,3 +255,32 @@ it", no test was added.
 
 **Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
 (the host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 10:17 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-108 at `169733e`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change)
+**Must-fix**: 1 | **Suggestions**: 3
+**Round**: 3 | **Ship**: continue — a new correctness must-fix surfaced this round (rescan does not inherit the selected band), cross-confirmed by Lens A and the lead read; it fires on the normal switch-then-rescan flow (not invariant-gated), so it warrants a fix + the regression test that would have caught it before shipping.
+
+Static analysis: cppcheck clean apart from pre-existing `shadowFunction` notes (locals
+`width`/`height`/`band` shadow accessors — predates this change); line-length (<=100)
+and trailing-whitespace clean (cpplint binary unavailable — checked manually). Claude
+Adversarial: 2 passes (Lens A logic + Lens B systemic/GL, Deep horizon). Lens B traced
+the worker abort/join, GL context lifecycle, atomic `pixels_loaded_` release/acquire
+ordering, and destruction-during-switch and found no race/leak/use-after-free; Lens A
+traced the selected band across rescan/readSettings/tilesReady/renderImage and found the
+must-fix below. Copilot: off (default). Plan adherence: exact, no scope creep (the
+rescan interaction is a plan gap, not a deviation). Governance: ADR-0005 (this is its
+scoped band-select follow-up), ADR-0002/0003 — compliant.
+
+### Findings
+- [ ] (must-fix) `rescan()` does not propagate the layer's `band_` to newly added tiles — after a switch to band N>1, a rescanned tile keeps default band 1: renders the wrong band through band N's range and is permanently excluded from the auto-range fold with no recovery. Fix: `tile->setBand(band_)` on each new tile in the rescan add loop — `src/camp2/raster/gggs_tile_layer.cpp:223`
+- [ ] (suggestion) `applyBand()` texture-release asymmetry: when `gl_context_` exists but `makeCurrent` fails, `releaseGL()` is skipped yet `setBand()` still clears pixels; `texture()` never refreshes an existing texture, so a stale old-band texture can render (narrow window) — `src/camp2/raster/gggs_tile_layer.cpp:670`
+- [ ] (suggestion) `test_gggs_band_select` covers only a clean uniform `setBand`; add rescan-after-switch coverage (the must-fix above passes the existing test) — `test/test_gggs_band_select.cpp:1`
+- [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; already documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
