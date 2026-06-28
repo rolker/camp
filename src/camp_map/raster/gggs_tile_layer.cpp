@@ -104,7 +104,14 @@ QString displayName(const QString& directory)
 
 GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory):
   map::Layer(parentItem, displayName(directory)),
-  directory_(directory)
+  // [camp#126] Canonicalize to a single absolute form so directory_ — the basis
+  // for dedup (directory()), persistence (the GggsTileLayers/dirs list and
+  // settingsKey()), and de-persist (onRemovedFromMap()) — is identical for any
+  // string variant of the same path (trailing slash / relative). The store
+  // source canonicalizes too; this defends the other caller (createDefaultLayers
+  // restoring from the dirs list). loadDirectory()/rescan() use QDir(directory_),
+  // which is path-agnostic, so the absolute path works unchanged.
+  directory_(QDir(directory).absolutePath())
 {
   // [camp#102] tilesReady() folds completed tiles' ranges + repaints on the GUI
   // thread when the async pixel load finishes.
@@ -813,8 +820,9 @@ QString GggsTileLayer::settingsKey() const
   // single FLAT key rather than a deep nested group tree, and prefix with "dir:"
   // to keep it readable and namespaced. NO migration: moving off the old name-key
   // accepts a one-time reset of currently-saved prefs (pre-deployment).
-  const QString abs = QDir(directory_).absolutePath();
-  return "dir:" + QString::fromLatin1(QUrl::toPercentEncoding(abs));
+  // [camp#126] directory_ is already canonicalized to an absolute path by the
+  // ctor, so it can be keyed directly — no QDir::absolutePath() needed here.
+  return "dir:" + QString::fromLatin1(QUrl::toPercentEncoding(directory_));
 }
 
 void GggsTileLayer::readSettings()

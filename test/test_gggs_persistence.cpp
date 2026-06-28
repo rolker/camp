@@ -345,6 +345,53 @@ TEST(GggsPersistence, SameDisplayNameDistinctPersistence)
   }
 }
 
+// [camp#126] Directory identity is normalized to ONE canonical absolute form, so
+// the three authorities that treat the directory as identity agree even when the
+// caller passes a non-canonical string variant (a trailing slash here). Without
+// canonicalization, GggsStoreSource::instantiate() dedups on the raw string while
+// settingsKey() normalizes via QDir::absolutePath() — so a trailing-slash variant
+// would dedup as a DISTINCT layer yet collide on ONE settings group. This pins:
+// (a) directory()/settingsKey() of a trailing-slash layer match the canonical
+// form; (b) instantiate() dedups the variant against the canonical layer (one
+// layer, not two); (c) the persisted dirs list stores the canonical path.
+// GL/GDAL-free (empty tile-set dir).
+TEST(GggsPersistence, NonCanonicalDirNormalizes)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+  const QString canonical = QDir(tileset.path()).absolutePath();
+  const QString variant = canonical + '/';   // non-canonical (trailing slash)
+  ASSERT_NE(variant, canonical);
+
+  // (a) A layer built from the trailing-slash variant normalizes directory_ to the
+  // canonical form, so directory() and settingsKey() match a canonical-form layer.
+  {
+    GggsTileLayer canonLayer(layers, canonical);
+    GggsTileLayer variantLayer(layers, variant);
+    EXPECT_EQ(variantLayer.directory(), canonical);
+    EXPECT_EQ(variantLayer.directory(), canonLayer.directory());
+    EXPECT_EQ(variantLayer.settingsKey(), canonLayer.settingsKey());
+  }
+
+  // (b) instantiate() with the variant then the canonical form yields ONE deduped
+  // layer (the second call returns the existing layer, not a duplicate), and (c)
+  // the persisted restore list holds exactly the canonical path.
+  GggsStoreSource source;
+  camp::map::Layer* first = source.instantiate(layers, variant);
+  ASSERT_NE(first, nullptr);
+  camp::map::Layer* second = source.instantiate(layers, canonical);
+  EXPECT_EQ(first, second) << "canonical re-select must dedup against the variant";
+  EXPECT_EQ(gggsLayersOn(layers, canonical), 1);
+  EXPECT_EQ(QSettings().value("GggsTileLayers/dirs").toStringList(),
+            QStringList{canonical})
+      << "persisted dir must be the canonical path, not the trailing-slash variant";
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");

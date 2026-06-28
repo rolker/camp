@@ -81,24 +81,33 @@ map::Layer* GggsStoreSource::instantiate(map::LayerList* layers, const QString& 
   if(!layers || key.isEmpty())
     return nullptr;
 
+  // [camp#126] Canonicalize the directory to a single absolute form up front so
+  // the three authorities that treat the directory as identity all agree: dedup
+  // (directory() compare), the layer's directory_, and the persisted restore
+  // list. Without this, two string variants of the same path (trailing slash /
+  // relative) would dedup as DISTINCT layers yet share ONE settingsKey() group
+  // (which normalizes via QDir::absolutePath()). GggsTileLayer's ctor normalizes
+  // too, so directory() below returns this same canonical string.
+  const QString canonical = QDir(key).absolutePath();
+
   // Dedup-on-select: a flat GggsTileLayer's onRemovedFromMap() de-persists by
   // directory(), so two layers on the same directory would let removing one
   // orphan the other's persistence. If this tile-set is already displayed,
   // return the existing layer instead of spawning a duplicate.
   for(map::MapItem* child : layers->childMapItems())
     if(auto* existing = dynamic_cast<GggsTileLayer*>(child))
-      if(existing->directory() == key)
+      if(existing->directory() == canonical)
         return existing;
 
-  auto* layer = new GggsTileLayer(layers, key);
+  auto* layer = new GggsTileLayer(layers, canonical);
 
   // Persist the selected tile-set so createDefaultLayers() restores it next
   // session (dir-unique; GggsTileLayer::onRemovedFromMap drops it on removal).
   QSettings settings;
   QStringList dirs = settings.value("GggsTileLayers/dirs").toStringList();
-  if(!dirs.contains(key))
+  if(!dirs.contains(canonical))
   {
-    dirs.append(key);
+    dirs.append(canonical);
     settings.setValue("GggsTileLayers/dirs", dirs);
   }
   return layer;
