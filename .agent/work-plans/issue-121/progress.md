@@ -194,3 +194,27 @@ test is not cheap — skipped per the finding's own guidance ("otherwise don't f
 
 ### Next step
 Re-read by the reviewer (Round 2). Do NOT push — host performs pushes.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 19:35 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-121 at `58bc66c`
+**Mode**: pre-push
+**Depth**: Deep (reason: ~1750 LOC new C++ + new ADR + off-thread file-I/O across the ROS↔GUI boundary)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 2 | **Ship**: recommended — Round-1 must-fix + 2 suggestions all correctly resolved; both Deep adversarial passes produced only verified false-positives; only an optional display-grade suggestion remains
+
+### Findings
+- [ ] (suggestion) Update-path auto-range only ever widens (foldAutoRange without resetAutoRange in handleTile), so a live tile's extreme revised to a less-extreme value leaves the colormap range too wide until band-switch/prune — display-grade, self-heals, optional — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:332,469-481`
+
+### Notes
+- Round-1 resolution verified: (must-fix) per-tile coalesced+joinable write-through (`WriteState`/`write_states_`/`write_watchers_`) serializes writes and joins EVERY watcher in the dtor — traced for move/coalesce correctness, no UB, no dropped final write; (suggestion) prune now resetAutoRange between recompute/fold; (suggestion) dtor resets subs first.
+- Adversarial adjudication (all rejected): Lens-B "dangling-this from queued finished()/invokeMethod after dtor" is a false positive — QObject's dtor removes pending posted events + disconnects, no nested event loop in the dtor, and the merged sibling `GggsTileLayer::~GggsTileLayer()` uses the identical waitForFinished-without-disconnect pattern. Lens-B "loadFromGeoTiff half-loaded on RasterIO failure" misread the code (it returns nullopt, sonar_live_tile.cpp:247-252). ctor-throw leak + best-effort fs::remove ec are below threshold. Lens A clean.
+- Governance clean: ADR-0001/0002/0005/0006 + #71/#117 all Pass; consequence updates (CMakeLists/package.xml/item_types.h/node.cpp/GDAL link) all done. Plan adherence matches the as-amended plan (opt-in model, ros/live_coverage/ placement).
+- Static analysis: camp configures no ament_lint/cpplint; build + 129 tests + 4 cache tests reported clean at implementation. New files match camp conventions.
+
+### Next step
+Lifecycle: **Local Review (approved)** → push / open PR → **triage-reviews**. Do NOT push — host performs pushes.
