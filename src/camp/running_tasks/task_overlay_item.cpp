@@ -38,7 +38,10 @@ qreal TaskOverlayItem::sceneRadius(const QGeoCoordinate& at, qreal pixels) const
   const qreal metres = pixels * metresPerPixel(at);
   const QPointF center = geoToPixel(at);
   const QPointF edge = geoToPixel(at.atDistanceAndAzimuth(metres, 0.0));
-  return std::hypot(center.x() - edge.x(), center.y() - edge.y());
+  const qreal radius = std::hypot(center.x() - edge.x(), center.y() - edge.y());
+  // Floor against a collapsed projection (zero metresPerPixel or coincident
+  // probe pixels): a zero-width hit stroke would make the item unclickable.
+  return radius > 0.0 ? radius : pixels;
 }
 
 QPainterPath TaskOverlayItem::buildPath() const

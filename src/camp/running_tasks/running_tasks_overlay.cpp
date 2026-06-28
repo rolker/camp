@@ -45,6 +45,11 @@ void RunningTasksOverlay::onItemClicked(const QString& id)
   // already matches), so no QSignalBlocker is needed.
   if (id == selected_id_)
     return;
+  // Apply the highlight locally first so a map click is reflected immediately
+  // and robustly even if the tree can't resolve the id (indexForId miss). The
+  // subsequent setSelectedTask → taskSelected → onTaskSelected is then a no-op
+  // (id already current), so there's no round-trip.
+  onTaskSelected(id);
   view_->setSelectedTask(id);
 }
 
