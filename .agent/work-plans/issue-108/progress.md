@@ -284,3 +284,66 @@ scoped band-select follow-up), ADR-0002/0003 — compliant.
 - [ ] (suggestion) `applyBand()` texture-release asymmetry: when `gl_context_` exists but `makeCurrent` fails, `releaseGL()` is skipped yet `setBand()` still clears pixels; `texture()` never refreshes an existing texture, so a stale old-band texture can render (narrow window) — `src/camp2/raster/gggs_tile_layer.cpp:670`
 - [ ] (suggestion) `test_gggs_band_select` covers only a clean uniform `setBand`; add rescan-after-switch coverage (the must-fix above passes the existing test) — `test/test_gggs_band_select.cpp:1`
 - [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; already documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 10:38 +0000
+**By**: Claude Opus
+
+**Summary**: Addressed the Round-3 local-review must-fix (rescan band propagation)
+plus the two non-shader suggestions. The shader `v<=0` item stays deferred to
+camp#122 (untouched). Commit `17158cb` on `feature/issue-108`.
+
+1. **(must-fix) rescan() propagates the selected band** (`gggs_tile_layer.cpp`) —
+   the rescan add loop now calls `tile->setBand(band_)` on each newly discovered
+   tile before it is folded into `tiles_`. A freshly-constructed `GggsTile` defaults
+   to band 1, so after a switch to band N>1 a rescanned tile rendered the wrong band
+   scaled through band N's range and was permanently excluded from the
+   `tilesReady()` auto-range fold (which folds only `band() == band_`), with no
+   recovery. `setBand(1)` on the band-1 default is a no-op (`GggsTile::setBand`
+   returns early on `band == band_`), so single-band / band-1 stores are unaffected.
+
+2. **(suggestion) applyBand() texture-release asymmetry** (`gggs_tile_layer.cpp`) —
+   when `gl_context_` exists but `makeCurrent` fails, the old path skipped
+   `releaseGL()` yet `setBand()` still cleared each tile's pixels, and `texture()`
+   never refreshes an EXISTING texture, so a stale old-band texture could render
+   against the new band's range once pixels reloaded (narrow window). `applyBand()`
+   now distinguishes the three context states: a null/not-yet-created context stays
+   the expected no-op (no textures exist yet); a successful `makeCurrent` releases
+   as before; a `makeCurrent` FAILURE now sets `gl_failed_` (and WARNs), exactly
+   matching `renderImage()`'s response to the same failure — `ensureGL()`
+   short-circuits so the layer stops rendering rather than drawing a stale-band
+   frame. Minimal, idiom-matching; no broader rework needed.
+
+3. **(suggestion) rescan-after-switch test coverage** (`test_gggs_band_select.cpp`)
+   — added `RescanInheritsSelectedBand`: switch a 2-band layer to band 2, `rescan()`
+   in a newly-landed tile, then assert via a new narrow GL-free `tileBands()` test
+   seam that EVERY tile (original + rescanned) reads band 2. The per-tile band
+   assertion needs no GL, so this test **RUNS (not SKIPs) in-container** and would
+   have caught the must-fix; the render confirmation stays
+   `offscreenGLAvailable()`-guarded. **Verified it is a genuine regression test**:
+   with `tile->setBand(band_)` reverted, the test FAILS (`band` reads 1, expected
+   2); with the fix in place it PASSES. `tileBands()` is a narrowly-scoped test-only
+   accessor (returns each tile's `band()` in order) documented as not part of the
+   public layer surface.
+
+4. **Shader `v<=0` discard** (suggestion 4) — NOT touched; the in-code comment still
+   points at the camp#122 follow-up, as instructed.
+
+`plan.md` synced: step 4 notes the rescan interaction (round-3 fix), the Tests
+section lists the new regression test, and the Files-to-Change table reflects the
+`rescan()`/`applyBand()`/`tileBands()` edits.
+
+**Build/test result** (verified in-container):
+- Build: `./ui_ws/build.sh camp` → `1 package finished` (camp), warnings only
+  (all pre-existing, e.g. `-Wunused-parameter`, Qt `matrix()` deprecation), no
+  errors. Required first building the shared `underlay_ws` (22 pkgs) and `core_ws`
+  (35 pkgs) symlink layers (their installs were empty): `Summary: 22 packages
+  finished` and `Summary: 35 packages finished`, both exit 0.
+- Test: `./ui_ws/test.sh camp` → **115 tests, 0 errors, 0 failures, 3 skipped**
+  (was 114; +1 from the new test). The 3 skips are the offscreen-GL tests that SKIP
+  in-container by design. The new `RescanInheritsSelectedBand` RAN and passed
+  (`[ OK ] ... (51 ms)`); `SetBandShiftsLayerRange` SKIPPED (no offscreen GL).
+
+**Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
+(the host performs pushes).
