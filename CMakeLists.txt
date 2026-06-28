@@ -111,6 +111,8 @@ set(SOURCES
     src/camp/helm_manager/helm_manager.cpp
     src/camp/running_tasks/running_tasks_model.cpp
     src/camp/running_tasks/running_tasks_view.cpp
+    src/camp/running_tasks/task_overlay_item.cpp
+    src/camp/running_tasks/running_tasks_overlay.cpp
     src/camp/roslink.cpp
     src/camp/nav_source.cpp
 )
@@ -426,6 +428,25 @@ if(BUILD_TESTING)
   target_link_libraries(test_collision_monitor_converter
     Qt5::Core
     Qt5::Positioning
+  )
+
+  # RunningTasksModel::hasTaskPoses guard (camp#129 P2)
+  ament_add_gtest(test_running_tasks_model
+    test/test_running_tasks_model.cpp
+    src/camp/running_tasks/running_tasks_model.cpp
+  )
+  target_include_directories(test_running_tasks_model PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  ament_target_dependencies(test_running_tasks_model
+    rclcpp
+    geometry_msgs
+    marine_nav_interfaces
+    marine_nav_tasks
+  )
+  target_link_libraries(test_running_tasks_model
+    Qt5::Core
+    Qt5::Widgets
   )
 
   # earth<-frame transform cache / staleness decision (#59 — TF-gap flicker fix)

@@ -11,7 +11,7 @@ ROSWidget::ROSWidget(QWidget *parent)
 
 }
 
-QGeoCoordinate ROSWidget::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header)
+QGeoCoordinate ROSWidget::getGeoCoordinate(const geometry_msgs::msg::Pose &pose, const std_msgs::msg::Header &header, double timeout_sec)
 {
     if(header.frame_id.empty())
       return {};
@@ -23,7 +23,7 @@ QGeoCoordinate ROSWidget::getGeoCoordinate(const geometry_msgs::msg::Pose &pose,
     geometry_msgs::msg::PoseStamped ecef;
     try
     {
-      ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
+      ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(timeout_sec));
     }
     catch (const tf2::TransformException &)
     {
@@ -37,7 +37,7 @@ QGeoCoordinate ROSWidget::getGeoCoordinate(const geometry_msgs::msg::Pose &pose,
       {
         ps.header.stamp.sec = 0;
         ps.header.stamp.nanosec = 0;
-        ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(1.5));
+        ecef = transform_buffer_->transform(ps, "earth", tf2::durationFromSec(timeout_sec));
       }
       catch (const tf2::TransformException &ex)
       {
