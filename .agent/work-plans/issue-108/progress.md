@@ -723,3 +723,21 @@ Verified non-vacuous: ran (status="run" result="completed", time 0.028s), no fai
 
 **Commit**: `13ee218` (hooks ran, no `--no-verify`). Not pushed; no PR opened (handoff
 contract — the host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 15:23 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `6add62e`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change spanning the camp2->camp_map cross-tree rename)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 8 | **Ship**: recommended — no must-fix; the only production code since the round-7 approval is the `13ee218` directory-canonicalization fix, and both Deep adversarial passes plus static/governance/plan/test review independently cleared it. Production code is UNCHANGED since `13ee218` (HEAD `6add62e` adds only progress.md), so no rebuild this round — the last recorded build/test stands at `122 tests, 0 errors, 0 failures, 3 skipped` (the 3 are offscreen-GL tests, SKIP-not-FAIL in-container by design).
+
+Static analysis: the genuinely-new band/persistence files (gggs_tile.{cpp,h}, gggs_tile_layer.{cpp,h}, gggs_store_source.cpp) are line-length(<=100)- and trailing-WS-clean; every >100-col / trailing-WS hit in the diff is pre-existing content carried over by the `git mv` rename (background_manager/map/web_mercator/raster_layer/grid_map/map_item), not lines this change authored. CMake/Doxyfile/src have 0 `camp2` references; only the CCOMAutonomousMissionPlanner executable target remains; all four GGGS gtests (tile/band_select/persistence/layer_name) are wired. Claude Adversarial: 2 passes (Lens A logic + Lens B systemic/GL/concurrency, Deep horizon). Lens A: 0 findings. Lens B: one proposed must-fix (a paint()/setBand() race clearing `data_`) — evaluated and REJECTED as a false positive: paint(), setBand()/applyBand(), and readSettings() (QTimer::singleShot) all run on the single Qt GUI thread (serialized by the event loop), the off-thread worker only writes `data_` after a release-store and never clears it, and every setBand is preceded by a worker abort+join — so no thread observes a cleared `data_` mid-paint. Copilot: off (default). Plan adherence: exact; camp#125/#126 are separately-tracked bundled issues, not #108 scope creep. Governance: camp ADR-0005 (#108 scoped band-select follow-up), ADR-0002 (camp#125 completes the #59 adoption migration), ADR-0003 (async load contract preserved) — compliant. Consequences: writeSettings band key (Done), directory-keyed persistence via settingsKey()+canonicalization (round-6 must-fix + round-7 dedup/settingsKey suggestion both resolved & test-verified non-vacuous via NonCanonicalDirNormalizes / SameDisplayNameDistinctPersistence / BandRoundTrips), and the camp2-retirement doc update in .agents/README (Done).
+
+### Findings
+- [ ] (suggestion) `settingsKey()` seam adoption incomplete — sibling persisting layers still hand-roll `beginGroup(itemID())`; harmless today (`settingsKey()==itemID()` for them) but the re-keying is not uniform — `src/camp_map/raster/raster_layer.cpp:341` / `src/camp_map/ros/grids/grid_map.cpp:229`
+- [ ] (tracking, deferred) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable -> camp#122; non-uniform-tile validation-authority divergence (front-tile vs per-tile count) — invariant-gated, never fires on a uniform store — `src/camp_map/raster/gggs_tile_layer.cpp:62`
