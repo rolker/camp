@@ -180,3 +180,29 @@ refactor and the band-count guard.
 
 **Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
 (the host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 02:54 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `2c8c873`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 2 | **Ship**: recommended — no must-fix; the prior round's suggestions 1-3 are folded in correctly, and both adversarial lenses re-verified the abort/join, texture-release ordering, per-band NoData re-query, and crossed-range re-fold. The one new finding is a defensive-path gap the store-uniformity invariant prevents from ever firing.
+
+Static analysis: cppcheck clean apart from pre-existing `shadowFunction` style notes
+(locals `width`/`height`/`band` shadow accessor methods — pattern predates this
+change); line-length (<=100) and trailing-whitespace clean (cpplint binary
+unavailable — checked manually). Claude Adversarial: 2 passes (Lens A logic +
+Lens B systemic/concurrency, Deep horizon); Lens B traced the worker abort/join,
+GL context lifecycle, and release/acquire memory ordering and found no race/leak/
+use-after-free. Copilot: off (default). Plan adherence: exact, no scope creep.
+Governance: camp ADR-0005 (this is its scoped band-select follow-up), ADR-0002/0003
+— compliant.
+
+### Findings
+- [ ] (suggestion) Non-uniform tile-set: `applyBand()` releases every tile's texture but only reloads tiles that have the requested band; a dropped tile (data_ freed to GPU, pixels_loaded_ still true) renders BLANK rather than "left on their prior band" as the comment claims, and its stale prior-band range still pollutes the tilesReady() fold. Gated behind the store-uniformity invariant (never fires on a uniform store). Fix: skip releaseGL() for dropped tiles, and/or correct the comment — `src/camp2/raster/gggs_tile_layer.cpp:653`
+- [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; already documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
