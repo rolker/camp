@@ -1,8 +1,11 @@
 // [camp#126] A flat store layer's tree-view name is the last two path components
 // ("parent/leaf"), so two stores that share a leaf (.../sidescan/processed and
 // .../bathymetry/processed) stay distinguishable. The name is the layer's
-// QObject name (set in the GggsTileLayer ctor); directory_/persistence stay keyed
-// by the full directory and are covered elsewhere (test_gggs_persistence.cpp).
+// QObject name (set in the GggsTileLayer ctor). These tests pin the DISPLAY name
+// only. Per-layer persistence (visible/colormap/band) is keyed on the DIRECTORY
+// via GggsTileLayer::settingsKey() — not on this display name, which two distinct
+// stores can share — so the display label and the persistence key are decoupled;
+// that directory-keyed independence is covered in test_gggs_persistence.cpp.
 //
 // GL/GDAL-free: an empty (or non-existent) tile-set directory yields no tiles, so
 // the ctor takes the "(no tiles)" branch and never touches the offscreen GL path.

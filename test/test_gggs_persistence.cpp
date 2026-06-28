@@ -31,6 +31,7 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QDir>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -70,17 +71,16 @@ public:
   using GggsTileLayer::writeSettings;
 };
 
-// [camp#108] Write a 2-band UInt16 north-up GeoTIFF so a layer over @p dir reports
-// bandCount() == 2 and setBand(2) is in range (verbatim helper from
-// test_gggs_band_select.cpp; disjoint per-band ranges, NoData = 0 on each band).
-QString writeTwoBandTile(const QTemporaryDir& dir, const QString& name,
+// [camp#108] Write a 2-band UInt16 north-up GeoTIFF at @p path so a layer over its
+// directory reports bandCount() == 2 and setBand(2) is in range (adapted from the
+// test_gggs_band_select.cpp helper; disjoint per-band ranges, NoData = 0 on each).
+QString writeTwoBandTile(const QString& path,
                          int w, int h, const double geo[6],
                          const std::vector<uint16_t>& band1,
                          const std::vector<uint16_t>& band2)
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
-  const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), w, h, 2, GDT_UInt16, nullptr);
   ds->SetGeoTransform(const_cast<double*>(geo));
@@ -99,9 +99,9 @@ QString writeTwoBandTile(const QTemporaryDir& dir, const QString& name,
   return err == CE_None ? path : QString();
 }
 
-// [camp#108] A small 2-band tile-set under @p dir; the layer over it reports
-// bandCount() == 2. Disjoint per-band ranges as in test_gggs_band_select.cpp.
-bool writeTwoBandTileSet(const QTemporaryDir& dir)
+// [camp#108] A small 2-band tile-set in the directory @p dirPath; the layer over it
+// reports bandCount() == 2. Disjoint per-band ranges as in test_gggs_band_select.cpp.
+bool writeTwoBandTileSet(const QString& dirPath)
 {
   const int w = 8, h = 8;
   const double geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
@@ -112,7 +112,8 @@ bool writeTwoBandTileSet(const QTemporaryDir& dir)
       band1[r * w + c] = uint16_t(10 + (c % 4) * 10);   // [10, 40]
       band2[r * w + c] = uint16_t(1000 + r * 400);      // [1000, 3800]
     }
-  return !writeTwoBandTile(dir, "13_0_0.tif", w, h, geo, band1, band2).isEmpty();
+  return !writeTwoBandTile(QDir(dirPath).filePath("13_0_0.tif"),
+                           w, h, geo, band1, band2).isEmpty();
 }
 
 }  // namespace
@@ -222,7 +223,7 @@ TEST(GggsPersistence, BandRoundTrips)
 
   QTemporaryDir tileset;
   ASSERT_TRUE(tileset.isValid());
-  ASSERT_TRUE(writeTwoBandTileSet(tileset));
+  ASSERT_TRUE(writeTwoBandTileSet(tileset.path()));
 
   // First layer: defaults to band 1, operator switches to band 2 (which persists).
   {
@@ -279,6 +280,68 @@ TEST(GggsPersistence, BandDefaultRoundTrips)
     auto* layer = new TestableGggsTileLayer(layers, tileset.path());
     layer->readSettings();
     EXPECT_EQ(layer->band(), 1);
+  }
+}
+
+// [camp#126] Two stores under DIFFERENT roots that share BOTH path components
+// (survey_a/bathymetry/processed and survey_b/bathymetry/processed) resolve to the
+// SAME parent/leaf display name — and thus, under a shared parent LayerList, the
+// SAME itemID(). Per-layer prefs used to key on itemID(), so the two would collide
+// on ONE QSettings group and clobber each other's visible/colormap/band. Now they
+// key on settingsKey() (the directory), so each persists independently. This test
+// pins the clash is fixed: set distinct visible/colormap/band on one and confirm
+// the other is unaffected. GL-free (band_ is set before any texture work; empty/
+// loaded tiles need no offscreen GL for the integer round-trip), GDAL-only.
+TEST(GggsPersistence, SameDisplayNameDistinctPersistence)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  QTemporaryDir baseA, baseB;
+  ASSERT_TRUE(baseA.isValid());
+  ASSERT_TRUE(baseB.isValid());
+  const QString dirA = baseA.filePath("bathymetry/processed");
+  const QString dirB = baseB.filePath("bathymetry/processed");
+  ASSERT_TRUE(QDir().mkpath(dirA));
+  ASSERT_TRUE(QDir().mkpath(dirB));
+  ASSERT_TRUE(writeTwoBandTileSet(dirA));
+  ASSERT_TRUE(writeTwoBandTileSet(dirB));
+
+  // Same display name + same itemID, but DISTINCT settings keys — the crux of the
+  // fix. The old itemID()-keyed group would have been shared between the two.
+  {
+    auto* a = new TestableGggsTileLayer(layers, dirA);
+    auto* b = new TestableGggsTileLayer(layers, dirB);
+    ASSERT_EQ(a->objectName(), QString("bathymetry/processed"));
+    ASSERT_EQ(a->objectName(), b->objectName());
+    ASSERT_EQ(a->itemID(), b->itemID());
+    EXPECT_NE(a->settingsKey(), b->settingsKey());
+
+    // Give A non-default visible/colormap/band; leave B at its defaults; persist.
+    ASSERT_EQ(a->bandCount(), 2);
+    a->setVisible(true);
+    a->setColormap(camp::map::ColorMap::Viridis);
+    a->setBand(2);
+    a->writeSettings();
+
+    b->setVisible(false);
+    b->writeSettings();   // B keeps its defaults (band 1)
+  }
+
+  // Fresh layers re-read their OWN groups: A's changes did not bleed into B.
+  {
+    auto* a = new TestableGggsTileLayer(layers, dirA);
+    auto* b = new TestableGggsTileLayer(layers, dirB);
+    a->readSettings();
+    b->readSettings();
+
+    EXPECT_TRUE(a->isVisible());
+    EXPECT_EQ(a->band(), 2);
+
+    EXPECT_FALSE(b->isVisible()) << "B's visibility must be independent of A's";
+    EXPECT_EQ(b->band(), 1) << "B's band must be independent of A's";
   }
 }
 

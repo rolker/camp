@@ -134,6 +134,10 @@ void GggsTile::setBand(int band)
   data_ = std::vector<float>();
   data_min_ = 1.0;   // crossed sentinel => no valid samples (range unknown)
   data_max_ = 0.0;
+  // Release ordering kept for symmetry with the true-store in loadPixels(); the
+  // actual cross-thread sync on this path is the worker abort+join the caller
+  // (applyBand/rescan) performs before setBand(), so no paint thread observes this
+  // store mid-flight. relaxed would be equally correct here.
   pixels_loaded_.store(false, std::memory_order_release);
 }
 

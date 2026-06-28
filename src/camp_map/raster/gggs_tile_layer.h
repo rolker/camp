@@ -59,6 +59,15 @@ public:
   /// Directory of `<level>_<row>_<col>.tif` tiles this layer renders.
   const QString& directory() const { return directory_; }
 
+  /// [camp#126] Per-layer persistence (visible/colormap/band) is keyed on the
+  /// tile-set DIRECTORY, not the display name. The display name is parent/leaf
+  /// (a label two stores can share, e.g. survey_a/bathymetry/processed and
+  /// survey_b/bathymetry/processed both show as "bathymetry/processed"); the
+  /// directory is the layer's stable, unique identity. Returns an itemID()-shaped
+  /// flat key derived from the absolute directory path so each store gets its own
+  /// QSettings group.
+  QString settingsKey() const override;
+
   /// True once at least one valid tile loaded.
   bool valid() const { return !tiles_.empty(); }
 

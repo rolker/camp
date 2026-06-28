@@ -22,6 +22,7 @@
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QTransform>
+#include <QUrl>
 #include <QtConcurrent>
 
 #include <cmath>
@@ -799,12 +800,29 @@ void GggsTileLayer::contextMenu(QMenu* menu)
   }
 }
 
+QString GggsTileLayer::settingsKey() const
+{
+  // [camp#126] Identity is the DIRECTORY, not the display name. The base
+  // MapItem::settingsKey() returns itemID() (parent path + objectName()), but a
+  // store layer's objectName() is a parent/leaf folder label two distinct stores
+  // can share (survey_a/bathymetry/processed and survey_b/bathymetry/processed
+  // both display as "bathymetry/processed"), so itemID()-keyed persistence would
+  // collide them onto ONE QSettings group — one store's visible/colormap/band
+  // would overwrite the other's. The absolute directory path is unique and stable,
+  // so key on it instead. Percent-encode it (every '/' becomes %2F) so it is a
+  // single FLAT key rather than a deep nested group tree, and prefix with "dir:"
+  // to keep it readable and namespaced. NO migration: moving off the old name-key
+  // accepts a one-time reset of currently-saved prefs (pre-deployment).
+  const QString abs = QDir(directory_).absolutePath();
+  return "dir:" + QString::fromLatin1(QUrl::toPercentEncoding(abs));
+}
+
 void GggsTileLayer::readSettings()
 {
   map::Layer::readSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(itemID());
+  settings.beginGroup(settingsKey());
   // [camp#102] Default GGGS tile-set leaves OFF: re-read `visible` with a FALSE
   // fallback (Layer::readSettings just applied it with a TRUE default). This has
   // to live in the leaf override, not a ctor setVisible(false) — MapItem::
@@ -838,7 +856,7 @@ void GggsTileLayer::writeSettings()
   map::Layer::writeSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(itemID());
+  settings.beginGroup(settingsKey());
   settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
   settings.setValue("band", band_);   // [camp#108] selected band round-trips
   settings.endGroup();
