@@ -164,3 +164,21 @@ first: `underlay_ws` (22 packages finished), `core_ws` (35 packages finished, in
 ### Findings status
 All 3 Plan Review findings addressed (must-fix per-tile placement; removed
 `[camp#108]` comment; commit-body asymmetry note).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 16:16 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-122 at `1802c93`
+**Mode**: pre-push
+**Depth**: Standard (reason: 173 changed code lines across 3 files; rendering-correctness change)
+**Must-fix**: 1 | **Suggestions**: 3
+**Round**: 1 | **Ship**: continue — one mechanical test-discrimination must-fix; shader logic itself is correct, expected to converge next round
+
+### Findings
+- [ ] (must-fix) Render test `NoDataDiscardHonorsUniform` does not discriminate the fix from the reverted `v <= 0.0` bug — both `opaque > 0` and `enclosed_transparent > 0` pass under the old code (positive stripes + the `9999 > 0` block stay opaque, the discarded 0.0 background supplies the enclosed transparency). It is the only test exercising the shader change, so the fix is effectively unpinned. Assert that a valid 0.0 background pixel away from the stripes/NoData block is opaque (alpha > 0) — only the new code produces that. — `test/test_gggs_render.cpp:197`
+- [ ] (suggestion) CPU range exclusion compares in double (`double(v) == nodata_`) while the shader discards in float (`v == float(nodata)`); they diverge for a NoData sentinel not exactly representable in float32 (e.g. a Float64 source band) — GPU discards, CPU keeps it in the auto-range and pollutes `u_min`/`u_max`. Benign for GGGS Float32/UInt16 data, but aligning the CPU compare to float future-proofs the consistency this PR now relies on. (Cross-pass confirmed, Lens A + Lens B.) — `gggs_tile.cpp:104`
+- [ ] (suggestion) Exact-equality discard interacts with the data texture's `Linear` min/mag filter: bilinearly interpolated boundary texels never exactly equal the sentinel, so a one-texel mis-ranged halo rings every NoData region — now more conspicuous because the sentinel is a large out-of-range value that clamps to `u_max` (bright end). Structurally pre-existing; consider `Nearest` sampling for the R32F data texture. — `gggs_tile.cpp:162`
+- [ ] (suggestion) New `writeFloatTile` helpers dereference `driver`/`ds` from `GetDriverByName`/`Create` without null checks (matches the pre-existing `writeTile` convention) — a guard would fail the test cleanly instead of crashing. — `test/test_gggs_tile.cpp:99`
