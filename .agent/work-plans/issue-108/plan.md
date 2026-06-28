@@ -51,8 +51,11 @@ treated as single-band only. The operator needs to pick which band a flat
    `writeSettings()`, while `readSettings()` calls `applyBand()` directly so the
    read path is not coupled to a settings write — mirroring the inline colormap
    apply. `applyBand()` also skips (and WARNs once per switch on) any tile whose
-   own `bandCount()` is below the requested band, so a non-uniform tile-set drops
-   such tiles from the render without crashing or silently vanishing.
+   own `bandCount()` is below the requested band: such a tile keeps its prior band
+   — its GL texture and pixels are left intact so it keeps rendering normally — and
+   `tilesReady()` excludes it from the range fold (folding only tiles whose
+   `band() == band_`) so its stale prior-band range can't pollute the new band's
+   auto-range. *(camp#108 local-review round-2 refinement.)*
 
 5. **Tests** —
    - `test_gggs_tile.cpp`: write a 2-band GeoTIFF (different constant values per

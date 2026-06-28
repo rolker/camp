@@ -306,6 +306,12 @@ void GggsTileLayer::tilesReady()
   bool first_range = (data_min_ > data_max_);
   for(auto& tile : tiles_)
   {
+    // [camp#108] Only fold tiles that actually carry the layer's current band.
+    // A non-uniform tile-set leaves a tile lacking that band on its prior band
+    // (applyBand() keeps it loaded rather than blanking it); its stale prior-band
+    // min/max must not pollute the current band's auto-range.
+    if(tile->band() != band_)
+      continue;
     if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
       continue;
     if(first_range || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
@@ -645,40 +651,45 @@ void GggsTileLayer::applyBand(int band)
     future_watcher_.waitForFinished();
   }
 
-  // Release every tile's GL texture under this layer's own context so the next
-  // render re-uploads the new band's pixels (reusing the per-tile releaseGL()
-  // path — textures only, NOT the shader/FBO/LUT, which are band-independent).
-  // Guard a null/not-yet-created context (the layer may never have painted), as
-  // releaseGL() does — setBand() can fire from readSettings() before first paint.
-  if(gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_))
-  {
-    for(auto& tile : tiles_)
-      tile->releaseGL();
-    gl_context_->doneCurrent();
-  }
-
-  // Re-point each tile at the new band (clears its CPU pixels + range) and reset
-  // the layer auto-range to crossed — the new band's range is unknown until its
-  // pixels reload. tilesReady() re-folds it after the load completes.
+  // Re-point each tile that carries the requested band at the new band: release
+  // its old-band GL texture under this layer's own context (so the next render
+  // re-uploads the new band's pixels) then setBand() (clears its CPU pixels +
+  // range, marks it not-loaded). releaseGL() touches textures only, NOT the
+  // shader/FBO/LUT, which are band-independent. Guard a null/not-yet-created
+  // context (the layer may never have painted), as releaseGL() does — applyBand()
+  // can fire from readSettings() before first paint.
   //
   // [camp#108] bandCount() speaks for the layer via tiles_.front(); a tile with
   // fewer bands than the front (a non-uniform tile-set, e.g. mixed survey dirs)
-  // can't serve the requested band. Skip it (leave it on its current band) rather
-  // than letting GggsTile::setBand() silently no-op, and WARN once per switch so
-  // the drop isn't invisible.
+  // can't serve the requested band. Such tiles lacking the requested band keep
+  // their prior band — we do NOT release their texture or clear their pixels, so
+  // they keep rendering normally on the band they already hold — and are excluded
+  // from the range fold (tilesReady() skips tiles whose band() != band_) so their
+  // stale prior-band range can't pollute the new band's auto-range. WARN once per
+  // switch so the drop isn't invisible.
+  const bool have_context =
+    gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_);
   int dropped = 0;
   for(auto& tile : tiles_)
   {
     if(tile->bandCount() < band)
     {
       ++dropped;
-      continue;
+      continue;   // leave its texture/pixels/range on the prior band
     }
+    if(have_context)
+      tile->releaseGL();
     tile->setBand(band);
   }
+  if(have_context)
+    gl_context_->doneCurrent();
   if(dropped > 0)
     qWarning("GggsTileLayer: %d tile(s) lack band %d; left on their prior band",
              dropped, band);
+
+  // Reset the layer auto-range to crossed — the new band's range is unknown until
+  // its pixels reload. tilesReady() re-folds it (over current-band tiles only)
+  // after the load completes.
   data_min_ = 1.0;
   data_max_ = 0.0;
   cached_image_ = QImage();
