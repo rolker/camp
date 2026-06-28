@@ -58,6 +58,13 @@ void main()
 // camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). NoData (0,
 // reserved by the mosaicker; real returns floored to >= 1) is discarded so empty
 // cells are transparent. Premultiplied-alpha output (opaque, so straight == premult).
+//
+// [camp#108] LIMITATION: the `v <= 0.0` discard assumes the mosaicker's
+// floor-to-1 convention (true for the depth/sidescan band 1). A switched band
+// whose valid samples can be 0 or negative (e.g. an uncertainty or signed-offset
+// band) will have those samples discarded and the rest mis-ranged. Distinguishing
+// real NoData from valid 0/negative samples needs per-band NoData plumbed to the
+// shader (a uniform + a sentinel test) — deferred; see plan Open Questions.
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
@@ -592,6 +599,65 @@ void GggsTileLayer::setColormap(map::ColorMap::Type type)
   update(boundingRect());
 }
 
+int GggsTileLayer::bandCount() const
+{
+  // [camp#108] The tiles of a store are uniform, so the first valid tile's band
+  // count speaks for the layer. loadDirectory()/rescan() only keep valid() tiles,
+  // so front() is valid when non-empty.
+  return tiles_.empty() ? 0 : tiles_.front()->bandCount();
+}
+
+void GggsTileLayer::setBand(int band)
+{
+  // [camp#108] Validate against the tile-set's band count and skip the no-change
+  // path (so a persisted-band read or a re-click of the current band doesn't pay
+  // the abort + reload). bandCount() == 0 (no tiles) rejects everything.
+  if(band < 1 || band > bandCount() || band == band_)
+    return;
+  band_ = band;
+
+  // Abort + join any in-flight load BEFORE mutating the tiles the worker reads —
+  // same contract as loadTiles()/rescan() (the worker captures `this` and iterates
+  // tiles_). Whole-tile abort granularity, as elsewhere.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+
+  // Release every tile's GL texture under this layer's own context so the next
+  // render re-uploads the new band's pixels (reusing the per-tile releaseGL()
+  // path — textures only, NOT the shader/FBO/LUT, which are band-independent).
+  // Guard a null/not-yet-created context (the layer may never have painted), as
+  // releaseGL() does — setBand() can fire from readSettings() before first paint.
+  if(gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_))
+  {
+    for(auto& tile : tiles_)
+      tile->releaseGL();
+    gl_context_->doneCurrent();
+  }
+
+  // Re-point each tile at the new band (clears its CPU pixels + range) and reset
+  // the layer auto-range to crossed — the new band's range is unknown until its
+  // pixels reload. tilesReady() re-folds it after the load completes.
+  for(auto& tile : tiles_)
+    tile->setBand(band);
+  data_min_ = 1.0;
+  data_max_ = 0.0;
+  cached_image_ = QImage();
+
+  writeSettings();
+
+  // Re-kick the async load only if the layer already started one (first paint).
+  // Otherwise the lazy first-paint kick will read the new band; no need to force
+  // a load on a layer the operator may never turn on.
+  if(load_started_)
+    loadTiles();
+  update(boundingRect());
+}
+
 void GggsTileLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
@@ -615,6 +681,23 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     action->setChecked(type == colormap_.type());
     connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
   }
+
+  // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
+  // uncertainty, backscatter intensity + quality). Single-band stores (the
+  // common sidescan case) get no submenu, so no visual noise. One checkable
+  // action per 1-indexed band, checked when it is the current selection.
+  const int bands = bandCount();
+  if(bands > 1)
+  {
+    QMenu* band_menu = menu->addMenu("Band");
+    for(int b = 1; b <= bands; ++b)
+    {
+      QAction* action = band_menu->addAction(QString::number(b));
+      action->setCheckable(true);
+      action->setChecked(b == band_);
+      connect(action, &QAction::triggered, this, [this, b]() { setBand(b); });
+    }
+  }
 }
 
 void GggsTileLayer::readSettings()
@@ -633,6 +716,10 @@ void GggsTileLayer::readSettings()
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+  // [camp#108] Persisted band (default 1). Applied via setBand() below so the
+  // round-trip mirrors a menu pick (texture release + reload + range reset);
+  // only when it differs, to skip the abort+reload on the common no-change path.
+  const int band = settings.value("band", 1).toInt();
   settings.endGroup();
   settings.endGroup();
   if(type != colormap_.type())
@@ -641,6 +728,8 @@ void GggsTileLayer::readSettings()
     lut_dirty_ = true;
     cached_image_ = QImage();
   }
+  if(band != band_)
+    setBand(band);
 }
 
 void GggsTileLayer::writeSettings()
@@ -650,6 +739,7 @@ void GggsTileLayer::writeSettings()
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
   settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.setValue("band", band_);   // [camp#108] selected band round-trips
   settings.endGroup();
   settings.endGroup();
 }

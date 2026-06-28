@@ -574,6 +574,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # GGGS layer-level band selection (camp#108): a 2-band tile-set renders band 1
+  # by default; setBand(2) reloads and shifts the auto-range so the render differs.
+  # Self-skips when no offscreen GL context is available.
+  ament_add_gtest(test_gggs_band_select
+    test/test_gggs_band_select.cpp
+  )
+  target_include_directories(test_gggs_band_select PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_band_select
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#96] RasterLayer GDAL handle-leak regression: a load + two colormap
   # re-renders must return the process-wide open-dataset count to its baseline,
   # proving loadAndReprojectFile RAII-closes its source dataset + warped VRT.

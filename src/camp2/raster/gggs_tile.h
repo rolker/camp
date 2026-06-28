@@ -33,10 +33,25 @@ public:
 
   bool valid() const { return width_ > 0 && height_ > 0; }
 
-  /// Read band 1 as Float32 and compute the data range. Safe to call off the GUI
-  /// thread (pure GDAL `RasterIO`, no GL). No-op if the tile is invalid or pixels
-  /// are already loaded. Returns true if pixels are present after the call.
+  /// Read the selected band (`band()`, 1-indexed) as Float32 and compute the data
+  /// range. Safe to call off the GUI thread (pure GDAL `RasterIO`, no GL). No-op
+  /// if the tile is invalid or pixels are already loaded. Returns true if pixels
+  /// are present after the call.
   bool loadPixels();
+
+  /// [camp#108] Number of raster bands in the GeoTIFF (>= 1 for a valid tile).
+  /// Read from GDAL in the constructor.
+  int bandCount() const { return band_count_; }
+
+  /// [camp#108] The 1-indexed band `loadPixels()` reads (default 1).
+  int band() const { return band_; }
+
+  /// [camp#108] Select which 1-indexed band `loadPixels()` reads. Clears any
+  /// loaded CPU pixels + range so the next loadPixels() re-reads the new band,
+  /// re-queries that band's NoData, and marks the tile not-loaded. Does NOT touch
+  /// the GL texture — releasing/recreating it is the layer's responsibility (it
+  /// owns the GL context). No-op if @p band is out of [1, bandCount()].
+  void setBand(int band);
 
   /// True once `loadPixels()` has read the band into CPU memory (or freed it into
   /// the GL texture). dataMin/dataMax and texture() are only meaningful once true.
@@ -81,6 +96,8 @@ private:
   QString path_;
   int width_ = 0;
   int height_ = 0;
+  int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
+  int band_ = 1;         // [camp#108] selected 1-indexed band loadPixels() reads
   double geo_transform_[6] = {0.0};
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;

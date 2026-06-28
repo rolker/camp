@@ -50,3 +50,61 @@ issue: 108
 - [ ] (suggestion) Layer `setBand` must guard null `gl_context_` (not-yet-painted) before makeCurrent/texture release, as `releaseGL()` already does (`gggs_tile_layer.cpp:571`) — `plan.md:27-33`
 
 **Note**: independence annotation applied per the skill's name-based rule (the `## Plan Authored` entry shares the `Claude Code Agent` agent-name); this review was nonetheless a fresh-context dispatch on a different model (Sonnet authored, Opus reviewed).
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 00:28 +0000
+**By**: Claude Opus
+
+**Summary**: Implemented per-layer band selection for `GggsTileLayer` per the
+committed plan, folding in all 5 plan-review findings.
+
+- `GggsTile` (`gggs_tile.{h,cpp}`): store `band_count_ = GetRasterCount()` in the
+  ctor (kept the `< 1` guard); added `int band_ = 1`, `bandCount()`, `band()`, and
+  `setBand(int)` (clears `data_`, resets range to the crossed sentinel, sets
+  `pixels_loaded_ = false`, validates `[1, band_count_]`, does NOT touch the GL
+  texture). `loadPixels()` now reads `GetRasterBand(band_)` and **re-queries
+  `GetNoDataValue()` for that band** (must-fix #2) so a switched band ranges
+  correctly — done in `loadPixels()` (which already has the dataset/band open)
+  rather than `setBand()` (which does not open the dataset).
+- `GggsTileLayer` (`gggs_tile_layer.{h,cpp}`): added `int band_ = 1`, `band()`,
+  `bandCount()` (delegates to the first valid tile), and `setBand(int)` —
+  validates, aborts+joins the in-flight load, **guards a null `gl_context_`**
+  (suggestion #5) before `makeCurrent` + per-tile texture release (textures only,
+  not shader/FBO/LUT), re-points each tile, resets the layer range to crossed,
+  invalidates `cached_image_`, persists, re-kicks `loadTiles()` only if a load had
+  started, and repaints.
+- Context menu: "Band" submenu added **only when `bandCount() > 1`**; one checkable
+  1-indexed action per band, checked at the current selection, wired to `setBand`.
+- Persistence: `writeSettings()` writes `"band"` and `readSettings()` reads it
+  (default 1) under the existing `MapItem/itemID()` group, applying via `setBand()`
+  only when it differs.
+- Tests: extended `test_gggs_tile.cpp` (`BandSelectSwitchesRange` — 2-band tile,
+  `bandCount()==2`, switch band, distinct range; passes) and added
+  `test/test_gggs_band_select.cpp` (`SetBandShiftsLayerRange` — 2-band tile-set,
+  `GggsTileLayer`, `waitForLoad()`, render differs after `setBand(2)`; **SKIPs**
+  not FAILs without offscreen GL via the same `offscreenGLAvailable()` guard).
+- Doc comments updated (suggestion #3): `gggs_tile.h` "Read band 1" → selected
+  band; `gggs_tile_layer.h` "Slice 1: single-band… [follow-up]" → implemented
+  band picker.
+- Shader `v <= 0.0` limitation (suggestion #4): NOT reworked; documented in a code
+  comment beside the discard and in the plan's Open Questions.
+
+**Build/test result** (verified in-container):
+- Build: `./ui_ws/build.sh camp` → `1 package finished` (camp), warnings only
+  (all pre-existing), no errors. Required building the shared `underlay_ws` (22
+  pkgs) and `core_ws` (35 pkgs) symlink layers first; their installs were empty.
+- Test: `./ui_ws/test.sh camp` → **114 tests, 0 errors, 0 failures, 3 skipped**.
+  `test_gggs_tile` (10 tests incl. `BandSelectSwitchesRange`) all passed;
+  `test_gggs_band_select` SKIPPED (no offscreen GL in container — by design).
+
+**Findings checklist** (all 5 addressed):
+- [x] (must-fix) New test registered in `CMakeLists.txt` — `ament_add_gtest` +
+  include/link for `test_gggs_band_select.cpp`, mirroring `test_gggs_render`;
+  verified it builds (`build/camp/test_gggs_band_select` present, ran).
+- [x] (must-fix) Per-band NoData re-queried in `loadPixels()` for the selected band.
+- [x] (suggestion) Stale doc comments updated in `gggs_tile.h` + `gggs_tile_layer.h`.
+- [x] (suggestion) Shader `v<=0` discard limitation acknowledged in Open Questions
+  + a code comment; no shader rework.
+- [x] (suggestion) Null `gl_context_` guarded in layer `setBand` before
+  `makeCurrent`/texture release.

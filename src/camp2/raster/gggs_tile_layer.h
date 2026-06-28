@@ -38,9 +38,10 @@ class GggsTile;
 /// the layer's extent; drawing it into boundingRect() (also Web-Mercator) keeps
 /// it registered with the vector overlays and CPU raster/tile layers.
 ///
-/// Slice 1: single-band auto-ranged grayscale (sidescan); fixed tessellation;
-/// whole-extent render cached by on-screen size. Band-select + colormap are
-/// Slice 3 (camp#63 GPU facility); visible-region-only render is Slice 2.
+/// Auto-ranged value mapped through a colormap LUT (camp#90); fixed
+/// tessellation; whole-extent render cached by on-screen size. Multi-band
+/// GeoTIFFs expose a per-layer band picker (camp#108); visible-region-only
+/// render is Slice 2.
 class GggsTileLayer: public map::Layer
 {
   Q_OBJECT
@@ -74,6 +75,20 @@ public:
   /// [camp#90] Select the colour ramp (the shared camp::map::ColorMap, baked to
   /// a GPU LUT). Persists and re-renders.
   void setColormap(map::ColorMap::Type type);
+
+  /// [camp#108] The 1-indexed band the tiles render (default 1).
+  int band() const { return band_; }
+
+  /// [camp#108] Number of bands in the tile-set, taken from the first valid tile
+  /// (the tiles of a store are uniform). 0 if there is no valid tile yet.
+  int bandCount() const;
+
+  /// [camp#108] Select which 1-indexed band the layer renders. Validates against
+  /// bandCount(), aborts + joins any in-flight load, releases every tile's GL
+  /// texture under this layer's context, re-points each tile at the new band,
+  /// resets the layer auto-range, invalidates the cached image, re-kicks the
+  /// async load, and repaints. No-op if @p band is out of range or unchanged.
+  void setBand(int band);
 
   /// [camp#102] Block until this layer's async pixel load (if any) has completed.
   /// Exposed for headless tests that call renderImage() directly without the
@@ -126,6 +141,7 @@ private:
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
   QString directory_;
+  int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
   QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)

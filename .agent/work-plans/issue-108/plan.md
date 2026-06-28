@@ -21,7 +21,11 @@ treated as single-band only. The operator needs to pick which band a flat
    sets `band_`, clears `data_`, resets `data_min_/data_max_` to crossed sentinel,
    stores `pixels_loaded_ = false` — GL texture is NOT touched here (that is the
    layer's responsibility). Modify `loadPixels()` to call
-   `dataset->GetRasterBand(band_)` instead of the hardcoded `1`.
+   `dataset->GetRasterBand(band_)` instead of the hardcoded `1`. **Per-band NoData
+   (review finding):** `loadPixels()` re-queries `GetNoDataValue()` from the band
+   it actually reads (rather than reusing the ctor's band-1 value), so a switched
+   band's range filter is correct. Done in `loadPixels()` — which already has the
+   dataset/band open — rather than in `setBand()`, which does not open the dataset.
 
 2. **`GggsTileLayer`: layer-level band state** — Add `int band_ = 1` member, plus
    `band()`, `bandCount()` (delegates to the first valid tile), and
@@ -91,8 +95,22 @@ treated as single-band only. The operator needs to pick which band a flat
 
 ## Open Questions
 
-- None — band semantics (depth vs. uncertainty labels) are explicitly deferred per
-  #104; operator identifies bands by 1-based index only.
+- Band semantics (depth vs. uncertainty labels) are explicitly deferred per #104;
+  operator identifies bands by 1-based index only.
+- **Shader `v <= 0.0` discard (camp#108 review finding).** The fragment shader
+  (`gggs_tile_layer.cpp` `kFragmentShader`) discards `v <= 0.0`, relying on the
+  mosaicker's convention that NoData is 0 and real returns are floored to >= 1.
+  This holds for the depth/sidescan band (band 1). A switched band whose valid
+  samples can legitimately be 0 or negative (e.g. an uncertainty band, or a
+  signed-offset band) will have those samples discarded and the remainder
+  mis-ranged — it renders blank or wrongly scaled. A correct fix distinguishes
+  real NoData from valid 0/negative samples by plumbing the per-band NoData value
+  into the shader (a uniform + sentinel test) instead of the hardcoded `<= 0.0`.
+  Deferred: this slice does NOT rework the shader. The limitation is documented in
+  a code comment beside the discard and acknowledged here. Per-band NoData is now
+  re-queried on the CPU side (`GggsTile::loadPixels`), so the CPU auto-range is
+  already correct for the selected band; only the GPU discard threshold is
+  band-1-specific.
 
 ## Estimated Scope
 
