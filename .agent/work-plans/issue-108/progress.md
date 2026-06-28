@@ -108,3 +108,28 @@ committed plan, folding in all 5 plan-review findings.
   + a code comment; no shader rework.
 - [x] (suggestion) Null `gl_context_` guarded in layer `setBand` before
   `makeCurrent`/texture release.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 02:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `946d9c2`
+**Mode**: pre-push
+**Depth**: Deep (reason: 200+ changed lines + concurrency/GL-lifecycle promotion trigger)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 1 | **Ship**: recommended — no must-fix; both adversarial lenses independently verified the abort/join, GL-texture release ordering, null-context guard, and crossed-range re-fold as correct.
+
+Static analysis: cppcheck clean; no lines >100 cols / no trailing whitespace
+(cpplint binary unavailable in this env — line length checked manually). Claude
+Adversarial: 2 passes (Lens A logic + Lens B systemic, Deep horizon). Copilot:
+off (default). All 5 plan-review findings confirmed folded in. Plan adherence:
+exact, no scope creep. Governance: ADR-0005 (#108 is its scoped band-select
+follow-up), ADR-0002/0003 — compliant.
+
+### Findings
+- [ ] (suggestion) `readSettings()`→`setBand()`→`writeSettings()` couples the read path to a settings write (safe now, but fragile); consider an internal `applyBand` that skips the persist, like colormap's inline apply — `gggs_tile_layer.cpp:731`
+- [ ] (suggestion) Non-uniform band counts across tiles silently mishandled — a tile with fewer bands than `tiles_.front()` is dropped from the render with no status signal; guard if mixed dirs are possible — `gggs_tile_layer.cpp:646`
+- [ ] (suggestion) Constructor band-1 NoData read is now dead (re-queried in `loadPixels`); minor cleanup — `gggs_tile.cpp:49`
+- [ ] (suggestion) File a follow-up: shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable (documented/deferred) — `gggs_tile_layer.cpp:78`
