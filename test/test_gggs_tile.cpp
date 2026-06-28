@@ -159,9 +159,12 @@ TEST(GggsTileTest, NoDataExcludedFromRange)
 
   GggsTile tile(path);
   ASSERT_TRUE(tile.valid());
+  // [camp#108] NoData is queried by loadPixels() for the selected band, not the
+  // ctor (which cached only band 1's value and went stale on setBand()), so it is
+  // only meaningful after the pixel read.
+  ASSERT_TRUE(tile.loadPixels());
   EXPECT_TRUE(tile.hasNoData());
   EXPECT_DOUBLE_EQ(tile.noData(), 0.0);
-  ASSERT_TRUE(tile.loadPixels());
   EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
 }

@@ -33,7 +33,6 @@ GggsTile::GggsTile(const QString& path):
 
   const int width = dataset->GetRasterXSize();
   const int height = dataset->GetRasterYSize();
-  auto band = dataset->GetRasterBand(band_);
 
   // Geographic extent from the geotransform. The tiles are north-up WGS84
   // (geo[2] == geo[4] == 0, geo[1] > 0, geo[5] < 0): row 0 is the north edge.
@@ -46,12 +45,14 @@ GggsTile::GggsTile(const QString& path):
   min_lat_ = std::min(y0, y1);
   max_lat_ = std::max(y0, y1);
 
-  int has_nodata = 0;
-  nodata_ = band->GetNoDataValue(&has_nodata);
-  has_nodata_ = has_nodata != 0;
-
   GDALClose(dataset);
 
+  // [camp#108] NoData is NOT read here: loadPixels() re-queries it for whichever
+  // band is selected (the ctor cached only band 1's value, which setBand() made
+  // stale), so has_nodata_/nodata_ stay at their defaults until the first
+  // loadPixels(). No path reads them before then (texture()/range are gated on
+  // pixelsLoaded()), so the ctor read was dead — removed.
+  //
   // [camp#102] Extent/metadata only — NO band RasterIO here. The pixel read is
   // deferred to loadPixels() so a large store opens without blocking the GUI
   // thread (the layer drives loadPixels() off a QtConcurrent worker). dataMin/

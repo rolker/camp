@@ -44,8 +44,15 @@ treated as single-band only. The operator needs to pick which band a flat
 
 4. **Persistence** — In `readSettings()`/`writeSettings()`, persist the selected
    band under the existing `MapItem/itemID()` settings group as key `"band"`.
-   `readSettings()` reads with a default of 1; calls `setBand()` only if the
-   persisted value differs (skips the abort+reload on the common no-change path).
+   `readSettings()` reads with a default of 1 and applies it only if the persisted
+   value differs (skips the abort+reload on the common no-change path).
+   *(camp#108 local-review refinement)* The band switch lives in a private,
+   non-persisting `applyBand(int)` helper: `setBand()` calls `applyBand()` then
+   `writeSettings()`, while `readSettings()` calls `applyBand()` directly so the
+   read path is not coupled to a settings write — mirroring the inline colormap
+   apply. `applyBand()` also skips (and WARNs once per switch on) any tile whose
+   own `bandCount()` is below the requested band, so a non-uniform tile-set drops
+   such tiles from the render without crashing or silently vanishing.
 
 5. **Tests** —
    - `test_gggs_tile.cpp`: write a 2-band GeoTIFF (different constant values per
@@ -62,9 +69,9 @@ treated as single-band only. The operator needs to pick which band a flat
 | File | Change |
 |------|--------|
 | `src/camp2/raster/gggs_tile.h` | Add `band_count_`, `band_`, `bandCount()`, `setBand(int)` |
-| `src/camp2/raster/gggs_tile.cpp` | Store band count in ctor; use `band_` in `loadPixels()`; implement `setBand` |
-| `src/camp2/raster/gggs_tile_layer.h` | Add `band_`, `band()`, `bandCount()`, `setBand(int)` |
-| `src/camp2/raster/gggs_tile_layer.cpp` | Implement `setBand`, update `contextMenu`, `readSettings`/`writeSettings` |
+| `src/camp2/raster/gggs_tile.cpp` | Store band count in ctor; use `band_` in `loadPixels()` (re-queries NoData there); implement `setBand` |
+| `src/camp2/raster/gggs_tile_layer.h` | Add `band_`, `band()`, `bandCount()`, `setBand(int)`, private `applyBand(int)` |
+| `src/camp2/raster/gggs_tile_layer.cpp` | Implement `applyBand`/`setBand` (read path non-persisting), update `contextMenu`, `readSettings`/`writeSettings` |
 | `test/test_gggs_tile.cpp` | Add multi-band construction + band-switch tests |
 | `test/test_gggs_band_select.cpp` | New: layer-level band selection + reload test |
 

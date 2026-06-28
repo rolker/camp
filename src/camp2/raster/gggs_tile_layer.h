@@ -83,11 +83,9 @@ public:
   /// (the tiles of a store are uniform). 0 if there is no valid tile yet.
   int bandCount() const;
 
-  /// [camp#108] Select which 1-indexed band the layer renders. Validates against
-  /// bandCount(), aborts + joins any in-flight load, releases every tile's GL
-  /// texture under this layer's context, re-points each tile at the new band,
-  /// resets the layer auto-range, invalidates the cached image, re-kicks the
-  /// async load, and repaints. No-op if @p band is out of range or unchanged.
+  /// [camp#108] Select which 1-indexed band the layer renders, then persist it.
+  /// Delegates the band switch to applyBand() and round-trips the selection to
+  /// QSettings. No-op if @p band is out of range or unchanged.
   void setBand(int band);
 
   /// [camp#102] Block until this layer's async pixel load (if any) has completed.
@@ -124,6 +122,14 @@ private slots:
   void tilesReady();
 
 private:
+  /// [camp#108] The non-persisting band switch shared by setBand() (persists
+  /// after) and readSettings() (applies an already-persisted value, so must not
+  /// write it back). Validates against bandCount(), aborts + joins any in-flight
+  /// load, releases every tile's GL texture under this layer's context, re-points
+  /// each tile at the new band (skipping + WARNing on tiles with too few bands),
+  /// resets the layer auto-range, invalidates the cached image, re-kicks the async
+  /// load, and repaints. No-op if @p band is out of range or unchanged.
+  void applyBand(int band);
   void loadDirectory(const QString& directory);
   /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
   /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.

@@ -15,9 +15,10 @@ namespace raster
 
 /// [camp#90 / I4 / camp#102] One native-geographic GGGS raster tile loaded from a
 /// WGS84 GeoTIFF (`<level>_<row>_<col>.tif`). The constructor reads only the
-/// geographic extent + dimensions + NoData from the GDAL geotransform/metadata
+/// geographic extent + dimensions + band count from the GDAL geotransform/metadata
 /// (no `RasterIO`) so `valid()` becomes true cheaply on the GUI thread; the band
-/// pixels are read later by `loadPixels()` (typically off-thread, per camp#102 /
+/// pixels (and that band's NoData) are read later by `loadPixels()` (typically
+/// off-thread, per camp#102 /
 /// ADR-0003 §3) and then lazily uploaded as a single-channel float (R32F) GL
 /// texture for the GPU display-time warp. Unlike RasterLayer, the tile is NOT
 /// reprojected on load — it stays in lat/lon and is warped to Web-Mercator in the
@@ -26,7 +27,8 @@ class GggsTile
 {
 public:
   /// Open a north-up WGS84 GeoTIFF and read its geotransform → extent, dimensions
-  /// and NoData ONLY (no pixel `RasterIO` — that is deferred to `loadPixels()`).
+  /// and band count ONLY (no pixel `RasterIO`, and no NoData — both are deferred to
+  /// `loadPixels()`, which queries NoData for the selected band).
   /// valid() is false if the file can't be opened / has no geotransform.
   explicit GggsTile(const QString& path);
   ~GggsTile();

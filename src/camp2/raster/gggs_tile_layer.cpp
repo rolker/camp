@@ -64,7 +64,8 @@ void main()
 // whose valid samples can be 0 or negative (e.g. an uncertainty or signed-offset
 // band) will have those samples discarded and the rest mis-ranged. Distinguishing
 // real NoData from valid 0/negative samples needs per-band NoData plumbed to the
-// shader (a uniform + a sentinel test) — deferred; see plan Open Questions.
+// shader (a uniform + a sentinel test) — deferred to the camp#122 follow-up (see
+// also plan Open Questions).
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
@@ -609,9 +610,26 @@ int GggsTileLayer::bandCount() const
 
 void GggsTileLayer::setBand(int band)
 {
-  // [camp#108] Validate against the tile-set's band count and skip the no-change
-  // path (so a persisted-band read or a re-click of the current band doesn't pay
-  // the abort + reload). bandCount() == 0 (no tiles) rejects everything.
+  // [camp#108] Persisting public entry point. Validate + apply the band switch
+  // (the actual work lives in applyBand()), then round-trip the selection to
+  // QSettings. The guard mirrors applyBand()'s so a no-op / out-of-range pick
+  // doesn't pay a needless settings write (the colormap path guards the same way).
+  if(band < 1 || band > bandCount() || band == band_)
+    return;
+  applyBand(band);
+  writeSettings();
+}
+
+void GggsTileLayer::applyBand(int band)
+{
+  // [camp#108] Band switch WITHOUT persisting — the shared body of setBand()
+  // (which persists after) and readSettings() (which applies the already-persisted
+  // value, so must NOT write it back). Decoupling the read path from a settings
+  // write mirrors the inline colormap apply in readSettings().
+  //
+  // Validate against the tile-set's band count and skip the no-change path (so a
+  // persisted-band read or a re-click of the current band doesn't pay the abort +
+  // reload). bandCount() == 0 (no tiles) rejects everything.
   if(band < 1 || band > bandCount() || band == band_)
     return;
   band_ = band;
@@ -642,13 +660,28 @@ void GggsTileLayer::setBand(int band)
   // Re-point each tile at the new band (clears its CPU pixels + range) and reset
   // the layer auto-range to crossed — the new band's range is unknown until its
   // pixels reload. tilesReady() re-folds it after the load completes.
+  //
+  // [camp#108] bandCount() speaks for the layer via tiles_.front(); a tile with
+  // fewer bands than the front (a non-uniform tile-set, e.g. mixed survey dirs)
+  // can't serve the requested band. Skip it (leave it on its current band) rather
+  // than letting GggsTile::setBand() silently no-op, and WARN once per switch so
+  // the drop isn't invisible.
+  int dropped = 0;
   for(auto& tile : tiles_)
+  {
+    if(tile->bandCount() < band)
+    {
+      ++dropped;
+      continue;
+    }
     tile->setBand(band);
+  }
+  if(dropped > 0)
+    qWarning("GggsTileLayer: %d tile(s) lack band %d; left on their prior band",
+             dropped, band);
   data_min_ = 1.0;
   data_max_ = 0.0;
   cached_image_ = QImage();
-
-  writeSettings();
 
   // Re-kick the async load only if the layer already started one (first paint).
   // Otherwise the lazy first-paint kick will read the new band; no need to force
@@ -716,9 +749,11 @@ void GggsTileLayer::readSettings()
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
-  // [camp#108] Persisted band (default 1). Applied via setBand() below so the
-  // round-trip mirrors a menu pick (texture release + reload + range reset);
-  // only when it differs, to skip the abort+reload on the common no-change path.
+  // [camp#108] Persisted band (default 1). Applied via applyBand() below — the
+  // non-persisting band switch (texture release + reload + range reset) — so the
+  // read path does NOT write the value straight back out (setBand() would). Only
+  // when it differs, to skip the abort+reload on the common no-change path,
+  // mirroring the inline colormap apply directly below.
   const int band = settings.value("band", 1).toInt();
   settings.endGroup();
   settings.endGroup();
@@ -729,7 +764,7 @@ void GggsTileLayer::readSettings()
     cached_image_ = QImage();
   }
   if(band != band_)
-    setBand(band);
+    applyBand(band);
 }
 
 void GggsTileLayer::writeSettings()
