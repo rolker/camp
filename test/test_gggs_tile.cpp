@@ -41,8 +41,17 @@ QString writeTile(const QTemporaryDir& dir, const QString& name,
     GDALAllRegister();
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
+  // cleanly instead of dereferencing null. (These helpers return QString, so a
+  // void-returning ASSERT_* can't be used here — EXPECT_NE + early return.)
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, 1,
                                    GDT_UInt16, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(0);
@@ -66,9 +75,15 @@ QString writeMultiBandTile(const QTemporaryDir& dir, const QString& name,
     GDALAllRegister();
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
   const int bands = int(samples.size());
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, bands,
                                    GDT_UInt16, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
   ds->SetGeoTransform(const_cast<double*>(geo));
   CPLErr err = CE_None;
   for(int b = 0; b < bands; ++b)
@@ -81,6 +96,37 @@ QString writeMultiBandTile(const QTemporaryDir& dir, const QString& name,
     if(err != CE_None)
       break;
   }
+  GDALClose(ds);
+  if(err != CE_None)
+    return QString();
+  return path;
+}
+
+// [camp#122] Write a single-band Float32 north-up GeoTIFF with the given NoData
+// sentinel and row-major samples — the variant the depth-floored UInt16 writer
+// can't express (valid 0/negative samples and a non-zero NoData). Returns the path.
+QString writeFloatTile(const QTemporaryDir& dir, const QString& name,
+                       int width, int height, const double geo[6],
+                       double nodata, const std::vector<float>& samples)
+{
+  if(GDALGetDriverCount() == 0)
+    GDALAllRegister();
+  const QString path = dir.filePath(name);
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  EXPECT_NE(driver, nullptr);
+  if(!driver)
+    return QString();
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, 1,
+                                   GDT_Float32, nullptr);
+  EXPECT_NE(ds, nullptr);
+  if(!ds)
+    return QString();
+  ds->SetGeoTransform(const_cast<double*>(geo));
+  GDALRasterBand* band = ds->GetRasterBand(1);
+  band->SetNoDataValue(nodata);
+  const CPLErr err = band->RasterIO(GF_Write, 0, 0, width, height,
+                                    const_cast<float*>(samples.data()),
+                                    width, height, GDT_Float32, 0, 0);
   GDALClose(ds);
   if(err != CE_None)
     return QString();
@@ -167,6 +213,32 @@ TEST(GggsTileTest, NoDataExcludedFromRange)
   EXPECT_DOUBLE_EQ(tile.noData(), 0.0);
   EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
+}
+
+// [camp#122] A Float32 band with valid 0/negative samples and a non-zero NoData:
+// the range must cover the negatives (and the valid 0), and only the exact-NoData
+// sample is excluded. This is the case the old shader `v <= 0.0` discard and the
+// UInt16 floor-to-1 convention could not express — the CPU range loop already
+// handles it, but no test pinned negative valid samples until now.
+TEST(GggsTileTest, NegativeValidSamplesNonZeroNoData)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  // valid samples [-3.0, 0.0, -1.5]; 9999.0 is the NoData sentinel (excluded).
+  std::vector<float> samples = {-3.0f, 0.0f, -1.5f, 9999.0f};
+  const QString path = writeFloatTile(dir, "13_6_6.tif", w, h, geo, 9999.0, samples);
+  ASSERT_FALSE(path.isEmpty());
+
+  GggsTile tile(path);
+  ASSERT_TRUE(tile.valid());
+  ASSERT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.hasNoData());
+  EXPECT_DOUBLE_EQ(tile.noData(), 9999.0);
+  // Range spans the negatives up to the valid 0; the 9999 NoData is excluded.
+  EXPECT_DOUBLE_EQ(tile.dataMin(), -3.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 0.0);
 }
 
 // An all-NoData tile has a crossed range (min > max) so the layer can skip it.
