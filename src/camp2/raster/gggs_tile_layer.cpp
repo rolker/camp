@@ -84,10 +84,25 @@ void main()
 }
 )";
 
+// [camp#126] Tree-view display name for a flat store layer: the last two path
+// components ("parent/leaf", e.g. "sidescan/processed"), falling back to just the
+// leaf when the directory has no parent component (a root-level dir like
+// "/processed"). Two stores that share a leaf (.../sidescan/processed and
+// .../bathymetry/processed) stay distinguishable in the tree. This is a DISPLAY
+// name only — directory_, persistence, and dedup all stay keyed by the full
+// directory (see loadDirectory()/writeSettings()).
+QString displayName(const QString& directory)
+{
+  const QDir dir(directory);                                // QDir trims a trailing slash
+  const QString leaf = dir.dirName();
+  const QString parent = QFileInfo(dir.path()).dir().dirName();
+  return (parent.isEmpty() || parent == ".") ? leaf : parent + '/' + leaf;
+}
+
 }  // namespace
 
 GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory):
-  map::Layer(parentItem, QFileInfo(directory).fileName()),
+  map::Layer(parentItem, displayName(directory)),
   directory_(directory)
 {
   // [camp#102] tilesReady() folds completed tiles' ranges + repaints on the GUI

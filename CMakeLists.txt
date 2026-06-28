@@ -678,6 +678,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#126] Flat store layer is named by its last two path components
+  # ("parent/leaf") so stores sharing a leaf stay distinguishable. Empty/absent
+  # tile-set dirs keep the naming assertion GL/GDAL-free.
+  ament_add_gtest(test_gggs_layer_name
+    test/test_gggs_layer_name.cpp
+  )
+  target_include_directories(test_gggs_layer_name PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+  )
+  target_link_libraries(test_gggs_layer_name
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#104] CatalogBrowser seed (browsed store root) persistence (ADR-0005
   # browser-seed amendment): seedRoot persists under CatalogBrowser/seeds and a
   # fresh browser + restoreSeeds rebuilds the top-level node; restore skips a
