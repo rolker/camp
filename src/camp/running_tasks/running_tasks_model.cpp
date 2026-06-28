@@ -230,3 +230,11 @@ QModelIndex RunningTasksModel::indexForId(const QString& id) const
     return QModelIndex();
   return createIndex(node->rowInParent, 0, node);
 }
+
+bool RunningTasksModel::hasTaskPoses(const QModelIndex& index) const
+{
+  Node* n = nodeForIndex(index);
+  if (!n || !n->task)
+    return false;
+  return !n->task->message().poses.empty();
+}

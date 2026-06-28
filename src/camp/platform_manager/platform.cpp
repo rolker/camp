@@ -3,6 +3,7 @@
 #include <QPainter>
 #include "nav_source.h"
 #include "ros/ros_context.h"
+#include "running_tasks/running_tasks_overlay.h"
 
 #include <QDebug>
 
@@ -236,6 +237,19 @@ void Platform::onNodeUpdated()
   m_ui->missionManager->nodeStarted(node_, transform_buffer_);
   m_ui->runningTasksView->setNode(node_);
   subscribeToPathTopic();
+
+  // Construct the overlay once (on first node assignment). Platform is a
+  // GeoGraphicsItem so scene() gives us the shared QGraphicsScene directly.
+  if (!running_tasks_overlay_ && scene())
+  {
+    running_tasks_overlay_ = new RunningTasksOverlay(
+        scene(), m_ui->runningTasksView, this);
+    running_tasks_overlay_->nodeStarted(node_, transform_buffer_);
+  }
+  else if (running_tasks_overlay_)
+  {
+    running_tasks_overlay_->nodeStarted(node_, transform_buffer_);
+  }
 }
 
 void Platform::subscribeToPathTopic()

@@ -14,6 +14,7 @@ namespace Ui
 class NavSource;
 class MissionManager;
 class HelmManager;
+class RunningTasksOverlay;
 
 class Platform : public camp_ros::ROSWidget, public ShipTrack
 {
@@ -79,6 +80,8 @@ private:
   nav_msgs::msg::Path path_;
   std::vector<QGeoCoordinate> path_geopoints_;
   std::vector<QPointF> path_local_points_;
+
+  RunningTasksOverlay* running_tasks_overlay_ = nullptr;
 
 };
 

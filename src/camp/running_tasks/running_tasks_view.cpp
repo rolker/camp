@@ -147,11 +147,15 @@ void RunningTasksView::applyPendingTasks()
       tree_->setCurrentIndex(restored);
     }
   }
+
+  emit tasksUpdated(current, tasks);
 }
 
 void RunningTasksView::onCurrentRowChanged(const QModelIndex& current,
                                            const QModelIndex& /*previous*/)
 {
+  if (!model_->hasTaskPoses(current))
+    return;
   const QString id = model_->idForIndex(current);
   if (!id.isEmpty())
     emit taskSelected(id);

@@ -51,6 +51,10 @@ public:
   /// Index of the row carrying the given full id (invalid if not present).
   QModelIndex indexForId(const QString& id) const;
 
+  /// True when the node at index has at least one pose (i.e. it is a leaf
+  /// task with geometry, not a pure structural parent row).
+  bool hasTaskPoses(const QModelIndex& index) const;
+
 private:
   struct Node
   {
