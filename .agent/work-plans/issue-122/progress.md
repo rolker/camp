@@ -277,3 +277,43 @@ offscreen GL to execute the strengthened render test and confirm the fail-on-rev
 Note: the strengthened render test SKIPs in-container (no offscreen GL); fail-on-revert
 verified by analysis (and independently by Lens A), not executed live. A host with
 offscreen GL should run `GggsRenderTest.NoDataDiscardHonorsUniform` to confirm.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+Addressed all 3 Round-2 suggestions (no behavior change), then committed at `5de201c`:
+
+1. **Test null-check consistency** — `test/test_gggs_render.cpp`: added the GDAL
+   handle guards (`EXPECT_NE(driver, nullptr)` / `EXPECT_NE(ds, nullptr)`, each with
+   an early `return QString()`) to both `writeTile` and `writeFloatTile`, matching
+   the idiom already in `test_gggs_tile.cpp` so the two files no longer diverge and a
+   GDAL driver/create failure fails the test cleanly instead of dereferencing null.
+
+2. **NaN NoData sentinel comment** — `gggs_tile.cpp` (range/NoData exclusion): added a
+   one-line note that a NaN NoData sentinel never matches the shader's `v == u_nodata`
+   (NaN != NaN), so the GPU would discard nothing while the CPU `!isfinite` check still
+   excludes it from the auto-range — a known theoretical edge. In practice GGGS NoData
+   is a finite sentinel (e.g. 9999 or 0), so it does not arise. Comment only.
+
+3. **Reworded float-compare rationale** — `gggs_tile.cpp:104`: tightened the comment so
+   it no longer overstates the double-vs-float risk. For a Float32 band
+   `GetNoDataValue()` already returns the float-rounded sentinel, so
+   `float(nodata_) == nodata_` and the two compares usually agree; the float cast just
+   keeps CPU and GPU on the same footing regardless of how the sentinel was stored. The
+   float compare is kept (it is correct).
+
+### Build + test (verbatim)
+Dependency installs were empty in this fresh worktree, so rebuilt the lower layers
+first (no `build.sh` for them — used `colcon build` directly):
+- `underlay_ws`: `Summary: 22 packages finished [3min 19s]`, exit 0.
+- `core_ws` (underlay sourced): `Summary: 35 packages finished [3min 58s]`, exit 0.
+- `./ui_ws/build.sh camp` → `Summary: 1 package finished [48.3s]`, exit 0 (only
+  pre-existing `-Wdeprecated-declarations` / `-Wunused-parameter` / `-Wsign-compare`
+  warnings).
+- `./ui_ws/test.sh camp` → `Summary: 124 tests, 0 errors, 0 failures, 4 skipped`.
+  The offscreen-GL render tests SKIP in-container by design (no offscreen GL context).
+
+### Findings status
+All 3 Round-2 suggestions resolved. No must-fix items remained. Ready to push/PR.
