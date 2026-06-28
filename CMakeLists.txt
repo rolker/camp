@@ -20,6 +20,7 @@ find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_interfaces REQUIRED)
 find_package(marine_nav_interfaces REQUIRED)
+find_package(marine_nav_tasks REQUIRED)
 
 find_package(qt_gui_cpp REQUIRED)
 find_package(rosgraph_msgs REQUIRED)
@@ -150,6 +151,7 @@ ament_target_dependencies(CCOMAutonomousMissionPlanner
     marine_autonomy
     marine_interfaces
     marine_nav_interfaces
+    marine_nav_tasks
 
     rclcpp
     tf2

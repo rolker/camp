@@ -3,7 +3,9 @@
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QMetaObject>
+#include <QPalette>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -12,7 +14,10 @@
 RunningTasksView::RunningTasksView(QWidget* parent)
   : QWidget(parent),
     tree_(new QTreeView(this)),
-    model_(new RunningTasksModel(this))
+    model_(new RunningTasksModel(this)),
+    watchdog_timer_(new QTimer(this)),
+    max_green_duration_(2, 0),
+    max_yellow_duration_(5, 0)
 {
   tree_->setModel(model_);
   tree_->setRootIsDecorated(true);
@@ -22,11 +27,15 @@ RunningTasksView::RunningTasksView(QWidget* parent)
   tree_->header()->setStretchLastSection(true);
 
   auto* layout = new QVBoxLayout(this);
-  layout->setContentsMargins(0, 0, 0, 0);
+  // A small margin lets the staleness window color show as a frame around the
+  // tree (the tree viewport paints its own background over the rest).
+  layout->setContentsMargins(3, 3, 3, 3);
   layout->addWidget(tree_);
 
   connect(tree_->selectionModel(), &QItemSelectionModel::currentRowChanged,
           this, &RunningTasksView::onCurrentRowChanged);
+  connect(watchdog_timer_, &QTimer::timeout, this,
+          &RunningTasksView::watchdogUpdate);
 }
 
 RunningTasksView::~RunningTasksView()
@@ -43,6 +52,10 @@ void RunningTasksView::setNode(rclcpp::Node::SharedPtr node)
 {
   node_ = node;
   subscribe();
+  // The staleness watchdog needs the node clock; start it once we have a node
+  // (mirrors HelmManager, which starts its 500 ms watchdog after setNode).
+  if (node_ && !watchdog_timer_->isActive())
+    watchdog_timer_->start(500);
 }
 
 void RunningTasksView::updateRobotNamespace(QString robot_namespace)
@@ -81,27 +94,12 @@ void RunningTasksView::subscribe()
 void RunningTasksView::taskFeedbackCallback(
     const marine_nav_interfaces::msg::TaskFeedback& msg)
 {
-  // Runs on the ROS executor thread — convert to Qt-friendly rows here and
-  // hand off to the GUI thread; never touch widgets from this thread.
-  QVector<TaskRow> rows;
-  rows.reserve(static_cast<int>(msg.tasks.size()));
-  for (const auto& task : msg.tasks)
-  {
-    TaskRow row;
-    row.id = QString::fromStdString(task.id);
-    row.type = QString::fromStdString(task.type);
-    row.priority = task.priority;
-    // Status is a YAML blob; show its first line as a summary for P1.
-    row.status =
-        QString::fromStdString(task.status).section('\n', 0, 0).trimmed();
-    row.done = task.done;
-    rows.push_back(row);
-  }
-
+  // Runs on the ROS executor thread — stash the raw snapshot and hand off to the
+  // GUI thread; never touch widgets (or the model's TaskList) from this thread.
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
     pending_current_ = QString::fromStdString(msg.current_navigation_task);
-    pending_rows_ = rows;
+    pending_tasks_ = msg.tasks;
   }
   QMetaObject::invokeMethod(this, "applyPendingTasks", Qt::QueuedConnection);
 }
@@ -109,17 +107,28 @@ void RunningTasksView::taskFeedbackCallback(
 void RunningTasksView::applyPendingTasks()
 {
   QString current;
-  QVector<TaskRow> rows;
+  std::vector<marine_nav_interfaces::msg::TaskInformation> tasks;
   {
     std::lock_guard<std::mutex> lock(pending_mutex_);
     current = pending_current_;
-    rows = pending_rows_;
+    tasks = pending_tasks_;
+  }
+
+  // Record receipt for the staleness watchdog (TaskFeedback has no header, so
+  // staleness is measured from receive time).
+  if (node_)
+  {
+    last_message_time_ = node_->get_clock()->now();
+    has_message_ = true;
   }
 
   // Preserve the selected task across the model reset.
   const QString selected = model_->idForIndex(tree_->currentIndex());
 
-  model_->setTasks(current, rows);
+  // TaskList needs a clock to stamp newly created tasks; node_ is always set by
+  // the time feedback arrives (a subscription requires it).
+  model_->setTasks(current, tasks,
+                   node_ ? node_->get_clock() : rclcpp::Clock::make_shared());
   tree_->expandAll();
 
   if (!selected.isEmpty())
@@ -149,4 +158,24 @@ void RunningTasksView::setSelectedTask(QString id)
   const QModelIndex index = model_->indexForId(id);
   if (index.isValid())
     tree_->setCurrentIndex(index);
+}
+
+void RunningTasksView::watchdogUpdate()
+{
+  // Only color once messages have started arriving (matches HelmManager, which
+  // gates on a non-zero last-heartbeat timestamp). Before then, leave the
+  // default (un-filled) background.
+  if (!node_ || !has_message_)
+    return;
+
+  const auto age = node_->get_clock()->now() - last_message_time_;
+  QPalette pal = palette();
+  if (age < max_green_duration_)
+    pal.setColor(QPalette::Window, Qt::green);
+  else if (age < max_yellow_duration_)
+    pal.setColor(QPalette::Window, Qt::yellow);
+  else
+    pal.setColor(QPalette::Window, Qt::red);
+  setAutoFillBackground(true);
+  setPalette(pal);
 }

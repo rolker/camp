@@ -3,13 +3,15 @@
 
 #include <QWidget>
 #include <QString>
-#include <QVector>
 #include <mutex>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "marine_nav_interfaces/msg/task_feedback.hpp"
+#include "marine_nav_interfaces/msg/task_information.hpp"
 #include "running_tasks/running_tasks_model.h"
 
+class QTimer;
 class QTreeView;
 
 /// Read-only structured running-task view. Node-injection widget (the
@@ -41,6 +43,9 @@ private slots:
   void applyPendingTasks();
   void onCurrentRowChanged(const QModelIndex& current,
                            const QModelIndex& previous);
+  /// Periodic staleness check — colors the background green/yellow/red by the
+  /// age of the last received TaskFeedback (mirrors HelmManager's watchdog).
+  void watchdogUpdate();
 
 private:
   void subscribe();
@@ -56,7 +61,14 @@ private:
 
   std::mutex pending_mutex_;
   QString pending_current_;
-  QVector<TaskRow> pending_rows_;
+  std::vector<marine_nav_interfaces::msg::TaskInformation> pending_tasks_;
+
+  // Message-staleness watchdog (green < max_green_ < yellow < max_yellow_ < red).
+  QTimer* watchdog_timer_;
+  rclcpp::Time last_message_time_;
+  bool has_message_ = false;
+  rclcpp::Duration max_green_duration_;
+  rclcpp::Duration max_yellow_duration_;
 };
 
 #endif  // CAMP_RUNNING_TASKS_VIEW_H
