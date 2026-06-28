@@ -25,6 +25,7 @@
   <depend>marine_autonomy</depend>
   <depend>marine_interfaces</depend>
   <depend>marine_nav_interfaces</depend>
+  <depend>marine_nav_tasks</depend>
 
   <!-- <depend>sound_play</depend> -->
   <depend>tf2</depend>

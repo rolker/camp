@@ -12,6 +12,12 @@ Platform::Platform(QWidget* parent, QGraphicsItem *parentItem):
   m_ui(new Ui::Platform)
 {
   m_ui->setupUi(this);
+  // Order: helm, running-task tree, mission command buttons. Give the tree all
+  // the vertical stretch so the helm panel and the (now header-less) button row
+  // stay at their natural, compact height instead of each taking a third.
+  m_ui->splitter->setStretchFactor(0, 0);  // helmManager
+  m_ui->splitter->setStretchFactor(1, 1);  // runningTasksView
+  m_ui->splitter->setStretchFactor(2, 0);  // missionManager (buttons)
   setAcceptHoverEvents(true);
   setZValue(6.0);
   connect(this, &Platform::pathUpdated, this, &Platform::updatePath, Qt::QueuedConnection);

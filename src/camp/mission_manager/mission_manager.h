@@ -3,7 +3,6 @@
 
 #include <QWidget>
 #include "ros/ros_widget.h"
-#include "marine_interfaces/msg/heartbeat.hpp"
 #include "marine_interfaces/msg/geo_occupancy_vector_map.hpp"
 #include "std_msgs/msg/string.hpp"
 
@@ -48,7 +47,6 @@ public slots:
 
 
 private slots:
-  void updateMissionStatus(QString const &status);
   void on_gotoLinePushButton_clicked(bool checked);
   void on_startLinePushButton_clicked(bool checked);
   void on_cancelOverridePushButton_clicked(bool checked);
@@ -56,14 +54,9 @@ private slots:
   void on_nextMissionItemPushButton_clicked(bool checked);
   void on_restartMissionPushButton_clicked(bool checked);
   void on_clearTasksPushButton_clicked(bool checked);
-  
-  void on_missionStatusTextBrowser_customContextMenuRequested(const QPoint &pos);
 
 private:
-  void missionStatusCallback(const marine_interfaces::msg::Heartbeat& message);
-
   Ui::MissionManager* m_ui;
-  rclcpp::Subscription<marine_interfaces::msg::Heartbeat>::SharedPtr mission_status_subscription_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr send_command_publisher_;
   rclcpp::Publisher<marine_interfaces::msg::GeoOccupancyVectorMap>::SharedPtr send_avoidance_costmap_publisher_;
 

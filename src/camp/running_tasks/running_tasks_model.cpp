@@ -1,8 +1,11 @@
 #include "running_tasks/running_tasks_model.h"
 
+#include <algorithm>
+
 #include <QBrush>
 #include <QColor>
 #include <QFont>
+#include <QStringList>
 
 RunningTasksModel::RunningTasksModel(QObject* parent)
   : QAbstractItemModel(parent), root_(std::make_unique<Node>())
@@ -58,11 +61,15 @@ QVariant RunningTasksModel::data(const QModelIndex& index, int role) const
   if (!index.isValid())
     return QVariant();
   Node* n = nodeForIndex(index);
-  if (!n)
+  if (!n || !n->task)
     return QVariant();
 
-  const bool is_current = n->hasTask && !current_task_.isEmpty() &&
-                          n->fullId == current_task_;
+  const auto& msg = n->task->message();
+  // current_task_ is already normalized (in setTasks); normalize fullId the same
+  // way for the comparison so the highlight matches regardless of stray slashes.
+  const bool is_current =
+      !current_task_.isEmpty() &&
+      n->fullId.split('/', Qt::SkipEmptyParts).join('/') == current_task_;
 
   switch (role)
   {
@@ -72,16 +79,14 @@ QVariant RunningTasksModel::data(const QModelIndex& index, int role) const
         case Name:
           return n->segment;
         case Type:
-          return n->hasTask ? n->row.type : QVariant();
+          return QString::fromStdString(msg.type);
         case Priority:
-          return n->hasTask ? QVariant(n->row.priority) : QVariant();
+          return QVariant(msg.priority);
         case Status:
-          return n->hasTask ? n->row.status : QVariant();
+          // Status is a YAML blob; show its first line as a summary for now.
+          return QString::fromStdString(msg.status).section('\n', 0, 0).trimmed();
         case Done:
-          return n->hasTask
-                     ? QVariant(n->row.done ? QStringLiteral("done")
-                                            : QString())
-                     : QVariant();
+          return msg.done ? QStringLiteral("done") : QString();
         default:
           return QVariant();
       }
@@ -97,8 +102,13 @@ QVariant RunningTasksModel::data(const QModelIndex& index, int role) const
       if (is_current)
         return QBrush(QColor(0xDD, 0xEE, 0xFF));
       return QVariant();
+    case Qt::ForegroundRole:
+      // Grey out completed tasks (they also sink to the bottom of each level).
+      if (msg.done)
+        return QBrush(QColor(0x90, 0x90, 0x90));
+      return QVariant();
     case Qt::ToolTipRole:
-      return n->hasTask ? n->fullId : QVariant();
+      return n->fullId;
     default:
       return QVariant();
   }
@@ -126,59 +136,67 @@ QVariant RunningTasksModel::headerData(int section, Qt::Orientation orientation,
   }
 }
 
-void RunningTasksModel::rebuild(const QVector<TaskRow>& rows)
+void RunningTasksModel::buildNodes(const marine_nav_tasks::TaskList& task_list,
+                                   Node* parent_node)
 {
-  root_ = std::make_unique<Node>();
-  for (const TaskRow& row : rows)
+  // Snapshot the domain task tree into display nodes, preserving the task list's
+  // (message / run) order. Done-to-bottom reordering happens afterwards.
+  for (const marine_nav_tasks::TaskPtr& task : task_list.tasks())
   {
-    const QStringList segments = row.id.split('/', Qt::SkipEmptyParts);
-    if (segments.isEmpty())
+    if (!task)
       continue;
-    Node* node = root_.get();
-    QString accumulated;
-    for (const QString& segment : segments)
-    {
-      accumulated = accumulated.isEmpty() ? segment
-                                          : accumulated + '/' + segment;
-      // Find an existing child for this segment, else create it.
-      Node* child = nullptr;
-      for (const std::unique_ptr<Node>& candidate : node->children)
-      {
-        if (candidate->segment == segment)
-        {
-          child = candidate.get();
-          break;
-        }
-      }
-      if (!child)
-      {
-        auto created = std::make_unique<Node>();
-        created->segment = segment;
-        created->fullId = accumulated;
-        created->parent = node;
-        created->rowInParent = static_cast<int>(node->children.size());
-        child = created.get();
-        node->children.push_back(std::move(created));
-      }
-      node = child;
-    }
-    // The leaf node for this id carries the task data. An intermediate node that
-    // is also an explicit task (both "survey_a" and "survey_a/line_1" present)
-    // gets its data filled here when its own row is processed.
-    node->row = row;
-    node->hasTask = true;
+    auto node = std::make_unique<Node>();
+    node->task = task;
+    node->fullId = QString::fromStdString(task->message().id);
+    const QStringList parts = node->fullId.split('/', Qt::SkipEmptyParts);
+    node->segment = parts.isEmpty() ? node->fullId : parts.last();
+    node->parent = parent_node;
+    node->rowInParent = static_cast<int>(parent_node->children.size());
+    Node* raw = node.get();
+    parent_node->children.push_back(std::move(node));
+    buildNodes(task->children(), raw);
   }
 }
 
-void RunningTasksModel::setTasks(const QString& current_task,
-                                 const QVector<TaskRow>& rows)
+void RunningTasksModel::sortChildrenRecursive(Node* node)
+{
+  // Order each level by run order = priority ascending (lower number runs first,
+  // e.g. the priority-100 done_hover fallback sorts last), with done tasks sunk
+  // to the bottom of each group. stable_sort keeps message order for ties. Then
+  // re-index rowInParent so index()/parent()/indexForId stay consistent.
+  std::stable_sort(
+      node->children.begin(), node->children.end(),
+      [](const std::unique_ptr<Node>& a, const std::unique_ptr<Node>& b)
+      {
+        const bool a_done = a->task && a->task->message().done;
+        const bool b_done = b->task && b->task->message().done;
+        if (a_done != b_done)
+          return !a_done;  // not-done before done
+        const int a_pri = a->task ? a->task->message().priority : 0;
+        const int b_pri = b->task ? b->task->message().priority : 0;
+        return a_pri < b_pri;  // lower priority number runs first
+      });
+  for (std::size_t i = 0; i < node->children.size(); ++i)
+  {
+    node->children[i]->rowInParent = static_cast<int>(i);
+    sortChildrenRecursive(node->children[i].get());
+  }
+}
+
+void RunningTasksModel::setTasks(
+    const QString& current_task,
+    const std::vector<marine_nav_interfaces::msg::TaskInformation>& tasks,
+    rclcpp::Clock::SharedPtr clock)
 {
   beginResetModel();
-  // Normalize the current-task id the same way node fullIds are built (split on
-  // '/', drop empty segments, re-join) so the highlight matches even if the id
-  // arrives with stray leading/trailing/double slashes.
+  // Normalize the current-task id the same way task ids are formed so the
+  // highlight matches even if it arrives with stray slashes.
   current_task_ = current_task.split('/', Qt::SkipEmptyParts).join('/');
-  rebuild(rows);
+  // TaskList owns the canonical hierarchy/order/done/data; we snapshot it.
+  task_list_.update(tasks, clock);
+  root_ = std::make_unique<Node>();
+  buildNodes(task_list_, root_.get());
+  sortChildrenRecursive(root_.get());
   endResetModel();
 }
 
