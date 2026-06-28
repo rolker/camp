@@ -101,3 +101,25 @@ and CAMP glue — plus all five plan-review findings:
 - [x] (suggestion) Frame schema closed in `running_tasks_overlay.cpp` comment
 - [x] (suggestion) Rebuild-all cadence documented in `RunningTasksOverlay` class comment
 - [x] (suggestion) Selection-sync loop guarded with `id == selected_id_` early return
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 16:37 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-129 at `6820371`
+**Mode**: pre-push
+**Depth**: Deep (reason: 736 lines / 15 files — both >200 lines and ≥10 files; cross-layer GUI+ROS)
+**Must-fix**: 3 | **Suggestions**: 5
+**Round**: 1 | **Ship**: continue — genuine correctness bugs (multi-pose items unclickable; latent double-free on scene/overlay teardown)
+
+### Findings
+- [ ] (must-fix) Multi-pose `shape()` returns a zero-area open polyline → Qt hit-tests via `shape().contains()`, so survey_line/transit overlay items never receive clicks; map→tree selection broken for all multi-pose tasks (contradicts class doc). Stroke the path (`QPainterPathStroker`) for `shape()` — `src/camp/running_tasks/task_overlay_item.cpp:47-50`
+- [ ] (must-fix) Double ownership of `TaskOverlayItem`: `scene_->addItem(item)` gives the scene ownership (parent nullptr) yet `clearItems()`/dtor also `delete item`; if the scene is destroyed before the overlay → use-after-free + double-free. `scene_` is a raw pointer with no `QPointer` guard. Follow the codebase convention (Qt parent ownership; this is the only `addItem` call site) and/or use `QPointer<QGraphicsScene>` — `src/camp/running_tasks/running_tasks_overlay.cpp:88,93-101`, `running_tasks_overlay.h:53`
+- [ ] (must-fix) Marker radii are fixed scene units (6.0 hit circle, 3.0 endpoints), not zoom-scaled like `Waypoint::shape()` (`1/mapScale()`) → markers sub-pixel when zoomed out / oversized when zoomed in; degrades single-pose hit area. Deviates from ADR-0003 constant-pixel-footprint convention (`metresPerPixel`) — `src/camp/running_tasks/task_overlay_item.cpp:30,90`
+- [ ] (suggestion) Rebuild-all deletes/recreates every `TaskOverlayItem` on each ~1 Hz republish even when unchanged → avoidable allocation churn + scene-region invalidation/flicker (cross-pass confirmed; documented as intentional) — `src/camp/running_tasks/running_tasks_overlay.cpp:50-91`
+- [ ] (suggestion) `rebuildItems` guards `transform_buffer_` but not `node_`; `getGeoCoordinate`'s catch path derefs `node_->get_logger()` — crash if `node_` null while buffer set (low risk in practice) — `src/camp/running_tasks/running_tasks_overlay.cpp:54`
+- [ ] (suggestion) `onItemClicked` comment claims it "mirrors the QSignalBlocker pattern" but uses only an id-equality guard (no `QSignalBlocker`) — comment/code mismatch — `src/camp/running_tasks/running_tasks_overlay.cpp:44-46`
+- [ ] (suggestion) `selected_id_` is never cleared/validated when the selected task disappears from a later republish; harmless but tree/overlay can drift — `src/camp/running_tasks/running_tasks_overlay.cpp:30-38`
+- [ ] (suggestion) Overlay is created only inside `onNodeUpdated` when `scene()` is non-null; if `scene()` is null on first call and `onNodeUpdated` never fires again the overlay is silently never created (no fallback) — `src/camp/platform_manager/platform.cpp:243`
