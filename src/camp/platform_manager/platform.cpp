@@ -99,6 +99,7 @@ void Platform::update(const marine_interfaces::msg::Platform& platform)
     platformNamespace = platform.platform_namespace;
   m_ui->helmManager->updateRobotNamespace(platformNamespace.c_str());
   m_ui->missionManager->updateRobotNamespace(platformNamespace.c_str());
+  m_ui->runningTasksView->updateRobotNamespace(platformNamespace.c_str());
 
   path_topic_ = "/" + platformNamespace + "/received_global_plan";
   subscribeToPathTopic();
@@ -227,6 +228,7 @@ void Platform::onNodeUpdated()
     ns.second->nodeStarted(node_, transform_buffer_);
   m_ui->helmManager->setNode(node_);
   m_ui->missionManager->nodeStarted(node_, transform_buffer_);
+  m_ui->runningTasksView->setNode(node_);
   subscribeToPathTopic();
 }
 
