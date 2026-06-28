@@ -24,7 +24,7 @@
 #include "map/map.h"
 #include "map/layer.h"
 #include "map/layer_list.h"
-#include "ros/node.h"          // camp2's camp::ros::Node (src/camp2/ros/node.h)
+#include "ros/node.h"          // camp_map's camp::ros::Node (src/camp_map/ros/node.h)
 #include "map_tree_view/map_tree_view.h"
 #include "catalog/catalog_browser.h"
 #include "raster/gggs_store_source.h"
@@ -120,7 +120,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(m_ui->projectView, &ProjectView::viewportChanged, m_ais_manager, &AISManager::updateViewport);
     connect(m_ui->rosLink, &ROSLink::rosConnected, m_ais_manager, &AISManager::nodeStarted);
 
-    // [#59 PR5] Grids and markers are now provided by camp2's scene-correct
+    // [#59 PR5] Grids and markers are now provided by camp_map's scene-correct
     // ros overlays, hosted on camp's existing ROS node (no second node). When
     // ROSLink connects, attach a camp::ros::Node to the Map's ToolsManager; it
     // auto-discovers grid/marker/geometry topics and creates layers in the

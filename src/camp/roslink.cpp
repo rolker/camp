@@ -42,7 +42,7 @@ ROSLink::~ROSLink()
     // signal handler already did this; on the normal window-close path nothing
     // else does, so without it spin never returns, quit()'s posted event is
     // never processed, and wait() deadlocks. Idempotent, so it's safe on both
-    // paths. Mirrors camp2's Node::~Node. quit() then exits the thread's exec()
+    // paths. Mirrors camp_map's Node::~Node. quit() then exits the thread's exec()
     // loop and wait() joins it (firing QThread::finished -> NodeThread::deleteLater).
     rclcpp::shutdown();
     node_thread_.quit();
@@ -59,8 +59,8 @@ void ROSLink::connectROS()
   connect(node, &camp_ros::NodeThread::started, this, &ROSLink::nodeStarted);
   connect(node, &camp_ros::NodeThread::shuttingDown, this, &ROSLink::nodeShuttingDown);
   // [#59] Quit the Qt app when the ROS node shuts down (e.g. SIGINT/Ctrl-C from
-  // the terminal) so the GUI exits cleanly instead of lingering. The camp2
-  // sandbox wires the same; the deployed app did not — which, once the
+  // the terminal) so the GUI exits cleanly instead of lingering. The retired
+  // camp2 sandbox wired the same; the deployed app did not — which, once the
   // shutdown-time null-node crash was fixed (ROSClient::nodeStarted guard), left
   // Ctrl-C hanging with the window still open.
   connect(node, &camp_ros::NodeThread::shuttingDown, qApp, &QCoreApplication::quit);

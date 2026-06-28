@@ -96,7 +96,7 @@ private:
   bool shutdown_ = false;        // set by the dtor so the worker stops relaunching
 
   // [camp#63] Colour ramp applied to the normalised grid values. Default
-  // grayscale (the camp2 post-#59 default); selectable per layer.
+  // grayscale (the camp_map post-#59 default); selectable per layer.
   map::ColorMap colormap_;
 
   // Last received message, cached so a colormap change can re-render without

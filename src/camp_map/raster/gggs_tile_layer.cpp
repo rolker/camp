@@ -112,7 +112,7 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   loadDirectory(directory);
   if(!tiles_.empty())
   {
-    // Match the camp2 raster convention (RasterLayer / MapTiles / grids): a
+    // Match the camp_map raster convention (RasterLayer / MapTiles / grids): a
     // NORTH-UP image anchored at the NW corner with a negative-Y item transform.
     // The MapView applies its own scale(s, -s); composed with this fromScale(1,
     // -1) the net Y is positive, so the image draws unmirrored and registers.

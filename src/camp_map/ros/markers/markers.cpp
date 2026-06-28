@@ -131,7 +131,7 @@ void Markers::updateMarker(const MarkerData& data)
   }
 
   // [#70] Warn on unrecognized actions instead of silently creating dead state
-  // (the camp original logged this; the camp2 port dropped it).
+  // (the camp original logged this; the camp_map port dropped it).
   if(action != visualization_msgs::msg::Marker::ADD &&
      action != visualization_msgs::msg::Marker::MODIFY &&
      action != visualization_msgs::msg::Marker::DELETE)

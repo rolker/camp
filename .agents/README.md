@@ -18,27 +18,30 @@ suite are the only automated gates — run them locally before pushing.
 
 ## Package Inventory
 
-One ROS 2 / ament_cmake package (`camp`) that builds **two executables** and
+One ROS 2 / ament_cmake package (`camp`) that builds **one executable** and
 **two shared libraries** from `CMakeLists.txt`:
 
 | Target | Kind | Source | Role |
 |--------|------|--------|------|
 | `CCOMAutonomousMissionPlanner` | executable | `src/camp/` | The deployed product (mission planning + monitoring) |
-| `camp2` | executable | `src/camp2/main/` | Sandbox app — exercises the framework in isolation; also the only place `QAbstractItemModelTester` validates the Map model at runtime |
-| `camp_map` | shared lib | `src/camp2/{map,map_view,raster,map_tiles,wmts,tools,background,util}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
-| `camp_map_ros` | shared lib | `src/camp2/ros/` | ROS overlay framework (topic discovery, grids, markers, geometry) built on `camp_map` |
+| `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,util}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
+| `camp_map_ros` | shared lib | `src/camp_map/ros/` | ROS overlay framework (topic discovery, grids, markers, geometry) built on `camp_map` |
 
-Both executables link the shared libs. The strategy (ADR-0002) is that the
-deployed `camp` **adopts** `camp2`'s framework rather than one app replacing the
-other; `camp2`-the-app is increasingly a dev/test harness as `camp` absorbs the
-framework.
+`CCOMAutonomousMissionPlanner` links the shared libs. The strategy (ADR-0002) was
+that the deployed `camp` **adopts** the shared map framework rather than one app
+replacing the other. That migration (#59) is now complete: the `camp2` sandbox
+executable — once a dev/test harness for the framework in isolation — has been
+**retired**, and its map framework lives in `src/camp_map/` as the `camp_map` /
+`camp_map_ros` libraries that `CCOMAutonomousMissionPlanner` consumes. The
+`QAbstractItemModelTester` check the sandbox once ran at runtime now lives in CI
+as the `test_map_model` gtest.
 
 ## Repository Layout
 
 ```
 src/camp/        deployed app (CCOMAutonomousMissionPlanner): mission model,
                  overlays, ROS link, details/manager widgets
-src/camp2/       the framework (camp_map / camp_map_ros) + the camp2 sandbox app
+src/camp_map/    the shared map framework (camp_map / camp_map_ros libraries)
 docs/decisions/  ADRs — read these before touching the scene/layer/depth model
 test/            gtest suites (run via colcon test)
 workspace/       sample data, incl. the 13283 KAP test charts
@@ -68,7 +71,7 @@ nodes. (`BackgroundRaster` was the old single-foundation chart object; it has
 been retired.)
 
 **Browse vs. compose for GGGS stores (ADR-0005):** a GGGS tile *store* is
-**browsed** through the generic catalog browser (`src/camp2/catalog/` — a
+**browsed** through the generic catalog browser (`src/camp_map/catalog/` — a
 ROS-free `CatalogModel`/`CatalogSource`/`CatalogBrowser` seam, shown as the
 "Stores" tab beside the Layers tab), not mounted into the Layers tree. Selecting
 a tile-set spawns an independent **flat top-level `GggsTileLayer`** the operator
@@ -108,7 +111,7 @@ to get `node_`/`transform_buffer_` + an `onNodeUpdated()` hook.
   architecture. **Read before changing anything in the map system.**
 - `src/camp/autonomousvehicleproject.{h,cpp}` — the mission model + chart
   load/persistence/depth.
-- `src/camp2/map/map.{h,cpp}` + `map/layer.{h,cpp}` — the layer model.
+- `src/camp_map/map/map.{h,cpp}` + `map/layer.{h,cpp}` — the layer model.
 - `src/camp/geographicsitem.{h,cpp}` — `geoToPixel` / `metresPerPixel` (the
   scene shim every overlay uses).
 - `src/camp/roslink.{cpp,h}` + `src/camp/ros/ros_client.h` — ROS node lifecycle.
@@ -136,10 +139,9 @@ coverage of the Map model's insert/remove/reorder paths).
 
 - **QSettings store name:** the deployed app must call
   `setOrganizationName("UNH-CCOMJHC")` / `setApplicationName("CCOMAutonomousMissionPlanner")`
-  in `main.cpp` (matching the camp2 sandbox) — otherwise it persists to
-  "Unknown Organization" and splits state from camp2. The **camp2 sandbox's
-  `main_window.cpp` is the reference for app-shell wiring** (org name,
-  quit-on-ROS-shutdown).
+  in `main.cpp` — otherwise it persists to "Unknown Organization" and splits its
+  state across stores. These names must stay stable across releases so the
+  persisted chart list / layer settings survive upgrades.
 - **Shutdown ordering:** `executor.spin()` only returns once `rclcpp::shutdown()`
   is called. Anything that `quit()`/`wait()`s the spin `QThread` (e.g.
   `~ROSLink`) must call `rclcpp::shutdown()` first or it deadlocks on

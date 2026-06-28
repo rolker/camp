@@ -10,11 +10,11 @@ int main(int argc, char *argv[])
     rclcpp::init(argc, argv);
     //ros::init(argc,argv, "CCOMAutonomousMissionPlanner", ros::init_options::AnonymousName);
     QApplication a(argc, argv);
-    // [#59 ADR-0003] Name the QSettings store explicitly (matches the camp2
-    // sandbox, main_window.cpp). Without this the deployed app falls back to
-    // "Unknown Organization", and — worse — splits its per-layer settings and
-    // the persisted chart list into a different store than camp2 writes. Must be
-    // set before MainWindow, which reads QSettings in its constructor.
+    // [#59 ADR-0003] Name the QSettings store explicitly. Without this the
+    // deployed app falls back to "Unknown Organization", and — worse — splits
+    // its per-layer settings and the persisted chart list across stores. These
+    // names must stay stable across releases. Must be set before MainWindow,
+    // which reads QSettings in its constructor.
     QCoreApplication::setOrganizationName("UNH-CCOMJHC");
     QCoreApplication::setOrganizationDomain("ccom.unh.edu");
     QCoreApplication::setApplicationName("CCOMAutonomousMissionPlanner");

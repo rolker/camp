@@ -165,9 +165,9 @@ target_link_libraries(CCOMAutonomousMissionPlanner
 target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRARY} yaml-cpp)
 
 # [#59 PR3a] Deployed camp adopts the shared map framework. camp_map_ros links
-# camp_map transitively and propagates the src/camp2 PUBLIC include path, so the
+# camp_map transitively and propagates the src/camp_map PUBLIC include path, so the
 # Web-Mercator scene (camp::map::Map), web_mercator helpers, and raster::RasterLayer
-# resolve from headers rooted at src/camp2 (e.g. "map/map.h"). See ADR-0002.
+# resolve from headers rooted at src/camp_map (e.g. "map/map.h"). See ADR-0002.
 target_link_libraries(CCOMAutonomousMissionPlanner camp_map_ros)
 
 install (TARGETS CCOMAutonomousMissionPlanner
@@ -226,51 +226,50 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 # ============================================================================
 # libcamp_map — shared map substrate, pure Qt/GDAL (ROS-free)   [#59 PR2]
 # ============================================================================
-# camp2's self-contained map core: layer model, Web-Mercator scene, OSM/WMTS
+# The shared, self-contained map core: layer model, Web-Mercator scene, OSM/WMTS
 # tiles, reprojected rasters, tree view, interaction tools. The ROS node is
 # attached by the application layer (MainWindow) via Map::toolsManager(), so
-# this library has no ROS dependency. Linked by the camp2 executable below and,
-# from PR3a, by CCOMAutonomousMissionPlanner.
+# this library has no ROS dependency. Linked by CCOMAutonomousMissionPlanner.
 
 set(CAMP_MAP_SOURCES
-    src/camp2/background/background_manager.cpp
-    src/camp2/catalog/catalog_model.cpp
-    src/camp2/catalog/catalog_browser.cpp
-    src/camp2/map/map.cpp
-    src/camp2/map/map_item.cpp
-    src/camp2/map/map_item_mime_data.cpp
-    src/camp2/map/layer_list.cpp
-    src/camp2/map/layer.cpp
-    src/camp2/map/color_map.cpp
-    src/camp2/map_tiles/cached_tile_loader.cpp
-    src/camp2/map_tiles/map_tiles.cpp
-    src/camp2/map_tiles/tile.cpp
-    src/camp2/map_tiles/tile_address.cpp
-    src/camp2/map_tiles/tile_layout.cpp
-    src/camp2/map_tiles/osm.cpp
-    src/camp2/map_tree_view/map_item_delegate.cpp
-    src/camp2/map_tree_view/map_tree_view.cpp
-    src/camp2/map_view/map_view.cpp
-    src/camp2/map_view/web_mercator.cpp
-    src/camp2/raster/raster_layer.cpp
-    src/camp2/raster/gggs_tile.cpp
-    src/camp2/raster/gggs_tile_layer.cpp
-    src/camp2/raster/gggs_store_source.cpp
-    src/camp2/tools/layer_manager.cpp
-    src/camp2/tools/map_tool.cpp
-    src/camp2/tools/tools_manager.cpp
-    src/camp2/util/cached_file_loader.cpp
-    src/camp2/wmts/capabilities.cpp
-    src/camp2/wmts/layer.cpp
-    src/camp2/wmts/tile_matrix_set.cpp
+    src/camp_map/background/background_manager.cpp
+    src/camp_map/catalog/catalog_model.cpp
+    src/camp_map/catalog/catalog_browser.cpp
+    src/camp_map/map/map.cpp
+    src/camp_map/map/map_item.cpp
+    src/camp_map/map/map_item_mime_data.cpp
+    src/camp_map/map/layer_list.cpp
+    src/camp_map/map/layer.cpp
+    src/camp_map/map/color_map.cpp
+    src/camp_map/map_tiles/cached_tile_loader.cpp
+    src/camp_map/map_tiles/map_tiles.cpp
+    src/camp_map/map_tiles/tile.cpp
+    src/camp_map/map_tiles/tile_address.cpp
+    src/camp_map/map_tiles/tile_layout.cpp
+    src/camp_map/map_tiles/osm.cpp
+    src/camp_map/map_tree_view/map_item_delegate.cpp
+    src/camp_map/map_tree_view/map_tree_view.cpp
+    src/camp_map/map_view/map_view.cpp
+    src/camp_map/map_view/web_mercator.cpp
+    src/camp_map/raster/raster_layer.cpp
+    src/camp_map/raster/gggs_tile.cpp
+    src/camp_map/raster/gggs_tile_layer.cpp
+    src/camp_map/raster/gggs_store_source.cpp
+    src/camp_map/tools/layer_manager.cpp
+    src/camp_map/tools/map_tool.cpp
+    src/camp_map/tools/tools_manager.cpp
+    src/camp_map/util/cached_file_loader.cpp
+    src/camp_map/wmts/capabilities.cpp
+    src/camp_map/wmts/layer.cpp
+    src/camp_map/wmts/tile_matrix_set.cpp
 )
 
 add_library(camp_map SHARED ${CAMP_MAP_SOURCES})
 
-# src/camp2 on the include path is PUBLIC so it propagates to camp_map_ros and
-# the executables (header includes are rooted at src/camp2, e.g. "map/map.h").
+# src/camp_map on the include path is PUBLIC so it propagates to camp_map_ros and
+# the executables (header includes are rooted at src/camp_map, e.g. "map/map.h").
 target_include_directories(camp_map PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
 )
 
 target_link_libraries(camp_map
@@ -294,29 +293,29 @@ install(TARGETS camp_map
 # ============================================================================
 # libcamp_map_ros — ROS-dependent map layers; links libcamp_map   [#59 PR2]
 # ============================================================================
-# The camp2 ROS layer set (geometry, grids, markers) + node/name plumbing.
+# The camp_map ROS layer set (geometry, grids, markers) + node/name plumbing.
 # Boundary verified one-directional after inverting Map's node creation: the
-# src/camp2 core has zero ROS includes; only this layer depends on
+# src/camp_map core has zero ROS includes; only this layer depends on
 # rclcpp/tf2/messages.
 
 set(CAMP_MAP_ROS_SOURCES
-    src/camp2/ros/geometry/geometry_manager.cpp
-    src/camp2/ros/geometry/polygon.cpp
-    src/camp2/ros/graph_thread.cpp
-    src/camp2/ros/grids/grid_layer.cpp
-    src/camp2/ros/grids/grid_manager.cpp
-    src/camp2/ros/grids/grid_map.cpp
-    src/camp2/ros/grids/occupancy_grid.cpp
-    src/camp2/ros/layer.cpp
-    src/camp2/ros/markers/marker.cpp
-    src/camp2/ros/markers/marker_namespace.cpp
-    src/camp2/ros/markers/markers.cpp
-    src/camp2/ros/markers/markers_manager.cpp
-    src/camp2/ros/name.cpp
-    src/camp2/ros/names_manager.cpp
-    src/camp2/ros/node.cpp
-    src/camp2/ros/node_thread.cpp
-    src/camp2/ros/transform_cache.cpp
+    src/camp_map/ros/geometry/geometry_manager.cpp
+    src/camp_map/ros/geometry/polygon.cpp
+    src/camp_map/ros/graph_thread.cpp
+    src/camp_map/ros/grids/grid_layer.cpp
+    src/camp_map/ros/grids/grid_manager.cpp
+    src/camp_map/ros/grids/grid_map.cpp
+    src/camp_map/ros/grids/occupancy_grid.cpp
+    src/camp_map/ros/layer.cpp
+    src/camp_map/ros/markers/marker.cpp
+    src/camp_map/ros/markers/marker_namespace.cpp
+    src/camp_map/ros/markers/markers.cpp
+    src/camp_map/ros/markers/markers_manager.cpp
+    src/camp_map/ros/name.cpp
+    src/camp_map/ros/names_manager.cpp
+    src/camp_map/ros/node.cpp
+    src/camp_map/ros/node_thread.cpp
+    src/camp_map/ros/transform_cache.cpp
 )
 
 add_library(camp_map_ros SHARED ${CAMP_MAP_ROS_SOURCES})
@@ -343,41 +342,6 @@ install(TARGETS camp_map_ros
     LIBRARY DESTINATION lib
     ARCHIVE DESTINATION lib
     RUNTIME DESTINATION bin)
-
-# ============================================================================
-# camp2 executable — app shell only; links the shared libraries   [#59 PR2]
-# ============================================================================
-
-add_executable(camp2
-    src/camp2/main/main.cpp
-    src/camp2/main/main_window.cpp
-)
-
-target_include_directories(camp2 PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
-)
-
-# Qt5::Test supplies QAbstractItemModelTester, used by main_window.cpp.
-target_link_libraries(camp2 camp_map_ros Qt5::Test)
-
-# camp_map_ros transitively brings camp_map + Qt. The ROS package deps are
-# repeated here so main.cpp/main_window.cpp (which include ros/node.h directly)
-# always resolve ROS headers, independent of ament's interface-propagation.
-ament_target_dependencies(camp2
-    geometry_msgs
-    grid_map_ros
-    marine_ais_msgs
-    marine_autonomy
-    marine_interfaces
-    rclcpp
-    tf2
-    tf2_ros
-    tf2_geometry_msgs
-)
-
-install (TARGETS camp2
-    DESTINATION lib/${PROJECT_NAME})
-
 
 install (DIRECTORY launch
     DESTINATION share/${PROJECT_NAME}
@@ -453,10 +417,10 @@ if(BUILD_TESTING)
   # earth<-frame transform cache / staleness decision (#59 — TF-gap flicker fix)
   ament_add_gtest(test_transform_cache
     test/test_transform_cache.cpp
-    src/camp2/ros/transform_cache.cpp
+    src/camp_map/ros/transform_cache.cpp
   )
   target_include_directories(test_transform_cache PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   ament_target_dependencies(test_transform_cache
     rclcpp
@@ -492,13 +456,13 @@ if(BUILD_TESTING)
 
   # camp::map::Map item-model correctness (#59 — model-mutation paths added by
   # the BackgroundRaster retirement: stacked-layer inserts + the Layers-tab
-  # Remove action). Lifts the camp2 sandbox's QAbstractItemModelTester check
-  # into CI by linking the shared camp_map library.
+  # Remove action). Runs the QAbstractItemModelTester check in CI by linking
+  # the shared camp_map library.
   ament_add_gtest(test_map_model
     test/test_map_model.cpp
   )
   target_include_directories(test_map_model PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_map_model
     camp_map
@@ -514,7 +478,7 @@ if(BUILD_TESTING)
     test/test_map_tiles_refresh.cpp
   )
   target_include_directories(test_map_tiles_refresh PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_map_tiles_refresh
     camp_map
@@ -531,7 +495,7 @@ if(BUILD_TESTING)
     test/test_map_tiles_eviction.cpp
   )
   target_include_directories(test_map_tiles_eviction PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_map_tiles_eviction
     camp_map
@@ -546,7 +510,7 @@ if(BUILD_TESTING)
     test/test_gggs_tile.cpp
   )
   target_include_directories(test_gggs_tile PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_tile
     camp_map
@@ -563,7 +527,7 @@ if(BUILD_TESTING)
     test/test_gggs_render.cpp
   )
   target_include_directories(test_gggs_render PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_render
     camp_map
@@ -581,7 +545,7 @@ if(BUILD_TESTING)
     test/test_gggs_band_select.cpp
   )
   target_include_directories(test_gggs_band_select PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_band_select
     camp_map
@@ -599,7 +563,7 @@ if(BUILD_TESTING)
     test/test_raster_layer_gdal_cleanup.cpp
   )
   target_include_directories(test_raster_layer_gdal_cleanup PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_raster_layer_gdal_cleanup
     camp_map
@@ -617,7 +581,7 @@ if(BUILD_TESTING)
     test/test_gggs_visibility.cpp
   )
   target_include_directories(test_gggs_visibility PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_visibility
     camp_map
@@ -635,7 +599,7 @@ if(BUILD_TESTING)
     test/test_catalog_source.cpp
   )
   target_include_directories(test_catalog_source PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_catalog_source
     camp_map
@@ -648,7 +612,7 @@ if(BUILD_TESTING)
     test/test_gggs_flat_layer_spawn.cpp
   )
   target_include_directories(test_gggs_flat_layer_spawn PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_flat_layer_spawn
     camp_map
@@ -667,7 +631,7 @@ if(BUILD_TESTING)
     test/test_gggs_persistence.cpp
   )
   target_include_directories(test_gggs_persistence PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_persistence
     camp_map
@@ -685,7 +649,7 @@ if(BUILD_TESTING)
     test/test_gggs_layer_name.cpp
   )
   target_include_directories(test_gggs_layer_name PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_layer_name
     camp_map
@@ -705,7 +669,7 @@ if(BUILD_TESTING)
     test/test_catalog_browser_seeds.cpp
   )
   target_include_directories(test_catalog_browser_seeds PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_catalog_browser_seeds
     camp_map
@@ -723,7 +687,7 @@ if(BUILD_TESTING)
     test/test_gggs_rescan.cpp
   )
   target_include_directories(test_gggs_rescan PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp2
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_rescan
     camp_map
