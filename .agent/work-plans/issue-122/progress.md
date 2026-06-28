@@ -256,3 +256,24 @@ layers first (no `build.sh` exists for them — used `colcon build` directly):
 ### Findings status
 All 4 Round-1 findings addressed. Next step: re-review (Round 2) on a host with
 offscreen GL to execute the strengthened render test and confirm the fail-on-revert.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 16:49 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-122 at `611bf59`
+**Mode**: pre-push
+**Depth**: Standard (reason: ~235 changed code lines across 4 files; rendering-correctness change)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 2 | **Ship**: recommended — Round-1 must-fix (test discrimination) resolved; 0 must-fix this round; two independent adversarial passes confirm the fix is sound
+
+### Findings
+- [ ] (suggestion) `writeTile`/`writeFloatTile` in `test_gggs_render.cpp` lack the GDAL null-checks added to `test_gggs_tile.cpp` (file divergence) — `test/test_gggs_render.cpp:50`
+- [ ] (suggestion) NaN NoData sentinel never matches shader `v == u_nodata` (NaN≠NaN) → GPU discards nothing while CPU `isfinite` excludes it; theoretical/pre-existing, worth a one-line comment — `gggs_tile.cpp:109`
+- [ ] (suggestion) Float-compare rationale comment slightly overstated (GTiff Float32 `GetNoDataValue` already returns the float-rounded value); compare itself is correct — `gggs_tile.cpp:104`
+
+Note: the strengthened render test SKIPs in-container (no offscreen GL); fail-on-revert
+verified by analysis (and independently by Lens A), not executed live. A host with
+offscreen GL should run `GggsRenderTest.NoDataDiscardHonorsUniform` to confirm.
