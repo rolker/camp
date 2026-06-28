@@ -1,2 +1,2 @@
-INPUT = src/camp2
+INPUT = src/camp_map
 RECURSIVE = YES

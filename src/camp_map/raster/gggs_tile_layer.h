@@ -38,9 +38,10 @@ class GggsTile;
 /// the layer's extent; drawing it into boundingRect() (also Web-Mercator) keeps
 /// it registered with the vector overlays and CPU raster/tile layers.
 ///
-/// Slice 1: single-band auto-ranged grayscale (sidescan); fixed tessellation;
-/// whole-extent render cached by on-screen size. Band-select + colormap are
-/// Slice 3 (camp#63 GPU facility); visible-region-only render is Slice 2.
+/// Auto-ranged value mapped through a colormap LUT (camp#90); fixed
+/// tessellation; whole-extent render cached by on-screen size. Multi-band
+/// GeoTIFFs expose a per-layer band picker (camp#108); visible-region-only
+/// render is Slice 2.
 class GggsTileLayer: public map::Layer
 {
   Q_OBJECT
@@ -58,6 +59,15 @@ public:
   /// Directory of `<level>_<row>_<col>.tif` tiles this layer renders.
   const QString& directory() const { return directory_; }
 
+  /// [camp#126] Per-layer persistence (visible/colormap/band) is keyed on the
+  /// tile-set DIRECTORY, not the display name. The display name is parent/leaf
+  /// (a label two stores can share, e.g. survey_a/bathymetry/processed and
+  /// survey_b/bathymetry/processed both show as "bathymetry/processed"); the
+  /// directory is the layer's stable, unique identity. Returns an itemID()-shaped
+  /// flat key derived from the absolute directory path so each store gets its own
+  /// QSettings group.
+  QString settingsKey() const override;
+
   /// True once at least one valid tile loaded.
   bool valid() const { return !tiles_.empty(); }
 
@@ -74,6 +84,25 @@ public:
   /// [camp#90] Select the colour ramp (the shared camp::map::ColorMap, baked to
   /// a GPU LUT). Persists and re-renders.
   void setColormap(map::ColorMap::Type type);
+
+  /// [camp#108] The 1-indexed band the tiles render (default 1).
+  int band() const { return band_; }
+
+  /// [camp#108] Number of bands in the tile-set, taken from the first valid tile
+  /// (the tiles of a store are uniform). 0 if there is no valid tile yet.
+  int bandCount() const;
+
+  /// [camp#108] Select which 1-indexed band the layer renders, then persist it.
+  /// Delegates the band switch to applyBand() and round-trips the selection to
+  /// QSettings. No-op if @p band is out of range or unchanged.
+  void setBand(int band);
+
+  /// [camp#108] Test-only: the 1-indexed band each held tile is currently set to
+  /// read, in tile order. Exposed as the narrow, GL-free seam a headless test uses
+  /// to assert applyBand()/rescan() propagated the layer band to EVERY tile (the
+  /// per-tile invariant the rendered image can't isolate). Not part of the public
+  /// layer surface — for tests only.
+  std::vector<int> tileBands() const;
 
   /// [camp#102] Block until this layer's async pixel load (if any) has completed.
   /// Exposed for headless tests that call renderImage() directly without the
@@ -109,6 +138,14 @@ private slots:
   void tilesReady();
 
 private:
+  /// [camp#108] The non-persisting band switch shared by setBand() (persists
+  /// after) and readSettings() (applies an already-persisted value, so must not
+  /// write it back). Validates against bandCount(), aborts + joins any in-flight
+  /// load, releases every tile's GL texture under this layer's context, re-points
+  /// each tile at the new band (skipping + WARNing on tiles with too few bands),
+  /// resets the layer auto-range, invalidates the cached image, re-kicks the async
+  /// load, and repaints. No-op if @p band is out of range or unchanged.
+  void applyBand(int band);
   void loadDirectory(const QString& directory);
   /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
   /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.
@@ -126,6 +163,7 @@ private:
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
   QString directory_;
+  int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
   QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)

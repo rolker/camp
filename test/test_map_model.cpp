@@ -1,5 +1,5 @@
 // [#59 ADR-0002/0003] Model-correctness coverage for camp::map::Map — the layer
-// tree model the deployed CAMP now runs on after the camp2 map-system port.
+// tree model the deployed CAMP now runs on after the camp_map map-system port.
 //
 // It validates the QAbstractItemModel protocol (balanced begin/end{Insert,
 // Remove}Rows, valid indices, consistent row counts) across the exact
@@ -8,10 +8,10 @@
 //   - detach-and-delete removal (the Layers-tab Remove action's
 //     setMapItemParent(layer, nullptr) + delete).
 //
-// Until now this protocol was only checked at runtime by the camp2 sandbox app's
-// QAbstractItemModelTester (camp2/main/main_window.cpp), which never runs in CI.
-// This lifts that check into the gtest suite so a row-accounting regression on
-// these paths fails the build instead of crashing the deployed app in the field.
+// Previously this protocol was only checked at runtime by the (now-retired)
+// camp2 sandbox app's QAbstractItemModelTester, which never ran in CI. This
+// lifts that check into the gtest suite so a row-accounting regression on these
+// paths fails the build instead of crashing the deployed app in the field.
 
 #include <gtest/gtest.h>
 

@@ -22,6 +22,7 @@
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QTransform>
+#include <QUrl>
 #include <QtConcurrent>
 
 #include <cmath>
@@ -58,6 +59,14 @@ void main()
 // camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). NoData (0,
 // reserved by the mosaicker; real returns floored to >= 1) is discarded so empty
 // cells are transparent. Premultiplied-alpha output (opaque, so straight == premult).
+//
+// [camp#108] LIMITATION: the `v <= 0.0` discard assumes the mosaicker's
+// floor-to-1 convention (true for the depth/sidescan band 1). A switched band
+// whose valid samples can be 0 or negative (e.g. an uncertainty or signed-offset
+// band) will have those samples discarded and the rest mis-ranged. Distinguishing
+// real NoData from valid 0/negative samples needs per-band NoData plumbed to the
+// shader (a uniform + a sentinel test) — deferred to the camp#122 follow-up (see
+// also plan Open Questions).
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
@@ -76,11 +85,33 @@ void main()
 }
 )";
 
+// [camp#126] Tree-view display name for a flat store layer: the last two path
+// components ("parent/leaf", e.g. "sidescan/processed"), falling back to just the
+// leaf when the directory has no parent component (a root-level dir like
+// "/processed"). Two stores that share a leaf (.../sidescan/processed and
+// .../bathymetry/processed) stay distinguishable in the tree. This is a DISPLAY
+// name only — directory_, persistence, and dedup all stay keyed by the full
+// directory (see loadDirectory()/writeSettings()).
+QString displayName(const QString& directory)
+{
+  const QDir dir(directory);                                // QDir trims a trailing slash
+  const QString leaf = dir.dirName();
+  const QString parent = QFileInfo(dir.path()).dir().dirName();
+  return (parent.isEmpty() || parent == ".") ? leaf : parent + '/' + leaf;
+}
+
 }  // namespace
 
 GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory):
-  map::Layer(parentItem, QFileInfo(directory).fileName()),
-  directory_(directory)
+  map::Layer(parentItem, displayName(directory)),
+  // [camp#126] Canonicalize to a single absolute form so directory_ — the basis
+  // for dedup (directory()), persistence (the GggsTileLayers/dirs list and
+  // settingsKey()), and de-persist (onRemovedFromMap()) — is identical for any
+  // string variant of the same path (trailing slash / relative). The store
+  // source canonicalizes too; this defends the other caller (createDefaultLayers
+  // restoring from the dirs list). loadDirectory()/rescan() use QDir(directory_),
+  // which is path-agnostic, so the absolute path works unchanged.
+  directory_(QDir(directory).absolutePath())
 {
   // [camp#102] tilesReady() folds completed tiles' ranges + repaints on the GUI
   // thread when the async pixel load finishes.
@@ -89,7 +120,7 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   loadDirectory(directory);
   if(!tiles_.empty())
   {
-    // Match the camp2 raster convention (RasterLayer / MapTiles / grids): a
+    // Match the camp_map raster convention (RasterLayer / MapTiles / grids): a
     // NORTH-UP image anchored at the NW corner with a negative-Y item transform.
     // The MapView applies its own scale(s, -s); composed with this fromScale(1,
     // -1) the net Y is positive, so the image draws unmirrored and registers.
@@ -214,6 +245,15 @@ bool GggsTileLayer::rescan()
 
   for(auto& tile : new_tiles)
   {
+    // [camp#108] A freshly-constructed GggsTile defaults to band 1; inherit the
+    // layer's current band so a tile discovered by a rescan AFTER a band switch
+    // (band_ > 1) reads the selected band — not the wrong band scaled through the
+    // selected band's range — and folds into the auto-range (tilesReady() folds
+    // only tiles whose band() == band_, so a default-band-1 tile would be
+    // permanently excluded with no recovery). setBand(1) on the band-1 default is
+    // a no-op (GggsTile::setBand returns early on band == band_), so the common
+    // band-1 case is unaffected.
+    tile->setBand(band_);
     const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
     const QPointF lo = web_mercator::geoToMap(
       QGeoCoordinate(tile->minLat(), tile->minLon()));
@@ -298,6 +338,12 @@ void GggsTileLayer::tilesReady()
   bool first_range = (data_min_ > data_max_);
   for(auto& tile : tiles_)
   {
+    // [camp#108] Only fold tiles that actually carry the layer's current band.
+    // A non-uniform tile-set leaves a tile lacking that band on its prior band
+    // (applyBand() keeps it loaded rather than blanking it); its stale prior-band
+    // min/max must not pollute the current band's auto-range.
+    if(tile->band() != band_)
+      continue;
     if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
       continue;
     if(first_range || tile->dataMin() < data_min_) data_min_ = tile->dataMin();
@@ -592,6 +638,133 @@ void GggsTileLayer::setColormap(map::ColorMap::Type type)
   update(boundingRect());
 }
 
+int GggsTileLayer::bandCount() const
+{
+  // [camp#108] The tiles of a store are uniform, so the first valid tile's band
+  // count speaks for the layer. loadDirectory()/rescan() only keep valid() tiles,
+  // so front() is valid when non-empty.
+  return tiles_.empty() ? 0 : tiles_.front()->bandCount();
+}
+
+std::vector<int> GggsTileLayer::tileBands() const
+{
+  // [camp#108] Test-only seam (see header): report each tile's current band so a
+  // headless test can assert the per-tile band propagation that the rendered image
+  // cannot isolate — e.g. that a rescan after a band switch added the new tile on
+  // the layer's band, not the fresh-tile default of 1.
+  std::vector<int> bands;
+  bands.reserve(tiles_.size());
+  for(const auto& tile : tiles_)
+    bands.push_back(tile->band());
+  return bands;
+}
+
+void GggsTileLayer::setBand(int band)
+{
+  // [camp#108] Persisting public entry point. Validate + apply the band switch
+  // (the actual work lives in applyBand()), then round-trip the selection to
+  // QSettings. The guard mirrors applyBand()'s so a no-op / out-of-range pick
+  // doesn't pay a needless settings write (the colormap path guards the same way).
+  if(band < 1 || band > bandCount() || band == band_)
+    return;
+  applyBand(band);
+  writeSettings();
+}
+
+void GggsTileLayer::applyBand(int band)
+{
+  // [camp#108] Band switch WITHOUT persisting — the shared body of setBand()
+  // (which persists after) and readSettings() (which applies the already-persisted
+  // value, so must NOT write it back). Decoupling the read path from a settings
+  // write mirrors the inline colormap apply in readSettings().
+  //
+  // Validate against the tile-set's band count and skip the no-change path (so a
+  // persisted-band read or a re-click of the current band doesn't pay the abort +
+  // reload). bandCount() == 0 (no tiles) rejects everything.
+  if(band < 1 || band > bandCount() || band == band_)
+    return;
+  band_ = band;
+
+  // Abort + join any in-flight load BEFORE mutating the tiles the worker reads —
+  // same contract as loadTiles()/rescan() (the worker captures `this` and iterates
+  // tiles_). Whole-tile abort granularity, as elsewhere.
+  if(future_watcher_.isRunning())
+  {
+    abort_flag_mutex_.lock();
+    abort_flag_ = true;
+    abort_flag_mutex_.unlock();
+    future_watcher_.waitForFinished();
+  }
+
+  // Re-point each tile that carries the requested band at the new band: release
+  // its old-band GL texture under this layer's own context (so the next render
+  // re-uploads the new band's pixels) then setBand() (clears its CPU pixels +
+  // range, marks it not-loaded). releaseGL() touches textures only, NOT the
+  // shader/FBO/LUT, which are band-independent. The context handling (null context
+  // vs makeCurrent failure) is guarded just below.
+  //
+  // [camp#108] bandCount() speaks for the layer via tiles_.front(); a tile with
+  // fewer bands than the front (a non-uniform tile-set, e.g. mixed survey dirs)
+  // can't serve the requested band. Such tiles lacking the requested band keep
+  // their prior band — we do NOT release their texture or clear their pixels, so
+  // they keep rendering normally on the band they already hold — and are excluded
+  // from the range fold (tilesReady() skips tiles whose band() != band_) so their
+  // stale prior-band range can't pollute the new band's auto-range. WARN once per
+  // switch so the drop isn't invisible.
+  // A null/not-yet-created context (the layer never painted — applyBand() can fire
+  // from readSettings() before first paint) is expected: no textures exist yet, so
+  // the switch just clears pixels + reloads with no stale GL state. But if the
+  // context EXISTS and makeCurrent FAILS, the old-band textures can't be released;
+  // setBand() below still clears each tile's pixels, and texture() never refreshes
+  // an EXISTING texture, so a stale old-band texture would render against the new
+  // band's range once pixels reload. Match renderImage()'s response to a
+  // makeCurrent failure — mark GL failed so ensureGL() short-circuits and the layer
+  // stops rendering rather than drawing a stale-band frame.
+  bool have_context = false;
+  if(gl_context_ && gl_surface_)
+  {
+    if(gl_context_->makeCurrent(gl_surface_))
+      have_context = true;
+    else
+    {
+      qWarning("GggsTileLayer: makeCurrent failed during band switch; "
+               "tiles not rendered");
+      gl_failed_ = true;
+    }
+  }
+  int dropped = 0;
+  for(auto& tile : tiles_)
+  {
+    if(tile->bandCount() < band)
+    {
+      ++dropped;
+      continue;   // leave its texture/pixels/range on the prior band
+    }
+    if(have_context)
+      tile->releaseGL();
+    tile->setBand(band);
+  }
+  if(have_context)
+    gl_context_->doneCurrent();
+  if(dropped > 0)
+    qWarning("GggsTileLayer: %d tile(s) lack band %d; left on their prior band",
+             dropped, band);
+
+  // Reset the layer auto-range to crossed — the new band's range is unknown until
+  // its pixels reload. tilesReady() re-folds it (over current-band tiles only)
+  // after the load completes.
+  data_min_ = 1.0;
+  data_max_ = 0.0;
+  cached_image_ = QImage();
+
+  // Re-kick the async load only if the layer already started one (first paint).
+  // Otherwise the lazy first-paint kick will read the new band; no need to force
+  // a load on a layer the operator may never turn on.
+  if(load_started_)
+    loadTiles();
+  update(boundingRect());
+}
+
 void GggsTileLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
@@ -615,6 +788,41 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     action->setChecked(type == colormap_.type());
     connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
   }
+
+  // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
+  // uncertainty, backscatter intensity + quality). Single-band stores (the
+  // common sidescan case) get no submenu, so no visual noise. One checkable
+  // action per 1-indexed band, checked when it is the current selection.
+  const int bands = bandCount();
+  if(bands > 1)
+  {
+    QMenu* band_menu = menu->addMenu("Band");
+    for(int b = 1; b <= bands; ++b)
+    {
+      QAction* action = band_menu->addAction(QString::number(b));
+      action->setCheckable(true);
+      action->setChecked(b == band_);
+      connect(action, &QAction::triggered, this, [this, b]() { setBand(b); });
+    }
+  }
+}
+
+QString GggsTileLayer::settingsKey() const
+{
+  // [camp#126] Identity is the DIRECTORY, not the display name. The base
+  // MapItem::settingsKey() returns itemID() (parent path + objectName()), but a
+  // store layer's objectName() is a parent/leaf folder label two distinct stores
+  // can share (survey_a/bathymetry/processed and survey_b/bathymetry/processed
+  // both display as "bathymetry/processed"), so itemID()-keyed persistence would
+  // collide them onto ONE QSettings group — one store's visible/colormap/band
+  // would overwrite the other's. The absolute directory path is unique and stable,
+  // so key on it instead. Percent-encode it (every '/' becomes %2F) so it is a
+  // single FLAT key rather than a deep nested group tree, and prefix with "dir:"
+  // to keep it readable and namespaced. NO migration: moving off the old name-key
+  // accepts a one-time reset of currently-saved prefs (pre-deployment).
+  // [camp#126] directory_ is already canonicalized to an absolute path by the
+  // ctor, so it can be keyed directly — no QDir::absolutePath() needed here.
+  return "dir:" + QString::fromLatin1(QUrl::toPercentEncoding(directory_));
 }
 
 void GggsTileLayer::readSettings()
@@ -622,7 +830,7 @@ void GggsTileLayer::readSettings()
   map::Layer::readSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(itemID());
+  settings.beginGroup(settingsKey());
   // [camp#102] Default GGGS tile-set leaves OFF: re-read `visible` with a FALSE
   // fallback (Layer::readSettings just applied it with a TRUE default). This has
   // to live in the leaf override, not a ctor setVisible(false) — MapItem::
@@ -633,6 +841,12 @@ void GggsTileLayer::readSettings()
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
     settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+  // [camp#108] Persisted band (default 1). Applied via applyBand() below — the
+  // non-persisting band switch (texture release + reload + range reset) — so the
+  // read path does NOT write the value straight back out (setBand() would). Only
+  // when it differs, to skip the abort+reload on the common no-change path,
+  // mirroring the inline colormap apply directly below.
+  const int band = settings.value("band", 1).toInt();
   settings.endGroup();
   settings.endGroup();
   if(type != colormap_.type())
@@ -641,6 +855,8 @@ void GggsTileLayer::readSettings()
     lut_dirty_ = true;
     cached_image_ = QImage();
   }
+  if(band != band_)
+    applyBand(band);
 }
 
 void GggsTileLayer::writeSettings()
@@ -648,8 +864,9 @@ void GggsTileLayer::writeSettings()
   map::Layer::writeSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
-  settings.beginGroup(itemID());
+  settings.beginGroup(settingsKey());
   settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.setValue("band", band_);   // [camp#108] selected band round-trips
   settings.endGroup();
   settings.endGroup();
 }

@@ -55,6 +55,38 @@ QString writeTile(const QTemporaryDir& dir, const QString& name,
   return path;
 }
 
+// [camp#108] Write a multi-band UInt16 north-up GeoTIFF: `bands` bands, NoData = 0
+// on each, with per-band row-major samples (samples[b] is band b+1). Returns the
+// path.
+QString writeMultiBandTile(const QTemporaryDir& dir, const QString& name,
+                           int width, int height, const double geo[6],
+                           const std::vector<std::vector<uint16_t>>& samples)
+{
+  if(GDALGetDriverCount() == 0)
+    GDALAllRegister();
+  const QString path = dir.filePath(name);
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
+  const int bands = int(samples.size());
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), width, height, bands,
+                                   GDT_UInt16, nullptr);
+  ds->SetGeoTransform(const_cast<double*>(geo));
+  CPLErr err = CE_None;
+  for(int b = 0; b < bands; ++b)
+  {
+    GDALRasterBand* band = ds->GetRasterBand(b + 1);
+    band->SetNoDataValue(0);
+    err = band->RasterIO(GF_Write, 0, 0, width, height,
+                         const_cast<uint16_t*>(samples[b].data()),
+                         width, height, GDT_UInt16, 0, 0);
+    if(err != CE_None)
+      break;
+  }
+  GDALClose(ds);
+  if(err != CE_None)
+    return QString();
+  return path;
+}
+
 }  // namespace
 
 // Extent corners come straight from the geotransform: north-up tile, row 0 is
@@ -127,9 +159,12 @@ TEST(GggsTileTest, NoDataExcludedFromRange)
 
   GggsTile tile(path);
   ASSERT_TRUE(tile.valid());
+  // [camp#108] NoData is queried by loadPixels() for the selected band, not the
+  // ctor (which cached only band 1's value and went stale on setBand()), so it is
+  // only meaningful after the pixel read.
+  ASSERT_TRUE(tile.loadPixels());
   EXPECT_TRUE(tile.hasNoData());
   EXPECT_DOUBLE_EQ(tile.noData(), 0.0);
-  ASSERT_TRUE(tile.loadPixels());
   EXPECT_DOUBLE_EQ(tile.dataMin(), 5.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 50000.0);
 }
@@ -223,6 +258,53 @@ TEST(GggsTileTest, PixelsPublishedToObserverThread)
   EXPECT_TRUE(tile.pixelsLoaded());
   EXPECT_DOUBLE_EQ(tile.dataMin(), 1.0);
   EXPECT_DOUBLE_EQ(tile.dataMax(), 16.0);
+}
+
+// [camp#108] A multi-band GeoTIFF reports its band count, and setBand() switches
+// which band loadPixels() reads — each band has its own distinct value range.
+TEST(GggsTileTest, BandSelectSwitchesRange)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  // Band 1 spans [10, 40]; band 2 spans [100, 400] — disjoint so the switch is
+  // unambiguous. (0 is NoData, excluded from each band's range.)
+  std::vector<std::vector<uint16_t>> samples = {
+    {10, 20, 30, 40},
+    {100, 200, 300, 400},
+  };
+  const QString path = writeMultiBandTile(dir, "13_5_5.tif", w, h, geo, samples);
+  ASSERT_FALSE(path.isEmpty());
+
+  GggsTile tile(path);
+  ASSERT_TRUE(tile.valid());
+  EXPECT_EQ(tile.bandCount(), 2);
+  EXPECT_EQ(tile.band(), 1);   // default
+
+  // Band 1 range.
+  ASSERT_TRUE(tile.loadPixels());
+  EXPECT_DOUBLE_EQ(tile.dataMin(), 10.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 40.0);
+
+  // Switch to band 2: clears the loaded pixels + range, marks not-loaded.
+  tile.setBand(2);
+  EXPECT_EQ(tile.band(), 2);
+  EXPECT_FALSE(tile.pixelsLoaded());
+  EXPECT_GT(tile.dataMin(), tile.dataMax());   // crossed until reload
+
+  // Reload reads band 2's distinct range.
+  ASSERT_TRUE(tile.loadPixels());
+  EXPECT_TRUE(tile.pixelsLoaded());
+  EXPECT_DOUBLE_EQ(tile.dataMin(), 100.0);
+  EXPECT_DOUBLE_EQ(tile.dataMax(), 400.0);
+
+  // Out-of-range / no-change selections are no-ops (band + loaded state unchanged).
+  tile.setBand(3);
+  EXPECT_EQ(tile.band(), 2);
+  EXPECT_TRUE(tile.pixelsLoaded());
+  tile.setBand(2);
+  EXPECT_TRUE(tile.pixelsLoaded());
 }
 
 // A missing file degrades to invalid (no crash), like RasterLayer.

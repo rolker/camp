@@ -85,7 +85,7 @@ private:
     CollisionMonitorManager* m_collision_monitor_manager = nullptr;
     FootprintManager* m_footprint_manager = nullptr;
 
-    // [#59 PR5] Guard so camp2's ros::Node (grids/markers/geometry) is attached
+    // [#59 PR5] Guard so camp_map's ros::Node (grids/markers/geometry) is attached
     // to the Map's ToolsManager only once, on the first ROS connect.
     bool m_map_ros_started = false;
 

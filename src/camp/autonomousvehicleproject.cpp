@@ -54,8 +54,8 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     m_map = new camp::map::Map(this);
     m_scene = m_map->scene();
     // [#59 ADR-0003] Keep chart/depth bookkeeping in sync when a chart layer is
-    // removed via the Layers-tab Remove action (camp2 Layer detaches through the
-    // Map model; we react here so camp2 stays unaware of the project).
+    // removed via the Layers-tab Remove action (camp_map Layer detaches through the
+    // Map model; we react here so camp_map stays unaware of the project).
     connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
 
     m_root = new Group();
@@ -289,7 +289,7 @@ bool AutonomousVehicleProject::hasBackground() const
 void AutonomousVehicleProject::persistBackgrounds() const
 {
     // [#59 ADR-0003] Persist the ordered chart filename list as app state.
-    // Per-layer settings (visible/opacity/colormap) already persist via camp2's
+    // Per-layer settings (visible/opacity/colormap) already persist via camp_map's
     // QSettings-by-itemID mechanism; this records which charts to recreate, in
     // order, so itemIDs (and thus those per-layer settings) line up on restore.
     QStringList files;
@@ -873,7 +873,7 @@ void AutonomousVehicleProject::deleteItem(const QModelIndex &index)
     // [#86] Complete the model removal with the item still alive, then defer the
     // delete. The old synchronous `delete item` ran mid-cascade (before
     // endRemoveRows), so any slot reached by endRemoveRows' currentChanged could
-    // touch a freed object. deleteLater() — the same idiom the camp2 layer-delete
+    // touch a freed object. deleteLater() — the same idiom the camp_map layer-delete
     // path uses (camp::map::Layer::removeFromMap) — lets connected slots unwind
     // first; QPointer observers in the detail panels null out when it finally dies.
     beginRemoveRows(p,rownum,rownum);

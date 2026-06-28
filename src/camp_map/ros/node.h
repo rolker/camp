@@ -24,7 +24,7 @@ class Node: public tools::LayerManager
 {
   Q_OBJECT
 public:
-  /// Spawns its own ROS node thread (camp2 standalone use).
+  /// Spawns its own ROS node thread (standalone use).
   Node(tools::ToolsManager* tools_manager);
 
   /// Adopts an externally-owned node + tf buffer (e.g. an app that already runs

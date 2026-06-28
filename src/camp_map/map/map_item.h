@@ -52,6 +52,14 @@ public:
 
   QString itemID() const;
 
+  /// [camp#126] The key under which this item's per-item QSettings group lives
+  /// (MapItem/<settingsKey>). Defaults to itemID() — the parent path plus
+  /// objectName() — so every existing item type is unchanged. Subclasses whose
+  /// DISPLAY name is not a stable, unique identity (e.g. GggsTileLayer, whose
+  /// tree label is a parent/leaf folder pair two stores can share) override this
+  /// to return an identity-stable key, decoupling persistence from the label.
+  virtual QString settingsKey() const { return itemID(); }
+
   template<typename T>
   T* parentOfType() const
   {

@@ -223,11 +223,11 @@ private:
     void addBackgroundLayer(QString const &fname, QString const &label);
     // [#59 ADR-0003] Persist the loaded-chart filename list (ordered) as app
     // state. Per-layer settings (visible/opacity/colormap) already persist via
-    // camp2's QSettings-by-itemID mechanism; this persists the *list*.
+    // camp_map's QSettings-by-itemID mechanism; this persists the *list*.
     void persistBackgrounds() const;
     // [#59 ADR-0003] React to a chart layer being removed via the Layers-tab
     // Remove action: drop its depth provider + bookkeeping entry and re-persist.
-    // Connected to m_map's rowsAboutToBeRemoved so the Map model (camp2) stays
+    // Connected to m_map's rowsAboutToBeRemoved so the Map model (camp_map) stays
     // unaware of the project's chart/depth bookkeeping.
     void onChartLayerRemoved(const QModelIndex& parent, int first, int last);
     QString generateUniqueLabel(std::string const &prefix);
