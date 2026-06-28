@@ -347,3 +347,31 @@ section lists the new regression test, and the Files-to-Change table reflects th
 
 **Note**: `feature/issue-108` not pushed and no PR opened, per the handoff contract
 (the host performs pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-28 10:51 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-108 at `5f3d6a3`
+**Mode**: pre-push
+**Depth**: Deep (reason: GL-texture lifecycle + async-worker concurrency on a 200+ line change)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 4 | **Ship**: recommended — no must-fix; the Round-3 must-fix (rescan band propagation) is folded in correctly at `gggs_tile_layer.cpp:233` with a genuine regression test (`RescanInheritsSelectedBand`) that RUNS in-container and fails without the fix ({2,1}). Both adversarial lenses independently cleared the concurrency/GL-lifecycle and logic surfaces.
+
+Static analysis: cppcheck clean apart from pre-existing `shadowFunction` notes (locals
+`width`/`height`/`band` shadow accessors — predates this change); line-length (<=100)
+and trailing-whitespace clean (cpplint binary unavailable — checked manually). Claude
+Adversarial: 2 passes (Lens A logic + Lens B systemic/GL/concurrency, Deep horizon).
+Lens B traced the worker abort/join, GL context lifecycle, `pixels_loaded_`
+release/acquire ordering, readSettings-before-GL, and destruction-during-switch and
+found no race/leak/use-after-free; Lens A verified the rescan fix and that the new
+regression test is genuine. Copilot: off (default). Plan adherence: exact, no scope
+creep. Governance: ADR-0005 (this is its scoped band-select follow-up), ADR-0002/0003
+— compliant.
+
+### Findings
+- [ ] (suggestion) Band QSettings round-trip (`readSettings`→`applyBand`, `writeSettings` `setValue("band")`) is untested — `test_gggs_persistence.cpp` covers visibility/colormap but never band; a "persisted band reverts to 1" regression would be silent — `src/camp2/raster/gggs_tile_layer.cpp:808`
+- [ ] (suggestion) Non-uniform tile-set: `setBand`/`applyBand` validate against the front tile's `bandCount()` while the per-tile loop uses each tile's own count — the validation/application authorities diverge; invariant-gated (uniform stores never hit it), acknowledged in comments — tracking for the deferred non-uniform work — `src/camp2/raster/gggs_tile_layer.cpp:661`
+- [ ] (suggestion) Shader `v <= 0.0` discard mis-ranges signed/uncertainty bands the picker now makes selectable; documented in-code and deferred to camp#122 — tracking only — `src/camp2/raster/gggs_tile_layer.cpp:62`
