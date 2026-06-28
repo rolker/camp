@@ -160,17 +160,21 @@ void RunningTasksModel::buildNodes(const marine_nav_tasks::TaskList& task_list,
 
 void RunningTasksModel::sortChildrenRecursive(Node* node)
 {
-  // Float done tasks to the bottom at each level, preserving run order within
-  // each group (stable_sort), then re-index rowInParent so index()/parent()/
-  // indexForId stay consistent with the new order.
+  // Order each level by run order = priority ascending (lower number runs first,
+  // e.g. the priority-100 done_hover fallback sorts last), with done tasks sunk
+  // to the bottom of each group. stable_sort keeps message order for ties. Then
+  // re-index rowInParent so index()/parent()/indexForId stay consistent.
   std::stable_sort(
       node->children.begin(), node->children.end(),
       [](const std::unique_ptr<Node>& a, const std::unique_ptr<Node>& b)
       {
         const bool a_done = a->task && a->task->message().done;
         const bool b_done = b->task && b->task->message().done;
-        // not-done (false) sorts before done (true); equal keeps run order.
-        return a_done < b_done;
+        if (a_done != b_done)
+          return !a_done;  // not-done before done
+        const int a_pri = a->task ? a->task->message().priority : 0;
+        const int b_pri = b->task ? b->task->message().priority : 0;
+        return a_pri < b_pri;  // lower priority number runs first
       });
   for (std::size_t i = 0; i < node->children.size(); ++i)
   {

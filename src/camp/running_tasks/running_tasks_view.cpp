@@ -26,6 +26,10 @@ RunningTasksView::RunningTasksView(QWidget* parent)
   tree_->setEditTriggers(QAbstractItemView::NoEditTriggers);
   tree_->header()->setStretchLastSection(true);
 
+  // The task tree is the primary pane; claim vertical space so it grows when the
+  // panel is stretched instead of the helm status / button row absorbing it.
+  setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+
   auto* layout = new QVBoxLayout(this);
   // A small margin lets the staleness window color show as a frame around the
   // tree (the tree viewport paints its own background over the rest).

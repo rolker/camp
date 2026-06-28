@@ -24,11 +24,13 @@ glue can read poses/markers). Adds `<depend>marine_nav_tasks</depend>` (ui→cor
 Note: `TaskList` does **not** synthesize missing intermediate parents, so there
 are no synthetic group rows — we render exactly the domain tree.
 
-### 1. Done-to-bottom ordering (`running_tasks_model.cpp`)
-Run order comes from `TaskList` (message order). On top of the snapshot, add a
-stable partition **per tree level**: not-done nodes first (in run order), done
-nodes last. `sortChildrenRecursive` sorts each node's `children` keyed on
-`task->message().done` and re-assigns `rowInParent` so index/parent stay consistent.
+### 1. Ordering: by priority (run order), done to the bottom (`running_tasks_model.cpp`)
+Run order is **priority ascending** (lower number runs first; the priority-100
+`done_hover` fallback runs last) — NOT message/insertion order, which floats
+`done_hover` to the top because the boat adds it first at init. `sortChildrenRecursive`
+sorts each level by `(done, priority)` — not-done before done, then priority
+ascending (stable_sort keeps message order for ties) — and re-assigns `rowInParent`
+so index/parent stay consistent.
 
 ### 2. Staleness background (`running_tasks_view.{h,cpp}`)
 Mirror `HelmManager::watchdogUpdate`:
@@ -79,9 +81,9 @@ Mirror `HelmManager::watchdogUpdate`:
 
 ## Open Questions
 
-- "Order by how they'll be run" is taken as message array order (= boat
-  `task_order_ids`, the run order), not a priority re-sort. Flag in review if a
-  priority sort was intended instead.
+- ~~array order vs priority~~ RESOLVED (sim, Roland): order by **priority**
+  ascending — message/insertion order wrongly floated the priority-100
+  `done_hover` fallback to the top.
 
 ## Estimated Scope
 
