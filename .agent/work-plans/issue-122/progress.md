@@ -182,3 +182,77 @@ All 3 Plan Review findings addressed (must-fix per-tile placement; removed
 - [ ] (suggestion) CPU range exclusion compares in double (`double(v) == nodata_`) while the shader discards in float (`v == float(nodata)`); they diverge for a NoData sentinel not exactly representable in float32 (e.g. a Float64 source band) — GPU discards, CPU keeps it in the auto-range and pollutes `u_min`/`u_max`. Benign for GGGS Float32/UInt16 data, but aligning the CPU compare to float future-proofs the consistency this PR now relies on. (Cross-pass confirmed, Lens A + Lens B.) — `gggs_tile.cpp:104`
 - [ ] (suggestion) Exact-equality discard interacts with the data texture's `Linear` min/mag filter: bilinearly interpolated boundary texels never exactly equal the sentinel, so a one-texel mis-ranged halo rings every NoData region — now more conspicuous because the sentinel is a large out-of-range value that clamps to `u_max` (bright end). Structurally pre-existing; consider `Nearest` sampling for the R32F data texture. — `gggs_tile.cpp:162`
 - [ ] (suggestion) New `writeFloatTile` helpers dereference `driver`/`ds` from `GetDriverByName`/`Create` without null checks (matches the pre-existing `writeTile` convention) — a guard would fail the test cleanly instead of crashing. — `test/test_gggs_tile.cpp:99`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-28
+**By**: Claude Code Agent (Claude Opus)
+**Branch**: feature/issue-122 at `9bded6a` (addresses Local Review Round 1)
+
+Addressed all four Round-1 findings (1 must-fix, 3 suggestions).
+
+### 1. (must-fix) Render test now discriminates the fix — `test/test_gggs_render.cpp`
+The old `NoDataDiscardHonorsUniform` asserted only `opaque > 0` and
+`enclosed_transparent > 0`; both also hold under the reverted `v <= 0.0` bug (the
+positive stripes stay opaque and the discarded 0.0 background supplies the enclosed
+transparency), so it did not pin the fix. Added a **dense-column** discriminator:
+per column, compute the opaque fraction of the footprint span (first..last opaque)
+and track `max_fill`; assert `EXPECT_GT(max_fill, 0.8)`. Under the fix the valid
+0.0 background fills a column edge-to-edge away from the hole (`max_fill ≈ 1.0`);
+under the reverted `v <= 0.0` the 0.0 background is discarded and **every** column
+is sparse — only the two thin stripes (plus, in the block columns, the 20-row 9999
+band), giving `max_fill ≈ 22/50 ≈ 0.44 < 0.8`, so the assertion fails. Kept the
+existing `opaque > 0` and `enclosed_transparent > 0` assertions and the
+`GTEST_SKIP()` offscreen-GL guard. Added `#include <algorithm>` for `std::max`.
+
+  **Discrimination verification**: the container has **no offscreen GL**, so the
+  test SKIPs here and I could not execute the fail-on-revert live. Verified by
+  analysis (the 0.44-vs-1.0 separation above, threshold 0.8 with wide margin; the
+  vertical web-Mercator scale over the 0.01° patch is effectively linear so per-
+  column opaque *ratios* are preserved through the warp). A reviewer with an
+  offscreen-GL host can confirm by reverting the shader discard to `if(v <= 0.0)`.
+
+### 2. (Roland's decision) Nearest sampling on the R32F data texture — `gggs_tile.cpp:172`
+Changed the **value** texture's min/mag filter from `Linear` to
+`QOpenGLTexture::Nearest` (the `setMinMagFilters` directly under the
+`setData(... data_.data())` upload — confirmed it is the R32F data texture, not the
+LUT). Linear interpolation across the NoData boundary produced texels that neither
+equal the 9999 sentinel (no discard) nor a real value (clamp to `u_max`), i.e. the
+bright one-texel halo. Nearest removes it; blocky cell-accurate raster accepted.
+The colormap LUT texture (`gggs_tile_layer.cpp:449`) was **left Linear** as
+instructed.
+
+### 3. (suggestion) Float-consistent CPU NoData compare — `gggs_tile.cpp:104`
+The range loop now excludes `has_nodata_ && v == float(nodata_)` (was
+`v == nodata_`, which promoted the float `v` to double and compared against the
+double `nodata_`). Now both sides are float, matching the shader's
+`v == float(u_nodata)`, so a sentinel not exactly representable in float32 can't
+have the GPU discard it while the CPU keeps it in the auto-range. Non-finite
+exclusion unchanged.
+
+### 4. (suggestion) Null-check the test tile writers — `test/test_gggs_tile.cpp`
+Added `EXPECT_NE(driver, nullptr)` / `EXPECT_NE(ds, nullptr)` guards (each with an
+early `return QString()`) after `GetDriverByName(...)` and `Create(...)` in the new
+`writeFloatTile` and, for consistency, the pre-existing `writeTile` and
+`writeMultiBandTile`. Used `EXPECT_NE` + guarded return rather than `ASSERT_NE`
+because these helpers return `QString` (a void-returning `ASSERT_*` would not
+compile here); the callers already `ASSERT_FALSE(path.isEmpty())`.
+
+### Build + test (verbatim)
+Dependency installs were empty in this fresh worktree, so I rebuilt the lower
+layers first (no `build.sh` exists for them — used `colcon build` directly):
+- `underlay_ws`: `Summary: 22 packages finished [1min 30s]`, exit 0.
+- `core_ws` (underlay sourced): `Summary: 35 packages finished [3min 44s]`, exit 0.
+- `./ui_ws/build.sh camp` → `Summary: 1 package finished [51.0s]`, exit 0 (only
+  pre-existing `-Wunused-parameter` / `-Wsign-compare` / `-Wdeprecated-declarations`
+  warnings).
+- `./ui_ws/test.sh camp` → `Summary: 124 tests, 0 errors, 0 failures, 4 skipped`.
+  Direct binary runs confirm `GggsRenderTest.NoDataDiscardHonorsUniform` **SKIPPED**
+  ("no offscreen GL context available", as designed in-container) and
+  `GggsTileTest.NegativeValidSamplesNonZeroNoData` + `NoDataExcludedFromRange`
+  **PASSED**. (As an extra check, `g++ -fsyntax-only` against the real Qt5/GDAL
+  headers compiles all three changed files clean.)
+
+### Findings status
+All 4 Round-1 findings addressed. Next step: re-review (Round 2) on a host with
+offscreen GL to execute the strengthened render test and confirm the fail-on-revert.
