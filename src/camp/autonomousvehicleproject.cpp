@@ -13,6 +13,7 @@
 #include <QMimeData>
 #include <QDebug>
 
+#include "geographicsitem.h"
 #include "depth_raster.h"
 #include "waypoint.h"
 #include "trackline.h"
@@ -1175,6 +1176,19 @@ void AutonomousVehicleProject::updateMapScale(qreal scale)
     // [#59 ADR-0003] Project-level map scale (driven by ProjectView::scaleChanged).
     // Glyph readers (Waypoint::shape, drawArrow, updateETE) read it via mapScale();
     // no per-chart copy to update now that BackgroundRaster is retired.
+    //
+    // The scale change resizes constant-pixel glyphs (Waypoint markers/arrows,
+    // task-overlay markers, etc.), so their item-coordinate boundingRect changes.
+    // Without notifying the scene, it keeps the stale cached rect and clips the
+    // glyph when zooming out. Invalidate every scale-dependent scene item's
+    // geometry here (before the scale changes) so the scene re-indexes and
+    // repaints them at the new size. This covers all GeoGraphicsItems in the
+    // scene, including overlays (e.g. running-task items, camp#129) that live
+    // outside the mission-item tree.
+    if (m_scene)
+        for (QGraphicsItem* item : m_scene->items())
+            if (auto* ggi = dynamic_cast<GeoGraphicsItem*>(item))
+                ggi->prepareGeometryChange();
     m_map_scale = scale;
 }
 
