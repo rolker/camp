@@ -3,6 +3,7 @@
 #include <QHeaderView>
 #include <QItemSelectionModel>
 #include <QMetaObject>
+#include <QSignalBlocker>
 #include <QTreeView>
 #include <QVBoxLayout>
 
@@ -28,7 +29,15 @@ RunningTasksView::RunningTasksView(QWidget* parent)
           this, &RunningTasksView::onCurrentRowChanged);
 }
 
-RunningTasksView::~RunningTasksView() = default;
+RunningTasksView::~RunningTasksView()
+{
+  // Stop new callback dispatch before the members the callback touches
+  // (pending_mutex_, pending_rows_) are torn down — they are declared after
+  // subscription_ and so are destroyed first under reverse-order destruction.
+  // (Full safety on shutdown also relies on the CAMP executor being stopped
+  // before these widgets are destroyed; this guards the local ordering.)
+  subscription_.reset();
+}
 
 void RunningTasksView::setNode(rclcpp::Node::SharedPtr node)
 {
@@ -117,7 +126,13 @@ void RunningTasksView::applyPendingTasks()
   {
     const QModelIndex restored = model_->indexForId(selected);
     if (restored.isValid())
+    {
+      // Restoring the prior selection must not look like a fresh user
+      // selection: block signals so taskSelected() isn't re-emitted on every
+      // periodic republish (which would re-trigger map glue in P2).
+      const QSignalBlocker blocker(tree_->selectionModel());
       tree_->setCurrentIndex(restored);
+    }
   }
 }
 

@@ -174,7 +174,10 @@ void RunningTasksModel::setTasks(const QString& current_task,
                                  const QVector<TaskRow>& rows)
 {
   beginResetModel();
-  current_task_ = current_task;
+  // Normalize the current-task id the same way node fullIds are built (split on
+  // '/', drop empty segments, re-join) so the highlight matches even if the id
+  // arrives with stray leading/trailing/double slashes.
+  current_task_ = current_task.split('/', Qt::SkipEmptyParts).join('/');
   rebuild(rows);
   endResetModel();
 }
