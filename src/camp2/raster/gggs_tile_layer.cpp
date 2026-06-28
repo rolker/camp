@@ -222,6 +222,15 @@ bool GggsTileLayer::rescan()
 
   for(auto& tile : new_tiles)
   {
+    // [camp#108] A freshly-constructed GggsTile defaults to band 1; inherit the
+    // layer's current band so a tile discovered by a rescan AFTER a band switch
+    // (band_ > 1) reads the selected band — not the wrong band scaled through the
+    // selected band's range — and folds into the auto-range (tilesReady() folds
+    // only tiles whose band() == band_, so a default-band-1 tile would be
+    // permanently excluded with no recovery). setBand(1) on the band-1 default is
+    // a no-op (GggsTile::setBand returns early on band == band_), so the common
+    // band-1 case is unaffected.
+    tile->setBand(band_);
     const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
     const QPointF lo = web_mercator::geoToMap(
       QGeoCoordinate(tile->minLat(), tile->minLon()));
@@ -614,6 +623,19 @@ int GggsTileLayer::bandCount() const
   return tiles_.empty() ? 0 : tiles_.front()->bandCount();
 }
 
+std::vector<int> GggsTileLayer::tileBands() const
+{
+  // [camp#108] Test-only seam (see header): report each tile's current band so a
+  // headless test can assert the per-tile band propagation that the rendered image
+  // cannot isolate — e.g. that a rescan after a band switch added the new tile on
+  // the layer's band, not the fresh-tile default of 1.
+  std::vector<int> bands;
+  bands.reserve(tiles_.size());
+  for(const auto& tile : tiles_)
+    bands.push_back(tile->band());
+  return bands;
+}
+
 void GggsTileLayer::setBand(int band)
 {
   // [camp#108] Persisting public entry point. Validate + apply the band switch
@@ -655,9 +677,8 @@ void GggsTileLayer::applyBand(int band)
   // its old-band GL texture under this layer's own context (so the next render
   // re-uploads the new band's pixels) then setBand() (clears its CPU pixels +
   // range, marks it not-loaded). releaseGL() touches textures only, NOT the
-  // shader/FBO/LUT, which are band-independent. Guard a null/not-yet-created
-  // context (the layer may never have painted), as releaseGL() does — applyBand()
-  // can fire from readSettings() before first paint.
+  // shader/FBO/LUT, which are band-independent. The context handling (null context
+  // vs makeCurrent failure) is guarded just below.
   //
   // [camp#108] bandCount() speaks for the layer via tiles_.front(); a tile with
   // fewer bands than the front (a non-uniform tile-set, e.g. mixed survey dirs)
@@ -667,8 +688,27 @@ void GggsTileLayer::applyBand(int band)
   // from the range fold (tilesReady() skips tiles whose band() != band_) so their
   // stale prior-band range can't pollute the new band's auto-range. WARN once per
   // switch so the drop isn't invisible.
-  const bool have_context =
-    gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_);
+  // A null/not-yet-created context (the layer never painted — applyBand() can fire
+  // from readSettings() before first paint) is expected: no textures exist yet, so
+  // the switch just clears pixels + reloads with no stale GL state. But if the
+  // context EXISTS and makeCurrent FAILS, the old-band textures can't be released;
+  // setBand() below still clears each tile's pixels, and texture() never refreshes
+  // an EXISTING texture, so a stale old-band texture would render against the new
+  // band's range once pixels reload. Match renderImage()'s response to a
+  // makeCurrent failure — mark GL failed so ensureGL() short-circuits and the layer
+  // stops rendering rather than drawing a stale-band frame.
+  bool have_context = false;
+  if(gl_context_ && gl_surface_)
+  {
+    if(gl_context_->makeCurrent(gl_surface_))
+      have_context = true;
+    else
+    {
+      qWarning("GggsTileLayer: makeCurrent failed during band switch; "
+               "tiles not rendered");
+      gl_failed_ = true;
+    }
+  }
   int dropped = 0;
   for(auto& tile : tiles_)
   {

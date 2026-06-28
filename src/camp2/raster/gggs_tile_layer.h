@@ -88,6 +88,13 @@ public:
   /// QSettings. No-op if @p band is out of range or unchanged.
   void setBand(int band);
 
+  /// [camp#108] Test-only: the 1-indexed band each held tile is currently set to
+  /// read, in tile order. Exposed as the narrow, GL-free seam a headless test uses
+  /// to assert applyBand()/rescan() propagated the layer band to EVERY tile (the
+  /// per-tile invariant the rendered image can't isolate). Not part of the public
+  /// layer surface — for tests only.
+  std::vector<int> tileBands() const;
+
   /// [camp#102] Block until this layer's async pixel load (if any) has completed.
   /// Exposed for headless tests that call renderImage() directly without the
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.

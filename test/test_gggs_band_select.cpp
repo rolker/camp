@@ -116,6 +116,73 @@ TEST(GggsBandSelectTest, SetBandShiftsLayerRange)
   EXPECT_NE(img1, img2);
 }
 
+// [camp#108] Regression for the rescan-after-switch must-fix: once the operator
+// switches the layer to band 2, a tile discovered by rescan() must INHERIT the
+// layer's current band (2), not the fresh-GggsTile default of band 1. A band-1
+// tile added under a band-2 layer reads the wrong band, renders it scaled through
+// band 2's range, and is permanently excluded from the auto-range fold
+// (tilesReady() folds only tiles whose band() == band_) with no recovery.
+//
+// The per-tile band assertion needs no GL (no rendering on the critical path), so
+// this test RUNS — not SKIPs — in-container and WOULD have caught the bug; the
+// optional render confirmation is GL-guarded.
+TEST(GggsBandSelectTest, RescanInheritsSelectedBand)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 8, h = 8;
+  const double geoA[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  // A second tile one tile-width due east, so both share the set but don't overlap.
+  const double geoB[6] = {-71.40 + w * 0.0001, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  // Disjoint per-band ranges, as in SetBandShiftsLayerRange.
+  std::vector<uint16_t> band1(w * h), band2(w * h);
+  for(int r = 0; r < h; ++r)
+    for(int c = 0; c < w; ++c)
+    {
+      band1[r * w + c] = uint16_t(10 + (c % 4) * 10);   // [10, 40]
+      band2[r * w + c] = uint16_t(1000 + r * 400);      // [1000, 3800]
+    }
+  ASSERT_FALSE(writeTwoBandTile(dir, "13_0_0.tif", w, h, geoA, band1, band2).isEmpty());
+
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new camp::raster::GggsTileLayer(layers, dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->bandCount(), 2);
+
+  // Load band 1, then switch the whole layer to band 2.
+  layer->waitForLoad();
+  layer->setBand(2);
+  EXPECT_EQ(layer->band(), 2);
+  layer->waitForLoad();
+
+  // A new tile lands AFTER the switch: rescan() must add it on band 2.
+  ASSERT_FALSE(writeTwoBandTile(dir, "13_0_1.tif", w, h, geoB, band1, band2).isEmpty());
+  ASSERT_TRUE(layer->rescan());
+  layer->waitForLoad();
+
+  // The must-fix: EVERY tile — the original AND the rescanned one — reads band 2.
+  // Without `tile->setBand(band_)` in rescan()'s add loop the new tile stays on the
+  // fresh default of band 1, so this vector would be {2, 1} and the EXPECT below
+  // would fail. No GL needed: this is the seam that catches the regression even
+  // when offscreen GL is unavailable.
+  const std::vector<int> bands = layer->tileBands();
+  ASSERT_EQ(bands.size(), size_t(2));
+  for(int b : bands)
+    EXPECT_EQ(b, 2);
+
+  // On a GL host, also confirm the rescanned band-2 tile-set still renders (the
+  // wrong-band exclusion symptom would leave the new tile mis-ranged). SKIPped
+  // automatically without offscreen GL — the band assertion above already stands.
+  if(offscreenGLAvailable())
+  {
+    QImage img = layer->renderImage(QSize(64, 64));
+    EXPECT_FALSE(img.isNull());
+  }
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");

@@ -57,6 +57,16 @@ treated as single-band only. The operator needs to pick which band a flat
    `band() == band_`) so its stale prior-band range can't pollute the new band's
    auto-range. *(camp#108 local-review round-2 refinement.)*
 
+   *(camp#108 local-review round-3 fix — rescan interaction.)* The band switch in
+   step 2/this step only re-points the tiles held at switch time; a tile that lands
+   AFTER a switch and is picked up by `rescan()` (camp#102/#104) is freshly
+   constructed at the default band 1. `rescan()`'s add loop therefore calls
+   `tile->setBand(band_)` on each new tile so it inherits the layer's current band —
+   otherwise a rescan after a band > 1 switch would render the wrong band scaled
+   through the selected band's range and be permanently excluded from the
+   `tilesReady()` fold (which folds only `band() == band_`). `setBand(1)` on a
+   band-1 default is a no-op, so the common single-band path is unchanged.
+
 5. **Tests** —
    - `test_gggs_tile.cpp`: write a 2-band GeoTIFF (different constant values per
      band); assert `bandCount() == 2`; load band 1, verify range; call
@@ -66,6 +76,12 @@ treated as single-band only. The operator needs to pick which band a flat
      `setBand(2)`, `waitForLoad()`, assert the layer's `data_min_`/`data_max_`
      shifted. Skips (not fails) on environments without offscreen GL, using the
      same `offscreenGLAvailable()` guard as `test_gggs_render.cpp`.
+   - `test_gggs_band_select.cpp` (round-3 add): `RescanInheritsSelectedBand` —
+     switch a 2-band layer to band 2, then `rescan()` in a newly-landed tile and
+     assert (via the GL-free `tileBands()` test seam) that EVERY tile, including the
+     rescanned one, reads band 2. The per-tile band assertion needs no GL, so this
+     test RUNS (not SKIPs) in-container and catches the must-fix; the render
+     confirmation is `offscreenGLAvailable()`-guarded.
 
 ## Files to Change
 
@@ -73,10 +89,10 @@ treated as single-band only. The operator needs to pick which band a flat
 |------|--------|
 | `src/camp2/raster/gggs_tile.h` | Add `band_count_`, `band_`, `bandCount()`, `setBand(int)` |
 | `src/camp2/raster/gggs_tile.cpp` | Store band count in ctor; use `band_` in `loadPixels()` (re-queries NoData there); implement `setBand` |
-| `src/camp2/raster/gggs_tile_layer.h` | Add `band_`, `band()`, `bandCount()`, `setBand(int)`, private `applyBand(int)` |
-| `src/camp2/raster/gggs_tile_layer.cpp` | Implement `applyBand`/`setBand` (read path non-persisting), update `contextMenu`, `readSettings`/`writeSettings` |
+| `src/camp2/raster/gggs_tile_layer.h` | Add `band_`, `band()`, `bandCount()`, `setBand(int)`, private `applyBand(int)`, test-only `tileBands()` |
+| `src/camp2/raster/gggs_tile_layer.cpp` | Implement `applyBand`/`setBand` (read path non-persisting), update `contextMenu`, `readSettings`/`writeSettings`; `rescan()` propagates `band_` to new tiles; `applyBand()` marks GL failed on a makeCurrent failure |
 | `test/test_gggs_tile.cpp` | Add multi-band construction + band-switch tests |
-| `test/test_gggs_band_select.cpp` | New: layer-level band selection + reload test |
+| `test/test_gggs_band_select.cpp` | New: layer-level band selection + reload test; rescan-after-switch band-inheritance regression test |
 
 ## Principles Self-Check
 
