@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <limits>
 #include <vector>
 
 #include <gdal_priv.h>
@@ -240,6 +241,83 @@ TEST(GggsRenderTest, NoDataDiscardHonorsUniform)
   EXPECT_GT(enclosed_transparent, 0);    // NoData (9999) block discarded -> hole
 
   img.save("/tmp/gggs_nodata_render.png");
+}
+
+// [camp#134] NaN NoData discard. Chart + backscatter stores use NaN as their
+// NoData sentinel; the OLD shader tested only `v == u_nodata`, which is FALSE for
+// NaN (NaN compares unequal to everything), so those cells rendered OPAQUE. The
+// unified renderer's `if(v != v) discard;` fixes it. This writes a Float32 tile
+// whose NoData sentinel is NaN: a valid 0.0 background (two positive stripes seed a
+// real range) with a NaN block punched into the interior. After the fix the NaN
+// block is a transparent hole enclosed by the opaque valid background.
+//
+// DISCRIMINATION mirrors NoDataDiscardHonorsUniform: the dense-column assertion
+// (max_fill > 0.8) holds only because the valid 0.0 background renders; if NaN
+// cells rendered opaque (the bug) the "hole" would fill in and enclosed_transparent
+// would be 0. (Runs only where offscreen GL exists; SKIPs in-container by design.)
+TEST(GggsRenderTest, NanNoDataDiscardsTransparent)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  const double geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  std::vector<float> samples(w * h, 0.0f);             // valid zero background
+  for(int c = 0; c < w; ++c)
+  {
+    samples[10 * w + c] = 5.0f;                        // positive stripes -> real range
+    samples[20 * w + c] = 10.0f;
+  }
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  for(int r = 40; r < 60; ++r)
+    for(int c = 40; c < 60; ++c)
+      samples[r * w + c] = nan;                        // interior NaN block
+  const QString path = writeFloatTile(dir, w, h, geo, nan, samples);   // NoData = NaN
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new camp::raster::GggsTileLayer(layers, dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QImage img = layer->renderImage(QSize(200, 200));
+  ASSERT_FALSE(img.isNull());
+
+  int opaque = 0, enclosed_transparent = 0;
+  double max_fill = 0.0;
+  for(int x = 0; x < img.width(); ++x)
+  {
+    int first_opaque = -1, last_opaque = -1, col_opaque = 0;
+    for(int y = 0; y < img.height(); ++y)
+    {
+      if(img.pixelColor(x, y).alpha() > 0)
+      {
+        ++opaque;
+        ++col_opaque;
+        if(first_opaque < 0)
+          first_opaque = y;
+        last_opaque = y;
+      }
+    }
+    if(first_opaque >= 0)
+    {
+      const int span = last_opaque - first_opaque + 1;
+      max_fill = std::max(max_fill, double(col_opaque) / span);
+      for(int y = first_opaque + 1; y < last_opaque; ++y)
+        if(img.pixelColor(x, y).alpha() == 0)
+          ++enclosed_transparent;
+    }
+  }
+  EXPECT_GT(opaque, 0);                  // valid 0.0 background renders opaque
+  EXPECT_GT(max_fill, 0.8);              // a column of valid background is dense
+  EXPECT_GT(enclosed_transparent, 0);    // NaN block discarded -> enclosed hole
+
+  img.save("/tmp/gggs_nan_render.png");
 }
 
 // Optional real-data smoke render: set GGGS_TEST_STORE to a tile directory to

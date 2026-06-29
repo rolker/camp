@@ -574,6 +574,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#134] Shared RasterGlRenderer unit tests (ADR-0007): the unified shader's
+  # NaN + finite-sentinel discard, LUT bake, Nearest sampling, and the RGBA bypass
+  # path, driven directly with hand-built textures. Self-skips with no offscreen GL.
+  ament_add_gtest(test_raster_gl_renderer
+    test/test_raster_gl_renderer.cpp
+  )
+  target_include_directories(test_raster_gl_renderer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_raster_gl_renderer
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # GGGS layer-level band selection (camp#108): a 2-band tile-set renders band 1
   # by default; setBand(2) reloads and shifts the auto-range so the render differs.
   # Self-skips when no offscreen GL context is available.
