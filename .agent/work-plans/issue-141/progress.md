@@ -195,3 +195,28 @@ Host build + test. On green, this is ready for PR (Closes #141); reconcile camp#
 - [ ] (follow-up) Post the camp#63 "camp-internal ColorMap" wording reconciliation comment when `gh` is authenticated — `docs/decisions/0008-adopt-marine-colormap-lut-bake.md`
 
 **Notes**: API usage verified correct against live marine_colormap headers (find_palette/bake_lut/palette_index/palette_names/sample/to_rgba8 signatures + 6-palette registry order). #134 GPU shader contract preserved (identity TransferParams). Static analysis: repo has no lint/CI gate; cppcheck cannot parse Qt without project config. Adversarial: 2 disjoint-lens passes both independently surfaced the two suggestions above (cross-pass confirmed).
+
+## Implementation (Address Review Findings — Round 1)
+**Status**: complete (host-verify pending)
+**When**: 2026-06-29 +00:00
+**By**: Claude Opus
+**Branch**: feature/issue-141 at `477136a`
+
+Applied both round-1 suggestions in `src/camp_map/ros/grids/grid_map.cpp`:
+
+1. **readSettings colormap default (~:250)** — replaced the unlocked
+   `QString::fromStdString(colormap_name_)` QSettings default with the string literal
+   `"grayscale"`, so no `colormap_name_` member is read without holding `mutex_`. The
+   existing registry-validation (`palette_index` → fallback `"grayscale"`) makes this a
+   no-op for valid stored values and identical fallback for unknowns; behavior unchanged.
+2. **Palette alpha (~:170)** — `QColor(c.r, c.g, c.b)` → `QColor(c.r, c.g, c.b, c.a)`.
+   `marine_colormap::Rgba8` already carries an 8-bit `a` (to_rgba8 scales 0..1→0..255 for
+   all four channels), so `c.a` is passed directly — no extra scaling. Parity-preserving
+   for the opaque built-in palettes; correct if a translucent palette is ever added.
+
+### Build status
+**Host verifies** — the container cannot build camp (missing underlays; known limitation).
+Host runs `source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`.
+
+### Next step
+Host build + test. On green, ready for PR (Closes #141). Not pushed.
