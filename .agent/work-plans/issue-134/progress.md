@@ -251,3 +251,38 @@ the remaining verification step.
 Run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp` on a host with the lower layers
 built; confirm a clean build and that the offscreen-GL render tests RUN (not SKIP)
 and pass. Then code review.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 05:07 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-134 at `f94bd6d`
+**Mode**: pre-push
+**Depth**: Deep (reason: large cross-cutting GL refactor, new ADR-0007, concurrency/lifecycle)
+**Must-fix**: 2 | **Suggestions**: 5
+**Round**: 1 | **Ship**: continue — two verified must-fixes (a runtime GPU-texture leak on prune; a silent scalar-colormap parity regression), both with precise low-risk fixes; warrants one more round.
+
+Deep review: 2 disjoint-lens Claude Adversarial passes (Lens A logic, Lens B
+lifecycle/concurrency). Both must-fixes were verified by the lead against the code
+and against the pre-refactor (`origin/jazzy`) baseline. Static analysis limited (env
+cannot build lower layers; cppcheck cannot resolve Qt headers); implementer's
+`g++ -fsyntax-only` pass was clean. Plan adherence strong; ADR-0006/0002/0001
+contracts verified untouched; ADR-0007 added cleanly.
+
+### Findings
+- [ ] (must-fix) Scalar-colormap parity regression: shared shader floors denominator at `max(span,1.0)`; old RasterLayer used true span via `ColorMap::color` — sub-unit-range scalar charts lose contrast — `src/camp_map/raster/raster_gl_renderer.cpp:76`
+- [ ] (must-fix) Prune destroys `Entry::texture` (QOpenGLTexture) without a current GL context → runtime GPU leak as tiles churn; every other teardown path guards with makeCurrent() — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:333`
+- [ ] (suggestion) Scalar RasterIO read failure sets `result.ok=true` + `setStatus("")` (reports success, shows nothing) — `src/camp_map/raster/raster_layer.cpp:224`
+- [ ] (suggestion) Pre-existing null-deref: `GetColorEntry(buffer[i])` may return nullptr before `ce->c3` — `src/camp_map/raster/raster_layer.cpp:280`
+- [ ] (suggestion) `renderToImage` doc says null-on-shader-failure but returns a non-null transparent image (then cached) — `src/camp_map/raster/raster_gl_renderer.h:64`
+- [ ] (suggestion) RGBA mipmaps generated from straight (non-premultiplied) alpha → possible dark fringes zoomed out — `src/camp_map/raster/raster_layer.cpp:379`
+- [ ] (suggestion) Colormap-range floor (must-fix 1) untested; add a sub-unit-range renderer case — `test/test_raster_gl_renderer.cpp`
+
+### Next step
+
+Verdict is **changes-requested** → host (`/run-issue`) should dispatch
+**`address-findings`** to work the two must-fixes (and the suggestions as warranted),
+then re-dispatch `review-code` for a round-2 pre-push read. The diff is not pushed
+until a pre-push review returns **approved**.
