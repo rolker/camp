@@ -18,6 +18,7 @@ find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
+find_package(marine_colormap REQUIRED)
 find_package(marine_interfaces REQUIRED)
 find_package(marine_tiled_raster_store REQUIRED)
 find_package(marine_nav_interfaces REQUIRED)
@@ -293,6 +294,11 @@ target_link_libraries(camp_map
         Qt5::Positioning
     PRIVATE
         ${GDAL_LIBRARY}
+        # [camp#141] marine_colormap is consumed only inside camp_map's .cpp files
+        # (the raster LUT bake / CPU sample); no marine_colormap type appears in any
+        # installed camp_map header (the colormap is a std::string name), so link it
+        # PRIVATE — it does not propagate into camp_map's public link/usage interface.
+        marine_colormap::marine_colormap
 )
 
 install(TARGETS camp_map
@@ -347,6 +353,7 @@ ament_target_dependencies(camp_map_ros
     grid_map_ros
     marine_ais_msgs
     marine_autonomy
+    marine_colormap
     marine_interfaces
     marine_tiled_raster_store
     rclcpp
