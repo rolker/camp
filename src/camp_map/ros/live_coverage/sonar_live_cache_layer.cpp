@@ -4,18 +4,11 @@
 #include "../../map_view/web_mercator.h"
 
 #include <QAction>
-#include <QColor>
 #include <QDebug>
 #include <QDir>
 #include <QGeoCoordinate>
-#include <QMatrix4x4>
 #include <QMenu>
 #include <QMetaObject>
-#include <QOffscreenSurface>
-#include <QOpenGLContext>
-#include <QOpenGLFramebufferObject>
-#include <QOpenGLFunctions>
-#include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QSettings>
@@ -39,42 +32,12 @@ namespace live_coverage
 namespace
 {
 
-// NOTE: shader duplicated from GggsTileLayer; will unify via RasterFieldSource in
-// camp#134. The pipeline is identical (CPU-side geo->Web-Mercator warp per vertex,
-// single-band R32F value texture, colormap LUT, per-tile NoData discard); only the
-// data source differs (in-memory dequantized Float32 vs. GggsTile's GDAL read).
-constexpr char kVertexShader[] = R"(
-#version 120
-attribute vec2 a_pos;
-attribute vec2 a_texcoord;
-uniform mat4 u_mvp;
-varying vec2 v_texcoord;
-void main()
-{
-  gl_Position = u_mvp * vec4(a_pos, 0.0, 1.0);
-  v_texcoord = a_texcoord;
-}
-)";
-
-constexpr char kFragmentShader[] = R"(
-#version 120
-uniform sampler2D u_tex;
-uniform sampler2D u_lut;
-uniform float u_min;
-uniform float u_max;
-uniform int u_has_nodata;
-uniform float u_nodata;
-varying vec2 v_texcoord;
-void main()
-{
-  float v = texture2D(u_tex, v_texcoord).r;
-  if(u_has_nodata != 0 && v == u_nodata)
-    discard;
-  float t = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
-  vec4 c = texture2D(u_lut, vec2(t, 0.5));
-  gl_FragColor = vec4(c.rgb, 1.0);
-}
-)";
+// [camp#134] The duplicated kVertex/kFragment shaders, ensureProgram(), ensureLut()
+// and the per-vertex geo->Web-Mercator tessellation moved into the shared
+// raster::RasterGlRenderer (see ADR-0007), which also fixes the NaN NoData discard.
+// This layer now collects its held tiles into RasterFieldItems and delegates the
+// draw; only the data source differs (in-memory dequantized Float32 vs. GDAL read).
+// ADR-0006's persistence + opt-in-subscription contract is untouched by this change.
 
 // Flat, filesystem-safe token for a source namespace (percent-encode every '/').
 QString sanitize(const std::string& ns)
@@ -142,7 +105,15 @@ SonarLiveCacheLayer::~SonarLiveCacheLayer()
   shutting_down_ = true;
   for(QFutureWatcher<void>* watcher : write_watchers_)
     watcher->waitForFinished();
-  releaseGL();
+  // [camp#134] Release each tile's GL texture under the renderer's context (the
+  // textures are owned by the Entries, not the renderer). The renderer frees its
+  // own program/LUT/FBO/context in its destructor right after this.
+  if(renderer_.makeCurrent())
+  {
+    for(auto& item : tiles_)
+      item.second.texture.reset();
+    renderer_.doneCurrent();
+  }
 }
 
 QString SonarLiveCacheLayer::settingsKey() const
@@ -272,6 +243,16 @@ void SonarLiveCacheLayer::warmLoad()
   if(!level_)
     return;   // nothing cached yet
 
+  // [camp#134] insert_or_assign below replaces any pre-existing Entry for an index
+  // (reachable on a disable→re-enable: disable leaves tiles_ — and their GL textures
+  // — intact). A displaced Entry's QOpenGLTexture must be freed under a current GL
+  // context, so make it current for the seed loop when tiles already hold textures.
+  // On the first (empty-map) warm load there is nothing to displace, so skip it.
+  // Gate on hasContext() (mirrors GggsTileLayer::applyBand): when no context exists
+  // yet no texture was ever uploaded, so skip makeCurrent() rather than forcing the
+  // offscreen context into existence to reset null textures.
+  const bool gl_current =
+    !tiles_.empty() && renderer_.hasContext() && renderer_.makeCurrent();
   const gggs::Level level(*level_);
   for(auto& tile : SonarLiveTile::loadCacheDir(cache_dir_, level))
   {
@@ -284,6 +265,8 @@ void SonarLiveCacheLayer::warmLoad()
     reconciler_.markHave(index, 0);
     tiles_.insert_or_assign(index, Entry{std::move(tile), nullptr, true});
   }
+  if(gl_current)
+    renderer_.doneCurrent();
   if(band_name_.empty())
     band_name_ = defaultBand();
   recomputeBounds();
@@ -353,12 +336,24 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
 
   publishRequest(result.to_request);
 
+  // [camp#134] A pruned Entry owns a QOpenGLTexture whose dtor frees GPU resources
+  // ONLY under a current GL context — erasing it here without one leaks the texture
+  // as tiles churn (the boat keeps producing; the catalog keeps pruning). Make the
+  // renderer's context current for the erase loop, exactly like the dtor's teardown.
+  // Gate on hasContext() (mirrors GggsTileLayer::applyBand): with no context yet no
+  // texture was ever uploaded, so a plain erase is harmless and we skip makeCurrent()
+  // rather than forcing the offscreen context into existence. If the context EXISTS
+  // but makeCurrent() fails, the textures stay alive but a plain erase still mirrors
+  // the dtor's null-context guard.
   bool pruned = false;
+  const bool gl_current =
+    !result.to_prune.empty() && renderer_.hasContext() && renderer_.makeCurrent();
   for(const auto& index : result.to_prune)
   {
     auto it = tiles_.find(index);
     if(it != tiles_.end())
     {
+      it->second.texture.reset();   // free the GPU texture under the current context
       tiles_.erase(it);
       pruned = true;
     }
@@ -371,6 +366,8 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
     fs::remove(fs::path(cache_dir_) / stem, ec);
     reconciler_.drop(index);
   }
+  if(gl_current)
+    renderer_.doneCurrent();
   if(pruned)
   {
     // Reset before re-folding so a pruned tile's extreme min/max can't linger in
@@ -510,71 +507,6 @@ QRectF SonarLiveCacheLayer::boundingRect() const
   return QRectF(QPointF(0.0, 0.0), scene_bounds_.size());
 }
 
-bool SonarLiveCacheLayer::ensureGL()
-{
-  if(gl_failed_)
-    return false;
-  if(gl_context_)
-    return true;
-  gl_surface_ = new QOffscreenSurface();
-  gl_surface_->create();
-  gl_context_ = new QOpenGLContext();
-  if(!gl_surface_->isValid() || !gl_context_->create())
-  {
-    qWarning("SonarLiveCacheLayer: offscreen GL unavailable; tiles not rendered");
-    gl_failed_ = true;
-    delete gl_context_; gl_context_ = nullptr;
-    delete gl_surface_; gl_surface_ = nullptr;
-    return false;
-  }
-  return true;
-}
-
-bool SonarLiveCacheLayer::ensureProgram()
-{
-  if(program_)
-    return program_->isLinked();
-  program_ = std::make_unique<QOpenGLShaderProgram>();
-  program_->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
-  program_->addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader);
-  if(!program_->link())
-  {
-    qWarning("SonarLiveCacheLayer: shader link failed: %s",
-             program_->log().toUtf8().constData());
-    setStatus("(shader error)");
-    return false;
-  }
-  return true;
-}
-
-QOpenGLTexture* SonarLiveCacheLayer::ensureLut()
-{
-  if(lut_texture_ && !lut_dirty_)
-    return lut_texture_.get();
-  std::vector<uchar> lut(256 * 4);
-  for(int i = 0; i < 256; ++i)
-  {
-    const QColor c = colormap_.colorNormalized(i / 255.0);
-    lut[i * 4 + 0] = uchar(c.red());
-    lut[i * 4 + 1] = uchar(c.green());
-    lut[i * 4 + 2] = uchar(c.blue());
-    lut[i * 4 + 3] = uchar(c.alpha());
-  }
-  if(!lut_texture_)
-  {
-    lut_texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
-    lut_texture_->setFormat(QOpenGLTexture::RGBA8_UNorm);
-    lut_texture_->setSize(256, 1);
-    lut_texture_->setMipLevels(1);
-    lut_texture_->allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
-    lut_texture_->setMinMagFilters(QOpenGLTexture::Linear, QOpenGLTexture::Linear);
-    lut_texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
-  }
-  lut_texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, lut.data());
-  lut_dirty_ = false;
-  return lut_texture_.get();
-}
-
 QOpenGLTexture* SonarLiveCacheLayer::textureFor(Entry& entry)
 {
   const SonarLiveBand* band = entry.tile.band(band_name_);
@@ -582,121 +514,101 @@ QOpenGLTexture* SonarLiveCacheLayer::textureFor(Entry& entry)
     return nullptr;
   if(entry.texture && !entry.texture_dirty)
     return entry.texture.get();
-  // (Re)upload the selected band as an R32F value texture, Nearest-filtered so the
-  // shader's exact-equality NoData discard never blends across a sentinel boundary
-  // (same rationale as GggsTile::texture()).
+  // (Re)upload the selected band as an R32F value texture. The Nearest filter (so
+  // the exact-equality NoData discard never blends across a sentinel boundary) is
+  // now applied by the renderer at draw time (camp#134); we just upload the data
+  // and the clamp wrap.
   entry.texture = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
   entry.texture->setFormat(QOpenGLTexture::R32F);
   entry.texture->setSize(entry.tile.width(), entry.tile.height());
   entry.texture->setMipLevels(1);
   entry.texture->allocateStorage(QOpenGLTexture::Red, QOpenGLTexture::Float32);
   entry.texture->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32, band->data.data());
-  entry.texture->setMinMagFilters(QOpenGLTexture::Nearest, QOpenGLTexture::Nearest);
   entry.texture->setWrapMode(QOpenGLTexture::ClampToEdge);
   entry.texture_dirty = false;
   return entry.texture.get();
+}
+
+QStringList SonarLiveCacheLayer::bands() const
+{
+  // [camp#134] Named live bands (union across held tiles), for the band picker.
+  QStringList result;
+  for(const auto& item : tiles_)
+    for(const auto& name : item.second.tile.bandNames())
+    {
+      const QString q = QString::fromStdString(name);
+      if(!result.contains(q))
+        result << q;
+    }
+  return result;
+}
+
+raster::RasterBandMeta SonarLiveCacheLayer::metadata(const QString& band) const
+{
+  // [camp#134] Surface the selected band's dequantized NoData sentinel from the
+  // first tile that carries it (the renderer reads NoData per item; this is for a
+  // future unified band picker).
+  raster::RasterBandMeta meta;
+  const std::string name = band.toStdString();
+  for(const auto& item : tiles_)
+    if(const SonarLiveBand* b = item.second.tile.band(name))
+    {
+      meta.has_nodata = b->has_nodata;
+      meta.nodata = b->nodata;
+      break;
+    }
+  return meta;
+}
+
+QPair<float, float> SonarLiveCacheLayer::dataRange() const
+{
+  return {float(data_min_), float(data_max_)};
+}
+
+QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
+{
+  // [camp#134] Collect the held tiles' selected band as Scalar items for the shared
+  // renderer. Called with the renderer's GL context current (renderImage()), so
+  // textureFor() may lazily (re)upload here. The geo->Web-Mercator warp lives in
+  // the renderer; this only forwards each tile's lat/lon extent + NoData sentinel.
+  QList<raster::RasterFieldItem> result;
+  result.reserve(int(tiles_.size()));
+  for(auto& item : tiles_)
+  {
+    Entry& entry = item.second;
+    const SonarLiveBand* band = entry.tile.band(band_name_);
+    if(!band)
+      continue;
+    QOpenGLTexture* texture = textureFor(entry);
+    if(!texture)
+      continue;
+    raster::RasterFieldItem fi;
+    fi.texture = texture;
+    fi.format = raster::RasterFieldItem::Format::Scalar;
+    fi.geographic = true;
+    fi.west = entry.tile.minLon();
+    fi.east = entry.tile.maxLon();
+    fi.south = entry.tile.minLat();
+    fi.north = entry.tile.maxLat();
+    fi.has_nodata = band->has_nodata;
+    fi.nodata = band->has_nodata ? band->nodata : 0.0f;
+    result.push_back(fi);
+  }
+  return result;
 }
 
 QImage SonarLiveCacheLayer::renderImage(const QSize& size)
 {
   if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
     return QImage();
-  if(!ensureGL())
+  // [camp#134] Make the renderer's context current, collect the held tiles
+  // (uploading textures under it), then delegate the warp + draw.
+  if(!renderer_.makeCurrent())
     return QImage();
-  if(!gl_context_->makeCurrent(gl_surface_))
-  {
-    qWarning("SonarLiveCacheLayer: makeCurrent failed; tiles not rendered");
-    gl_failed_ = true;
-    return QImage();
-  }
-
-  QOpenGLFunctions* f = gl_context_->functions();
-  if(!fbo_ || fbo_->size() != size)
-    fbo_ = std::make_unique<QOpenGLFramebufferObject>(size);
-
-  fbo_->bind();
-  f->glViewport(0, 0, size.width(), size.height());
-  f->glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-  f->glClear(GL_COLOR_BUFFER_BIT);
-  f->glDisable(GL_DEPTH_TEST);
-  f->glEnable(GL_BLEND);
-  f->glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-  if(ensureProgram())
-  {
-    const double origin_x = scene_bounds_.left();
-    const double origin_y = scene_bounds_.top();
-    const double width_m = scene_bounds_.width();
-    const double height_m = scene_bounds_.height();
-    QMatrix4x4 mvp;
-    mvp.ortho(0.0f, float(width_m), 0.0f, float(height_m), -1.0f, 1.0f);
-
-    program_->bind();
-    program_->setUniformValue("u_mvp", mvp);
-    program_->setUniformValue("u_min", float(data_min_));
-    program_->setUniformValue("u_max", float(data_max_));
-    program_->setUniformValue("u_tex", 0);
-    program_->setUniformValue("u_lut", 1);
-    QOpenGLTexture* lut = ensureLut();
-    if(lut)
-      lut->bind(1);
-
-    const int pos_loc = program_->attributeLocation("a_pos");
-    const int texcoord_loc = program_->attributeLocation("a_texcoord");
-    program_->enableAttributeArray(pos_loc);
-    program_->enableAttributeArray(texcoord_loc);
-
-    const int rows = kLatSubdivisions + 1;
-    std::vector<float> verts;
-    verts.reserve(rows * 2 * 4);
-    for(auto& item : tiles_)
-    {
-      Entry& entry = item.second;
-      const SonarLiveBand* band = entry.tile.band(band_name_);
-      if(!band)
-        continue;
-      QOpenGLTexture* texture = textureFor(entry);
-      if(!texture)
-        continue;
-
-      verts.clear();
-      const double min_lon = entry.tile.minLon();
-      const double max_lon = entry.tile.maxLon();
-      const double min_lat = entry.tile.minLat();
-      const double max_lat = entry.tile.maxLat();
-      for(int r = 0; r < rows; ++r)
-      {
-        const double frac = double(r) / kLatSubdivisions;
-        const double lat = max_lat + (min_lat - max_lat) * frac;   // north -> south
-        const float v = float(frac);
-        const QPointF l = web_mercator::geoToMap(QGeoCoordinate(lat, min_lon));
-        const QPointF rt = web_mercator::geoToMap(QGeoCoordinate(lat, max_lon));
-        verts.insert(verts.end(),
-                     {float(l.x() - origin_x), float(l.y() - origin_y), 0.0f, v});
-        verts.insert(verts.end(),
-                     {float(rt.x() - origin_x), float(rt.y() - origin_y), 1.0f, v});
-      }
-
-      texture->bind(0);
-      program_->setUniformValue("u_has_nodata", band->has_nodata ? 1 : 0);
-      program_->setUniformValue("u_nodata", band->has_nodata ? band->nodata : 0.0f);
-      program_->setAttributeArray(pos_loc, GL_FLOAT, verts.data(), 2, 4 * sizeof(float));
-      program_->setAttributeArray(texcoord_loc, GL_FLOAT, verts.data() + 2, 2,
-                                  4 * sizeof(float));
-      f->glDrawArrays(GL_TRIANGLE_STRIP, 0, rows * 2);
-      texture->release(0);
-    }
-
-    if(lut)
-      lut->release(1);
-    program_->disableAttributeArray(pos_loc);
-    program_->disableAttributeArray(texcoord_loc);
-    program_->release();
-  }
-
-  fbo_->release();
-  QImage image = fbo_->toImage();
-  gl_context_->doneCurrent();
+  const QList<raster::RasterFieldItem> draw = items();
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, float(data_min_),
+                                               float(data_max_), size);
+  renderer_.doneCurrent();
   return image;
 }
 
@@ -724,29 +636,13 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
   painter->restore();
 }
 
-void SonarLiveCacheLayer::releaseGL()
-{
-  if(gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_))
-  {
-    fbo_.reset();
-    program_.reset();
-    lut_texture_.reset();
-    for(auto& item : tiles_)
-      item.second.texture.reset();
-    gl_context_->doneCurrent();
-  }
-  delete gl_context_; gl_context_ = nullptr;
-  delete gl_surface_; gl_surface_ = nullptr;
-}
-
 // ------------------------------- band / colormap -----------------------------
 
 void SonarLiveCacheLayer::setColormap(map::ColorMap::Type type)
 {
-  if(type == colormap_.type())
+  if(type == renderer_.colormap())
     return;
-  colormap_.setType(type);
-  lut_dirty_ = true;
+  renderer_.setColormap(type);   // re-bakes the LUT on next render
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
@@ -795,7 +691,7 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
   {
     QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
     action->setCheckable(true);
-    action->setChecked(type == colormap_.type());
+    action->setChecked(type == renderer_.colormap());
     connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
   }
 
@@ -831,17 +727,16 @@ void SonarLiveCacheLayer::readSettings()
   // turns coverage on explicitly.
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
   const std::string band = settings.value("band", QString::fromStdString(band_name_))
                              .toString().toStdString();
   const bool was_enabled = settings.value("live_enabled", false).toBool();
   settings.endGroup();
   settings.endGroup();
 
-  if(type != colormap_.type())
+  if(type != renderer_.colormap())
   {
-    colormap_.setType(type);
-    lut_dirty_ = true;
+    renderer_.setColormap(type);
     cached_image_ = QImage();
   }
   if(!band.empty())
@@ -858,7 +753,7 @@ void SonarLiveCacheLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
-  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
   settings.setValue("band", QString::fromStdString(band_name_));
   settings.setValue("live_enabled", enabled_);
   settings.endGroup();

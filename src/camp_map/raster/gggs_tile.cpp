@@ -169,15 +169,10 @@ QOpenGLTexture* GggsTile::texture()
     texture_->setMipLevels(1);
     texture_->allocateStorage(QOpenGLTexture::Red, QOpenGLTexture::Float32);
     texture_->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32, data_.data());
-    // [camp#122] Nearest (not Linear) on the value texture. The shader discards by
-    // exact equality (v == u_nodata); Linear filtering interpolates boundary texels
-    // between real data and the 9999 sentinel, so they neither equal the sentinel
-    // (no discard) nor a real value (clamp to u_max), producing a bright one-texel
-    // halo around NoData regions. Nearest never blends across the NoData boundary,
-    // removing the halo. Roland accepts the blocky (cell-accurate) raster tradeoff.
-    // NOTE: only the value texture is Nearest; the colormap LUT (in gggs_tile_layer)
-    // stays Linear for a smooth ramp.
-    texture_->setMinMagFilters(QOpenGLTexture::Nearest, QOpenGLTexture::Nearest);
+    // [camp#134] The Nearest min/mag filter on this scalar value texture is set at
+    // draw time by RasterGlRenderer (per-item, once per frame) — see camp#122 for the
+    // rationale (Nearest avoids the NoData-sentinel halo the shader's exact-equality
+    // discard would otherwise blend across). No upload-time setMinMagFilters() here.
     texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
     // Free the CPU copy once it's on the GPU — the texture persists for the
     // tile's lifetime, so we never re-upload (releaseGL = teardown). Halves

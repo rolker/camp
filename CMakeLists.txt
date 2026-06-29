@@ -260,6 +260,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_tree_view/map_tree_view.cpp
     src/camp_map/map_view/map_view.cpp
     src/camp_map/map_view/web_mercator.cpp
+    src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
     src/camp_map/raster/gggs_tile.cpp
     src/camp_map/raster/gggs_tile_layer.cpp
@@ -565,6 +566,24 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_gggs_render
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#134] Shared RasterGlRenderer unit tests (ADR-0007): the unified shader's
+  # NaN + finite-sentinel discard, LUT bake, Nearest sampling, and the RGBA bypass
+  # path, driven directly with hand-built textures. Self-skips with no offscreen GL.
+  ament_add_gtest(test_raster_gl_renderer
+    test/test_raster_gl_renderer.cpp
+  )
+  target_include_directories(test_raster_gl_renderer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_raster_gl_renderer
     camp_map
     Qt5::Core
     Qt5::Gui

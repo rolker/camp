@@ -5,20 +5,12 @@
 #include "../map_view/web_mercator.h"
 
 #include <QAction>
-#include <QColor>
-#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QGeoCoordinate>
 #include <QMenu>
 #include <QSet>
 #include <QSettings>
-#include <QMatrix4x4>
-#include <QOffscreenSurface>
-#include <QOpenGLContext>
-#include <QOpenGLFramebufferObject>
-#include <QOpenGLFunctions>
-#include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QTransform>
@@ -36,54 +28,11 @@ namespace raster
 namespace
 {
 
-// Vertex shader: purely linear. The geo->Web-Mercator warp is done on the CPU in
-// double precision (web_mercator::geoToMap) per mesh vertex, with positions made
-// RELATIVE to the extent origin so values stay small. This is deliberate:
-// computing y = R*asinh(tan phi) in the shader used GPU transcendentals (tan/log/
-// sqrt) whose low precision, multiplied by R~6.4e6, produced a ~50 m latitude
-// error (longitude was exact because x = R*lambda needs no transcendental).
-constexpr char kVertexShader[] = R"(
-#version 120
-attribute vec2 a_pos;        // local Web-Mercator metres (from extent origin)
-attribute vec2 a_texcoord;
-uniform mat4 u_mvp;          // local metres -> NDC
-varying vec2 v_texcoord;
-void main()
-{
-  gl_Position = u_mvp * vec4(a_pos, 0.0, 1.0);
-  v_texcoord = a_texcoord;
-}
-)";
-
-// Fragment shader: auto-ranged value mapped through a colormap LUT (the shared
-// camp::map::ColorMap baked to a 256x1 RGBA texture on the CPU). Each tile's
-// per-band NoData (plumbed in as u_has_nodata/u_nodata from GggsTile) is discarded
-// so empty cells are transparent; tiles without NoData discard nothing.
-// Premultiplied-alpha output (opaque, so straight == premult).
-//
-// [camp#122] The discard now tests the band's actual NoData sentinel rather than
-// the old hardcoded `v <= 0.0` (which assumed the mosaicker's floor-to-1 depth
-// convention and wrongly discarded valid 0/negative samples in uncertainty,
-// quality, or signed-offset bands after #108 enabled arbitrary band selection).
-constexpr char kFragmentShader[] = R"(
-#version 120
-uniform sampler2D u_tex;     // unit 0: single-band data (R32F)
-uniform sampler2D u_lut;     // unit 1: colormap LUT (256x1 RGBA)
-uniform float u_min;
-uniform float u_max;
-uniform int u_has_nodata;    // 0 = tile has no NoData; nonzero = discard v == u_nodata
-uniform float u_nodata;      // per-tile NoData sentinel (band-specific)
-varying vec2 v_texcoord;
-void main()
-{
-  float v = texture2D(u_tex, v_texcoord).r;
-  if(u_has_nodata != 0 && v == u_nodata)
-    discard;
-  float t = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
-  vec4 c = texture2D(u_lut, vec2(t, 0.5));
-  gl_FragColor = vec4(c.rgb, 1.0);
-}
-)";
+// [camp#134] The kVertex/kFragment shaders, ensureProgram(), ensureLut() and the
+// per-vertex geo->Web-Mercator tessellation that used to live here moved into the
+// shared raster::RasterGlRenderer (see ADR-0007). The unified shader there also
+// fixes the NaN NoData discard (`v != v`). This layer now only collects loaded
+// tiles into RasterFieldItems and delegates the draw.
 
 // [camp#126] Tree-view display name for a flat store layer: the last two path
 // components ("parent/leaf", e.g. "sidescan/processed"), falling back to just the
@@ -145,7 +94,15 @@ GggsTileLayer::~GggsTileLayer()
   abort_flag_ = true;
   abort_flag_mutex_.unlock();
   future_watcher_.waitForFinished();
-  releaseGL();
+  // [camp#134] Release each tile's GL texture under the renderer's context (the
+  // textures are owned by the GggsTiles, not the renderer). The renderer's own
+  // program/LUT/FBO/context are freed by its destructor right after this.
+  if(renderer_.makeCurrent())
+  {
+    for(auto& tile : tiles_)
+      tile->releaseGL();
+    renderer_.doneCurrent();
+  }
 }
 
 void GggsTileLayer::loadDirectory(const QString& directory)
@@ -383,195 +340,79 @@ QRectF GggsTileLayer::boundingRect() const
   return QRectF(QPointF(0.0, 0.0), scene_bounds_.size());
 }
 
-bool GggsTileLayer::ensureGL()
+QStringList GggsTileLayer::bands() const
 {
-  // gl_failed_ first: once GL is declared broken (creation OR a mid-session
-  // makeCurrent failure), stay failed and don't retry — otherwise every repaint
-  // re-enters renderImage (cached_image_ never populates) and re-warns.
-  if(gl_failed_)
-    return false;
-  if(gl_context_)
-    return true;
-
-  gl_surface_ = new QOffscreenSurface();
-  gl_surface_->create();
-  gl_context_ = new QOpenGLContext();
-  if(!gl_surface_->isValid() || !gl_context_->create())
-  {
-    qWarning("GggsTileLayer: offscreen GL unavailable; tiles not rendered");
-    gl_failed_ = true;
-    delete gl_context_; gl_context_ = nullptr;
-    delete gl_surface_; gl_surface_ = nullptr;
-    return false;
-  }
-  return true;
+  // [camp#134] GggsTile bands are 1-indexed; expose them as "1".."N" for the
+  // (per-layer) band picker. The renderer consumes only items()/dataRange().
+  QStringList result;
+  const int count = bandCount();
+  for(int b = 1; b <= count; ++b)
+    result << QString::number(b);
+  return result;
 }
 
-bool GggsTileLayer::ensureProgram()
+RasterBandMeta GggsTileLayer::metadata(const QString&) const
 {
-  if(program_)
-    return program_->isLinked();
-  program_ = std::make_unique<QOpenGLShaderProgram>();
-  program_->addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
-  program_->addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader);
-  if(!program_->link())
-  {
-    qWarning("GggsTileLayer: shader link failed: %s",
-             program_->log().toUtf8().constData());
-    setStatus("(shader error)");
-    return false;
-  }
-  return true;
+  // [camp#134] NoData is per-tile/per-band and only known after a tile loads, so
+  // the authoritative sentinel travels per item (see items()); this layer-level
+  // metadata is a placeholder for a future unified band picker.
+  return RasterBandMeta{};
 }
 
-QOpenGLTexture* GggsTileLayer::ensureLut()
+QPair<float, float> GggsTileLayer::dataRange() const
 {
-  // Bake camp::map::ColorMap into a 256x1 RGBA LUT (re-baked when the ramp
-  // changes). Sampled by the fragment shader as the colour transfer.
-  if(lut_texture_ && !lut_dirty_)
-    return lut_texture_.get();
-  std::vector<uchar> lut(256 * 4);
-  for(int i = 0; i < 256; ++i)
+  return {float(data_min_), float(data_max_)};
+}
+
+QList<RasterFieldItem> GggsTileLayer::items()
+{
+  // [camp#134] Collect the loaded tiles as Scalar items for the shared renderer.
+  // Called with the renderer's GL context current (renderImage()), so tile->
+  // texture() may lazily upload here. The geo->Web-Mercator warp + tessellation
+  // now lives in the renderer, so this only forwards each tile's lat/lon extent +
+  // per-tile NoData sentinel.
+  QList<RasterFieldItem> result;
+  result.reserve(int(tiles_.size()));
+  for(auto& tile : tiles_)
   {
-    const QColor c = colormap_.colorNormalized(i / 255.0);
-    lut[i * 4 + 0] = uchar(c.red());
-    lut[i * 4 + 1] = uchar(c.green());
-    lut[i * 4 + 2] = uchar(c.blue());
-    lut[i * 4 + 3] = uchar(c.alpha());
+    // [camp#102] Skip a tile whose pixels haven't loaded yet. pixelsLoaded() is an
+    // ACQUIRE load pairing with the worker's RELEASE store in loadPixels(), so once
+    // true the data_/texture() reads see the worker's completed writes — no race.
+    if(!tile->pixelsLoaded())
+      continue;
+    QOpenGLTexture* texture = tile->texture();
+    if(!texture)
+      continue;
+    RasterFieldItem item;
+    item.texture = texture;
+    item.format = RasterFieldItem::Format::Scalar;
+    item.geographic = true;
+    item.west = tile->minLon();
+    item.east = tile->maxLon();
+    item.south = tile->minLat();
+    item.north = tile->maxLat();
+    // [camp#122] Per-tile NoData: a non-uniform store can carry different NoData
+    // per tile/band, so it travels per item rather than as one layer uniform.
+    item.has_nodata = tile->hasNoData();
+    item.nodata = tile->hasNoData() ? float(tile->noData()) : 0.0f;
+    result.push_back(item);
   }
-  if(!lut_texture_)
-  {
-    lut_texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
-    lut_texture_->setFormat(QOpenGLTexture::RGBA8_UNorm);
-    lut_texture_->setSize(256, 1);
-    lut_texture_->setMipLevels(1);
-    lut_texture_->allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
-    lut_texture_->setMinMagFilters(QOpenGLTexture::Linear, QOpenGLTexture::Linear);
-    lut_texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
-  }
-  lut_texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, lut.data());
-  lut_dirty_ = false;
-  return lut_texture_.get();
+  return result;
 }
 
 QImage GggsTileLayer::renderImage(const QSize& size)
 {
   if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
     return QImage();
-  if(!ensureGL())
+  // [camp#134] Make the renderer's context current, collect the loaded tiles
+  // (uploading their textures under it), then delegate the warp + draw. The
+  // returned image is top-down ARGB32 premultiplied (as before).
+  if(!renderer_.makeCurrent())
     return QImage();
-  if(!gl_context_->makeCurrent(gl_surface_))
-  {
-    qWarning("GggsTileLayer: makeCurrent failed; tiles not rendered");
-    gl_failed_ = true;
-    return QImage();
-  }
-
-  QOpenGLFunctions* f = gl_context_->functions();
-  if(!fbo_ || fbo_->size() != size)
-    fbo_ = std::make_unique<QOpenGLFramebufferObject>(size);
-
-  fbo_->bind();
-  f->glViewport(0, 0, size.width(), size.height());
-  f->glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-  f->glClear(GL_COLOR_BUFFER_BIT);
-  f->glDisable(GL_DEPTH_TEST);
-  f->glEnable(GL_BLEND);
-  f->glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
-
-  if(ensureProgram())
-  {
-    // Vertices are LOCAL Web-Mercator metres from the extent origin (the SW
-    // corner), so map [0, width] x [0, height] -> NDC. local-y 0 = south,
-    // height = north, so 'top' = height gives a NORTH-UP image (row 0 = north);
-    // the item's fromScale(1,-1) + NW anchor draws it upright.
-    const double origin_x = scene_bounds_.left();    // west
-    const double origin_y = scene_bounds_.top();      // south (smaller mercator-y)
-    const double width_m = scene_bounds_.width();
-    const double height_m = scene_bounds_.height();
-    QMatrix4x4 mvp;
-    mvp.ortho(0.0f, float(width_m), 0.0f, float(height_m), -1.0f, 1.0f);
-
-    program_->bind();
-    program_->setUniformValue("u_mvp", mvp);
-    program_->setUniformValue("u_min", float(data_min_));
-    program_->setUniformValue("u_max", float(data_max_));
-    program_->setUniformValue("u_tex", 0);
-    program_->setUniformValue("u_lut", 1);
-    QOpenGLTexture* lut = ensureLut();
-    if(lut)
-      lut->bind(1);
-
-    const int pos_loc = program_->attributeLocation("a_pos");
-    const int texcoord_loc = program_->attributeLocation("a_texcoord");
-    program_->enableAttributeArray(pos_loc);
-    program_->enableAttributeArray(texcoord_loc);
-
-    // Per-tile triangle strip, subdivided in latitude only. Each vertex's
-    // Web-Mercator position is computed on the CPU (double precision) via
-    // web_mercator::geoToMap and made relative to the extent origin. Interleaved
-    // [local_x, local_y, u, v] per vertex.
-    const int rows = kLatSubdivisions + 1;
-    std::vector<float> verts;
-    verts.reserve(rows * 2 * 4);
-    for(auto& tile : tiles_)
-    {
-      // [camp#102] Skip a tile whose pixels haven't loaded yet (in-flight or not
-      // yet kicked). pixelsLoaded() is an ACQUIRE load that pairs with the worker's
-      // RELEASE store in loadPixels() (issued after the data_ move), so once it
-      // reads true the subsequent data_/texture() reads are guaranteed to see the
-      // worker's completed writes — no race even while a worker is mid-flight on
-      // another tile. The layer also repaints on tilesReady() once the load
-      // completes (to fold the range).
-      if(!tile->pixelsLoaded())
-        continue;
-
-      verts.clear();
-      const double min_lon = tile->minLon();
-      const double max_lon = tile->maxLon();
-      const double min_lat = tile->minLat();
-      const double max_lat = tile->maxLat();
-      for(int r = 0; r < rows; ++r)
-      {
-        const double frac = double(r) / kLatSubdivisions;
-        const double lat = max_lat + (min_lat - max_lat) * frac;   // north -> south
-        const float v = float(frac);                               // tex row 0 = north
-        const QPointF l = web_mercator::geoToMap(QGeoCoordinate(lat, min_lon));
-        const QPointF rt = web_mercator::geoToMap(QGeoCoordinate(lat, max_lon));
-        verts.insert(verts.end(),
-                     {float(l.x() - origin_x), float(l.y() - origin_y), 0.0f, v});
-        verts.insert(verts.end(),
-                     {float(rt.x() - origin_x), float(rt.y() - origin_y), 1.0f, v});
-      }
-
-      QOpenGLTexture* texture = tile->texture();
-      if(!texture)
-        continue;
-      texture->bind(0);
-      // [camp#122] Per-tile NoData: a non-uniform store can carry different NoData
-      // values per tile/band, so these are set inside the loop (unlike u_min/u_max,
-      // which are a layer-global colormap range set once above).
-      program_->setUniformValue("u_has_nodata", tile->hasNoData() ? 1 : 0);
-      program_->setUniformValue("u_nodata",
-                                tile->hasNoData() ? float(tile->noData()) : 0.0f);
-      program_->setAttributeArray(pos_loc, GL_FLOAT, verts.data(), 2,
-                                  4 * sizeof(float));
-      program_->setAttributeArray(texcoord_loc, GL_FLOAT, verts.data() + 2, 2,
-                                  4 * sizeof(float));
-      f->glDrawArrays(GL_TRIANGLE_STRIP, 0, rows * 2);
-      texture->release(0);
-    }
-
-    if(lut)
-      lut->release(1);
-    program_->disableAttributeArray(pos_loc);
-    program_->disableAttributeArray(texcoord_loc);
-    program_->release();
-  }
-
-  fbo_->release();
-  QImage image = fbo_->toImage();   // top-down ARGB32 (premultiplied)
-  gl_context_->doneCurrent();
+  const QList<RasterFieldItem> draw = items();
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, float(data_min_),
+                                               float(data_max_), size);
+  renderer_.doneCurrent();
   return image;
 }
 
@@ -618,28 +459,12 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   painter->restore();
 }
 
-void GggsTileLayer::releaseGL()
-{
-  if(gl_context_ && gl_surface_ && gl_context_->makeCurrent(gl_surface_))
-  {
-    fbo_.reset();
-    program_.reset();
-    lut_texture_.reset();
-    for(auto& tile : tiles_)
-      tile->releaseGL();
-    gl_context_->doneCurrent();
-  }
-  delete gl_context_; gl_context_ = nullptr;
-  delete gl_surface_; gl_surface_ = nullptr;
-}
-
 void GggsTileLayer::setColormap(map::ColorMap::Type type)
 {
-  if(type == colormap_.type())
+  if(type == renderer_.colormap())
     return;
-  colormap_.setType(type);
-  lut_dirty_ = true;
-  cached_image_ = QImage();   // force a re-render with the new ramp
+  renderer_.setColormap(type);   // re-bakes the LUT on next render
+  cached_image_ = QImage();      // force a re-render with the new ramp
   writeSettings();
   update(boundingRect());
 }
@@ -719,25 +544,13 @@ void GggsTileLayer::applyBand(int band)
   // switch so the drop isn't invisible.
   // A null/not-yet-created context (the layer never painted — applyBand() can fire
   // from readSettings() before first paint) is expected: no textures exist yet, so
-  // the switch just clears pixels + reloads with no stale GL state. But if the
-  // context EXISTS and makeCurrent FAILS, the old-band textures can't be released;
-  // setBand() below still clears each tile's pixels, and texture() never refreshes
-  // an EXISTING texture, so a stale old-band texture would render against the new
-  // band's range once pixels reload. Match renderImage()'s response to a
-  // makeCurrent failure — mark GL failed so ensureGL() short-circuits and the layer
-  // stops rendering rather than drawing a stale-band frame.
-  bool have_context = false;
-  if(gl_context_ && gl_surface_)
-  {
-    if(gl_context_->makeCurrent(gl_surface_))
-      have_context = true;
-    else
-    {
-      qWarning("GggsTileLayer: makeCurrent failed during band switch; "
-               "tiles not rendered");
-      gl_failed_ = true;
-    }
-  }
+  // the switch just clears pixels + reloads with no stale GL state — skip the
+  // release pass entirely (hasContext() == false) rather than forcing the offscreen
+  // context into existence early. If the context EXISTS but makeCurrent FAILS, the
+  // renderer latches its GL-failed flag (renderImage() then returns null and the
+  // layer stops rendering rather than drawing a stale-band frame) and we leave the
+  // textures alone.
+  bool have_context = renderer_.hasContext() && renderer_.makeCurrent();
   int dropped = 0;
   for(auto& tile : tiles_)
   {
@@ -751,7 +564,7 @@ void GggsTileLayer::applyBand(int band)
     tile->setBand(band);
   }
   if(have_context)
-    gl_context_->doneCurrent();
+    renderer_.doneCurrent();
   if(dropped > 0)
     qWarning("GggsTileLayer: %d tile(s) lack band %d; left on their prior band",
              dropped, band);
@@ -791,7 +604,7 @@ void GggsTileLayer::contextMenu(QMenu* menu)
   {
     QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
     action->setCheckable(true);
-    action->setChecked(type == colormap_.type());
+    action->setChecked(type == renderer_.colormap());
     connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
   }
 
@@ -846,7 +659,7 @@ void GggsTileLayer::readSettings()
   // the first-run default flips.
   setVisible(settings.value("visible", false).toBool());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
   // [camp#108] Persisted band (default 1). Applied via applyBand() below — the
   // non-persisting band switch (texture release + reload + range reset) — so the
   // read path does NOT write the value straight back out (setBand() would). Only
@@ -855,10 +668,9 @@ void GggsTileLayer::readSettings()
   const int band = settings.value("band", 1).toInt();
   settings.endGroup();
   settings.endGroup();
-  if(type != colormap_.type())
+  if(type != renderer_.colormap())
   {
-    colormap_.setType(type);
-    lut_dirty_ = true;
+    renderer_.setColormap(type);
     cached_image_ = QImage();
   }
   if(band != band_)
@@ -871,7 +683,7 @@ void GggsTileLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
-  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
   settings.setValue("band", band_);   // [camp#108] selected band round-trips
   settings.endGroup();
   settings.endGroup();
