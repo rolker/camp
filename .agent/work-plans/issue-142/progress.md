@@ -125,3 +125,15 @@ The issue requires: when the operator views an uncertainty band → default colo
 - `RasterBandMeta` (returned by `GggsTileLayer::metadata(band)`) carries band name and data-type info. If uncertainty bands are consistently named (e.g. "uncertainty", "quality"), name-matching is sufficient.
 - The plan must choose: (a) name-match at band-switch time, (b) explicit metadata field, or (c) operator-only (no auto-default). Option (a) is consistent with the existing band-name-driven context-menu pattern and is the least-invasive path.
 - The `threshold` is unspecified in the issue; plan should propose a default (e.g. 1.0, or the band's 95th-percentile from metadata if available) and record it.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-29 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-142/plan.md` at `faf2374`
+**Branch**: feature/issue-142 at `faf2374`
+**Phases**: 2 (PR1 this run — backend + numeric UI; PR2 — colorbar widget embed)
+
+### Open questions
+- [ ] camp#138 sequencing: if live-cache auto-range refold lands before PR1 merges, verify the `range_model_.update_auto` call site in `foldAutoRange` does not conflict with #138's fold-logic changes (expected orthogonal, but warrants diff review at merge time).
