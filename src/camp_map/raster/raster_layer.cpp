@@ -2,6 +2,7 @@
 #include <gdal_priv.h>
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
+#include <marine_colormap/palette.hpp>
 #include <QPainter>
 #include <QOpenGLTexture>
 #include <QTransform>
@@ -29,8 +30,8 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
-  // [camp#63] Default scalar ramp is Viridis (the renderer defaults to Grayscale).
-  renderer_.setColormap(map::ColorMap::Viridis);
+  // [camp#63] Default scalar ramp is viridis (the renderer defaults to grayscale).
+  renderer_.setColormap("viridis");
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
   // [#59 ADR-0003] Establish the scene extent + world transform synchronously,
   // before kicking off the async pixel load, so the layer knows where it is
@@ -460,14 +461,14 @@ QList<RasterFieldItem> RasterLayer::items()
   return result;
 }
 
-void RasterLayer::setColormap(map::ColorMap::Type type)
+void RasterLayer::setColormap(const std::string& name)
 {
-  if(type == renderer_.colormap())
+  if(name == renderer_.colormap())
     return;
   // [camp#134] A colormap change is now just an LUT re-bake — no re-warp. The
   // scalar value texture already holds the raw data, so the shader recolours it on
   // the next render.
-  renderer_.setColormap(type);
+  renderer_.setColormap(name);
   writeSettings();
   cached_image_ = QImage();
   update(boundingRect());
@@ -478,13 +479,14 @@ void RasterLayer::contextMenu(QMenu* menu)
   map::Layer::contextMenu(menu);
   if(!is_scalar_)              // colormap only applies to scalar (depth) rasters
     return;
+  // [camp#141] Expose the FULL marine_colormap registry, not just the legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
-  for(auto type : map::ColorMap::allTypes())
+  for(const std::string& name : marine_colormap::palette_names())
   {
-    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    QAction* action = colormap_menu->addAction(QString::fromStdString(name));
     action->setCheckable(true);
-    action->setChecked(type == renderer_.colormap());
-    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+    action->setChecked(name == renderer_.colormap());
+    connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 }
 
@@ -494,14 +496,18 @@ void RasterLayer::readSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
-  const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
+  // [camp#141] Persisted palette name; case-insensitive read + registry-validated
+  // (unknown -> grayscale).
+  std::string colormap = settings.value(
+    "colormap", QString::fromStdString(renderer_.colormap())).toString().toLower().toStdString();
+  if(!marine_colormap::palette_index(colormap))
+    colormap = "grayscale";
   settings.endGroup();
   settings.endGroup();
   // Apply the persisted ramp (re-bake + re-render if it differs); don't re-persist.
-  if(type != renderer_.colormap())
+  if(colormap != renderer_.colormap())
   {
-    renderer_.setColormap(type);
+    renderer_.setColormap(colormap);
     cached_image_ = QImage();
     update(boundingRect());
   }
@@ -523,7 +529,7 @@ void RasterLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
-  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
+  settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.endGroup();
   settings.endGroup();
 }

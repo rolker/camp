@@ -4,6 +4,8 @@
 #include "gggs_tile_util.h"
 #include "../map_view/web_mercator.h"
 
+#include <marine_colormap/palette.hpp>
+
 #include <QAction>
 #include <QDir>
 #include <QFileInfo>
@@ -459,11 +461,11 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   painter->restore();
 }
 
-void GggsTileLayer::setColormap(map::ColorMap::Type type)
+void GggsTileLayer::setColormap(const std::string& name)
 {
-  if(type == renderer_.colormap())
+  if(name == renderer_.colormap())
     return;
-  renderer_.setColormap(type);   // re-bakes the LUT on next render
+  renderer_.setColormap(name);   // re-bakes the LUT on next render
   cached_image_ = QImage();      // force a re-render with the new ramp
   writeSettings();
   update(boundingRect());
@@ -599,13 +601,15 @@ void GggsTileLayer::contextMenu(QMenu* menu)
   QAction* rescan_action = menu->addAction("Rescan");
   connect(rescan_action, &QAction::triggered, this, [this]() { rescan(); });
 
+  // [camp#141] Expose the FULL marine_colormap registry (grayscale/bronze/thermal/
+  // viridis/turbo/quality), not just the three legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
-  for(auto type : map::ColorMap::allTypes())
+  for(const std::string& name : marine_colormap::palette_names())
   {
-    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    QAction* action = colormap_menu->addAction(QString::fromStdString(name));
     action->setCheckable(true);
-    action->setChecked(type == renderer_.colormap());
-    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+    action->setChecked(name == renderer_.colormap());
+    connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 
   // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
@@ -658,8 +662,13 @@ void GggsTileLayer::readSettings()
   // `visible` value still wins (the operator's on/off choice round-trips); only
   // the first-run default flips.
   setVisible(settings.value("visible", false).toBool());
-  const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
+  // [camp#141] Persisted palette name. Read case-insensitively (camp already stores
+  // lowercase, but tolerate a legacy capitalized "Viridis"/"Turbo") and validate
+  // against the marine_colormap registry; an unknown name falls back to grayscale.
+  std::string colormap = settings.value(
+    "colormap", QString::fromStdString(renderer_.colormap())).toString().toLower().toStdString();
+  if(!marine_colormap::palette_index(colormap))
+    colormap = "grayscale";
   // [camp#108] Persisted band (default 1). Applied via applyBand() below — the
   // non-persisting band switch (texture release + reload + range reset) — so the
   // read path does NOT write the value straight back out (setBand() would). Only
@@ -668,9 +677,9 @@ void GggsTileLayer::readSettings()
   const int band = settings.value("band", 1).toInt();
   settings.endGroup();
   settings.endGroup();
-  if(type != renderer_.colormap())
+  if(colormap != renderer_.colormap())
   {
-    renderer_.setColormap(type);
+    renderer_.setColormap(colormap);
     cached_image_ = QImage();
   }
   if(band != band_)
@@ -683,7 +692,7 @@ void GggsTileLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
-  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
+  settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.setValue("band", band_);   // [camp#108] selected band round-trips
   settings.endGroup();
   settings.endGroup();

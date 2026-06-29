@@ -18,6 +18,7 @@ find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
+find_package(marine_colormap REQUIRED)
 find_package(marine_interfaces REQUIRED)
 find_package(marine_tiled_raster_store REQUIRED)
 find_package(marine_nav_interfaces REQUIRED)
@@ -249,7 +250,6 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map/map_item_mime_data.cpp
     src/camp_map/map/layer_list.cpp
     src/camp_map/map/layer.cpp
-    src/camp_map/map/color_map.cpp
     src/camp_map/map_tiles/cached_tile_loader.cpp
     src/camp_map/map_tiles/map_tiles.cpp
     src/camp_map/map_tiles/tile.cpp
@@ -293,6 +293,11 @@ target_link_libraries(camp_map
         Qt5::Positioning
     PRIVATE
         ${GDAL_LIBRARY}
+        # [camp#141] marine_colormap is consumed only inside camp_map's .cpp files
+        # (the raster LUT bake / CPU sample); no marine_colormap type appears in any
+        # installed camp_map header (the colormap is a std::string name), so link it
+        # PRIVATE — it does not propagate into camp_map's public link/usage interface.
+        marine_colormap::marine_colormap
 )
 
 install(TARGETS camp_map
@@ -347,6 +352,7 @@ ament_target_dependencies(camp_map_ros
     grid_map_ros
     marine_ais_msgs
     marine_autonomy
+    marine_colormap
     marine_interfaces
     marine_tiled_raster_store
     rclcpp
@@ -402,13 +408,14 @@ if(BUILD_TESTING)
   )
 
 
-  # ColorMap facility unit tests (camp#63)
+  # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
+  # palettes, the exposed registry, and the name-resolution rules the layers use.
   ament_add_gtest(test_color_map
     test/test_color_map.cpp
   )
   target_link_libraries(test_color_map
-    camp_map
-    Qt5::Test
+    marine_colormap::marine_colormap
+    Qt5::Core
   )
 
   # Collision-monitor polygon converter unit tests

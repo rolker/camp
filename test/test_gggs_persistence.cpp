@@ -322,7 +322,7 @@ TEST(GggsPersistence, SameDisplayNameDistinctPersistence)
     // Give A non-default visible/colormap/band; leave B at its defaults; persist.
     ASSERT_EQ(a->bandCount(), 2);
     a->setVisible(true);
-    a->setColormap(camp::map::ColorMap::Viridis);
+    a->setColormap("viridis");
     a->setBand(2);
     a->writeSettings();
 
