@@ -176,3 +176,22 @@ edits were made cleanly and committed; **host verifies** via
 ### Next step
 Host build + test. On green, this is ready for PR (Closes #141); reconcile camp#63's
 "camp-internal ColorMap" wording per ADR-0008.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 14:48 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-141 at `eb483bd`
+**Mode**: pre-push
+**Depth**: Deep (reason: new project ADR + render-path/concurrency refactor + new dependency)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix; both suggestions are pre-existing/parity-preserving niceties
+
+### Findings
+- [ ] (suggestion) `GridMap::readSettings` reads `colormap_name_` as the QSettings default without holding `mutex_` (pre-existing pattern; now a std::string — read default under lock or use literal "grayscale") — `src/camp_map/ros/grids/grid_map.cpp:250`
+- [ ] (suggestion) `QColor(c.r, c.g, c.b)` drops palette alpha; parity-preserving (all built-in palettes opaque) — optionally pass `c.a` — `src/camp_map/ros/grids/grid_map.cpp:170`
+- [ ] (follow-up) Post the camp#63 "camp-internal ColorMap" wording reconciliation comment when `gh` is authenticated — `docs/decisions/0008-adopt-marine-colormap-lut-bake.md`
+
+**Notes**: API usage verified correct against live marine_colormap headers (find_palette/bake_lut/palette_index/palette_names/sample/to_rgba8 signatures + 6-palette registry order). #134 GPU shader contract preserved (identity TransferParams). Static analysis: repo has no lint/CI gate; cppcheck cannot parse Qt without project config. Adversarial: 2 disjoint-lens passes both independently surfaced the two suggestions above (cross-pass confirmed).
