@@ -286,3 +286,91 @@ Verdict is **changes-requested** → host (`/run-issue`) should dispatch
 **`address-findings`** to work the two must-fixes (and the suggestions as warranted),
 then re-dispatch `review-code` for a round-2 pre-push read. The diff is not pushed
 until a pre-push review returns **approved**.
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-29 05:20 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Phase**: address-findings (Round 1 — pre-push review changes-requested)
+**Branch**: feature/issue-134
+
+Worked the 2 must-fixes and all 4 folded suggestions from the Round-1 Local Review,
+plus the requested sub-unit-range test.
+
+### Must-fixes
+1. **Scalar-colormap true-span parity** — `raster_gl_renderer.cpp` fragment shader.
+   Changed the Scalar denominator from `max(u_max - u_min, 1.0)` to
+   `max(u_max - u_min, 1e-6)`. The `1.0` floor crushed contrast for any data span
+   < 1.0 (silent regression once small-range RasterLayer charts joined the shared
+   shader); the `1e-6` floor keeps the divide-by-zero guard for a genuinely
+   degenerate (zero-width) range while normalizing over the TRUE span like the old
+   `ColorMap::color`. Verified against baseline (`85e66a8~1`): GGGS and Sonar used
+   the same `1.0` floor but their depth/backscatter spans are always ≫1, so they
+   render identically; only sub-unit RasterLayer/GGGS data now stretches correctly.
+   Negative-VALUED ranges are unaffected (span stays positive).
+2. **Prune GPU-texture leak** — `sonar_live_cache_layer.cpp` `handleCatalog()`.
+   The prune loop erased `Entry`s (destroying each `QOpenGLTexture`) without a current
+   GL context → GPU resources leaked as tiles churn. Wrapped the erase loop in
+   `renderer_.makeCurrent()` / `doneCurrent()` (guarded on `!to_prune.empty()` and a
+   successful makeCurrent, mirroring the dtor's null-context handling) and reset each
+   pruned texture under the current context before erase.
+   **Other eviction sites verified**: the only other `tiles_` mutation that can
+   destroy a live texture is `warmLoad()`'s `insert_or_assign` on a disable→re-enable
+   (disable leaves textured entries intact). Guarded that loop with the same
+   makeCurrent pattern (skipped on the first, empty-map warm load).
+
+### Suggestions (folded in)
+- **Silent scalar RasterIO failure** (`raster_layer.cpp`): a failed scalar read no
+  longer falls through to `result.ok = true`; it returns with `ok = false` so
+  `imageReady()` reports `"(load failed)"` instead of silent success + blank layer.
+- **`renderToImage` doc/behavior** (`raster_gl_renderer.cpp`): on shader-compile
+  failure it now returns a null `QImage()` (matching the header contract) BEFORE
+  allocating/binding the FBO, instead of returning a non-null transparent image the
+  caller would cache as a valid empty render.
+- **RGBA mipmap alpha fringing** (`raster_layer.cpp` + shader): the RGBA upload now
+  converts to `Format_RGBA8888_Premultiplied` so mipmap/linear filtering box-filters
+  premultiplied texels (no dark fringes from transparent cells' black RGB). The
+  shared shader's Rgba branch correspondingly emits the texel as-is (`gl_FragColor =
+  c`) instead of premultiplying again (`c.rgb * c.a`). Only RasterLayer produces Rgba
+  items, so the change is contained; the opaque-red unit test is unaffected.
+- **Pre-existing null-deref** (`raster_layer.cpp`): guarded
+  `GDALColorEntry* ce = GetColorEntry(...)` with `if(!ce) continue;` before reading
+  `ce->c3` (palette index out of range now skips the pixel rather than crashing).
+
+### Test (must-fix 1)
+Added `RasterGlRendererTest.ScalarSubUnitRangeSpansColormap` to
+`test/test_raster_gl_renderer.cpp`: a 2×1 R32F tile (col0 = data_min 0.0,
+col1 = data_max 0.3), Grayscale, range [0.0, 0.3]. Asserts the max sample reaches the
+top of the ramp (`hi.red() > 200`) — under the old `max(span, 1.0)` floor it would
+only reach t = 0.3 → grey ~76, so the test FAILS under the floor and PASSES with the
+true-span fix. Also asserts preserved contrast (`hi.red() - lo.red() > 150`).
+
+### Build / test — HONEST STATUS (not built in-container)
+`source setup.bash → ./ui_ws/build.sh camp` **fails to configure** here exactly as the
+prior entries reported: the lower layers are unbuilt in this container, so camp's ROS
+message deps are absent:
+
+```
+CMake Error at CMakeLists.txt:14 (find_package):
+  Could not find a package configuration file provided by "marine_ais_msgs"
+```
+
+So `./ui_ws/test.sh camp` was **not run** — no verbatim ctest counts. I did NOT fake a
+build. Instead I `g++ -std=c++17 -fsyntax-only`'d the changed ROS-free units against
+system Qt5 (Core/Gui/Widgets/OpenGL/Positioning/Concurrent) + GDAL — all clean (only
+the codebase's pre-existing `QOpenGLTexture::setData(void*)` deprecation warning):
+
+- `raster_gl_renderer.cpp` — clean
+- `raster_layer.cpp` — clean
+- `test_raster_gl_renderer.cpp` — clean
+
+`sonar_live_cache_layer.cpp` pulls in ROS headers so can't be syntax-checked in
+isolation; its diff is a localized makeCurrent/doneCurrent guard mirroring the dtor.
+
+The offscreen-GL render tests SKIP in-container and RUN on a GL host (by design). A
+full `build.sh`/`test.sh` on a host with the lower layers built — including the new
+`ScalarSubUnitRangeSpansColormap` case — is the remaining verification step.
+
+### Next step
+Host should re-dispatch `review-code` for a Round-2 pre-push read; on a GL host,
+confirm `test_raster_gl_renderer` RUNs (not SKIP) and the new sub-unit case passes.
