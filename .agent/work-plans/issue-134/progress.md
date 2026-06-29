@@ -456,3 +456,51 @@ Lifecycle unchanged: **Local Review** (approved) → push / open PR → **triage
 All 3 optional suggestions now applied, so nothing remains pending from Round 2. On a
 GL host with lower layers built, run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp`
 and confirm `test_raster_gl_renderer` RUNs (not SKIP) and passes.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 05:52 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-134 at `8bbd868` (code under review: `7a80af9`)
+**Mode**: pre-push
+**Depth**: Deep (reason: large cross-cutting GL refactor, new ADR-0007, concurrency/lifecycle)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 3 | **Ship**: recommended — Round-3 read of the consistency-nits commit; 0 must-fix, 0 surviving suggestions; delta since Round-2 approval is a no-behavior-change refactor and all 3 Round-2 suggestions are applied.
+
+Round-3 read of the address-findings consistency commit `7a80af9` (the 3 Round-2
+suggestions: hasContext-gated makeCurrent, member-decl reorder, redundant Nearest
+filter drop). Deep tier: 2 disjoint-lens Claude Adversarial passes (Lens A logic,
+Lens B lifecycle/concurrency). Lens A clean. Lens B raised 4 findings — the lead
+adversarially verified ALL 4 as false positives / non-actionable against the code:
+- warmLoad `insert_or_assign` "leak": FP — `makeCurrent()` is hoisted ABOVE the
+  insert loop (`sonar_live_cache_layer.cpp:32-33` before `:44`), so displaced
+  textures destruct under a current context.
+- stale-texture race between `items()` and `renderToImage()` (raised twice): FP —
+  `renderImage()` calls both back-to-back synchronously (`:7-12`); the Qt event loop
+  never spins between them, so the queued `handleCatalog` slot cannot interleave;
+  textures are touched only on the GUI thread.
+- dtor leak if `makeCurrent()` fails: not actionable — if makeCurrent fails, uploads
+  (also gated on makeCurrent) never succeeded, so there are no GPU textures to leak.
+
+Lead verification of the delta: member reorder is correct (no `-Wreorder`; each ctor
+init-list names one early member; dtor bodies already release textures under a current
+context, so the reorder is a sound defensive backstop). hasContext() gating sound
+(no context ⟹ no texture uploaded). Redundant Nearest-filter drop safe (renderer sets
+the scalar filter per-item at draw, `raster_gl_renderer.cpp:307-309`). Prior Round-1
+must-fixes verified still in place (true-span `max(span,1e-6)` `:84`; null-image on
+shader-compile-fail before FBO `:220`; Rgba emitted as-is `:93`). Governance: ADR-0007
+added cleanly; ADR-0006/0001 contracts untouched. Plan adherence strong. Static
+analysis limited (env cannot build lower layers; cppcheck misparses Qt namespaces);
+implementer `g++ -fsyntax-only` clean.
+
+### Findings
+- [ ] No issues found. LGTM.
+
+### Next step
+Verdict is **approved** (Round 3, 0 must-fix). Lifecycle: **Local Review** → push /
+open PR → **triage-reviews**. Nothing remains pending. Remaining verification
+(unchanged, environmental only): on a GL host with the lower layers built, run
+`./ui_ws/build.sh camp && ./ui_ws/test.sh camp` and confirm `test_raster_gl_renderer`
+RUNs (not SKIP) — including the sub-unit-range case — and passes.
