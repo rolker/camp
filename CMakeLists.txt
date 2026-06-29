@@ -250,7 +250,6 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map/map_item_mime_data.cpp
     src/camp_map/map/layer_list.cpp
     src/camp_map/map/layer.cpp
-    src/camp_map/map/color_map.cpp
     src/camp_map/map_tiles/cached_tile_loader.cpp
     src/camp_map/map_tiles/map_tiles.cpp
     src/camp_map/map_tiles/tile.cpp
@@ -409,13 +408,14 @@ if(BUILD_TESTING)
   )
 
 
-  # ColorMap facility unit tests (camp#63)
+  # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
+  # palettes, the exposed registry, and the name-resolution rules the layers use.
   ament_add_gtest(test_color_map
     test/test_color_map.cpp
   )
   target_link_libraries(test_color_map
-    camp_map
-    Qt5::Test
+    marine_colormap::marine_colormap
+    Qt5::Core
   )
 
   # Collision-monitor polygon converter unit tests

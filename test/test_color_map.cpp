@@ -1,76 +1,143 @@
-// Unit tests for camp::map::ColorMap (camp#63).
+// Characterization tests for the marine_colormap adoption (camp#141).
+//
+// camp's internal camp::map::ColorMap is deleted; the colormap is now a
+// marine_colormap palette selected by name and baked into the GPU LUT (ADR-0008)
+// or sampled on the CPU (GridMap). viridis/turbo are now the CANONICAL 256-entry
+// matplotlib/Google tables — an INTENDED colour change from camp's old sparse
+// 7/8-stop approximations — so these tests SNAPSHOT the new canonical bake_lut
+// output rather than asserting equivalence to the retired ramp. grayscale still
+// matches exactly (a plain black->white ramp).
+//
+// The render-path properties (NaN + finite-NoData discard, Nearest filtering,
+// sub-unit range stretch) live with the GPU shader and are covered by
+// test_raster_gl_renderer.cpp; here we pin the palette colours, the exposed
+// registry, and the name-resolution rules the layers rely on.
 #include <gtest/gtest.h>
-#include <cmath>
-#include "map/color_map.h"
 
-using camp::map::ColorMap;
+#include <QString>
 
-TEST(ColorMap, GrayscaleEndpointsAndMidpoint)
+#include <string>
+#include <vector>
+
+#include <marine_colormap/colormap.hpp>
+#include <marine_colormap/palette.hpp>
+#include <marine_colormap/transfer.hpp>
+
+using marine_colormap::Rgba8;
+
+namespace
 {
-  ColorMap cm(ColorMap::Grayscale);
-  EXPECT_EQ(cm.colorNormalized(0.0), QColor(0, 0, 0));
-  EXPECT_EQ(cm.colorNormalized(1.0), QColor(255, 255, 255));
-  // Midpoint is a mid grey on the diagonal.
-  const QColor mid = cm.colorNormalized(0.5);
-  EXPECT_EQ(mid.red(), mid.green());
-  EXPECT_EQ(mid.green(), mid.blue());
-  EXPECT_NEAR(mid.red(), 128, 1);
+
+// The camp colormap path bakes a 256-entry LUT with IDENTITY TransferParams (the
+// per-band range stays in the shader; the LUT carries only the palette ramp — see
+// RasterGlRenderer::ensureLut / ADR-0008). Reproduce that exact bake here.
+std::vector<Rgba8> bake(const std::string& name)
+{
+  const marine_colormap::Palette* pal = marine_colormap::find_palette(name);
+  EXPECT_NE(pal, nullptr) << "palette not found: " << name;
+  return marine_colormap::bake_lut(*pal, marine_colormap::TransferParams{}, 256);
 }
 
-TEST(ColorMap, RangeMapsToNormalized)
+// Mirrors the case-insensitive, registry-validated settings read every migrated
+// layer performs: lowercase the stored string, validate against the registry, and
+// fall back to grayscale for an unknown name.
+std::string canonicalName(const QString& stored)
 {
-  ColorMap cm(ColorMap::Grayscale);
-  // value at min -> 0, at max -> 1, halfway -> 0.5.
-  EXPECT_EQ(cm.color(10.0, 10.0, 20.0), cm.colorNormalized(0.0));
-  EXPECT_EQ(cm.color(20.0, 10.0, 20.0), cm.colorNormalized(1.0));
-  EXPECT_EQ(cm.color(15.0, 10.0, 20.0), cm.colorNormalized(0.5));
+  std::string name = stored.toLower().toStdString();
+  if(!marine_colormap::palette_index(name))
+    name = "grayscale";
+  return name;
 }
 
-TEST(ColorMap, ClampsOutOfRange)
+}  // namespace
+
+// The colormap context menus are built from palette_names(): pin the full exposed
+// registry so a palette add/rename/reorder is a deliberate, visible change.
+TEST(Colormap, RegistryIsTheFullSix)
 {
-  ColorMap cm(ColorMap::Turbo);
-  // Below min clamps to the t=0 colour; above max clamps to the t=1 colour.
-  EXPECT_EQ(cm.color(-5.0, 0.0, 10.0), cm.colorNormalized(0.0));
-  EXPECT_EQ(cm.color(99.0, 0.0, 10.0), cm.colorNormalized(1.0));
+  const std::vector<std::string> expected = {
+    "grayscale", "bronze", "thermal", "viridis", "turbo", "quality"};
+  EXPECT_EQ(marine_colormap::palette_names(), expected);
 }
 
-TEST(ColorMap, NanAndDegenerateRangeAreTransparent)
+// grayscale is a plain black->white ramp: it matches camp's old grayscale exactly.
+TEST(Colormap, GrayscaleMatchesExactly)
 {
-  ColorMap cm(ColorMap::Viridis);
-  EXPECT_EQ(cm.colorNormalized(std::nan("")).alpha(), 0);
-  EXPECT_EQ(cm.color(std::nan(""), 0.0, 1.0).alpha(), 0);
-  // max <= min is degenerate -> transparent (no division-by-zero colour).
-  EXPECT_EQ(cm.color(5.0, 10.0, 10.0).alpha(), 0);
-  EXPECT_EQ(cm.color(5.0, 10.0, 1.0).alpha(), 0);
+  const std::vector<Rgba8> lut = bake("grayscale");
+  EXPECT_EQ(lut.front().r, 0);   EXPECT_EQ(lut.front().g, 0);   EXPECT_EQ(lut.front().b, 0);
+  EXPECT_EQ(lut.back().r, 255);  EXPECT_EQ(lut.back().g, 255);  EXPECT_EQ(lut.back().b, 255);
+  // Mid LUT entry is a neutral grey on the diagonal.
+  const Rgba8 mid = lut[128];
+  EXPECT_EQ(mid.r, mid.g);
+  EXPECT_EQ(mid.g, mid.b);
+  EXPECT_NEAR(mid.r, 128, 1);
 }
 
-TEST(ColorMap, OpaqueColoursInRange)
+// viridis: snapshot the NEW canonical table (endpoints exact, midpoint ~1 LSB).
+TEST(Colormap, ViridisIsCanonical)
 {
-  for(auto type : ColorMap::allTypes())
+  const std::vector<Rgba8> lut = bake("viridis");
+  EXPECT_EQ(lut.front().r, 68);  EXPECT_EQ(lut.front().g, 1);   EXPECT_EQ(lut.front().b, 84);
+  EXPECT_EQ(lut.back().r, 253);  EXPECT_EQ(lut.back().g, 231);  EXPECT_EQ(lut.back().b, 37);
+  const Rgba8 mid = lut[128];
+  EXPECT_NEAR(mid.r, 33, 1);
+  EXPECT_NEAR(mid.g, 145, 1);
+  EXPECT_NEAR(mid.b, 140, 1);
+  // The canonical midpoint is a teal green (~145), NOT camp's old sparse-ramp green
+  // (~168): this guards that the canonical table — not the retired approximation —
+  // is in use. An intended change, documented in ADR-0008.
+  EXPECT_LT(mid.g, 160);
+}
+
+// turbo: snapshot the NEW canonical table.
+TEST(Colormap, TurboIsCanonical)
+{
+  const std::vector<Rgba8> lut = bake("turbo");
+  EXPECT_EQ(lut.front().r, 48);  EXPECT_EQ(lut.front().g, 18);  EXPECT_EQ(lut.front().b, 59);
+  EXPECT_EQ(lut.back().r, 122);  EXPECT_EQ(lut.back().g, 4);    EXPECT_EQ(lut.back().b, 3);
+  const Rgba8 mid = lut[128];
+  EXPECT_NEAR(mid.r, 164, 1);
+  EXPECT_NEAR(mid.g, 252, 1);
+  EXPECT_NEAR(mid.b, 60, 1);
+}
+
+// Every palette is fully opaque across its in-range entries (no accidental
+// transparency in the LUT; transparency is a render-path NoData concern, not a
+// palette one).
+TEST(Colormap, AllPalettesOpaqueInRange)
+{
+  for(const std::string& name : marine_colormap::palette_names())
   {
-    ColorMap cm(type);
-    EXPECT_EQ(cm.colorNormalized(0.0).alpha(), 255);
-    EXPECT_EQ(cm.colorNormalized(0.5).alpha(), 255);
-    EXPECT_EQ(cm.colorNormalized(1.0).alpha(), 255);
+    const std::vector<Rgba8> lut = bake(name);
+    EXPECT_EQ(lut.front().a, 255) << name;
+    EXPECT_EQ(lut[128].a, 255) << name;
+    EXPECT_EQ(lut.back().a, 255) << name;
   }
 }
 
-TEST(ColorMap, NamedRampsDifferFromGrayscale)
+// palette_names() round-trips through the name<->index<->palette registry, and an
+// unknown name resolves to nullptr/nullopt (the layers fall back to grayscale).
+TEST(Colormap, NameRoundTrip)
 {
-  // A perceptual ramp's midpoint is not a neutral grey.
-  const QColor v = ColorMap(ColorMap::Viridis).colorNormalized(0.5);
-  EXPECT_FALSE(v.red() == v.green() && v.green() == v.blue());
+  for(const std::string& name : marine_colormap::palette_names())
+  {
+    const auto index = marine_colormap::palette_index(name);
+    ASSERT_TRUE(index.has_value()) << name;
+    EXPECT_EQ(marine_colormap::palette(*index).name(), name);
+    EXPECT_NE(marine_colormap::find_palette(name), nullptr) << name;
+  }
+  EXPECT_FALSE(marine_colormap::palette_index("nope").has_value());
+  EXPECT_EQ(marine_colormap::find_palette("nope"), nullptr);
 }
 
-TEST(ColorMap, NameRoundTrip)
+// The persisted-name migration rule the layers apply: camp stores lowercase, but a
+// legacy capitalized "Viridis"/"Turbo" still resolves; an unknown name -> grayscale.
+TEST(Colormap, CaseInsensitiveSettingsFallback)
 {
-  for(auto type : ColorMap::allTypes())
-  {
-    bool ok = false;
-    EXPECT_EQ(ColorMap::typeFromName(ColorMap::name(type), &ok), type);
-    EXPECT_TRUE(ok);
-  }
-  bool ok = true;
-  EXPECT_EQ(ColorMap::typeFromName("nope", &ok), ColorMap::Grayscale);
-  EXPECT_FALSE(ok);
+  EXPECT_EQ(canonicalName("viridis"), "viridis");
+  EXPECT_EQ(canonicalName("Viridis"), "viridis");
+  EXPECT_EQ(canonicalName("TURBO"), "turbo");
+  EXPECT_EQ(canonicalName("grayscale"), "grayscale");
+  EXPECT_EQ(canonicalName("nope"), "grayscale");
+  EXPECT_EQ(canonicalName(""), "grayscale");
 }
