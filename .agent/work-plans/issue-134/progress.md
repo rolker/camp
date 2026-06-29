@@ -139,3 +139,115 @@ host-dispatched Opus sub-agent — not author self-review).
 - [ ] (suggestion) RasterLayer RGBA/palette path vs single-band R32F renderer: recommended option (a) (CPU composite → RGBA8) needs a colormap-bypass mode in the renderer, but the sketched `render(items, data_min, data_max, mvp)` + `RasterFieldItem{texture, nodata}` only expresses scalar R32F+LUT. Add a format/mode field to `RasterFieldItem` (or a render overload) and resolve the open question before step 6 — `plan.md:46-52`, `plan.md:142-146`
 - [ ] (suggestion) ADR-table label wrong: "ADR-0001 (camp: Adopt ADRs)" — camp ADR-0001 is "TopicBridge and the executor contract"; no camp "Adopt ADRs" ADR exists (that's a workspace ADR). Also camp ADR-0006 (live tile cache) governs `SonarLiveCacheLayer` — confirm the render-path migration leaves its persistence/subscription contract untouched and note it in the table — `plan.md:124-129`
 - [ ] (suggestion) New `test_raster_gl_renderer.cpp` requires an offscreen GL context; mirror `test_gggs_render`'s harness and confirm CI provides GL — `plan.md:93-96`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-29 04:51 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-134 — commits `85e66a8`..`10f1159` (5, ordered)
+**Plan**: `.agent/work-plans/issue-134/plan.md` at `85e66a8` (synced)
+
+### What landed
+
+Full consolidation in one PR, committed step-by-step (review suggestion 1):
+
+- **(a) `85e66a8`** — ADR-0007 + `raster/raster_field_source.h` (interface:
+  `bands()`/`metadata()`/`items()`/`dataRange()` + `RasterFieldItem`) +
+  `raster/raster_gl_renderer.{h,cpp}` (the shared renderer). One compiled program +
+  colormap LUT per GL context, the unified fragment shader, the geo→Web-Mercator
+  tessellation, and the data-texture filter all live here now. The renderer owns
+  its own offscreen context/surface/FBO; sources release their textures between
+  `makeCurrent()`/`doneCurrent()`.
+- **(b) `26bedba`** — `GggsTileLayer`: deleted its kVertex/kFragment shaders,
+  `ensureProgram`/`ensureLut`, per-vertex tessellation and own GL context/FBO;
+  implements `RasterFieldSource`; `renderImage()` delegates. QtConcurrent load +
+  atomic `pixelsLoaded()` unchanged.
+- **(c) `f517d27`** — `SonarLiveCacheLayer`: deleted the duplicated shader block +
+  its `// NOTE: shader duplicated; unify via camp#134` marker; delegates. ADR-0006
+  invariants (persistence, opt-in subscription, reconcile/prune, GUI-thread
+  marshalling) untouched — only `renderImage()`'s GL internals changed.
+- **(d) `3f2e855`** — `RasterLayer`: replaced the QPainter/mipmap path with the GL
+  renderer (own offscreen context via the shared renderer). Adopts the GggsTileLayer
+  placement convention (NW anchor + `fromScale(1,-1)`). Async GDAL load + abort +
+  RAII handle-close kept; a scalar colormap change is now an LUT re-bake (no
+  re-warp).
+- **(e) `10f1159`** — tests.
+
+### NaN fix location
+
+Lands ONCE, in the unified fragment shader in `raster_gl_renderer.cpp`:
+`if(v != v) discard;` (NaN, GLSL 1.20-portable) before
+`if(u_has_nodata != 0 && v == u_nodata) discard;` (finite sentinel). All three
+adapters inherit it; the two old per-layer copies are gone.
+
+### RGBA format handling (review suggestion 2)
+
+`RasterFieldItem::Format{Scalar,Rgba}` resolves the open question. Scalar bands →
+R32F + colormap LUT (NaN/finite discard); RasterLayer's palette/RGB charts →
+CPU-composited RGBA8 sampled directly (LUT bypassed; transparency from the
+composited alpha), with mipmaps for zoomed-out LOD. A `geographic` flag lets the
+one renderer serve both lat/lon tiles (warped in-shader) and RasterLayer (already
+GDAL-reprojected → a single linear quad). Per-band channel select for colour files
+is left a future issue (composited on CPU as today).
+
+### Parity verification
+
+- Multi-band select, colormap LUT + per-band/auto-range, Nearest sampling: preserved
+  per adapter (the renderer reproduces the prior vertex math + mvp + Nearest filter
+  exactly; the geographic warp is byte-for-byte the old tessellation).
+- NoData discard NaN **and** finite: now both, in the one shader.
+- CPU range fold excludes NaN consistently in all three (`std::isfinite` in
+  `GggsTile::loadPixels`, `SonarLiveTile::refoldRange`, and RasterLayer's range loop),
+  so CPU range and shader discard agree.
+- RasterLayer GPU change: scalar colormap, palette/RGB (RGBA bypass), and NoData
+  transparency covered; north-up placement mirrors GggsTileLayer's verified convention.
+
+### Review suggestions addressed
+
+1. Ordered per-adapter commits — done (a→e). 2. Format/mode field — done
+(`RasterFieldItem::Format` + `geographic`). 3. ADR table fix — ADR-0007 + plan
+reference camp ADR-0001 correctly (*TopicBridge…*, not "Adopt ADRs") and state
+ADR-0006 governs `SonarLiveCacheLayer` and is untouched. 4. Test harness —
+`test_raster_gl_renderer.cpp` mirrors `test_gggs_render`'s offscreen-GL harness +
+`offscreenGLAvailable()` SKIP guard.
+
+### Build / test — HONEST STATUS (env cannot do a full build)
+
+`source setup.bash → ./ui_ws/build.sh camp` **fails to configure**: every lower
+layer is unbuilt in this container (`underlay/core/platforms/site/sensors/simulation`
+install dirs are empty; `setup.bash` warns "exists but is not built"), so camp's
+ROS message deps are absent:
+
+```
+CMake Error at CMakeLists.txt:14 (find_package):
+  Could not find a package configuration file provided by "marine_ais_msgs"
+```
+
+Building all lower layers from source here is impractical, so `./ui_ws/test.sh camp`
+was **not run** — no verbatim ctest counts to report. I did NOT fake a build.
+
+To validate the change I instead ran standalone `g++ -std=c++17 -fsyntax-only`
+against system Qt5 + GDAL on every new/migrated ROS-free unit — all clean (only the
+pre-existing `QOpenGLTexture::setData(void*)` deprecation warning the codebase
+already uses):
+
+- `raster_gl_renderer.cpp` — clean
+- `gggs_tile_layer.cpp` — clean
+- `raster_layer.cpp` — clean
+- `test_gggs_render.cpp` — clean
+- `test_raster_gl_renderer.cpp` — clean
+
+`sonar_live_cache_layer.cpp` pulls in ROS headers so can't be syntax-checked in
+isolation; its diff mirrors the (compiling) GggsTileLayer migration exactly.
+
+The offscreen-GL render tests (`test_gggs_render`, `test_raster_gl_renderer`) are
+designed to **SKIP in-container** and **RUN on a GL host** — expected. A full
+`build.sh`/`test.sh` on a host with the lower layers built (and verbatim counts) is
+the remaining verification step.
+
+### Next step
+
+Run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp` on a host with the lower layers
+built; confirm a clean build and that the offscreen-GL render tests RUN (not SKIP)
+and pass. Then code review.
