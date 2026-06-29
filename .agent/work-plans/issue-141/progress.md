@@ -54,3 +54,15 @@ architectural decision to record.
 - [ ] Resolve "bathy/turbo" and "sequential" palette name ambiguity: marine_colormap's registry is grayscale/bronze/thermal/viridis/turbo/quality — map each per-band default to a named entry or add a new palette to marine_colormap before this issue can ship.
 - [ ] Record the LUT integration decision (marine_colormap shader vs. bake ramps into existing LUT-texture path) in a camp project ADR or the plan's decision block.
 - [ ] Verify settings-key persistence: ensure that persisted colormap names survive the rename (add migration/fallback if marine_colormap's ramp names differ from current `ColorMap::name()` strings).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-29 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-141/plan.md` at `d14ca9b`
+**Branch**: feature/issue-141 at `d14ca9b`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — scope decisions are explicit in the issue; plan is review-plan-ready.
