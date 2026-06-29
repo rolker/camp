@@ -167,7 +167,7 @@ bool GridMap::renderToData(const grid_map_msgs::msg::GridMap &data,
             marine_colormap::to_rgba8(palette->sample(static_cast<float>(value)));
           grid_layer_data.grid_image.setPixelColor(
             QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()),
-            QColor(c.r, c.g, c.b));
+            QColor(c.r, c.g, c.b, c.a));
         }
       }
     }
@@ -246,8 +246,10 @@ void GridMap::readSettings()
   settings.beginGroup(itemID());
   // [camp#141] Persisted palette name; case-insensitive read + registry-validated
   // (unknown -> grayscale).
+  // Literal default avoids reading colormap_name_ without holding mutex_; the
+  // registry-validation below already falls back to "grayscale" for unknowns.
   std::string name = settings.value(
-    "colormap", QString::fromStdString(colormap_name_)).toString().toLower().toStdString();
+    "colormap", "grayscale").toString().toLower().toStdString();
   if(!marine_colormap::palette_index(name))
     name = "grayscale";
   settings.endGroup();
