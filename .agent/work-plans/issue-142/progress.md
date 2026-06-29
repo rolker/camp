@@ -221,3 +221,29 @@ Container cannot build camp (known) — **host verifies**:
 `source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`. Edits made
 cleanly; hooks ran on commit (no `--no-verify`). Not pushed. PR1 is **Part of
 #142** (does not close it).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 19:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-142 at `7ca8927`
+**Mode**: pre-push
+**Depth**: Standard (reason: ~600 LOC C++ across three layer classes in two ROS packages + persistence path)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 1 | **Ship**: recommended — no must-fix findings; two independent adversarial passes agree the mechanics are correct and ADR-0008-compliant.
+
+### Findings
+- [ ] (suggestion) `*AutoRoundTrips` tests assert only `rangeMode()==Auto`, never `rangeLo()/rangeHi()` — Auto restore extent is unchecked (false-confidence gap) — `test/test_range_persist.cpp:742,812,878`
+- [ ] (suggestion) `range_min`/`range_max` read with `0.0`/`1.0` defaults independent of `range_mode`; partially-corrupt settings could silently pin `[0,1]` Manual (benign — keys always co-written) — `raster_layer.cpp:357`, `gggs_tile_layer.cpp:738`, `sonar_live_cache_layer.cpp:799`
+- [ ] (suggestion) `QInputDialog::getDouble(..., decimals=4, ...)` quantizes the pre-filled current range on reopen (minor UX) — `gggs_tile_layer.cpp:648`, `raster_layer.cpp:533`, `sonar_live_cache_layer.cpp:743`
+
+### Governance / Plan
+Full plan adherence (all "Files to Change" present, no scope creep); all three plan-review
+suggestions addressed (per-layer tests, RasterLayer `itemID()` keying, camp#145 deferral).
+ADR-0007 (single `renderToImage` insertion point) and ADR-0008 (override → `u_min`/`u_max`,
+not the LUT) both compliant. CMake PRIVATE→PUBLIC linkage correct; no ament export gap
+(only `rqt_helm_manager` is exported and it does not link `camp_map`). Static analysis
+inconclusive in-container (cppcheck can't parse Qt macros; cpplint absent) — host ament
+build is authoritative.
