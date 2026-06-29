@@ -5,6 +5,8 @@
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
 
+#include <marine_colormap/transfer.hpp>
+
 #include <QFutureWatcher>
 #include <QImage>
 #include <QRectF>
@@ -68,6 +70,16 @@ public:
 
   /// The layer's Web-Mercator extent. Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
+
+  /// [camp#142] Per-layer colormap range override (scalar charts only; the menu
+  /// gates on is_scalar_). Auto tracks the data extents (data_min_/data_max_, set
+  /// in imageReady()); Manual pins an operator [lo, hi]. Applied at render time
+  /// (shader u_min/u_max via renderToImage), transparent to the auto-range.
+  void setRangeOverride(float lo, float hi);   ///< -> Manual [lo, hi]
+  void resetRangeToAuto();                      ///< -> Auto (tracks the data extents)
+  marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
+  float rangeLo() const { return range_model_.lo(); }
+  float rangeHi() const { return range_model_.hi(); }
 
   // [camp#134] RasterFieldSource: a single reprojected-chart item for the renderer.
   QStringList bands() const override;
@@ -136,6 +148,10 @@ private:
   RasterFieldItem::Format format_ = RasterFieldItem::Format::Scalar;
   float data_min_ = 1.0f;     // scalar colormap range (crossed => no data)
   float data_max_ = 0.0f;
+  // [camp#142] Resolved colormap range (Auto tracks data_min_/data_max_ via
+  // update_auto() in imageReady(); Manual pins an operator override). Fed to the
+  // renderer's u_min/u_max at render time, replacing the raw data_min_/data_max_.
+  marine_colormap::RangeModel range_model_;
   bool has_nodata_ = false;
   float nodata_ = 0.0f;
 

@@ -291,13 +291,17 @@ target_link_libraries(camp_map
         Qt5::Network
         Qt5::Xml
         Qt5::Positioning
+        # [camp#142] marine_colormap was PRIVATE under camp#141 because the colormap
+        # was only a std::string name with no marine_colormap type in any camp_map
+        # header. The per-layer range override (camp#142) adds a
+        # marine_colormap::RangeModel VALUE member to the raster layer headers
+        # (gggs_tile_layer.h / raster_layer.h / sonar_live_cache_layer.h), so the
+        # type — and <marine_colormap/transfer.hpp> — now appears in camp_map's
+        # public headers. Link PUBLIC so the include dir + symbols propagate to every
+        # consumer of those headers (camp_map_ros, the camp executable, the tests).
+        marine_colormap::marine_colormap
     PRIVATE
         ${GDAL_LIBRARY}
-        # [camp#141] marine_colormap is consumed only inside camp_map's .cpp files
-        # (the raster LUT bake / CPU sample); no marine_colormap type appears in any
-        # installed camp_map header (the colormap is a std::string name), so link it
-        # PRIVATE — it does not propagate into camp_map's public link/usage interface.
-        marine_colormap::marine_colormap
 )
 
 install(TARGETS camp_map
@@ -779,6 +783,38 @@ if(BUILD_TESTING)
   target_link_libraries(test_sonar_live_cache
     camp_map_ros
     Qt5::Core
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#142] Per-layer colormap range override persist/restore round-trip across
+  # ALL THREE raster layers (GggsTileLayer + RasterLayer in camp_map;
+  # SonarLiveCacheLayer in camp_map_ros). GL-free: the RangeModel is pure data and
+  # renderImage() is never called — only the public range API + read/writeSettings
+  # are exercised, so these RUN (not SKIP) in-container. Links camp_map_ros (which
+  # pulls camp_map + marine_colormap transitively) plus the ROS deps the sonar layer
+  # header needs, GDAL (RasterLayer's ctor opens GDAL), and the Qt Widgets/Positioning
+  # the layers + QSettings/QApplication use.
+  ament_add_gtest(test_range_persist
+    test/test_range_persist.cpp
+  )
+  target_include_directories(test_range_persist PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_range_persist
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_range_persist
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
     ${GDAL_LIBRARY}
   )
 endif()

@@ -6,6 +6,8 @@
 #include "../../raster/raster_gl_renderer.h"
 #include "sonar_live_tile.h"
 
+#include <marine_colormap/transfer.hpp>
+
 #include "marine_tiled_raster_store/tile_catalog.hpp"
 
 #include "marine_interfaces/msg/sonar_visualization_tile.hpp"
@@ -84,6 +86,16 @@ public:
 
   /// The layer's Web-Mercator extent (union of tile extents). Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
+
+  /// [camp#142] Per-layer colormap range override. Auto tracks the data extents
+  /// (data_min_/data_max_, folded in foldAutoRange()); Manual pins an operator
+  /// [lo, hi] so an outlier band can't collapse the useful colour range. Applied at
+  /// render time (shader u_min/u_max via renderToImage), transparent to the fold.
+  void setRangeOverride(float lo, float hi);   ///< -> Manual [lo, hi]
+  void resetRangeToAuto();                      ///< -> Auto (tracks the data extents)
+  marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
+  float rangeLo() const { return range_model_.lo(); }
+  float rangeHi() const { return range_model_.hi(); }
 
   // [camp#134] RasterFieldSource: feed the shared RasterGlRenderer. bands() are the
   // named live bands; items() returns the held tiles as Scalar items (textures
@@ -181,6 +193,11 @@ private:
   QRectF scene_bounds_;
   double data_min_ = 1.0;        // auto-range over the selected band (crossed => none)
   double data_max_ = 0.0;
+
+  // [camp#142] Resolved colormap range (Auto tracks data_min_/data_max_ via
+  // update_auto() in foldAutoRange(); Manual pins an operator override). Fed to the
+  // renderer's u_min/u_max at render time, replacing the raw data_min_/data_max_.
+  marine_colormap::RangeModel range_model_;
 
   std::string band_name_;        // selected band (persisted)
 

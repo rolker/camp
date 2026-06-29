@@ -13,6 +13,7 @@
 #include <memory>
 #include <QMenu>
 #include <QAction>
+#include <QInputDialog>
 #include <QSettings>
 #include <QFileInfo>
 
@@ -341,6 +342,12 @@ void RasterLayer::imageReady()
   data_max_ = result.data_max;
   has_nodata_ = result.has_nodata;
   nodata_ = result.nodata;
+  // [camp#142] Keep the Auto resolved range current with the loaded scalar extents
+  // (a no-op while the operator holds a Manual override). Only scalar charts shade
+  // through the range; RGB charts bypass the LUT, so their crossed default extents
+  // are left untracked.
+  if(is_scalar_ && data_min_ <= data_max_)
+    range_model_.update_auto(data_min_, data_max_);
 
   // [#59 ADR-0003] The placement was already applied synchronously in initExtent()
   // (identical reprojected geotransform). Re-apply defensively only if initExtent()
@@ -414,8 +421,11 @@ QImage RasterLayer::renderImage(const QSize& size)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<RasterFieldItem> draw = items();
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, data_min_,
-                                               data_max_, size);
+  // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
+  // the operator override) into the shader's u_min/u_max. Scalar charts shade
+  // through it; RGB charts bypass the LUT, so the range is a don't-care for them.
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+                                               range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;
 }
@@ -474,6 +484,28 @@ void RasterLayer::setColormap(const std::string& name)
   update(boundingRect());
 }
 
+void RasterLayer::setRangeOverride(float lo, float hi)
+{
+  // [camp#142] Pin the resolved range to the operator's [lo, hi] (set_manual swaps
+  // an inverted pair so lo() <= hi()). Re-render with the new range + persist.
+  range_model_.set_manual(lo, hi);
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
+}
+
+void RasterLayer::resetRangeToAuto()
+{
+  // [camp#142] Return to data-driven Auto, then re-track the current scalar extents
+  // so lo()/hi() reflect the data without waiting for a reload.
+  range_model_.reset();
+  if(is_scalar_ && data_min_ <= data_max_)
+    range_model_.update_auto(data_min_, data_max_);
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
+}
+
 void RasterLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
@@ -488,6 +520,30 @@ void RasterLayer::contextMenu(QMenu* menu)
     action->setChecked(name == renderer_.colormap());
     connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
+
+  // [camp#142] Colormap range override (scalar only — gated by the is_scalar_ early
+  // return above, the same condition as the Colormap submenu). "Set range…" prompts
+  // for lo then hi (pre-filled with the current resolved range) and pins a Manual
+  // override; "Reset to auto" returns to the data-driven extents.
+  QMenu* range_menu = menu->addMenu("Colormap range");
+  QAction* set_range = range_menu->addAction("Set range…");
+  connect(set_range, &QAction::triggered, this, [this]()
+  {
+    bool ok = false;
+    const double lo = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Minimum:", range_model_.lo(),
+      -1.0e9, 1.0e9, 4, &ok);
+    if(!ok)
+      return;
+    const double hi = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Maximum:", range_model_.hi(),
+      -1.0e9, 1.0e9, 4, &ok);
+    if(!ok)
+      return;
+    setRangeOverride(float(lo), float(hi));
+  });
+  QAction* reset_range = range_menu->addAction("Reset to auto");
+  connect(reset_range, &QAction::triggered, this, [this]() { resetRangeToAuto(); });
 }
 
 void RasterLayer::readSettings()
@@ -502,6 +558,12 @@ void RasterLayer::readSettings()
     "colormap", QString::fromStdString(renderer_.colormap())).toString().toLower().toStdString();
   if(!marine_colormap::palette_index(colormap))
     colormap = "grayscale";
+  // [camp#142] Persisted colormap range (grouped under itemID(), the key this
+  // layer's read/writeSettings already use — NOT settingsKey()). "manual" restores
+  // the operator override; anything else (default "auto") leaves Auto.
+  const QString range_mode = settings.value("range_mode", "auto").toString();
+  const float range_min = settings.value("range_min", 0.0).toFloat();
+  const float range_max = settings.value("range_max", 1.0).toFloat();
   settings.endGroup();
   settings.endGroup();
   // Apply the persisted ramp (re-bake + re-render if it differs); don't re-persist.
@@ -511,6 +573,12 @@ void RasterLayer::readSettings()
     cached_image_ = QImage();
     update(boundingRect());
   }
+  // [camp#142] Apply the persisted range. A Manual override is independent of the
+  // data extents and is restored as-is; "auto" leaves the model tracking the data.
+  if(range_mode == "manual")
+    range_model_.set_manual(range_min, range_max);
+  else
+    range_model_.reset();
 }
 
 void RasterLayer::onRemovedFromMap()
@@ -530,6 +598,13 @@ void RasterLayer::writeSettings()
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
   settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
+  // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
+  // its [lo, hi]) survives a restart; Auto persists as "auto".
+  settings.setValue("range_mode",
+                    range_model_.mode() == marine_colormap::RangeMode::Manual ? "manual"
+                                                                              : "auto");
+  settings.setValue("range_min", range_model_.lo());
+  settings.setValue("range_max", range_model_.hi());
   settings.endGroup();
   settings.endGroup();
 }

@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QGeoCoordinate>
+#include <QInputDialog>
 #include <QMenu>
 #include <QSet>
 #include <QSettings>
@@ -318,6 +319,13 @@ void GggsTileLayer::tilesReady()
     setStatus("(no data)");
   else
     setStatus("");
+  // [camp#142] Keep the Auto resolved range current with the freshly-folded
+  // extents (a no-op while the operator holds a Manual override, so an incoming
+  // tile never disturbs a pinned range). camp#138 coordination: this is the
+  // update_auto() call site to review at merge — the override is applied at
+  // render time and is transparent to this fold.
+  if(data_min_ <= data_max_)
+    range_model_.update_auto(float(data_min_), float(data_max_));
   update(boundingRect());
 }
 
@@ -412,8 +420,10 @@ QImage GggsTileLayer::renderImage(const QSize& size)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<RasterFieldItem> draw = items();
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, float(data_min_),
-                                               float(data_max_), size);
+  // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
+  // the operator override) into the shader's u_min/u_max instead of the raw extents.
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+                                               range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;
 }
@@ -467,6 +477,28 @@ void GggsTileLayer::setColormap(const std::string& name)
     return;
   renderer_.setColormap(name);   // re-bakes the LUT on next render
   cached_image_ = QImage();      // force a re-render with the new ramp
+  writeSettings();
+  update(boundingRect());
+}
+
+void GggsTileLayer::setRangeOverride(float lo, float hi)
+{
+  // [camp#142] Pin the resolved range to the operator's [lo, hi] (set_manual swaps
+  // an inverted pair so lo() <= hi()). Re-render with the new range + persist.
+  range_model_.set_manual(lo, hi);
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
+}
+
+void GggsTileLayer::resetRangeToAuto()
+{
+  // [camp#142] Return to data-driven Auto, then immediately re-track the current
+  // extents so lo()/hi() reflect the data without waiting for the next fold.
+  range_model_.reset();
+  if(data_min_ <= data_max_)
+    range_model_.update_auto(float(data_min_), float(data_max_));
+  cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
 }
@@ -612,6 +644,30 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 
+  // [camp#142] Colormap range override. GGGS tiles are always scalar values, so the
+  // submenu is offered unconditionally (same gating as the Colormap submenu above).
+  // "Set range…" prompts for lo then hi (pre-filled with the current resolved range)
+  // and pins a Manual override; "Reset to auto" returns to the data-driven extents.
+  QMenu* range_menu = menu->addMenu("Colormap range");
+  QAction* set_range = range_menu->addAction("Set range…");
+  connect(set_range, &QAction::triggered, this, [this]()
+  {
+    bool ok = false;
+    const double lo = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Minimum:", range_model_.lo(),
+      -1.0e9, 1.0e9, 4, &ok);
+    if(!ok)
+      return;
+    const double hi = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Maximum:", range_model_.hi(),
+      -1.0e9, 1.0e9, 4, &ok);
+    if(!ok)
+      return;
+    setRangeOverride(float(lo), float(hi));
+  });
+  QAction* reset_range = range_menu->addAction("Reset to auto");
+  connect(reset_range, &QAction::triggered, this, [this]() { resetRangeToAuto(); });
+
   // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
   // uncertainty, backscatter intensity + quality). Single-band stores (the
   // common sidescan case) get no submenu, so no visual noise. One checkable
@@ -675,6 +731,12 @@ void GggsTileLayer::readSettings()
   // when it differs, to skip the abort+reload on the common no-change path,
   // mirroring the inline colormap apply directly below.
   const int band = settings.value("band", 1).toInt();
+  // [camp#142] Persisted colormap range. "manual" restores the operator override;
+  // anything else (default "auto") leaves the data-driven Auto range. min/max are
+  // only meaningful in Manual mode but are always written, so they round-trip.
+  const QString range_mode = settings.value("range_mode", "auto").toString();
+  const float range_min = settings.value("range_min", 0.0).toFloat();
+  const float range_max = settings.value("range_max", 1.0).toFloat();
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())
@@ -684,6 +746,12 @@ void GggsTileLayer::readSettings()
   }
   if(band != band_)
     applyBand(band);
+  // Apply the persisted range AFTER the band switch (applyBand resets data_min_/
+  // data_max_; a Manual override is independent of the data extents and survives).
+  if(range_mode == "manual")
+    range_model_.set_manual(range_min, range_max);
+  else
+    range_model_.reset();
 }
 
 void GggsTileLayer::writeSettings()
@@ -694,6 +762,13 @@ void GggsTileLayer::writeSettings()
   settings.beginGroup(settingsKey());
   settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.setValue("band", band_);   // [camp#108] selected band round-trips
+  // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
+  // its [lo, hi]) survives a restart; Auto persists as "auto".
+  settings.setValue("range_mode",
+                    range_model_.mode() == marine_colormap::RangeMode::Manual ? "manual"
+                                                                              : "auto");
+  settings.setValue("range_min", range_model_.lo());
+  settings.setValue("range_max", range_model_.hi());
   settings.endGroup();
   settings.endGroup();
 }
