@@ -3,8 +3,10 @@
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
 #include <QPainter>
-#include <QStyleOptionGraphicsItem>
+#include <QOpenGLTexture>
+#include <QTransform>
 #include <QtConcurrent>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <memory>
@@ -27,6 +29,8 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
+  // [camp#63] Default scalar ramp is Viridis (the renderer defaults to Grayscale).
+  renderer_.setColormap(map::ColorMap::Viridis);
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
   // [#59 ADR-0003] Establish the scene extent + world transform synchronously,
   // before kicking off the async pixel load, so the layer knows where it is
@@ -42,46 +46,65 @@ RasterLayer::~RasterLayer()
   abort_flag_ = true;
   abort_flag_mutex_.unlock();
   future_watcher_.waitForFinished();
+  // [camp#134] Release the chart texture under the renderer's context (the texture
+  // is owned here, not by the renderer). The renderer frees its own
+  // program/LUT/FBO/context in its destructor right after this.
+  if(renderer_.makeCurrent())
+  {
+    texture_.reset();
+    renderer_.doneCurrent();
+  }
 }
 
 QRectF RasterLayer::boundingRect() const
 {
-  // [#59 ADR-0003] Prefer the synchronously-known reprojected dimensions so the
-  // extent is valid before pixels load. The mipmap rect (same dimensions) is the
-  // fallback for the failed-initExtent / not-yet-set case.
-  if(reprojected_width_ > 0 && reprojected_height_ > 0)
-    return QRectF(0, 0, reprojected_width_, reprojected_height_);
-  if(!mipmaps_.empty())
-    return mipmaps_.begin()->second.rect();
+  // [camp#134] Local space spans (0,0)..(width_m,height_m) in Web-Mercator metres;
+  // the item is setPos()'d at the NW corner with a fromScale(1,-1) transform (the
+  // camp_map raster convention shared with GggsTileLayer).
+  if(!scene_bounds_.isNull())
+    return QRectF(QPointF(0.0, 0.0), scene_bounds_.size());
   return QRectF();
 }
 
 
 void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
 {
-  if(!mipmaps_.empty())
-  {
-    auto lod = QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform());
-    auto level = mipmaps_.lower_bound( std::min(255, int(1.0/lod)) );
-    if(level == mipmaps_.end())
-      level--;
-    painter->save();
-    painter->setRenderHint(QPainter::SmoothPixmapTransform);
-    painter->scale(level->first, level->first);
-    painter->drawPixmap(0,0, level->second);
-    painter->restore();
-  }
+  if(scene_bounds_.isNull())
+    return;
+  if(is_scalar_ && data_min_ > data_max_)   // scalar: nothing valid to colour yet
+    return;
 
+  // Target the offscreen render at the extent's on-screen size, so the image is
+  // crisp at the current zoom. Re-render only when that size changes (zoom); pan
+  // reuses the cached image (drawImage repositions it via the world transform).
+  const QRectF dev = painter->worldTransform().mapRect(boundingRect());
+  const int w = std::min(kMaxImageEdge,
+                         std::max(1, int(std::ceil(std::abs(dev.width())))));
+  const int h = std::min(kMaxImageEdge,
+                         std::max(1, int(std::ceil(std::abs(dev.height())))));
+  const QSize size(w, h);
+
+  if(cached_image_.isNull() || cached_size_ != size)
+  {
+    cached_image_ = renderImage(size);
+    cached_size_ = size;
+  }
+  if(cached_image_.isNull())
+    return;
+
+  painter->save();
+  painter->setRenderHint(QPainter::SmoothPixmapTransform);
+  painter->drawImage(boundingRect(), cached_image_);
+  painter->restore();
 }
 
 
 void RasterLayer::initExtent(const QString& filename)
 {
   // [#59 ADR-0003] Read only the reprojected geotransform + dimensions (no
-  // pixels) and apply the world transform/position synchronously, so the layer
-  // has a valid extent and scene position before the async pixel load. Mirrors
-  // the placement loadAndReprojectFile/imageReady would set, just earlier and
-  // pixel-free. GDALAutoCreateWarpedVRT is metadata-only and effectively instant.
+  // pixels) and apply the Web-Mercator scene placement synchronously, so the layer
+  // has a valid extent and scene position before the async pixel load.
+  // GDALAutoCreateWarpedVRT is metadata-only and effectively instant.
   auto dataset = GDALDataset::FromHandle(GDALOpen(filename.toLatin1(), GA_ReadOnly));
   if(!dataset)
     return;
@@ -93,9 +116,24 @@ void RasterLayer::initExtent(const QString& filename)
     reprojected->GetGeoTransform(geo_transform);
     reprojected_width_ = reprojected->GetRasterXSize();
     reprojected_height_ = reprojected->GetRasterYSize();
+    // [camp#134] Web-Mercator extent from the reprojected geotransform (geo[2] ==
+    // geo[4] == 0, geo[1] > 0, geo[5] < 0 — north-up): the NW corner is (geo[0],
+    // geo[3]); the SE corner subtracts width/height. north = max y, south = min y.
+    const double x0 = geo_transform[0];
+    const double y0 = geo_transform[3];
+    const double x1 = x0 + reprojected_width_ * geo_transform[1];
+    const double y1 = y0 + reprojected_height_ * geo_transform[5];
+    merc_x_min_ = std::min(x0, x1);
+    merc_x_max_ = std::max(x0, x1);
+    merc_y_min_ = std::min(y0, y1);
+    merc_y_max_ = std::max(y0, y1);
     prepareGeometryChange();
-    setTransform(QTransform::fromScale(geo_transform[1], geo_transform[5]), true);
-    setPos(geo_transform[0], geo_transform[3]);
+    scene_bounds_ = QRectF(QPointF(merc_x_min_, merc_y_min_),
+                           QPointF(merc_x_max_, merc_y_max_)).normalized();
+    // North-up image anchored at the NW corner with a negative-Y transform (matches
+    // GggsTileLayer); the MapView's own scale(s,-s) composes to a net upright draw.
+    setTransform(QTransform::fromScale(1.0, -1.0));
+    setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));   // NW corner
     GDALClose(reprojected);
   }
   GDALClose(dataset);
@@ -129,13 +167,10 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
 
   // [#96] RAII-close both GDAL handles so every return path — normal, the
   // !reprojected_dataset early return, and the abort-flag `return {}` paths in
-  // the scan loops below — frees them; previously they leaked on every call
-  // (ctor / setColormap / readSettings). Declaration order matters: local
+  // the scan loops below — frees them. Declaration order matters: local
   // unique_ptrs destruct in reverse declaration order, so `dataset` MUST stay
   // declared before `reprojected_dataset` — the warped VRT references the source
-  // dataset, so it has to close first, then the source. This mirrors
-  // initExtent()'s deliberate GDALClose(reprojected) then GDALClose(dataset).
-  // Do not reorder.
+  // dataset, so it has to close first, then the source. Do not reorder.
   const auto gdal_closer = [](GDALDataset* d){ if(d) GDALClose(d); };
   std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
     GDALDataset::FromHandle(GDALOpen(filename.toLatin1(), GA_ReadOnly)), gdal_closer);
@@ -159,32 +194,38 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
   double reprojected_geo_transform[6] = {0.0};
   reprojected_dataset->GetGeoTransform(reprojected_geo_transform);
 
-  result.world_x = reprojected_geo_transform[0];
-  result.world_y = reprojected_geo_transform[3];
+  const int width = reprojected_dataset->GetRasterXSize();
+  const int height = reprojected_dataset->GetRasterYSize();
+  result.width = width;
+  result.height = height;
+  result.reprojected_width = width;
+  result.reprojected_height = height;
 
-  result.scale_x = reprojected_geo_transform[1];
-  result.scale_y = reprojected_geo_transform[5];
-
-  auto width = reprojected_dataset->GetRasterXSize();
-  auto height = reprojected_dataset->GetRasterYSize();
-
-  QImage image(width, height, QImage::Format_ARGB32);
-  image.fill(Qt::black);
+  // [camp#134] Web-Mercator extent (same derivation as initExtent), so imageReady()
+  // can re-apply the placement defensively if initExtent() did not run.
+  const double x0 = reprojected_geo_transform[0];
+  const double y0 = reprojected_geo_transform[3];
+  const double x1 = x0 + width * reprojected_geo_transform[1];
+  const double y1 = y0 + height * reprojected_geo_transform[5];
+  result.merc_x_min = std::min(x0, x1);
+  result.merc_x_max = std::max(x0, x1);
+  result.merc_y_min = std::min(y0, y1);
+  result.merc_y_max = std::max(y0, y1);
 
   auto first_band = reprojected_dataset->GetRasterBand(1);
   if(reprojected_dataset->GetRasterCount() == 1 &&
      first_band->GetColorTable() == nullptr)
   {
-    result.is_scalar = true;
-    // [camp#63/#59 PR3c / camp#90] Single-band scalar field (depth raster, GGGS
-    // backscatter/bathy tiles, etc.): shade through the ColorMap over the data
-    // range — read as Float32 so any numeric dtype (Float32/UInt16/...) works —
-    // instead of the UInt32 RGB path (which renders non-8-bit values as near-
-    // black AND opaque, ignoring NoData). NoData / NaN -> transparent. Paletted
+    // [camp#63/#59 PR3c / camp#90 / camp#134] Single-band scalar field (depth
+    // raster, GGGS backscatter/bathy tiles, etc.): read as Float32 and upload as an
+    // R32F value texture coloured by the shared shader's LUT (NoData / NaN ->
+    // transparent on the GPU). Read as Float32 so any numeric dtype works. Paletted
     // single-band rasters still use the colour-table path below.
-    image.fill(Qt::transparent);
+    result.is_scalar = true;
     int has_nodata = 0;
     const double nodata = first_band->GetNoDataValue(&has_nodata);
+    result.has_nodata = has_nodata != 0;
+    result.nodata = float(nodata);
     std::vector<float> values(static_cast<size_t>(width) * height);
     if(first_band->RasterIO(GF_Read, 0, 0, width, height, values.data(), width, height, GDT_Float32, 0, 0) == CE_None)
     {
@@ -192,130 +233,227 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
       double max_value = std::numeric_limits<double>::lowest();
       for(float v : values)
       {
-        if(std::isnan(v) || (has_nodata && v == nodata))
+        // Exclude NaN + the finite NoData sentinel from the auto-range, so the CPU
+        // range and the shader's discard (`v != v` and v == u_nodata) agree.
+        if(std::isnan(v) || (result.has_nodata && v == result.nodata))
           continue;
         min_value = std::min(min_value, double(v));
         max_value = std::max(max_value, double(v));
       }
-      // A constant-valued raster (all valid samples equal) would otherwise hit
-      // ColorMap::color()'s degenerate max<=min guard and render fully
-      // transparent — the raster would vanish. Widen the range so the single
-      // value maps to the top of the ramp (matches grid_map's handling). If
-      // there were no valid samples at all, min/max stay crossed and pixels
-      // correctly stay transparent.
+      // A constant-valued raster (all valid samples equal) would otherwise hit the
+      // degenerate max<=min guard and render transparent. Widen the range so the
+      // single value maps to the top of the ramp. If there were no valid samples at
+      // all, min/max stay crossed and the layer correctly shows nothing.
       if(min_value == max_value)
         min_value -= 1.0;
-      const map::ColorMap cm = colormap_;
-      for(int j = 0; j < height; ++j)
+      result.data_min = float(min_value);
+      result.data_max = float(max_value);
+      // Periodic abort check (cheap, whole-buffer granularity is fine post-read).
       {
-        uchar* scanline = image.scanLine(j);
-        for(int i = 0; i < width; ++i)
+        QMutexLocker lock(&abort_flag_mutex_);
+        if(abort_flag_)
+          return {};
+      }
+      result.values = std::move(values);
+    }
+  }
+  else
+  {
+    // [camp#134] Palette / RGB chart: composite to an RGBA QImage on the CPU (as
+    // before) and upload it as an RGBA8 texture the shader samples directly (the
+    // LUT is bypassed). Per-band channel select for colour files is a future issue.
+    QImage image(width, height, QImage::Format_ARGB32);
+    image.fill(Qt::black);
+    for(auto&& band: reprojected_dataset->GetBands())
+    {
+      auto color_table = band->GetColorTable();
+      std::vector<uint32_t> buffer(width);
+      for(int j = 0; j<height; ++j)
+      {
+        if(band->RasterIO(GF_Read, 0, j, width, 1, &buffer.front(), width, 1, GDT_UInt32, 0, 0)== CE_None)
         {
-          const float v = values[static_cast<size_t>(j) * width + i];
-          const QColor c = (std::isnan(v) || (has_nodata && v == nodata))
-                             ? QColor(0, 0, 0, 0) : cm.color(v, min_value, max_value);
-          scanline[i*4+0] = c.blue();
-          scanline[i*4+1] = c.green();
-          scanline[i*4+2] = c.red();
-          scanline[i*4+3] = c.alpha();
+          uchar *scanline = image.scanLine(j);
+          for(int i = 0; i < width; ++i)
+          {
+            if(color_table)
+            {
+              GDALColorEntry const *ce = color_table->GetColorEntry(buffer[i]);
+              scanline[i*4] = ce->c3;
+              scanline[i*4+1] = ce->c2;
+              scanline[i*4+2] = ce->c1;
+              scanline[i*4+3] = ce->c4;
+            }
+            else
+            {
+              if(band->GetColorInterpretation() == GCI_GrayIndex)
+              {
+                  scanline[i*4+0] = buffer[i];
+                  scanline[i*4+1] = buffer[i];
+                  scanline[i*4+2] = buffer[i];
+              }
+              if(band->GetColorInterpretation() == GCI_RedBand)
+                  scanline[i*4+2] = buffer[i];
+              if(band->GetColorInterpretation() == GCI_GreenBand)
+                  scanline[i*4+1] = buffer[i];
+              if(band->GetColorInterpretation() == GCI_BlueBand)
+                  scanline[i*4+0] = buffer[i];
+              if(band->GetColorInterpretation() == GCI_AlphaBand)
+                  scanline[i*4+3] = buffer[i];
+            }
+          }
         }
         QMutexLocker lock(&abort_flag_mutex_);
         if(abort_flag_)
           return {};
       }
     }
-  }
-  else
-  for(auto&& band: reprojected_dataset->GetBands())
-  {
-    auto color_table = band->GetColorTable();
-    std::vector<uint32_t> buffer(width);
-    for(int j = 0; j<height; ++j)
-    {
-      if(band->RasterIO(GF_Read, 0, j, width, 1, &buffer.front(), width, 1, GDT_UInt32, 0, 0)== CE_None)
-      {
-        uchar *scanline = image.scanLine(j);
-        for(int i = 0; i < width; ++i)
-        {
-          if(color_table)
-          {
-            GDALColorEntry const *ce = color_table->GetColorEntry(buffer[i]);
-            scanline[i*4] = ce->c3;
-            scanline[i*4+1] = ce->c2;
-            scanline[i*4+2] = ce->c1;
-            scanline[i*4+3] = ce->c4;
-          }
-          else
-          {
-            if(band->GetColorInterpretation() == GCI_GrayIndex)
-            {
-                scanline[i*4+0] = buffer[i];
-                scanline[i*4+1] = buffer[i];
-                scanline[i*4+2] = buffer[i];
-            }
-            if(band->GetColorInterpretation() == GCI_RedBand)
-                scanline[i*4+2] = buffer[i];
-            if(band->GetColorInterpretation() == GCI_GreenBand)
-                scanline[i*4+1] = buffer[i];
-            if(band->GetColorInterpretation() == GCI_BlueBand)
-                scanline[i*4+0] = buffer[i];
-            if(band->GetColorInterpretation() == GCI_AlphaBand)
-                scanline[i*4+3] = buffer[i];
-          }
-        }
-      }
-      QMutexLocker lock(&abort_flag_mutex_);
-      if(abort_flag_)
-        return {};
-    }
+    result.rgba = std::move(image);
   }
 
-  result.mipmaps[1] = QPixmap::fromImage(image);
-  for(int i = 2; i < 128; i*=2)
-  {
-    result.mipmaps[i] = QPixmap::fromImage(image.scaledToWidth(width/float(i),Qt::SmoothTransformation));
-  }
+  result.ok = true;
   return result;
 }
 
 void RasterLayer::imageReady()
 {
   auto result = future_watcher_.result();
-  if(result.mipmaps.empty())   // failed load (null/unreprojectable dataset);
-  {                            // don't apply the zero-filled transform/pos
+  if(!result.ok)              // failed/aborted load (null/unreprojectable dataset)
+  {
     setStatus("(load failed)");
     return;
   }
   is_scalar_ = result.is_scalar;
-  mipmaps_ = result.mipmaps;
+  format_ = is_scalar_ ? RasterFieldItem::Format::Scalar
+                       : RasterFieldItem::Format::Rgba;
+  data_min_ = result.data_min;
+  data_max_ = result.data_max;
+  has_nodata_ = result.has_nodata;
+  nodata_ = result.nodata;
 
-  // [#59 ADR-0003] The world transform + position were already applied
-  // synchronously in initExtent() (the warped geotransform is identical here),
-  // and boundingRect() comes from the reprojected dimensions, so the geometry
-  // does not change when the pixels arrive — only the painted content does.
-  // Defensive fallback: if initExtent() did not establish the extent (e.g. a
-  // transient open failure) but the async load nonetheless succeeded, apply the
-  // placement here so the layer is still positioned correctly.
-  if(reprojected_width_ <= 0 || reprojected_height_ <= 0)
+  // [#59 ADR-0003] The placement was already applied synchronously in initExtent()
+  // (identical reprojected geotransform). Re-apply defensively only if initExtent()
+  // did not establish the extent (e.g. a transient open failure) but the async load
+  // nonetheless succeeded.
+  if(scene_bounds_.isNull())
   {
     prepareGeometryChange();
-    reprojected_width_ = result.mipmaps.begin()->second.width();
-    reprojected_height_ = result.mipmaps.begin()->second.height();
-    setTransform(QTransform::fromScale(result.scale_x, result.scale_y), true);
-    setPos(result.world_x, result.world_y);
+    reprojected_width_ = result.reprojected_width;
+    reprojected_height_ = result.reprojected_height;
+    merc_x_min_ = result.merc_x_min;
+    merc_x_max_ = result.merc_x_max;
+    merc_y_min_ = result.merc_y_min;
+    merc_y_max_ = result.merc_y_max;
+    scene_bounds_ = QRectF(QPointF(merc_x_min_, merc_y_min_),
+                           QPointF(merc_x_max_, merc_y_max_)).normalized();
+    setTransform(QTransform::fromScale(1.0, -1.0));
+    setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
   }
+
+  // [camp#134] Upload the reprojected pixels to a GL texture under the renderer's
+  // context (the texture is owned here). Scalar -> R32F (Nearest-filtered by the
+  // renderer); colour -> RGBA8 with mipmaps (so a chart zoomed far out keeps the
+  // LOD the old QPainter mipmap pyramid provided).
+  if(renderer_.makeCurrent())
+  {
+    texture_.reset();
+    if(is_scalar_ && !result.values.empty())
+    {
+      texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
+      texture_->setFormat(QOpenGLTexture::R32F);
+      texture_->setSize(result.width, result.height);
+      texture_->setMipLevels(1);
+      texture_->allocateStorage(QOpenGLTexture::Red, QOpenGLTexture::Float32);
+      texture_->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32,
+                        result.values.data());
+      texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
+    }
+    else if(!is_scalar_ && !result.rgba.isNull())
+    {
+      const QImage rgba8 = result.rgba.convertToFormat(QImage::Format_RGBA8888);
+      texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
+      texture_->setFormat(QOpenGLTexture::RGBA8_UNorm);
+      texture_->setSize(rgba8.width(), rgba8.height());
+      texture_->setMipLevels(texture_->maximumMipLevels());
+      texture_->allocateStorage(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8);
+      texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, rgba8.constBits());
+      texture_->generateMipMaps();
+      texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
+    }
+    renderer_.doneCurrent();
+  }
+
+  cached_image_ = QImage();
   update(boundingRect());
   setStatus("");
 }
 
+QImage RasterLayer::renderImage(const QSize& size)
+{
+  if(scene_bounds_.isNull() || size.isEmpty())
+    return QImage();
+  if(is_scalar_ && data_min_ > data_max_)
+    return QImage();
+  if(!renderer_.makeCurrent())
+    return QImage();
+  const QList<RasterFieldItem> draw = items();
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, data_min_,
+                                               data_max_, size);
+  renderer_.doneCurrent();
+  return image;
+}
+
+QStringList RasterLayer::bands() const
+{
+  // A reprojected chart is a single composited field; one nominal band.
+  return QStringList() << "1";
+}
+
+RasterBandMeta RasterLayer::metadata(const QString&) const
+{
+  RasterBandMeta meta;
+  meta.has_nodata = has_nodata_;
+  meta.nodata = nodata_;
+  return meta;
+}
+
+QPair<float, float> RasterLayer::dataRange() const
+{
+  return {data_min_, data_max_};
+}
+
+QList<RasterFieldItem> RasterLayer::items()
+{
+  // [camp#134] One non-geographic item: GDAL already reprojected the chart to
+  // Web-Mercator, so the renderer draws it as a single linear quad over the
+  // mercator extent (no per-vertex geo warp).
+  QList<RasterFieldItem> result;
+  if(!texture_)
+    return result;
+  RasterFieldItem item;
+  item.texture = texture_.get();
+  item.format = format_;
+  item.geographic = false;
+  item.west = merc_x_min_;
+  item.east = merc_x_max_;
+  item.south = merc_y_min_;
+  item.north = merc_y_max_;
+  item.has_nodata = has_nodata_;
+  item.nodata = nodata_;
+  result.push_back(item);
+  return result;
+}
+
 void RasterLayer::setColormap(map::ColorMap::Type type)
 {
-  if(type == colormap_.type())
+  if(type == renderer_.colormap())
     return;
-  colormap_.setType(type);
+  // [camp#134] A colormap change is now just an LUT re-bake — no re-warp. The
+  // scalar value texture already holds the raw data, so the shader recolours it on
+  // the next render.
+  renderer_.setColormap(type);
   writeSettings();
-  if(!filename_.isEmpty())     // re-warp + re-shade with the new ramp
-    loadFile(filename_);
+  cached_image_ = QImage();
+  update(boundingRect());
 }
 
 void RasterLayer::contextMenu(QMenu* menu)
@@ -328,7 +466,7 @@ void RasterLayer::contextMenu(QMenu* menu)
   {
     QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
     action->setCheckable(true);
-    action->setChecked(type == colormap_.type());
+    action->setChecked(type == renderer_.colormap());
     connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
   }
 }
@@ -340,16 +478,15 @@ void RasterLayer::readSettings()
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
   const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
   settings.endGroup();
   settings.endGroup();
-  // Apply the persisted ramp (re-render if it differs from the default used by
-  // the initial load); don't re-persist here.
-  if(type != colormap_.type())
+  // Apply the persisted ramp (re-bake + re-render if it differs); don't re-persist.
+  if(type != renderer_.colormap())
   {
-    colormap_.setType(type);
-    if(!filename_.isEmpty())
-      loadFile(filename_);
+    renderer_.setColormap(type);
+    cached_image_ = QImage();
+    update(boundingRect());
   }
 }
 
@@ -369,7 +506,7 @@ void RasterLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
-  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
   settings.endGroup();
   settings.endGroup();
 }
