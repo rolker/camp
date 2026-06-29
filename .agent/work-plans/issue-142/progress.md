@@ -137,3 +137,29 @@ The issue requires: when the operator views an uncertainty band → default colo
 
 ### Open questions
 - [ ] camp#138 sequencing: if live-cache auto-range refold lands before PR1 merges, verify the `range_model_.update_auto` call site in `foldAutoRange` does not conflict with #138's fold-logic changes (expected orthogonal, but warrants diff review at merge time).
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-29 18:10 +00:00
+**By**: Claude Code Agent (Claude Opus)
+<!-- Independent review: fresh-context sub-agent, distinct model (plan authored by Claude Sonnet). The name-only self-review heuristic is degenerate here (all agents share "Claude Code Agent"); this review is genuinely independent, so no self-review annotation. -->
+
+**Plan**: `.agent/work-plans/issue-142/plan.md` at `faf2374`
+**PR**: PR-less (`--issue` mode)
+**Verdict**: approve-with-suggestions
+
+Plan is well-targeted, correctly staged (PR1 backend+numeric UI; PR2 widget), and
+ADR-compliant. File targeting verified against live code: all three layers call
+`renderer_.renderToImage(…, data_min_, data_max_, size)` (exact substitution
+points); fold sites `tilesReady()`/`foldAutoRange()`/`imageReady()` and
+`contextMenu()`/settings groups all present. `RangeModel` API
+(`update_auto`/`set_manual`/`reset`/`lo`/`hi`/`mode`) confirmed in
+`marine_colormap/transfer.hpp`. ADR-0008 lands with the #141 rebase (step 1);
+pre-#141 `map::ColorMap::allTypes()` in `raster_layer.cpp` confirms the rebase is
+genuinely required. gh is unauthenticated in this environment — issue body was
+read from the two `## Issue Review` entries above rather than live `gh issue view`.
+
+### Findings
+- [ ] (suggestion) Uncertainty-band auto-default (a #142 requirement, flagged in issue review) is deferred to a post-#104 follow-on, but Estimated Scope says "PR2 closes #142" — reconcile: narrow #142's scope + open a follow-on, or keep #142 open past PR2. — `plan.md:75`
+- [ ] (suggestion) Persist round-trip tests use only `TestableGggsTileLayer`; the Consequences table claims the test pins keys for all three layers. Add a per-layer round-trip for SonarLiveCacheLayer + RasterLayer, or record manual verification. — `plan.md:78`
+- [ ] (suggestion) Step 7 says persist "via `settingsKey()`" but `RasterLayer::read/writeSettings` group under `itemID()`; implementer should use `itemID()` for RasterLayer. — `plan.md:69`
