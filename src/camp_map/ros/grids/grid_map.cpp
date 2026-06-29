@@ -6,6 +6,9 @@
 #include "marine_autonomy/gz4d_geo.h"
 #include <tf2/utils.h>
 #include "grid_layer.h"
+#include <marine_colormap/palette.hpp>
+#include <marine_colormap/color.hpp>
+#include <QColor>
 #include <QMenu>
 #include <QAction>
 #include <QSettings>
@@ -51,7 +54,7 @@ void GridMap::startRenderLocked()
   // Snapshot the inputs under the lock so the worker is fully isolated from
   // mutex_-guarded state.
   rendering_ = true;
-  process_future_ = QtConcurrent::run(this, &GridMap::processGridMap, last_msg_, colormap_);
+  process_future_ = QtConcurrent::run(this, &GridMap::processGridMap, last_msg_, colormap_name_);
 }
 
 void GridMap::requestRenderLocked()
@@ -82,17 +85,21 @@ void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
   requestRenderLocked();
 }
 
-void GridMap::processGridMap(grid_map_msgs::msg::GridMap data, map::ColorMap colormap)
+void GridMap::processGridMap(grid_map_msgs::msg::GridMap data, std::string colormap_name)
 {
   GridMapData grid_data;
-  if(renderToData(data, colormap, grid_data))
+  if(renderToData(data, colormap_name, grid_data))
     emit newGridData(grid_data);
   onProcessFinished();
 }
 
 bool GridMap::renderToData(const grid_map_msgs::msg::GridMap &data,
-                           const map::ColorMap &colormap, GridMapData &grid_data)
+                           const std::string &colormap_name, GridMapData &grid_data)
 {
+  // [camp#141] Resolve the palette once for the whole message; unknown -> grayscale.
+  const marine_colormap::Palette* palette = marine_colormap::find_palette(colormap_name);
+  if(!palette)
+    palette = marine_colormap::find_palette("grayscale");
   grid_map::GridMap grid_map;
   auto node = node_->node();
   rclcpp::Clock clock;
@@ -152,11 +159,15 @@ bool GridMap::renderToData(const grid_map_msgs::msg::GridMap &data,
         double value = grid_map.at(layer, *iterator);
         if(!std::isnan(value))
         {
-          // [camp#63] Normalised value -> colour via the selectable ramp
-          // (colorNormalized clamps to [0,1]); default grayscale reproduces the
-          // prior output.
+          // [camp#63 / camp#141] Normalised value -> colour via the selected
+          // marine_colormap palette (Palette::sample clamps to [0,1]); invalid
+          // (NaN) cells are left transparent by the fill above. Default grayscale.
           value = (value - min_value) / (max_value - min_value);
-          grid_layer_data.grid_image.setPixelColor(QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()), colormap.colorNormalized(value));
+          const marine_colormap::Rgba8 c =
+            marine_colormap::to_rgba8(palette->sample(static_cast<float>(value)));
+          grid_layer_data.grid_image.setPixelColor(
+            QPoint(size.x()-1-iterator.getUnwrappedIndex().x(), iterator.getUnwrappedIndex().y()),
+            QColor(c.r, c.g, c.b));
         }
       }
     }
@@ -195,13 +206,13 @@ void GridMap::updateGridLayer(const GridMapLayerData& data)
   layer->updateGridLayer(data);
 }
 
-void GridMap::setColormap(map::ColorMap::Type type)
+void GridMap::setColormap(const std::string& name)
 {
   {
     QMutexLocker lock(&mutex_);
-    if(type == colormap_.type())
+    if(name == colormap_name_)
       return;
-    colormap_.setType(type);
+    colormap_name_ = name;
     if(has_last_msg_)             // re-render the cached grid with the new ramp
       requestRenderLocked();      // coalesced: not lost even if a render is in flight
   }
@@ -211,13 +222,19 @@ void GridMap::setColormap(map::ColorMap::Type type)
 void GridMap::contextMenu(QMenu* menu)
 {
   Layer::contextMenu(menu);
-  QMenu* colormap_menu = menu->addMenu("Colormap");
-  for(auto type : map::ColorMap::allTypes())
+  // [camp#141] Expose the FULL marine_colormap registry, not just the legacy ramps.
+  std::string current;
   {
-    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    QMutexLocker lock(&mutex_);
+    current = colormap_name_;
+  }
+  QMenu* colormap_menu = menu->addMenu("Colormap");
+  for(const std::string& name : marine_colormap::palette_names())
+  {
+    QAction* action = colormap_menu->addAction(QString::fromStdString(name));
     action->setCheckable(true);
-    action->setChecked(type == colormap_.type());
-    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+    action->setChecked(name == current);
+    connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 }
 
@@ -227,12 +244,16 @@ void GridMap::readSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
-  auto type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(colormap_.type())).toString());
+  // [camp#141] Persisted palette name; case-insensitive read + registry-validated
+  // (unknown -> grayscale).
+  std::string name = settings.value(
+    "colormap", QString::fromStdString(colormap_name_)).toString().toLower().toStdString();
+  if(!marine_colormap::palette_index(name))
+    name = "grayscale";
   settings.endGroup();
   settings.endGroup();
   QMutexLocker lock(&mutex_);
-  colormap_.setType(type);
+  colormap_name_ = name;
 }
 
 void GridMap::writeSettings()
@@ -241,7 +262,12 @@ void GridMap::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
-  settings.setValue("colormap", map::ColorMap::name(colormap_.type()));
+  std::string name;
+  {
+    QMutexLocker lock(&mutex_);   // snapshot the name; QSettings I/O stays unlocked
+    name = colormap_name_;
+  }
+  settings.setValue("colormap", QString::fromStdString(name));
   settings.endGroup();
   settings.endGroup();
 }

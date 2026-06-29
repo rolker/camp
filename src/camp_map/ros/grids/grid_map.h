@@ -2,7 +2,6 @@
 #define CAMP_ROS_GRIDS_GRID_MAP_H
 
 #include "../layer.h"
-#include "../../map/color_map.h"
 #include "grid_map_msgs/msg/grid_map.hpp"
 #include <QtConcurrent>
 #include <QMutex>
@@ -44,9 +43,10 @@ public:
   GridMap(MapItem* parent, Node* node, QString topic);
   ~GridMap() override;   // joins the in-flight render worker before teardown
 
-  /// [camp#63] Select the colour ramp for this layer; persists and re-renders
-  /// the last received grid.
-  void setColormap(map::ColorMap::Type type);
+  /// [camp#63 / camp#141] Select the colour ramp for this layer by marine_colormap
+  /// palette name; persists and re-renders the last received grid. Unknown name ->
+  /// grayscale.
+  void setColormap(const std::string& name);
 
 protected:
   void contextMenu(QMenu* menu) override;
@@ -60,12 +60,12 @@ private:
   void gridMapCallback(const grid_map_msgs::msg::GridMap &data);
 
   // Worker body (runs on a QtConcurrent thread). Takes its inputs by value so
-  // it never touches mutex_-guarded state: the message and colormap are
+  // it never touches mutex_-guarded state: the message and colormap name are
   // snapshotted under the lock at launch.
-  void processGridMap(grid_map_msgs::msg::GridMap data, map::ColorMap colormap);
-  // Renders `data` with `colormap` into `out`; returns false (no emit) when the
-  // message can't be converted, has no layers, or has no earth transform.
-  bool renderToData(const grid_map_msgs::msg::GridMap &data, const map::ColorMap &colormap,
+  void processGridMap(grid_map_msgs::msg::GridMap data, std::string colormap_name);
+  // Renders `data` with the `colormap_name` palette into `out`; returns false (no
+  // emit) when the message can't be converted, has no layers, or has no transform.
+  bool renderToData(const grid_map_msgs::msg::GridMap &data, const std::string &colormap_name,
                     GridMapData &out);
 
   // Render-scheduling helpers. *Locked variants assume mutex_ is held. Only one
@@ -95,9 +95,9 @@ private:
   bool render_pending_ = false;  // a request arrived while rendering_; render once more
   bool shutdown_ = false;        // set by the dtor so the worker stops relaunching
 
-  // [camp#63] Colour ramp applied to the normalised grid values. Default
-  // grayscale (the camp_map post-#59 default); selectable per layer.
-  map::ColorMap colormap_;
+  // [camp#63 / camp#141] marine_colormap palette applied to the normalised grid
+  // values. Default grayscale (the camp_map post-#59 default); selectable per layer.
+  std::string colormap_name_{"grayscale"};
 
   // Last received message, cached so a colormap change can re-render without
   // waiting for the next publish (live costmaps would also pick it up).
