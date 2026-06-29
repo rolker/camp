@@ -167,6 +167,15 @@ private:
   // Needed to recover a GridIndex from a cached GeoTIFF on warm-load.
   std::optional<std::uint8_t> level_;
 
+  // [camp#134] The shared GL raster renderer (its own offscreen context + the
+  // unified shader + colormap LUT). Replaces the shader/program/LUT/FBO this layer
+  // used to duplicate from GggsTileLayer. Default ramp Grayscale (renderer default).
+  // Declared BEFORE the texture-holding tiles_ so reverse-declaration destruction
+  // tears the tiles (and their Entry GL textures) down before the renderer's
+  // context — the invariant the dtor body already enforces explicitly, now also
+  // structural.
+  raster::RasterGlRenderer renderer_;
+
   marine_tiled_raster_store::TileCatalogReconciler reconciler_;
   std::map<gggs::GridIndex, Entry> tiles_;
 
@@ -198,11 +207,6 @@ private:
   // once teardown starts.
   std::vector<QFutureWatcher<void>*> write_watchers_;
   bool shutting_down_ = false;
-
-  // [camp#134] The shared GL raster renderer (its own offscreen context + the
-  // unified shader + colormap LUT). Replaces the shader/program/LUT/FBO this layer
-  // used to duplicate from GggsTileLayer. Default ramp Grayscale (renderer default).
-  raster::RasterGlRenderer renderer_;
 
   QImage cached_image_;
   QSize cached_size_;

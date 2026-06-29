@@ -248,7 +248,11 @@ void SonarLiveCacheLayer::warmLoad()
   // — intact). A displaced Entry's QOpenGLTexture must be freed under a current GL
   // context, so make it current for the seed loop when tiles already hold textures.
   // On the first (empty-map) warm load there is nothing to displace, so skip it.
-  const bool gl_current = !tiles_.empty() && renderer_.makeCurrent();
+  // Gate on hasContext() (mirrors GggsTileLayer::applyBand): when no context exists
+  // yet no texture was ever uploaded, so skip makeCurrent() rather than forcing the
+  // offscreen context into existence to reset null textures.
+  const bool gl_current =
+    !tiles_.empty() && renderer_.hasContext() && renderer_.makeCurrent();
   const gggs::Level level(*level_);
   for(auto& tile : SonarLiveTile::loadCacheDir(cache_dir_, level))
   {
@@ -336,10 +340,14 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   // ONLY under a current GL context — erasing it here without one leaks the texture
   // as tiles churn (the boat keeps producing; the catalog keeps pruning). Make the
   // renderer's context current for the erase loop, exactly like the dtor's teardown.
-  // If makeCurrent() fails (offscreen GL unavailable) no live texture was ever
-  // uploaded, so a plain erase is harmless — mirrors the dtor's null-context guard.
+  // Gate on hasContext() (mirrors GggsTileLayer::applyBand): with no context yet no
+  // texture was ever uploaded, so a plain erase is harmless and we skip makeCurrent()
+  // rather than forcing the offscreen context into existence. If the context EXISTS
+  // but makeCurrent() fails, the textures stay alive but a plain erase still mirrors
+  // the dtor's null-context guard.
   bool pruned = false;
-  const bool gl_current = !result.to_prune.empty() && renderer_.makeCurrent();
+  const bool gl_current =
+    !result.to_prune.empty() && renderer_.hasContext() && renderer_.makeCurrent();
   for(const auto& index : result.to_prune)
   {
     auto it = tiles_.find(index);

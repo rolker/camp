@@ -158,6 +158,15 @@ private:
   // [camp#134] Latitude tessellation moved into RasterGlRenderer (the shared warp).
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
+  // [camp#134] The shared GL raster renderer (its own offscreen context + the
+  // unified shader + colormap LUT). Replaces this layer's former duplicated
+  // shader/program/LUT/FBO. Default ramp is Grayscale (the renderer's default),
+  // preserving the original look; selectable via the context menu. Declared BEFORE
+  // the texture-holding tiles_ so reverse-declaration destruction tears the tiles
+  // (and their GL textures) down before the renderer's context — the invariant the
+  // dtor body already enforces explicitly, now also structural.
+  RasterGlRenderer renderer_;
+
   QString directory_;
   int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
@@ -181,12 +190,6 @@ private:
   bool abort_flag_ = false;
   QMutex abort_flag_mutex_;
   bool load_started_ = false;  // first paint() kicks the load exactly once
-
-  // [camp#134] The shared GL raster renderer (its own offscreen context + the
-  // unified shader + colormap LUT). Replaces this layer's former duplicated
-  // shader/program/LUT/FBO. Default ramp is Grayscale (the renderer's default),
-  // preserving the original look; selectable via the context menu.
-  RasterGlRenderer renderer_;
 
   QImage cached_image_;        // last render, reused on pan (re-rendered on zoom)
   QSize cached_size_;
