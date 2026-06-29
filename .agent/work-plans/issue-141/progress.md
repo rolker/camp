@@ -94,3 +94,85 @@ architectural decision to record.
   (renderer+gggs+sonar, then raster_layer+grid_map) per the Issue Review staging note — `plan.md:120`
 - [ ] (suggestion) Scope the new ADR explicitly as "camp ADR-0008" to avoid collision with workspace
   ADR-0008 (ROS 2 conventions) referenced in the Issue Review — `plan.md:62`, `plan.md:87`
+
+## Implementation
+**Status**: complete (host-verify pending — container cannot build camp)
+**When**: 2026-06-29 10:30 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-141
+**Commits** (atomic, ordered; agent identity stamped):
+- `166bdc1` feat: add marine_colormap dependency + ADR-0008
+- `3c35cfe` refactor: migrate GPU LUT path (renderer + gggs + sonar + raster_layer)
+- `a61764e` refactor: migrate GridMap CPU path
+- `9d0bf33` refactor: delete internal ColorMap; characterize marine_colormap
+- (this entry) progress
+
+### What changed
+Replaced camp's internal `camp::map::ColorMap` (3 sparse ramps) with `marine_colormap`
+(6-palette registry) across all 7 consumers, migrated together (no mixed path):
+
+- **GPU path** (`RasterGlRenderer::ensureLut`, used by gggs_tile_layer /
+  sonar_live_cache_layer / raster_layer): the LUT is now baked via
+  `bake_lut(find_palette(name), TransferParams{}, 256)` and copied into the existing
+  256×1 RGBA LUT texture. The **#134 shader contract is preserved unchanged** — NaN +
+  finite-NoData `discard`, `Nearest`, per-band range normalize stay in the fragment
+  shader; marine_colormap's GPU shader / `marine_colormap_response` are **not** used.
+  Identity `TransferParams` at bake time (range/gain/contrast stay the shader's job).
+- **CPU path** (`GridMap`): `colormap.colorNormalized(t)` → `find_palette(name)->sample(t)`
+  quantized to a `QColor` (`to_rgba8`); invalid (NaN) cells stay transparent via the
+  existing `!isnan` guard. The worker snapshot carries the name by value under the
+  same mutex as before.
+- **API**: `setColormap(const std::string& name)`; layers store/persist
+  `std::string colormap_name_`; getter returns the name. Unknown name → grayscale
+  (renderer `ensureLut` + each layer's read both fall back).
+
+**Full-registry exposure**: every Colormap context menu is now built from
+`marine_colormap::palette_names()` (grayscale/bronze/thermal/viridis/turbo/quality),
+not the old three ramps.
+
+**Persisted-name migration**: each `readSettings()` lowercases the stored name and
+validates it against the registry (`palette_index`), falling back to grayscale for an
+unknown name — so existing lowercase names round-trip and any legacy capitalized
+"Viridis"/"Turbo" still resolves. Persistence stays keyed via `settingsKey()` /
+`itemID()` as before. RasterLayer keeps **viridis** as its scalar default.
+
+**Dependency**: `<depend>marine_colormap</depend>` + `find_package`; linked **PRIVATE**
+to `camp_map` (no marine_colormap type is in any installed camp_map header — the
+colormap is a `std::string` name) and added to `camp_map_ros`'s
+`ament_target_dependencies` for the GridMap/SonarLiveCacheLayer consumers.
+
+**Deleted** `src/camp_map/map/color_map.{h,cpp}` + removed from CMake sources.
+
+### Plan-review findings folded in
+- **(must-fix) Reframed the parity test — no false equivalence.** `test_color_map.cpp`
+  is replaced with a characterization suite: **grayscale** asserted exact;
+  **viridis/turbo** snapshot the NEW canonical 256-entry `bake_lut` output
+  (endpoints exact, midpoints within 1 LSB: viridis[128]≈(33,145,140),
+  turbo[128]≈(164,252,60)) and explicitly guard that the canonical (not the old
+  sparse ~168-green) table is in use. Also covers: all 6 palettes opaque in-range,
+  `palette_names()` registry pin, name↔index round-trip, and the case-insensitive
+  grayscale-fallback rule. No "locks in render equivalence" wording. NaN-discard
+  stays covered by the render-path test (`test_raster_gl_renderer.cpp`).
+- **(suggestion) PRIVATE link** — done (see Dependency above).
+- **(suggestion) camp ADR-0008 numbering** — ADR explicitly labels itself **camp
+  ADR-0008** with a note disambiguating it from the workspace ADR-0008, and its
+  cross-refs use the correct camp series (camp ADR-0001 = TopicBridge, ADR-0007 =
+  RasterFieldSource). The committed `plan.md`'s ADR-table mislabel was left as the
+  historical record; the authoritative ADR is correct.
+- **(suggestion) GPU/CPU split fallback** — the migration was committed as that exact
+  split (GPU: renderer+gggs+sonar+raster_layer; CPU: grid_map; then delete), so a
+  bisect/partial-revert seam exists even though it shipped as one PR.
+
+### Build status
+**Not built in-container** — `./ui_ws/build.sh camp` fails at colcon configure because
+the underlay `marine_colormap` (and the other lower layers) are not installed in the
+container (the known camp limitation): `Failed to find ... install/marine_colormap/
+share/marine_colormap/package.sh`. This is a missing-underlay error, not a compile
+error in the change, and confirms the new dependency is now resolved by colcon. The
+edits were made cleanly and committed; **host verifies** via
+`source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`.
+
+### Next step
+Host build + test. On green, this is ready for PR (Closes #141); reconcile camp#63's
+"camp-internal ColorMap" wording per ADR-0008.
