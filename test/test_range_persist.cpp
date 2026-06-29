@@ -141,6 +141,10 @@ TEST(RangePersist, GggsAutoRoundTrips)
     auto* layer = new TestableGggsTileLayer(layers, tileset.path());
     layer->readSettings();
     EXPECT_EQ(layer->rangeMode(), RangeMode::Auto);
+    // An Auto round-trip must leave the model tracking the data, not pin a manual
+    // override; with no tiles loaded it stays at the RangeModel default extents.
+    EXPECT_FLOAT_EQ(layer->rangeLo(), 0.0f);
+    EXPECT_FLOAT_EQ(layer->rangeHi(), 1.0f);
   }
 }
 
@@ -212,6 +216,10 @@ TEST(RangePersist, RasterAutoRoundTrips)
     auto* layer = new TestableRasterLayer(layers, file);
     layer->readSettings();
     EXPECT_EQ(layer->rangeMode(), RangeMode::Auto);
+    // An Auto round-trip must leave the model tracking the data, not pin a manual
+    // override; with no raster loaded it stays at the RangeModel default extents.
+    EXPECT_FLOAT_EQ(layer->rangeLo(), 0.0f);
+    EXPECT_FLOAT_EQ(layer->rangeHi(), 1.0f);
   }
 }
 
@@ -275,6 +283,10 @@ TEST(RangePersist, SonarAutoRoundTrips)
     auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
     layer->readSettings();
     EXPECT_EQ(layer->rangeMode(), RangeMode::Auto);
+    // An Auto round-trip must leave the model tracking the data, not pin a manual
+    // override; with no source loaded it stays at the RangeModel default extents.
+    EXPECT_FLOAT_EQ(layer->rangeLo(), 0.0f);
+    EXPECT_FLOAT_EQ(layer->rangeHi(), 1.0f);
   }
 }
 

@@ -655,12 +655,12 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     bool ok = false;
     const double lo = QInputDialog::getDouble(
       nullptr, "Colormap range", "Minimum:", range_model_.lo(),
-      -1.0e9, 1.0e9, 4, &ok);
+      -1.0e9, 1.0e9, 6, &ok);
     if(!ok)
       return;
     const double hi = QInputDialog::getDouble(
       nullptr, "Colormap range", "Maximum:", range_model_.hi(),
-      -1.0e9, 1.0e9, 4, &ok);
+      -1.0e9, 1.0e9, 6, &ok);
     if(!ok)
       return;
     setRangeOverride(float(lo), float(hi));
@@ -732,9 +732,12 @@ void GggsTileLayer::readSettings()
   // mirroring the inline colormap apply directly below.
   const int band = settings.value("band", 1).toInt();
   // [camp#142] Persisted colormap range. "manual" restores the operator override;
-  // anything else (default "auto") leaves the data-driven Auto range. min/max are
-  // only meaningful in Manual mode but are always written, so they round-trip.
+  // anything else (default "auto") leaves the data-driven Auto range. Honor Manual
+  // only when both extents are present too — a partial/corrupt entry falls back to
+  // Auto rather than snapping to the [0,1] read-defaults.
   const QString range_mode = settings.value("range_mode", "auto").toString();
+  const bool has_manual_range = range_mode == "manual" &&
+    settings.contains("range_min") && settings.contains("range_max");
   const float range_min = settings.value("range_min", 0.0).toFloat();
   const float range_max = settings.value("range_max", 1.0).toFloat();
   settings.endGroup();
@@ -748,7 +751,7 @@ void GggsTileLayer::readSettings()
     applyBand(band);
   // Apply the persisted range AFTER the band switch (applyBand resets data_min_/
   // data_max_; a Manual override is independent of the data extents and survives).
-  if(range_mode == "manual")
+  if(has_manual_range)
     range_model_.set_manual(range_min, range_max);
   else
     range_model_.reset();
