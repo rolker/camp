@@ -2,7 +2,6 @@
 #define RASTER_GGGS_TILE_LAYER_H
 
 #include "../map/layer.h"
-#include "../map/color_map.h"
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
 
@@ -11,6 +10,7 @@
 #include <QMutex>
 #include <QSize>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace camp
@@ -77,9 +77,9 @@ public:
   /// without a window.
   QImage renderImage(const QSize& size);
 
-  /// [camp#90] Select the colour ramp (the shared camp::map::ColorMap, baked to
-  /// a GPU LUT). Persists and re-renders.
-  void setColormap(map::ColorMap::Type type);
+  /// [camp#90 / camp#141] Select the colour ramp by marine_colormap palette name
+  /// (baked to a GPU LUT). Persists and re-renders. Unknown name -> grayscale.
+  void setColormap(const std::string& name);
 
   /// [camp#108] The 1-indexed band the tiles render (default 1).
   int band() const { return band_; }

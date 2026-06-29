@@ -3,6 +3,8 @@
 #include "../node.h"
 #include "../../map_view/web_mercator.h"
 
+#include <marine_colormap/palette.hpp>
+
 #include <QAction>
 #include <QDebug>
 #include <QDir>
@@ -638,11 +640,11 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
 
 // ------------------------------- band / colormap -----------------------------
 
-void SonarLiveCacheLayer::setColormap(map::ColorMap::Type type)
+void SonarLiveCacheLayer::setColormap(const std::string& name)
 {
-  if(type == renderer_.colormap())
+  if(name == renderer_.colormap())
     return;
-  renderer_.setColormap(type);   // re-bakes the LUT on next render
+  renderer_.setColormap(name);   // re-bakes the LUT on next render
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
@@ -686,13 +688,14 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
             &SonarLiveCacheLayer::enableLiveCoverage);
   }
 
+  // [camp#141] Expose the FULL marine_colormap registry, not just the legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
-  for(auto type : map::ColorMap::allTypes())
+  for(const std::string& name : marine_colormap::palette_names())
   {
-    QAction* action = colormap_menu->addAction(map::ColorMap::name(type));
+    QAction* action = colormap_menu->addAction(QString::fromStdString(name));
     action->setCheckable(true);
-    action->setChecked(type == renderer_.colormap());
-    connect(action, &QAction::triggered, this, [this, type]() { setColormap(type); });
+    action->setChecked(name == renderer_.colormap());
+    connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 
   // Band picker over the union of band names across held tiles. Only shown when
@@ -726,17 +729,21 @@ void SonarLiveCacheLayer::readSettings()
   // Default discovered layers OFF in the tree (like GGGS tile-sets) — the operator
   // turns coverage on explicitly.
   setVisible(settings.value("visible", false).toBool());
-  const map::ColorMap::Type type = map::ColorMap::typeFromName(
-    settings.value("colormap", map::ColorMap::name(renderer_.colormap())).toString());
+  // [camp#141] Persisted palette name; case-insensitive read + registry-validated
+  // (unknown -> grayscale), mirroring GggsTileLayer.
+  std::string colormap = settings.value(
+    "colormap", QString::fromStdString(renderer_.colormap())).toString().toLower().toStdString();
+  if(!marine_colormap::palette_index(colormap))
+    colormap = "grayscale";
   const std::string band = settings.value("band", QString::fromStdString(band_name_))
                              .toString().toStdString();
   const bool was_enabled = settings.value("live_enabled", false).toBool();
   settings.endGroup();
   settings.endGroup();
 
-  if(type != renderer_.colormap())
+  if(colormap != renderer_.colormap())
   {
-    renderer_.setColormap(type);
+    renderer_.setColormap(colormap);
     cached_image_ = QImage();
   }
   if(!band.empty())
@@ -753,7 +760,7 @@ void SonarLiveCacheLayer::writeSettings()
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
-  settings.setValue("colormap", map::ColorMap::name(renderer_.colormap()));
+  settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.setValue("band", QString::fromStdString(band_name_));
   settings.setValue("live_enabled", enabled_);
   settings.endGroup();

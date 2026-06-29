@@ -2,7 +2,6 @@
 #define CAMP_ROS_LIVE_COVERAGE_SONAR_LIVE_CACHE_LAYER_H
 
 #include "../layer.h"
-#include "../../map/color_map.h"
 #include "../../raster/raster_field_source.h"
 #include "../../raster/raster_gl_renderer.h"
 #include "sonar_live_tile.h"
@@ -150,7 +149,7 @@ private:
   // [camp#121] Band selection (by NAME, since live bands are named, unlike the
   // GggsTile 1-indexed bands). Default picks "depth" if present else the first.
   std::string defaultBand() const;
-  void setColormap(map::ColorMap::Type type);
+  void setColormap(const std::string& name);   // [camp#141] marine_colormap palette
   void setBandName(const std::string& name);
 
   // [camp#134] (Re)upload the selected band of @p entry as an R32F value texture
