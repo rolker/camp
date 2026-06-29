@@ -66,3 +66,31 @@ architectural decision to record.
 
 ### Open questions
 - [ ] No open questions — scope decisions are explicit in the issue; plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-29 09:52 +00:00
+**By**: Claude Code Agent (Claude Opus)
+<!-- Independent review: the plan author was Claude Sonnet (fresh-context, separately
+     dispatched). The shared "Claude Code Agent" name matches the self-review heuristic,
+     but the model and context differ, so this is genuinely independent — annotation omitted. -->
+
+**Plan**: `.agent/work-plans/issue-141/plan.md` at `d14ca9b`
+**PR**: PR-less (`--issue` mode; `gh` unauthenticated, issue context taken from the
+`## Issue Review` entry above)
+**Verdict**: changes-requested
+
+### Findings
+- [ ] (must-fix) Parity test rests on false equivalence — camp viridis/turbo are sparse 7/8-stop
+  approximations; marine_colormap's are canonical 256-entry tables. At t=0.5 camp viridis (34,168,132)
+  vs canonical (33,145,140) = green off by 23, >> the ≤2/channel tolerance. Grayscale parity holds;
+  viridis/turbo do not. Reframe step 1 (grayscale exact; viridis/turbo = intended change, snapshot new
+  values) and fix the "locks in render equivalence" Principles claim — `plan.md:28`, `plan.md:97`
+- [ ] (suggestion) ADR table mislabels camp ADR-0001 as "Adopt ADRs" — that is a *workspace* ADR
+  (camp ADR-0001 is TopicBridge); ADR-0007 already corrected this exact error — `plan.md:104`
+- [ ] (suggestion) Link `marine_colormap` `PRIVATE` not `PUBLIC` — no marine_colormap type appears in
+  camp_map's installed headers post-migration (Only what's needed) — `plan.md:36`, `plan.md:105`
+- [ ] (suggestion) ~17 files exceeds the single-PR rubric; record a GPU/CPU split fallback
+  (renderer+gggs+sonar, then raster_layer+grid_map) per the Issue Review staging note — `plan.md:120`
+- [ ] (suggestion) Scope the new ADR explicitly as "camp ADR-0008" to avoid collision with workspace
+  ADR-0008 (ROS 2 conventions) referenced in the Issue Review — `plan.md:62`, `plan.md:87`
