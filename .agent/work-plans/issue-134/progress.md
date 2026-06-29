@@ -109,3 +109,15 @@ the correct home.
 - [ ] Stage the refactor into at minimum two PRs: shared renderer + GGGS adapter first, then live cache + raster_layer.
 - [ ] Verify CPU range path in GggsTileLayer (`isfinite`) stays consistent with the unified shader's NaN discard.
 - [ ] Consider an ADR for `RasterFieldSource` interface design (threading contract for `read()`).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-29 04:09 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-134/plan.md` at `6fbe701`
+**Branch**: feature/issue-134 at `6fbe701`
+**Phases**: single
+
+### Open questions
+- [ ] `RasterLayer` RGB/palette bands: composite on CPU → RGBA8 texture (recommended for this PR) vs per-band R32F + channel compositor — decide before implementing step 6.
