@@ -3,6 +3,8 @@
 
 #include "../map/layer.h"
 #include "../map/color_map.h"
+#include "raster_field_source.h"
+#include "raster_gl_renderer.h"
 
 #include <QFutureWatcher>
 #include <QImage>
@@ -10,12 +12,6 @@
 #include <QSize>
 #include <memory>
 #include <vector>
-
-class QOpenGLContext;
-class QOffscreenSurface;
-class QOpenGLFramebufferObject;
-class QOpenGLShaderProgram;
-class QOpenGLTexture;
 
 namespace camp
 {
@@ -42,7 +38,7 @@ class GggsTile;
 /// tessellation; whole-extent render cached by on-screen size. Multi-band
 /// GeoTIFFs expose a per-layer band picker (camp#108); visible-region-only
 /// render is Slice 2.
-class GggsTileLayer: public map::Layer
+class GggsTileLayer: public map::Layer, public RasterFieldSource
 {
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
@@ -119,6 +115,14 @@ public:
   /// (ADR-0005); a per-layer watcher is a follow-up.
   bool rescan();
 
+  // [camp#134] RasterFieldSource: feed the shared RasterGlRenderer. bands() lists
+  // the 1-indexed tile bands; items() returns the loaded tiles as Scalar items
+  // (textures uploaded lazily under the renderer's current context).
+  QStringList bands() const override;
+  RasterBandMeta metadata(const QString& band) const override;
+  QList<RasterFieldItem> items() override;
+  QPair<float, float> dataRange() const override;
+
 protected:
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
@@ -150,16 +154,8 @@ private:
   /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
   /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.
   void loadTilesWorker();
-  bool ensureGL();
-  bool ensureProgram();
-  QOpenGLTexture* ensureLut();
-  void releaseGL();
 
-  // Latitude tessellation per tile. The geo->Web-Mercator warp is separable:
-  // longitude is linear, latitude is the lone nonlinearity. 16 strips is
-  // sub-pixel over a tile at these zooms (Slice 2 tunes this to a < 0.5 px
-  // budget and renders only the visible region for large surveys).
-  static constexpr int kLatSubdivisions = 16;
+  // [camp#134] Latitude tessellation moved into RasterGlRenderer (the shared warp).
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
   QString directory_;
@@ -186,18 +182,11 @@ private:
   QMutex abort_flag_mutex_;
   bool load_started_ = false;  // first paint() kicks the load exactly once
 
-  // The layer's own offscreen GL context — created lazily, used only for the
-  // FBO render; never touches the GUI's context.
-  QOpenGLContext* gl_context_ = nullptr;
-  QOffscreenSurface* gl_surface_ = nullptr;
-  std::unique_ptr<QOpenGLFramebufferObject> fbo_;
-  std::unique_ptr<QOpenGLShaderProgram> program_;
-  std::unique_ptr<QOpenGLTexture> lut_texture_;   // colormap LUT (256x1 RGBA)
-  bool gl_failed_ = false;
-
-  // Default grayscale preserves the original look; selectable via context menu.
-  map::ColorMap colormap_{map::ColorMap::Grayscale};
-  bool lut_dirty_ = true;      // re-bake the LUT on next render after a change
+  // [camp#134] The shared GL raster renderer (its own offscreen context + the
+  // unified shader + colormap LUT). Replaces this layer's former duplicated
+  // shader/program/LUT/FBO. Default ramp is Grayscale (the renderer's default),
+  // preserving the original look; selectable via the context menu.
+  RasterGlRenderer renderer_;
 
   QImage cached_image_;        // last render, reused on pan (re-rendered on zoom)
   QSize cached_size_;
