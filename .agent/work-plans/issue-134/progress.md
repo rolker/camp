@@ -374,3 +374,42 @@ full `build.sh`/`test.sh` on a host with the lower layers built — including th
 ### Next step
 Host should re-dispatch `review-code` for a Round-2 pre-push read; on a GL host,
 confirm `test_raster_gl_renderer` RUNs (not SKIP) and the new sub-unit case passes.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 05:32 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-134 at `396bb74`
+**Mode**: pre-push
+**Depth**: Deep (reason: large cross-cutting GL refactor, new ADR-0007, concurrency/lifecycle)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 2 | **Ship**: recommended — both Round-1 must-fixes verified correct and complete; two independent Deep-tier adversarial passes (Lens A logic, Lens B lifecycle) plus the lead found no new must-fix; only low-priority consistency nits remain.
+
+Round-2 read of the address-findings fix commit `736922b`. Verified against the code
+and the `origin/jazzy` baseline:
+- **Must-fix 1 (scalar-colormap true-span)** — `raster_gl_renderer.cpp:84` `max(span, 1e-6)`
+  matches `ColorMap::color`'s true-span normalization (`color_map.cpp:95-100`); new test
+  `ScalarSubUnitRangeSpansColormap` discriminates the fix from the old `1.0` floor. Correct.
+- **Must-fix 2 (prune GPU-texture leak)** — `sonar_live_cache_layer.cpp:342-362` guards the
+  prune-erase loop with makeCurrent/doneCurrent; warmLoad's `insert_or_assign` displacement
+  (`:251,:264`) guarded the same way. All texture destroy/create sites audited (Lens B):
+  every one runs under a current GL context; member-decl order safe via dtor-body release.
+
+Static analysis limited (env cannot build lower layers; cppcheck clean but Qt/ROS headers
+unresolved). Governance: ADR-0007 added cleanly; ADR-0006 persistence/subscription and
+ADR-0001 GUI-thread marshalling verified untouched. Plan adherence strong (ordered
+per-adapter commits a→e; `RasterFieldItem::Format` resolved the plan's open RGBA question).
+
+### Findings
+- [ ] (suggestion) Gate sonar prune/warm-load `makeCurrent()` on `hasContext()` like `GggsTileLayer::applyBand` — avoids forcing the offscreen context into existence just to reset null textures — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:342,251`
+- [ ] (suggestion) Declare `renderer_` before `tiles_` in the two ROS-layer headers so safe teardown order is intrinsic, not dtor-body-dependent (current code is safe) — `src/camp_map/raster/gggs_tile_layer.h`, `src/camp_map/ros/live_coverage/sonar_live_cache_layer.h`
+- [ ] (suggestion) Drop the now-redundant `Nearest` filter set at upload (renderer sets the scalar filter at draw time; `textureFor` already dropped it) — `src/camp_map/raster/gggs_tile.cpp:180` (pre-existing, unchanged file)
+
+### Next step
+Verdict is **approved** (Round 2, 0 must-fix). Lifecycle: **Local Review** → push / open PR
+→ **triage-reviews**. The 3 suggestions are optional and non-blocking; they can be applied
+before push or tracked as follow-ups. Remaining verification (unchanged): on a GL host with
+the lower layers built, run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp` and confirm
+`test_raster_gl_renderer` RUNs (not SKIP) — including the new sub-unit case — and passes.
