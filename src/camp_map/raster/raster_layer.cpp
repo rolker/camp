@@ -256,6 +256,15 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
       }
       result.values = std::move(values);
     }
+    else
+    {
+      // [camp#134] A failed scalar read must NOT fall through to result.ok = true:
+      // that reported success while uploading nothing (an empty values buffer ->
+      // no texture -> a blank layer). Leave ok = false so imageReady() surfaces the
+      // failure ("(load failed)"), matching the RGBA path's load-failure handling.
+      qDebug("RasterLayer::loadFile scalar band RasterIO read failed");
+      return result;   // result.ok stays false (default)
+    }
   }
   else
   {
@@ -278,6 +287,8 @@ RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filenam
             if(color_table)
             {
               GDALColorEntry const *ce = color_table->GetColorEntry(buffer[i]);
+              if(!ce)
+                continue;   // index outside the palette -> leave the fill (skip)
               scanline[i*4] = ce->c3;
               scanline[i*4+1] = ce->c2;
               scanline[i*4+2] = ce->c1;
@@ -369,7 +380,13 @@ void RasterLayer::imageReady()
     }
     else if(!is_scalar_ && !result.rgba.isNull())
     {
-      const QImage rgba8 = result.rgba.convertToFormat(QImage::Format_RGBA8888);
+      // [camp#134] Upload PREMULTIPLIED RGBA so mipmap generation (and linear
+      // minification) box-filter premultiplied texels — straight-alpha averaging
+      // bleeds the transparent cells' black RGB into the edges as dark fringes when
+      // the chart is zoomed out. The shared shader's Rgba branch samples this texel
+      // as already-premultiplied (no second c.rgb*c.a), matching the premultiplied
+      // GL_ONE / GL_ONE_MINUS_SRC_ALPHA blend.
+      const QImage rgba8 = result.rgba.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
       texture_ = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
       texture_->setFormat(QOpenGLTexture::RGBA8_UNorm);
       texture_->setSize(rgba8.width(), rgba8.height());

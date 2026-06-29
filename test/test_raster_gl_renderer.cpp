@@ -115,6 +115,50 @@ TEST(RasterGlRendererTest, ScalarNanAndSentinelDiscard)
   EXPECT_GT(img.pixelColor(1, 1).alpha(), 0);
 }
 
+// [camp#134 must-fix] Sub-unit value range: the colormap must stretch across a data
+// range narrower than 1.0. A 2x1 R32F tile: col0 = data_min (0.0), col1 = data_max
+// (0.3), Grayscale ramp, range [0.0, 0.3]. With the TRUE-span denominator the max
+// sample reaches t = 1.0 (white, ~255). Under the old max(u_max - u_min, 1.0)
+// denominator floor it only reached t = 0.3 -> grey ~76, collapsing the contrast —
+// so the EXPECT_GT(hi.red(), 200) below FAILS under the floor and PASSES with the fix.
+TEST(RasterGlRendererTest, ScalarSubUnitRangeSpansColormap)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+  renderer.setColormap(camp::map::ColorMap::Grayscale);
+
+  const int w = 2, h = 1;
+  std::vector<float> data = {0.0f, 0.3f};   // col0 = data_min, col1 = data_max
+  auto tex = makeScalarTexture(w, h, data);
+
+  RasterFieldItem item;
+  item.texture = tex.get();
+  item.format = RasterFieldItem::Format::Scalar;
+  item.geographic = false;
+  item.west = 0.0; item.east = double(w);
+  item.south = 0.0; item.north = double(h);
+  item.has_nodata = false;
+  item.nodata = 0.0f;
+
+  const QImage img = renderer.renderToImage({item}, QRectF(0, 0, w, h), 0.0f, 0.3f,
+                                            QSize(w, h));
+  tex.reset();
+  renderer.doneCurrent();
+
+  ASSERT_FALSE(img.isNull());
+  const QColor lo = img.pixelColor(0, 0);   // data_min -> bottom of ramp (black)
+  const QColor hi = img.pixelColor(1, 0);   // data_max -> top of ramp (white)
+
+  EXPECT_GT(hi.red(), 200) << "sub-unit max must span to the top of the colormap "
+                              "(fails under the max(span, 1.0) floor)";
+  EXPECT_LT(lo.red(), 40) << "data_min stays at the bottom of the colormap";
+  // Distinct LUT outputs at min vs max: the ramp spans the range.
+  EXPECT_GT(hi.red() - lo.red(), 150) << "sub-unit range must preserve contrast";
+}
+
 // The Rgba bypass path: an RGBA8 texture is sampled directly (LUT bypassed). A
 // uniform red texture renders red everywhere (NOT a colormap of red.r), proving the
 // LUT is skipped; a fully-transparent texture discards everywhere.

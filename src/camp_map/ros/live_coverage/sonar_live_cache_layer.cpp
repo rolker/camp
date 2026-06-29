@@ -243,6 +243,12 @@ void SonarLiveCacheLayer::warmLoad()
   if(!level_)
     return;   // nothing cached yet
 
+  // [camp#134] insert_or_assign below replaces any pre-existing Entry for an index
+  // (reachable on a disable→re-enable: disable leaves tiles_ — and their GL textures
+  // — intact). A displaced Entry's QOpenGLTexture must be freed under a current GL
+  // context, so make it current for the seed loop when tiles already hold textures.
+  // On the first (empty-map) warm load there is nothing to displace, so skip it.
+  const bool gl_current = !tiles_.empty() && renderer_.makeCurrent();
   const gggs::Level level(*level_);
   for(auto& tile : SonarLiveTile::loadCacheDir(cache_dir_, level))
   {
@@ -255,6 +261,8 @@ void SonarLiveCacheLayer::warmLoad()
     reconciler_.markHave(index, 0);
     tiles_.insert_or_assign(index, Entry{std::move(tile), nullptr, true});
   }
+  if(gl_current)
+    renderer_.doneCurrent();
   if(band_name_.empty())
     band_name_ = defaultBand();
   recomputeBounds();
@@ -324,12 +332,20 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
 
   publishRequest(result.to_request);
 
+  // [camp#134] A pruned Entry owns a QOpenGLTexture whose dtor frees GPU resources
+  // ONLY under a current GL context — erasing it here without one leaks the texture
+  // as tiles churn (the boat keeps producing; the catalog keeps pruning). Make the
+  // renderer's context current for the erase loop, exactly like the dtor's teardown.
+  // If makeCurrent() fails (offscreen GL unavailable) no live texture was ever
+  // uploaded, so a plain erase is harmless — mirrors the dtor's null-context guard.
   bool pruned = false;
+  const bool gl_current = !result.to_prune.empty() && renderer_.makeCurrent();
   for(const auto& index : result.to_prune)
   {
     auto it = tiles_.find(index);
     if(it != tiles_.end())
     {
+      it->second.texture.reset();   // free the GPU texture under the current context
       tiles_.erase(it);
       pruned = true;
     }
@@ -342,6 +358,8 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
     fs::remove(fs::path(cache_dir_) / stem, ec);
     reconciler_.drop(index);
   }
+  if(gl_current)
+    renderer_.doneCurrent();
   if(pruned)
   {
     // Reset before re-folding so a pruned tile's extreme min/max can't linger in

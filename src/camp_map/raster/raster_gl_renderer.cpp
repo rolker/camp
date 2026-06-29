@@ -50,10 +50,11 @@ void main()
 //    idiom (isnan() is 1.30+). The finite-sentinel discard (v == u_nodata, e.g.
 //    sidescan 9999/0) follows. Premultiplied-opaque output (alpha 1).
 //
-//  - Rgba (u_mode == 1): a pre-composited RGBA8 texture sampled directly, BYPASSING
-//    the LUT (RasterLayer's palette/RGB charts). Transparency comes from the
-//    composited alpha; fully-transparent cells discard. Output is premultiplied to
-//    match the GL_ONE / GL_ONE_MINUS_SRC_ALPHA blend.
+//  - Rgba (u_mode == 1): a pre-composited, PREMULTIPLIED RGBA8 texture sampled
+//    directly, BYPASSING the LUT (RasterLayer's palette/RGB charts). The uploader
+//    premultiplies (so mipmap/linear filtering doesn't fringe), so the texel is
+//    emitted as-is — already matching the GL_ONE / GL_ONE_MINUS_SRC_ALPHA blend.
+//    Transparency comes from the composited alpha; fully-transparent cells discard.
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: Scalar R32F data, or Rgba RGBA8
@@ -73,16 +74,23 @@ void main()
       discard;                                       // NaN NoData (1.20-portable)
     if(u_has_nodata != 0 && v == u_nodata)
       discard;                                        // finite sentinel
-    float t = clamp((v - u_min) / max(u_max - u_min, 1.0), 0.0, 1.0);
+    // Normalize over the TRUE data span (matches ColorMap::color), so sub-unit
+    // ranges still stretch across the colormap. The 1e-6 floor is ONLY a
+    // divide-by-zero guard for a genuinely degenerate (zero-width) range — a true
+    // span of 0 collapses to t=0 (a flat LUT value). The old 1.0 floor silently
+    // crushed contrast for any span < 1.0 (harmless for large-range GGGS/sidescan
+    // depth, but wrong once small-range RasterLayer charts share this shader).
+    // Negative-valued ranges are fine: span = u_max - u_min stays positive.
+    float t = clamp((v - u_min) / max(u_max - u_min, 1e-6), 0.0, 1.0);
     vec4 c = texture2D(u_lut, vec2(t, 0.5));
     gl_FragColor = vec4(c.rgb, 1.0);
   }
   else
   {
-    vec4 c = texture2D(u_tex, v_texcoord);
+    vec4 c = texture2D(u_tex, v_texcoord);   // already premultiplied
     if(c.a == 0.0)
       discard;
-    gl_FragColor = vec4(c.rgb * c.a, c.a);
+    gl_FragColor = c;
   }
 }
 )";
@@ -206,6 +214,12 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
   if(items.isEmpty() || size.isEmpty() || !gl_context_)
     return QImage();
 
+  // [camp#134] Fail BEFORE allocating/binding the FBO so a shader-compile failure
+  // returns a null image (per the header contract) — not a transparent one the
+  // caller would cache as a valid empty render.
+  if(!ensureProgram())
+    return QImage();
+
   QOpenGLFunctions* f = gl_context_->functions();
   if(!fbo_ || fbo_->size() != size)
     fbo_ = std::make_unique<QOpenGLFramebufferObject>(size);
@@ -218,7 +232,6 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
   f->glEnable(GL_BLEND);
   f->glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-  if(ensureProgram())
   {
     // Vertices are LOCAL Web-Mercator metres from the extent origin, so map
     // [0, width] x [0, height] -> NDC. origin = scene_bounds top-left; the per-item
