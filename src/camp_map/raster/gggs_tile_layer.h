@@ -5,6 +5,8 @@
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
 
+#include <marine_colormap/transfer.hpp>
+
 #include <QFutureWatcher>
 #include <QImage>
 #include <QMutex>
@@ -87,6 +89,19 @@ public:
   /// [camp#108] Number of bands in the tile-set, taken from the first valid tile
   /// (the tiles of a store are uniform). 0 if there is no valid tile yet.
   int bandCount() const;
+
+  /// [camp#142] Per-layer colormap range override. In Auto mode the resolved
+  /// range tracks the data extents (data_min_/data_max_, folded in tilesReady());
+  /// in Manual mode it is pinned to an operator-chosen [lo, hi] so an outlier band
+  /// (e.g. backscatter max 925, mean 0.16) can't collapse the useful colour range.
+  /// The override is applied at render time (fed to the shader's u_min/u_max via
+  /// renderToImage) and is transparent to the auto-range accumulation. Each setter
+  /// persists and re-renders.
+  void setRangeOverride(float lo, float hi);   ///< -> Manual [lo, hi]
+  void resetRangeToAuto();                      ///< -> Auto (tracks the data extents)
+  marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
+  float rangeLo() const { return range_model_.lo(); }   ///< current resolved low bound
+  float rangeHi() const { return range_model_.hi(); }   ///< current resolved high bound
 
   /// [camp#108] Select which 1-indexed band the layer renders, then persist it.
   /// Delegates the band switch to applyBand() and round-trips the selection to
@@ -173,6 +188,11 @@ private:
   QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)
   double data_max_ = 0.0;
+
+  // [camp#142] Resolved colormap range (Auto tracks data_min_/data_max_ via
+  // update_auto() in tilesReady(); Manual pins an operator override). Fed to the
+  // renderer's u_min/u_max at render time, replacing the raw data_min_/data_max_.
+  marine_colormap::RangeModel range_model_;
 
   // [camp#102] Async pixel load mirroring RasterLayer (ADR-0003 §3): the cheap
   // extent list is built in loadDirectory(); the band reads are deferred to a

@@ -9,6 +9,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QGeoCoordinate>
+#include <QInputDialog>
 #include <QMenu>
 #include <QMetaObject>
 #include <QOpenGLTexture>
@@ -477,6 +478,12 @@ void SonarLiveCacheLayer::foldAutoRange()
     if(first || band->data_max > data_max_) data_max_ = band->data_max;
     first = false;
   }
+  // [camp#142] Keep the Auto resolved range current with the freshly-folded extents
+  // (a no-op while the operator holds a Manual override). camp#138 coordination:
+  // this update_auto() call site is where #138's fold changes meet this PR — the
+  // override is applied at render time and is transparent to the accumulation.
+  if(data_min_ <= data_max_)
+    range_model_.update_auto(float(data_min_), float(data_max_));
 }
 
 std::string SonarLiveCacheLayer::defaultBand() const
@@ -608,8 +615,10 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<raster::RasterFieldItem> draw = items();
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, float(data_min_),
-                                               float(data_max_), size);
+  // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
+  // the operator override) into the shader's u_min/u_max instead of the raw extents.
+  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+                                               range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;
 }
@@ -666,6 +675,28 @@ void SonarLiveCacheLayer::setBandName(const std::string& name)
   update(boundingRect());
 }
 
+void SonarLiveCacheLayer::setRangeOverride(float lo, float hi)
+{
+  // [camp#142] Pin the resolved range to the operator's [lo, hi] (set_manual swaps
+  // an inverted pair so lo() <= hi()). Re-render with the new range + persist.
+  range_model_.set_manual(lo, hi);
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
+}
+
+void SonarLiveCacheLayer::resetRangeToAuto()
+{
+  // [camp#142] Return to data-driven Auto, then re-track the current extents so
+  // lo()/hi() reflect the data without waiting for the next fold.
+  range_model_.reset();
+  if(data_min_ <= data_max_)
+    range_model_.update_auto(float(data_min_), float(data_max_));
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
+}
+
 // --------------------------------- context menu ------------------------------
 
 void SonarLiveCacheLayer::contextMenu(QMenu* menu)
@@ -697,6 +728,30 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
     action->setChecked(name == renderer_.colormap());
     connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
+
+  // [camp#142] Colormap range override. Live bands are scalar values (same gating as
+  // the Colormap submenu above), so the submenu is offered unconditionally. "Set
+  // range…" prompts for lo then hi (pre-filled with the current resolved range) and
+  // pins a Manual override; "Reset to auto" returns to the data-driven extents.
+  QMenu* range_menu = menu->addMenu("Colormap range");
+  QAction* set_range = range_menu->addAction("Set range…");
+  connect(set_range, &QAction::triggered, this, [this]()
+  {
+    bool ok = false;
+    const double lo = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Minimum:", range_model_.lo(),
+      -1.0e9, 1.0e9, 6, &ok);
+    if(!ok)
+      return;
+    const double hi = QInputDialog::getDouble(
+      nullptr, "Colormap range", "Maximum:", range_model_.hi(),
+      -1.0e9, 1.0e9, 6, &ok);
+    if(!ok)
+      return;
+    setRangeOverride(float(lo), float(hi));
+  });
+  QAction* reset_range = range_menu->addAction("Reset to auto");
+  connect(reset_range, &QAction::triggered, this, [this]() { resetRangeToAuto(); });
 
   // Band picker over the union of band names across held tiles. Only shown when
   // there is more than one band to choose from.
@@ -738,6 +793,15 @@ void SonarLiveCacheLayer::readSettings()
   const std::string band = settings.value("band", QString::fromStdString(band_name_))
                              .toString().toStdString();
   const bool was_enabled = settings.value("live_enabled", false).toBool();
+  // [camp#142] Persisted colormap range. "manual" restores the operator override;
+  // anything else (default "auto") leaves the data-driven Auto range. Honor Manual
+  // only when both extents are present too — a partial/corrupt entry falls back to
+  // Auto rather than snapping to the [0,1] read-defaults.
+  const QString range_mode = settings.value("range_mode", "auto").toString();
+  const bool has_manual_range = range_mode == "manual" &&
+    settings.contains("range_min") && settings.contains("range_max");
+  const float range_min = settings.value("range_min", 0.0).toFloat();
+  const float range_max = settings.value("range_max", 1.0).toFloat();
   settings.endGroup();
   settings.endGroup();
 
@@ -748,6 +812,12 @@ void SonarLiveCacheLayer::readSettings()
   }
   if(!band.empty())
     band_name_ = band;
+  // [camp#142] Apply the persisted range. A Manual override is independent of the
+  // data extents and is restored as-is; "auto" leaves the model tracking the data.
+  if(has_manual_range)
+    range_model_.set_manual(range_min, range_max);
+  else
+    range_model_.reset();
   // [ADR-0006 D5] An enabled source re-subscribes on warm restart; a never-enabled
   // one stays passive. enableLiveCoverage() persists, which is a harmless re-write.
   if(was_enabled && !enabled_)
@@ -763,6 +833,13 @@ void SonarLiveCacheLayer::writeSettings()
   settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.setValue("band", QString::fromStdString(band_name_));
   settings.setValue("live_enabled", enabled_);
+  // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
+  // its [lo, hi]) survives a restart; Auto persists as "auto".
+  settings.setValue("range_mode",
+                    range_model_.mode() == marine_colormap::RangeMode::Manual ? "manual"
+                                                                              : "auto");
+  settings.setValue("range_min", range_model_.lo());
+  settings.setValue("range_max", range_model_.hi());
   settings.endGroup();
   settings.endGroup();
 }
