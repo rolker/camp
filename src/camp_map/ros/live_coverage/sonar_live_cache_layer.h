@@ -3,6 +3,8 @@
 
 #include "../layer.h"
 #include "../../map/color_map.h"
+#include "../../raster/raster_field_source.h"
+#include "../../raster/raster_gl_renderer.h"
 #include "sonar_live_tile.h"
 
 #include "marine_tiled_raster_store/tile_catalog.hpp"
@@ -21,10 +23,6 @@
 #include <string>
 #include <vector>
 
-class QOpenGLContext;
-class QOffscreenSurface;
-class QOpenGLFramebufferObject;
-class QOpenGLShaderProgram;
 class QOpenGLTexture;
 
 namespace camp
@@ -57,7 +55,7 @@ namespace live_coverage
 /// reconcile / markHave / drop / applyPatch / write-through scheduling. Warm-load
 /// runs on the GUI thread before the subscriptions are created, so it cannot race a
 /// callback.
-class SonarLiveCacheLayer: public Layer
+class SonarLiveCacheLayer: public Layer, public raster::RasterFieldSource
 {
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
@@ -87,6 +85,14 @@ public:
 
   /// The layer's Web-Mercator extent (union of tile extents). Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
+
+  // [camp#134] RasterFieldSource: feed the shared RasterGlRenderer. bands() are the
+  // named live bands; items() returns the held tiles as Scalar items (textures
+  // uploaded lazily under the renderer's current context).
+  QStringList bands() const override;
+  raster::RasterBandMeta metadata(const QString& band) const override;
+  QList<raster::RasterFieldItem> items() override;
+  QPair<float, float> dataRange() const override;
 
 public slots:
   /// [camp#121] Subscribe to the tile stream, warm-load the disk cache, start
@@ -147,14 +153,10 @@ private:
   void setColormap(map::ColorMap::Type type);
   void setBandName(const std::string& name);
 
-  // GL helpers (duplicated from GggsTileLayer; see camp#134).
-  bool ensureGL();
-  bool ensureProgram();
-  QOpenGLTexture* ensureLut();
+  // [camp#134] (Re)upload the selected band of @p entry as an R32F value texture
+  // (owned by the Entry). The shader + LUT + tessellation now live in renderer_.
   QOpenGLTexture* textureFor(Entry& entry);
-  void releaseGL();
 
-  static constexpr int kLatSubdivisions = 16;
   static constexpr int kMaxImageEdge = 4096;
 
   std::string base_namespace_;   // e.g. "/cube_bathymetry"
@@ -173,8 +175,6 @@ private:
   double data_max_ = 0.0;
 
   std::string band_name_;        // selected band (persisted)
-  map::ColorMap colormap_{map::ColorMap::Grayscale};
-  bool lut_dirty_ = true;
 
   rclcpp::Subscription<marine_interfaces::msg::SonarVisualizationTile>::SharedPtr tile_sub_;
   rclcpp::Subscription<marine_interfaces::msg::TileCatalog>::SharedPtr catalog_sub_;
@@ -199,14 +199,10 @@ private:
   std::vector<QFutureWatcher<void>*> write_watchers_;
   bool shutting_down_ = false;
 
-  // Offscreen GL (the layer owns it; never touches the GUI context). Duplicated
-  // from GggsTileLayer — unify via RasterFieldSource camp#134.
-  QOpenGLContext* gl_context_ = nullptr;
-  QOffscreenSurface* gl_surface_ = nullptr;
-  std::unique_ptr<QOpenGLFramebufferObject> fbo_;
-  std::unique_ptr<QOpenGLShaderProgram> program_;
-  std::unique_ptr<QOpenGLTexture> lut_texture_;
-  bool gl_failed_ = false;
+  // [camp#134] The shared GL raster renderer (its own offscreen context + the
+  // unified shader + colormap LUT). Replaces the shader/program/LUT/FBO this layer
+  // used to duplicate from GggsTileLayer. Default ramp Grayscale (renderer default).
+  raster::RasterGlRenderer renderer_;
 
   QImage cached_image_;
   QSize cached_size_;
