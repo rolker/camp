@@ -220,3 +220,24 @@ Host runs `source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`.
 
 ### Next step
 Host build + test. On green, ready for PR (Closes #141). Not pushed.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-29 16:49 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-141 at `e9c68b2`
+**Mode**: pre-push
+**Depth**: Deep (reason: new project ADR-0008 + 1123 lines / 21 files + render-path/concurrency refactor + new dependency)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 2 | **Ship**: recommended — round-1's two suggestions are both addressed; this round surfaced no must-fix and no new actionable findings
+
+### Findings
+- [ ] No issues found. LGTM.
+
+**Notes**: Re-reviewed the diff after the round-1 address-findings pass (commits `477136a`, `e9c68b2`). Both round-1 suggestions verified fixed in `grid_map.cpp`: readSettings now uses the literal `"grayscale"` QSettings default (no unlocked `colormap_name_` read), and the CPU path passes palette alpha via `QColor(c.r, c.g, c.b, c.a)`. marine_colormap API usage re-verified against live headers — `find_palette`→`const Palette*`, `bake_lut(pal, TransferParams{}, 256)`→`vector<Rgba8>`, `palette_index`→`optional<size_t>` (correct `if(!...)` truthiness), `palette(idx).name()`, `Palette::sample(float)`→`Rgba`, `to_rgba8`→`Rgba8`. Registry confirmed 6 palettes (grayscale/bronze/thermal/viridis/turbo/quality) — `test_color_map.cpp`'s `RegistryIsTheFullSix` pin is accurate (the 5-entry docstring in marine_colormap's `palette.hpp` is stale upstream, not in this diff). Concurrency: GridMap snapshots `colormap_name_` by value under `mutex_` before each worker launch / menu build / settings write; the `find_palette` pointer targets a static (app-lifetime) registry and Meyer's-singleton lookups are read-only/reentrant — race-free. #134 GPU shader contract preserved (identity TransferParams; per-band range-normalize + NaN/NoData discard stay in the shader). Two disjoint-lens Claude Adversarial passes (Lens A logic / Lens B systemic) both returned no must-fix. Static analysis: repo has no lint/CI/pre-commit gate (per `.agents/README.md`); cppcheck cannot parse Qt without project config — build + gtest (host-side; container lacks underlays) is the only gate. Governance: camp ADR-0008 added and correctly disambiguated from the workspace ADR-0008; cross-refs use the camp series (ADR-0001=TopicBridge, ADR-0007=RasterFieldSource); dependency linked PRIVATE to camp_map + `ament_target_dependencies` on camp_map_ros. Plan drift: `test_color_map_parity.cpp` was not added as a separate file — its parity baseline was folded into the reframed `test_color_map.cpp` characterization suite (per the plan-review must-fix on false equivalence); a documented, sound deviation.
+
+### Follow-ups (non-blocking)
+- [ ] (follow-up) Post the camp#63 "camp-internal ColorMap" wording-reconciliation comment when `gh` is authenticated — `docs/decisions/0008-adopt-marine-colormap-lut-bake.md`
+- [ ] (follow-up) Host build + test (`source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`) before push — container cannot build camp (missing underlays; known limitation).
