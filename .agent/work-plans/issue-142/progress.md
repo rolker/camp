@@ -163,3 +163,61 @@ read from the two `## Issue Review` entries above rather than live `gh issue vie
 - [ ] (suggestion) Uncertainty-band auto-default (a #142 requirement, flagged in issue review) is deferred to a post-#104 follow-on, but Estimated Scope says "PR2 closes #142" — reconcile: narrow #142's scope + open a follow-on, or keep #142 open past PR2. — `plan.md:75`
 - [ ] (suggestion) Persist round-trip tests use only `TestableGggsTileLayer`; the Consequences table claims the test pins keys for all three layers. Add a per-layer round-trip for SonarLiveCacheLayer + RasterLayer, or record manual verification. — `plan.md:78`
 - [ ] (suggestion) Step 7 says persist "via `settingsKey()`" but `RasterLayer::read/writeSettings` group under `itemID()`; implementer should use `itemID()` for RasterLayer. — `plan.md:69`
+
+## Implementation
+**Status**: complete
+**When**: 2026-06-29 19:30 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Commit**: `45c07a6` on `feature/issue-142`
+**Scope**: PR1 only (backend + numeric override; the colorbar widget is PR2)
+
+### What landed
+- **RangeModel wiring across all three layers.** `GggsTileLayer`,
+  `SonarLiveCacheLayer` and `RasterLayer` each own a
+  `marine_colormap::RangeModel range_model_`. `renderImage()` now feeds
+  `range_model_.lo()/hi()` into `RasterGlRenderer::renderToImage(...)`'s
+  `u_min`/`u_max` instead of the raw `data_min_`/`data_max_`. After each
+  auto-range fold — `tilesReady()` (GGGS), `foldAutoRange()` (sonar),
+  `imageReady()` (raster) — `range_model_.update_auto(data_min_, data_max_)`
+  keeps Auto current; it is a no-op in Manual mode, so an incoming tile never
+  disturbs a pinned override. The `update_auto` call sites carry a **camp#138**
+  coordination note for diff review at merge (the override is applied at render
+  time, transparent to the fold).
+- **Public API per layer**: `setRangeOverride(float lo, float hi)`
+  (→ `set_manual`, persist, re-render), `resetRangeToAuto()` (→ `reset` then
+  re-track current extents, persist, re-render), and
+  `rangeMode()`/`rangeLo()`/`rangeHi()` accessors (for tests + PR2 binding).
+- **Context menu**: a "Colormap range" submenu — "Set range…" (two
+  `QInputDialog::getDouble()` prompts pre-filled with the current lo/hi) and
+  "Reset to auto" — added under the same scalar gate as the colormap submenu
+  (unconditional for the two always-scalar tile layers; behind `is_scalar_` for
+  RasterLayer).
+- **Persistence**: `range_mode` ("auto"/"manual") + `range_min`/`range_max` per
+  layer. GggsTileLayer + SonarLiveCacheLayer group under `settingsKey()`;
+  **RasterLayer groups under `itemID()`** — the key its existing read/writeSettings
+  already use (plan-review suggestion `plan.md:69` addressed).
+- **CMake**: `marine_colormap` moved PRIVATE → **PUBLIC** on `camp_map`, because a
+  marine_colormap type (`RangeModel`) now appears in camp_map's public headers
+  (it was a std::string-only name under camp#141). The only ament-exported target
+  (`rqt_helm_manager`) does not link camp_map, so this stays internal.
+
+### Tests (GL-free — RangeModel is pure data; `renderImage()` never called)
+`test/test_range_persist.cpp`, wired into `CMakeLists.txt`. Covers **all three
+layers** (plan-review suggestion `plan.md:78` addressed): default is Auto;
+`setRangeOverride` → Manual + lo/hi; Manual persist→restore round-trip; Auto
+persist→restore; reset→Auto. Each layer is driven through a `TestableXxx`
+subclass exposing the protected read/writeSettings (the `test_gggs_persistence.cpp`
+pattern); empty tile-set dir / never-opened file / null ROS node keep them
+GL/GDAL/ROS-free, so they RUN (not SKIP) in-container.
+
+### Deferred / noted
+- **Uncertainty-band auto-default is DEFERRED to camp#145** (needs band semantics,
+  camp#104) — plan-review finding `plan.md:75`. PR1 delivers only the mechanism;
+  #142 stays open past PR2 (or is narrowed) per that finding. Not implemented here.
+
+### Build status
+Container cannot build camp (known) — **host verifies**:
+`source setup.bash; ./ui_ws/build.sh camp; ./ui_ws/test.sh camp`. Edits made
+cleanly; hooks ran on commit (no `--no-verify`). Not pushed. PR1 is **Part of
+#142** (does not close it).
