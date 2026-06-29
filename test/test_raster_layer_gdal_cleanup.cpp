@@ -62,7 +62,7 @@ QString writeRaster(const QTemporaryDir& dir)
   ds->SetProjection(wkt);
   CPLFree(wkt);
 
-  // Varying values so the ColorMap spans a real (non-degenerate) range.
+  // Varying values so the colormap spans a real (non-degenerate) range.
   std::vector<float> samples(static_cast<size_t>(w) * h);
   for(size_t i = 0; i < samples.size(); ++i)
     samples[i] = static_cast<float>(i);
@@ -117,12 +117,12 @@ TEST(RasterLayerGdalCleanupTest, LoadAndColormapFlipsLeakNoDatasets)
   // ...and so must the async load that opens the handles under test.
   ASSERT_TRUE(waitForLoad(layer)) << "initial load did not reach the warp path";
 
-  // Two additional ramp types (default is Viridis); each re-invokes
+  // Two additional ramp names (default is viridis); each re-invokes
   // loadAndReprojectFile, opening and — with the fix — closing both handles.
-  layer->setColormap(camp::map::ColorMap::Grayscale);
-  ASSERT_TRUE(waitForLoad(layer)) << "Grayscale re-render did not reach the warp path";
-  layer->setColormap(camp::map::ColorMap::Turbo);
-  ASSERT_TRUE(waitForLoad(layer)) << "Turbo re-render did not reach the warp path";
+  layer->setColormap("grayscale");
+  ASSERT_TRUE(waitForLoad(layer)) << "grayscale re-render did not reach the warp path";
+  layer->setColormap("turbo");
+  ASSERT_TRUE(waitForLoad(layer)) << "turbo re-render did not reach the warp path";
 
   // Dtor aborts + joins the in-flight load (waitForFinished), so every
   // loadAndReprojectFile invocation has returned and closed its handles.

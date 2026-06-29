@@ -2,6 +2,10 @@
 
 #include "../map_view/web_mercator.h"
 
+#include <marine_colormap/colormap.hpp>
+#include <marine_colormap/palette.hpp>
+#include <marine_colormap/transfer.hpp>
+
 #include <QColor>
 #include <QGeoCoordinate>
 #include <QMatrix4x4>
@@ -74,7 +78,8 @@ void main()
       discard;                                       // NaN NoData (1.20-portable)
     if(u_has_nodata != 0 && v == u_nodata)
       discard;                                        // finite sentinel
-    // Normalize over the TRUE data span (matches ColorMap::color), so sub-unit
+    // Normalize over the TRUE data span (the per-band range step, kept in the
+    // shader — the baked LUT uses identity TransferParams, see ADR-0008), so sub-unit
     // ranges still stretch across the colormap. The 1e-6 floor is ONLY a
     // divide-by-zero guard for a genuinely degenerate (zero-width) range — a true
     // span of 0 collapses to t=0 (a flat LUT value). The old 1.0 floor silently
@@ -171,18 +176,27 @@ bool RasterGlRenderer::ensureProgram()
 
 QOpenGLTexture* RasterGlRenderer::ensureLut()
 {
-  // Bake camp::map::ColorMap into a 256x1 RGBA LUT (re-baked when the ramp
-  // changes). Sampled by the fragment shader as the colour transfer.
+  // [camp#141] Bake the selected marine_colormap palette into a 256x1 RGBA LUT
+  // (re-baked when the ramp changes), sampled by the fragment shader as the colour
+  // transfer. TransferParams stays IDENTITY: the shader still owns range-normalize
+  // (per-band u_min/u_max over the true span) and the NaN/finite-NoData discard, so
+  // the LUT carries only the palette ramp — exactly what the old colorNormalized
+  // loop produced (see ADR-0008). An unknown name falls back to grayscale.
   if(lut_texture_ && !lut_dirty_)
     return lut_texture_.get();
+  const marine_colormap::Palette* palette = marine_colormap::find_palette(colormap_name_);
+  if(!palette)
+    palette = marine_colormap::find_palette("grayscale");
+  const std::vector<marine_colormap::Rgba8> baked =
+    marine_colormap::bake_lut(*palette, marine_colormap::TransferParams{}, 256);
   std::vector<uchar> lut(256 * 4);
   for(int i = 0; i < 256; ++i)
   {
-    const QColor c = colormap_.colorNormalized(i / 255.0);
-    lut[i * 4 + 0] = uchar(c.red());
-    lut[i * 4 + 1] = uchar(c.green());
-    lut[i * 4 + 2] = uchar(c.blue());
-    lut[i * 4 + 3] = uchar(c.alpha());
+    const marine_colormap::Rgba8& c = baked[static_cast<size_t>(i)];
+    lut[i * 4 + 0] = c.r;
+    lut[i * 4 + 1] = c.g;
+    lut[i * 4 + 2] = c.b;
+    lut[i * 4 + 3] = c.a;
   }
   if(!lut_texture_)
   {
@@ -199,11 +213,11 @@ QOpenGLTexture* RasterGlRenderer::ensureLut()
   return lut_texture_.get();
 }
 
-void RasterGlRenderer::setColormap(map::ColorMap::Type type)
+void RasterGlRenderer::setColormap(const std::string& name)
 {
-  if(type == colormap_.type())
+  if(name == colormap_name_)
     return;
-  colormap_.setType(type);
+  colormap_name_ = name;
   lut_dirty_ = true;
 }
 

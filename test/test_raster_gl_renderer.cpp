@@ -128,7 +128,7 @@ TEST(RasterGlRendererTest, ScalarSubUnitRangeSpansColormap)
 
   RasterGlRenderer renderer;
   ASSERT_TRUE(renderer.makeCurrent());
-  renderer.setColormap(camp::map::ColorMap::Grayscale);
+  renderer.setColormap("grayscale");
 
   const int w = 2, h = 1;
   std::vector<float> data = {0.0f, 0.3f};   // col0 = data_min, col1 = data_max
@@ -231,10 +231,10 @@ TEST(RasterGlRendererTest, ColormapRebakesLut)
   auto tex = makeScalarTexture(n, n, data);
   const RasterFieldItem item = scalarItem(tex.get(), n, false, 0.0f);
 
-  renderer.setColormap(camp::map::ColorMap::Grayscale);
+  renderer.setColormap("grayscale");
   const QColor gray = renderer.renderToImage({item}, QRectF(0, 0, n, n), 0.0f, 10.0f,
                                              QSize(n, n)).pixelColor(0, 0);
-  renderer.setColormap(camp::map::ColorMap::Viridis);
+  renderer.setColormap("viridis");
   const QColor viridis = renderer.renderToImage({item}, QRectF(0, 0, n, n), 0.0f, 10.0f,
                                                 QSize(n, n)).pixelColor(0, 0);
   tex.reset();

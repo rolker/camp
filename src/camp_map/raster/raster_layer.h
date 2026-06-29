@@ -2,7 +2,6 @@
 #define RASTER_RASTER_LAYER_H
 
 #include "../map/layer.h"
-#include "../map/color_map.h"
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
 
@@ -11,6 +10,7 @@
 #include <QRectF>
 #include <QSize>
 #include <memory>
+#include <string>
 #include <vector>
 
 class QOpenGLTexture;
@@ -46,10 +46,10 @@ public:
   QRectF boundingRect() const override;
   void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
 
-  /// [camp#63] Select the colour ramp for a scalar (single-band Float32) raster;
-  /// persists and re-renders (just re-bakes the LUT — no re-warp). No effect on
-  /// RGB rasters.
-  void setColormap(map::ColorMap::Type type);
+  /// [camp#63 / camp#141] Select the colour ramp for a scalar (single-band Float32)
+  /// raster by marine_colormap palette name; persists and re-renders (just re-bakes
+  /// the LUT — no re-warp). No effect on RGB rasters. Unknown name -> grayscale.
+  void setColormap(const std::string& name);
 
   /// [#59 ADR-0003] Source file this layer renders (kept for re-render, removal,
   /// and app-state persistence of the loaded-chart list).

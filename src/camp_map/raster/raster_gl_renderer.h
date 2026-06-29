@@ -2,13 +2,13 @@
 #define RASTER_RASTER_GL_RENDERER_H
 
 #include "raster_field_source.h"
-#include "../map/color_map.h"
 
 #include <QImage>
 #include <QList>
 #include <QRectF>
 #include <QSize>
 #include <memory>
+#include <string>
 
 class QOpenGLContext;
 class QOffscreenSurface;
@@ -67,9 +67,10 @@ public:
                        const QRectF& scene_bounds, float data_min, float data_max,
                        const QSize& size);
 
-  /// Select the colour ramp baked into the LUT (re-baked on next render).
-  void setColormap(map::ColorMap::Type type);
-  map::ColorMap::Type colormap() const { return colormap_.type(); }
+  /// [camp#141] Select the marine_colormap palette baked into the LUT, by name
+  /// (re-baked on next render). An unknown name renders as "grayscale".
+  void setColormap(const std::string& name);
+  const std::string& colormap() const { return colormap_name_; }
 
   /// Release the FBO / program / LUT. Safe to call with no context; the dtor
   /// makes the context current first and then destroys it.
@@ -91,7 +92,7 @@ private:
   std::unique_ptr<QOpenGLShaderProgram> program_;
   std::unique_ptr<QOpenGLTexture> lut_texture_;   // colormap LUT (256x1 RGBA)
 
-  map::ColorMap colormap_{map::ColorMap::Grayscale};
+  std::string colormap_name_{"grayscale"};   // [camp#141] marine_colormap palette
   bool lut_dirty_ = true;
   bool gl_failed_ = false;
 };
