@@ -121,3 +121,21 @@ the correct home.
 
 ### Open questions
 - [ ] `RasterLayer` RGB/palette bands: composite on CPU → RGBA8 texture (recommended for this PR) vs per-band R32F + channel compositor — decide before implementing step 6.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-29 04:16 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-134/plan.md` at `6fbe701`
+**PR**: PR-less (`--issue 134`, layer worktree `issue-camp-134`)
+**Verdict**: approve-with-suggestions
+
+Independent review (plan authored by a Sonnet agent; this review is a fresh
+host-dispatched Opus sub-agent — not author self-review).
+
+### Findings
+- [ ] (suggestion) Single PR migrates 3 adapters + 2 new components (~9–11 files), exceeding the >3-component split heuristic and overriding review-issue's 2-PR staging action. Operator-decided and documented — accept, but enforce ordered per-adapter commits (steps 4→5→6) so the PR is reviewable commit-by-commit — `plan.md:26`, `plan.md:117`
+- [ ] (suggestion) RasterLayer RGBA/palette path vs single-band R32F renderer: recommended option (a) (CPU composite → RGBA8) needs a colormap-bypass mode in the renderer, but the sketched `render(items, data_min, data_max, mvp)` + `RasterFieldItem{texture, nodata}` only expresses scalar R32F+LUT. Add a format/mode field to `RasterFieldItem` (or a render overload) and resolve the open question before step 6 — `plan.md:46-52`, `plan.md:142-146`
+- [ ] (suggestion) ADR-table label wrong: "ADR-0001 (camp: Adopt ADRs)" — camp ADR-0001 is "TopicBridge and the executor contract"; no camp "Adopt ADRs" ADR exists (that's a workspace ADR). Also camp ADR-0006 (live tile cache) governs `SonarLiveCacheLayer` — confirm the render-path migration leaves its persistence/subscription contract untouched and note it in the table — `plan.md:124-129`
+- [ ] (suggestion) New `test_raster_gl_renderer.cpp` requires an offscreen GL context; mirror `test_gggs_render`'s harness and confirm CI provides GL — `plan.md:93-96`
