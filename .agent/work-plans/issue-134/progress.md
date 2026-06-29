@@ -413,3 +413,46 @@ Verdict is **approved** (Round 2, 0 must-fix). Lifecycle: **Local Review** → p
 before push or tracked as follow-ups. Remaining verification (unchanged): on a GL host with
 the lower layers built, run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp` and confirm
 `test_raster_gl_renderer` RUNs (not SKIP) — including the new sub-unit case — and passes.
+
+---
+
+## Implementation — Round-2 consistency nits (address-findings)
+
+**By**: Claude Code Agent (Claude Opus)
+**Status**: complete
+**Commit**: `7a80af9`
+**Branch**: feature/issue-134
+
+Applied all 3 low-priority consistency suggestions from the Round-2 approved review.
+No behavior change.
+
+1. **hasContext()-gate `makeCurrent()`** — `sonar_live_cache_layer.cpp` warm-load
+   (`:251`) and prune (`:342`) paths now read
+   `!… .empty() && renderer_.hasContext() && renderer_.makeCurrent()`, mirroring
+   `GggsTileLayer::applyBand` (`gggs_tile_layer.cpp:553`). When no GL context exists
+   yet, no texture was ever uploaded, so we skip `makeCurrent()` rather than forcing
+   the offscreen context into existence to reset null textures. Textures that DO
+   exist are still destroyed under a current context (correctness preserved).
+2. **Member declaration order** — `renderer_` now declared BEFORE `tiles_` (the
+   texture-holding member) in both `gggs_tile_layer.h` and `sonar_live_cache_layer.h`,
+   so reverse-declaration destruction tears tiles/textures down before the
+   renderer/GL context intrinsically. The dtor bodies already enforced this
+   explicitly; the change makes the invariant structural. No initializer-list
+   reorder warning introduced (each ctor init-list names only one early member —
+   `directory_` / `base_namespace_`).
+3. **Drop redundant Nearest filter set** — removed
+   `setMinMagFilters(Nearest, Nearest)` at upload in `gggs_tile.cpp:180`. The
+   renderer sets the scalar data-texture Nearest filter per-item at draw time
+   (`raster_gl_renderer.cpp:307-309`), which fully covers this path; sampling stays
+   Nearest. `setWrapMode(ClampToEdge)` retained (renderer does not set wrap mode).
+
+**Build status**: not built in-container — `./ui_ws/build.sh camp` fails at the
+configure step (`find_package` cannot locate `marine_ais_msgs`; lower layers
+unbuilt in this container). Edits made cleanly; host to verify with the lower
+layers built. Tests not run for the same reason.
+
+### Next step
+Lifecycle unchanged: **Local Review** (approved) → push / open PR → **triage-reviews**.
+All 3 optional suggestions now applied, so nothing remains pending from Round 2. On a
+GL host with lower layers built, run `./ui_ws/build.sh camp && ./ui_ws/test.sh camp`
+and confirm `test_raster_gl_renderer` RUNs (not SKIP) and passes.
