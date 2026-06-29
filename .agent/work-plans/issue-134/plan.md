@@ -34,23 +34,31 @@ Single PR, full consolidation (operator-decided).
    called on GUI/GL thread; sources ensure texture validity before returning).
    Note `marine_colormap` deferral.
 
-2. **Interface** — Add `src/camp_map/raster/raster_field_source.h`:
+2. **Interface** — Add `src/camp_map/raster/raster_field_source.h` (as implemented):
    ```cpp
-   struct BandMeta { float nodata; bool has_nodata; QString units; };
+   struct RasterBandMeta { bool has_nodata; float nodata; QString units; };
    struct RasterFieldItem {
-     QOpenGLTexture* texture;  // R32F, owned by source
-     QList<QPointF> geo_vertices;  // Web-Mercator geo coords
-     float nodata; bool has_nodata;
+     enum class Format { Scalar, Rgba };   // [review-2] format/mode field
+     QOpenGLTexture* texture;              // R32F (Scalar) or RGBA8 (Rgba), source-owned
+     Format format;
+     bool geographic;                      // true: warp west/east/south/north (deg)
+     double west, east, south, north;      //  false: already Web-Mercator metres (a quad)
+     bool has_nodata; float nodata;        // Scalar finite-sentinel discard
    };
    class RasterFieldSource {
    public:
      virtual QStringList bands() const = 0;
-     virtual BandMeta metadata(const QString& band) const = 0;
-     virtual QList<RasterFieldItem> items(const QString& band,
-                                          const QRectF& extent) const = 0;
-     virtual QPair<float,float> dataRange(const QString& band) const = 0;
+     virtual RasterBandMeta metadata(const QString& band) const = 0;
+     virtual QList<RasterFieldItem> items() = 0;      // current selection; lazy texture upload
+     virtual QPair<float,float> dataRange() const = 0;
    };
    ```
+   [review-2] The `Format` field resolves the RGB/palette open question: Scalar
+   items shade through the LUT (NaN/finite discard), Rgba items (RasterLayer's
+   palette/RGB charts, composited to RGBA8 on the CPU) sample directly, bypassing
+   the LUT. The `geographic` flag lets one renderer serve both the GGGS/live path
+   (lat/lon tiles warped in the renderer) and RasterLayer (already GDAL-reprojected
+   to Web-Mercator → a single linear quad).
 
 3. **Shared GL renderer** — Add `src/camp_map/raster/raster_gl_renderer.{h,cpp}`:
    Owns compiled shader program + LUT texture (per-GL context; caller makes
@@ -121,10 +129,15 @@ Single PR, full consolidation (operator-decided).
 
 ## ADR Compliance
 
+[review-3] ADR table corrected: camp ADR-0001 is *`TopicBridge` and the executor
+contract* (NOT "Adopt ADRs" — that's a workspace ADR). New camp ADR is `0007`.
+
 | ADR | Triggered | How addressed |
 |---|---|---|
-| ADR-0001 (camp: Adopt ADRs) | Yes | New camp ADR `0007-raster-field-source-interface.md` |
-| ADR-0002 (camp: Web-Mercator scene/layer model) | Yes | All three adapters remain Web-Mercator scene objects; geometry warp moves into renderer, not out |
+| camp ADR-0001 (`TopicBridge` and the executor contract) | Yes | `SonarLiveCacheLayer`'s ROS-callback → GUI-thread marshalling is untouched by the render migration |
+| camp ADR-0002 (Web-Mercator scene/layer model) | Yes | All three adapters remain Web-Mercator scene objects; geometry warp moves into the renderer, not out |
+| camp ADR-0006 (live tile cache — persistence + opt-in subscription) | Yes | Governs `SonarLiveCacheLayer`; this migration swaps only `renderImage()`'s GL internals — persistence / subscription / reconcile / prune / write-through are UNTOUCHED |
+| New: camp ADR-0007 (RasterFieldSource + unified renderer) | Yes | Captures the interface, ownership + threading contract, and the marine_colormap deferral |
 | ADR-0008 (workspace: ROS 2 conventions) | No | Pure Qt/GL; no ROS message data in render path |
 | ADR-0013 (workspace: progress.md vocabulary) | Yes | This plan + progress entry satisfy it |
 
@@ -139,11 +152,19 @@ Single PR, full consolidation (operator-decided).
 
 ## Open Questions
 
-- `RasterLayer` RGB/palette bands: current QPainter path draws composite RGBA QImage.
-  The GL renderer is single-band R32F. For multi-band color files, determine whether
-  to (a) composite on CPU → upload RGBA8 texture (simplest, sidesteps per-band select),
-  or (b) expose per-band R32F + channel compositor in the renderer. Recommendation: (a)
-  for this PR; band-per-channel select is a separate future issue.
+- ~~`RasterLayer` RGB/palette bands~~ **RESOLVED [review-2]**: option (a) — composite
+  on CPU → upload RGBA8 texture, sampled directly via the renderer's `Rgba` format
+  (LUT bypassed). The `RasterFieldItem::Format` field expresses it; per-band channel
+  select for colour files stays a future issue. Mipmaps are generated on the RGBA8
+  texture so a chart zoomed far out keeps the LOD the old QPainter mipmap gave.
+
+## Commit ordering [review-1]
+
+Single PR, but committed step-by-step so it reviews commit-by-commit (overrides
+review-issue's 2-PR split; operator-decided, full consolidation in one PR):
+(a) ADR-0007 + `raster_field_source.h` + `raster_gl_renderer.{h,cpp}`,
+(b) migrate `GggsTileLayer`, (c) migrate `SonarLiveCacheLayer`,
+(d) migrate `RasterLayer`, (e) tests (renderer unit + GGGS NaN render).
 
 ## Estimated Scope
 

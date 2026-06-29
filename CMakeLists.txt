@@ -260,6 +260,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_tree_view/map_tree_view.cpp
     src/camp_map/map_view/map_view.cpp
     src/camp_map/map_view/web_mercator.cpp
+    src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
     src/camp_map/raster/gggs_tile.cpp
     src/camp_map/raster/gggs_tile_layer.cpp
