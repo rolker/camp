@@ -2,6 +2,7 @@
 #include <gdal_priv.h>
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
+#include "colormap_range_dialog.h"
 #include <marine_colormap/palette.hpp>
 #include <QPainter>
 #include <QOpenGLTexture>
@@ -13,7 +14,6 @@
 #include <memory>
 #include <QMenu>
 #include <QAction>
-#include <QInputDialog>
 #include <QSettings>
 #include <QFileInfo>
 
@@ -521,29 +521,27 @@ void RasterLayer::contextMenu(QMenu* menu)
     connect(action, &QAction::triggered, this, [this, name]() { setColormap(name); });
   }
 
-  // [camp#142] Colormap range override (scalar only — gated by the is_scalar_ early
-  // return above, the same condition as the Colormap submenu). "Set range…" prompts
-  // for lo then hi (pre-filled with the current resolved range) and pins a Manual
-  // override; "Reset to auto" returns to the data-driven extents.
-  QMenu* range_menu = menu->addMenu("Colormap range");
-  QAction* set_range = range_menu->addAction("Set range…");
-  connect(set_range, &QAction::triggered, this, [this]()
+  // [camp#142 PR2] Colormap range override (scalar only — gated by the is_scalar_
+  // early return above, the same condition as the Colormap submenu). Opens the
+  // interactive colorbar — drag the handles or edit the bounds to pin a Manual
+  // override, reset to track the data extents — the successor to PR1's sequential
+  // numeric prompts.
+  QAction* range_action = menu->addAction("Colormap range…");
+  connect(range_action, &QAction::triggered, this, [this]()
   {
-    bool ok = false;
-    const double lo = QInputDialog::getDouble(
-      nullptr, "Colormap range", "Minimum:", range_model_.lo(),
-      -1.0e9, 1.0e9, 6, &ok);
-    if(!ok)
-      return;
-    const double hi = QInputDialog::getDouble(
-      nullptr, "Colormap range", "Maximum:", range_model_.hi(),
-      -1.0e9, 1.0e9, 6, &ok);
-    if(!ok)
-      return;
-    setRangeOverride(float(lo), float(hi));
+    ColormapRangeState state;
+    const auto idx = marine_colormap::palette_index(renderer_.colormap());
+    state.palette_index = idx ? static_cast<int>(*idx) : 0;
+    state.data_min = static_cast<float>(data_min_);
+    state.data_max = static_cast<float>(data_max_);
+    state.mode = range_model_.mode();
+    state.lo = range_model_.lo();
+    state.hi = range_model_.hi();
+    showColormapRangeDialog(
+      nullptr, "Colormap range", state,
+      [this](float lo, float hi) { setRangeOverride(lo, hi); },
+      [this]() { resetRangeToAuto(); });
   });
-  QAction* reset_range = range_menu->addAction("Reset to auto");
-  connect(reset_range, &QAction::triggered, this, [this]() { resetRangeToAuto(); });
 }
 
 void RasterLayer::readSettings()
