@@ -11,6 +11,17 @@ Georeferenced::Georeferenced(): m_geoTransform{0.0,1.0,0.0,0.0,0.0,1.0}, m_inver
 
 }
 
+Georeferenced::~Georeferenced()
+{
+    // [#152] Free the PROJ-backed transformation pipelines allocated by
+    // extractGeoreference. Each is ~tens of KB of PROJ state; without this they
+    // leaked once per chart load (DepthRaster + VectorDataset both derive here).
+    if(m_projectTransformation)
+        OGRCoordinateTransformation::DestroyCT(m_projectTransformation);
+    if(m_unprojectTransformation)
+        OGRCoordinateTransformation::DestroyCT(m_unprojectTransformation);
+}
+
 QPointF Georeferenced::pixelToProjectedPoint(const QPointF &point) const
 {
     return QPointF(m_geoTransform[0]+point.x()*m_geoTransform[1]+point.y()*m_geoTransform[2],
