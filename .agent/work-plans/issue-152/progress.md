@@ -86,3 +86,25 @@ matches by name for every agent, so the mechanical self-review check does not ap
 ### Notes
 - Source fixes verified against actual code: all five leak sites confirmed real and correctly located (`georeferenced.cpp:48-49`; `vectordataset.cpp:22,35,72,100,119`). Approach correctly reuses the `gdal_closer` RAII pattern (`raster_layer.cpp:176`) and the `GetOpenDatasets()` baseline-delta test pattern (`test_raster_layer_gdal_cleanup.cpp`).
 - `virtual ~Georeferenced()` is not strictly required (no call site deletes through `Georeferenced*`) but is a sound defensive choice; review-issue already tracks the PR rationale.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-06-30 16:39 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-152 at `550164a`
+**Mode**: pre-push
+**Depth**: Deep (reason: memory/resource-lifecycle fix; polymorphic base-class change affecting DepthRaster + VectorDataset)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 1 | **Ship**: recommended — zero must-fix; refactor verified behavior-preserving and leak-free on every path by two adversarial passes
+
+### Findings
+- [ ] (suggestion) Attach valgrind `--leak-check=full` output (`definitely lost: 0`) to the PR — the automated tests only see the GDAL dataset handle via `GetOpenDatasets()`, not the primary ~180 KB `OGRCoordinateTransformation` leak the new dtor frees — `georeferenced.cpp:14`, `test/test_vector_dataset_cleanup.cpp`
+- [ ] (suggestion) Soften the `~Georeferenced` comment: `DepthRaster` is deleted as `DepthRaster*` and `VectorDataset` via the QObject chain — neither is delete-through-`Georeferenced*`, so the stated risk is overstated (the `virtual` is fine as defensive future-proofing) — `georeferenced.h:13`
+- [ ] (suggestion) Optional RAII parity: the per-layer `unprojectTransformation` raw pointer is held across the feature loop and its end-of-layer `DestroyCT` is not exception-safe (OOM-only); wrap it in `unique_ptr<OGRCoordinateTransformation, &DestroyCT>` like the dataset closer — `src/camp/vector/vector_parse.cpp:49`
+
+### Notes
+- Static analysis: cppcheck clean (one const-pointer style nit only); ament_cpplint findings (header-guard style, trailing whitespace) are all pre-existing package style confirmed via `git blame` (2017–2021), not introduced here.
+- Two fresh-context Claude adversarial passes (Lens A logic / Lens B systemic-lifecycle) independently traced every GDAL/OGR handle and confirmed: all coordinate handling preserved verbatim (incl. the Point `(Y,X)` vs Line/Polygon `(X,Y)` axis quirk), every handle freed on every path, no double-free, no new leak, `=delete` copy ops break no call site (both subclasses heap-only via `new`), and the constructor zero-inits both transformation pointers so the dtor null-checks are safe.
+- Full plan adherence: both review-plan must-fixes (end-of-layer transform destroy; per-ring iterator destroy) and both suggestions (rule-of-three `=delete`; honest test comments) are folded into the implementation. The `vector_parse` testable-seam extraction resolves the plan-review must-fix about the test having no linkable library.
