@@ -20,21 +20,28 @@ Two classes leak GDAL/OGR handles on every chart load, confirmed by valgrind (~1
 
 ## Approach
 
-1. **Add `virtual ~Georeferenced()`** — destroy both OGR coordinate transformations.
-2. **Fix `VectorDataset::open`** — RAII-close the GDAL dataset; destroy the per-layer transformation; destroy all three `OGRPointIterator` instances.
-3. **Extend `test_depth_raster.cpp`** — add a GDAL open-dataset-count baseline-delta test that proves `DepthRaster` construction and destruction leave the handle count unchanged (guards against regressions where someone removes the existing `GDALClose`).
-4. **Add `test_vector_dataset_cleanup.cpp`** — synthetic GeoJSON in a temp dir; open via `VectorDataset`; assert GDAL dataset handle count returns to baseline. This catches the `GDALOpenEx` leak.
+1. **Add `virtual ~Georeferenced()`** — destroy both OGR coordinate transformations. Also `= delete` the copy ctor/assignment (rule-of-three: the class now owns handles; both subclasses are heap-only so no live call site changes). *(review-plan suggestion folded)*
+2. **Fix `VectorDataset::open`** — RAII-close the GDAL dataset; destroy the per-layer transformation **at end-of-layer** (else all but the last layer leak); destroy every `OGRPointIterator` **at its site**, including the interior-ring iterator **inside the ring loop** (`:119`, reassigned per ring). *(review-plan must-fix folded)*
+3. **Extract a testable seam (operator decision, post-review).** The original `open()` interleaved the GDAL/OGR resource lifecycle with construction of the project item graph (`Point`/`LineString`/`Polygon` + `connect(autonomousVehicleProject(), …)`), so any test driving `open()` would have to link ~all 52 app TUs and stand up a `QApplication`-backed `AutonomousVehicleProject` — the "bounded source list" balloons. Instead split the pure parse into a new MissionItem-free TU:
+   - `src/camp/vector/vector_parse.{h,cpp}` — `camp::vector::parseVectorLayers(GDALDataset*)` returns plain WGS84 geometry (`ParsedLayer`/`ParsedGeometry`) and owns the per-layer transform + per-ring iterator lifecycle (the #152 leak sites). No Qt-item / project coupling.
+   - `VectorDataset::open` RAII-opens the dataset, calls `extractGeoreference`, then `buildItems(parseVectorLayers(...))`.
+   - `VectorDataset::buildItems(layers)` — the unchanged item-graph construction, now fed plain data. Coordinate handling preserved verbatim per geometry type.
+4. **Extend `test_depth_raster.cpp`** — add a GDAL open-dataset-count baseline-delta test (`LoadAndDestroyLeavesNoOpenDataset`). NOTE: it guards the **pre-existing** `GDALClose`, not the new dtor — `GetOpenDatasets()` can't see the `OGRCoordinateTransformation` handles the dtor frees (valgrind-only). Stated in the test comment. *(review-plan suggestion folded)*
+5. **Add `test_vector_dataset_cleanup.cpp`** — links the standalone `vector_parse` TU (no item graph). Synthetic 2-layer GeoPackage (point + linestring + polygon-with-hole per layer); calls `parseVectorLayers`; asserts every parse branch ran (non-vacuous) and the GDAL open-dataset count returns to baseline. The transform/iterator leaks are **valgrind-only** (run the binary with `--leak-check=full`; definitely-lost must be 0) — documented in the test + CMake comments.
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp/georeferenced.h` | Add `virtual ~Georeferenced();` declaration |
-| `src/camp/georeferenced.cpp` | Implement destructor: call `OGRCoordinateTransformation::DestroyCT` on both members, null them |
-| `src/camp/vector/vectordataset.cpp` | Wrap `GDALDataset*` in `unique_ptr` with `gdal_closer`; call `OGRCoordinateTransformation::DestroyCT(unprojectTransformation)` after each layer; call `OGRPointIterator::destroy(pi)` at all three iterator sites |
-| `test/test_depth_raster.cpp` | Add GDAL open-dataset baseline-delta test for `DepthRaster` |
-| `test/test_vector_dataset_cleanup.cpp` | New test: synthetic OGR file, `VectorDataset::open`, assert handle count delta == 0 |
-| `CMakeLists.txt` | Register `test_vector_dataset_cleanup` under `ament_add_gtest` |
+| `src/camp/georeferenced.h` | Add `virtual ~Georeferenced();` + `= delete` copy ctor/assignment |
+| `src/camp/georeferenced.cpp` | Implement destructor: `OGRCoordinateTransformation::DestroyCT` on both members |
+| `src/camp/vector/vector_parse.h` | **New** — `ParsedGeometry`/`ParsedLayer` + `parseVectorLayers(GDALDataset*)` (MissionItem-free) |
+| `src/camp/vector/vector_parse.cpp` | **New** — pure parse; per-layer transform + per-ring iterator created and destroyed; `OGRFeature::DestroyFeature` retained |
+| `src/camp/vector/vectordataset.h` | Forward-declare `camp::vector::ParsedLayer`; declare private `buildItems` |
+| `src/camp/vector/vectordataset.cpp` | `open()` → RAII dataset + `extractGeoreference` + `buildItems(parseVectorLayers(...))`; new `buildItems` holds the item-graph construction |
+| `test/test_depth_raster.cpp` | Add GDAL open-dataset baseline-delta test (guards pre-existing `GDALClose`; dtor leak is valgrind-only) |
+| `test/test_vector_dataset_cleanup.cpp` | **New** — links `vector_parse` TU; synthetic 2-layer GPKG; asserts parse branches + handle-count baseline; transform/iterator leaks valgrind-only |
+| `CMakeLists.txt` | Add `vector_parse.cpp` to executable sources; register `test_vector_dataset_cleanup` |
 
 ## Principles Self-Check
 

@@ -97,6 +97,7 @@ set(SOURCES
     src/camp/waypointdetails.cpp
 
     src/camp/vector/vectordataset.cpp
+    src/camp/vector/vector_parse.cpp
     src/camp/group.cpp
     src/camp/vector/point.cpp
     src/camp/vector/linestring.cpp
@@ -492,6 +493,28 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
   )
   target_link_libraries(test_depth_raster
+    Qt5::Core
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#152] VectorDataset GDAL/OGR handle-leak regression. parseVectorLayers
+  # creates and destroys each layer's OGRCoordinateTransformation and every
+  # OGRPointIterator and must leave the process-wide open-dataset count at
+  # baseline. NOTE: GetOpenDatasets() can see the GDAL *dataset* handle but NOT
+  # the OGRCoordinateTransformation pipelines that are the primary ~180 KB leak —
+  # those are proven only under valgrind (run this binary with
+  # `valgrind --leak-check=full`; "definitely lost" must be 0). Linked against
+  # the standalone vector_parse TU so the leak path is exercised without the
+  # MissionItem / AutonomousVehicleProject item graph.
+  ament_add_gtest(test_vector_dataset_cleanup
+    test/test_vector_dataset_cleanup.cpp
+    src/camp/vector/vector_parse.cpp
+  )
+  target_include_directories(test_vector_dataset_cleanup PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  target_link_libraries(test_vector_dataset_cleanup
     Qt5::Core
     Qt5::Positioning
     ${GDAL_LIBRARY}
