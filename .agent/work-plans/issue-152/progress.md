@@ -52,3 +52,15 @@ The leaks are well-evidenced (valgrind confirmed). The fix is clearly scoped to 
 - [ ] Add virtual destructor to `Georeferenced`; include "why virtual" rationale in PR description (base class with polymorphic subclasses — deleting through base pointer would be UB without it)
 - [ ] In `VectorDataset::open`: use the `gdal_closer` unique_ptr pattern (already in `raster_layer.cpp:176`) for the `GDALDataset*`; destroy the per-layer `OGRCoordinateTransformation`; call `OGRPointIterator::destroy(pi)` at all three iterator sites
 - [ ] Confirm `DepthRaster` has no direct GDAL handle members that also need cleanup (quick grep shows it does not, but verify during implementation)
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-06-30 14:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-152/plan.md` at `40d4749`
+**Branch**: feature/issue-152 at `40d4749`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
