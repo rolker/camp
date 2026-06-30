@@ -64,3 +64,25 @@ The leaks are well-evidenced (valgrind confirmed). The fix is clearly scoped to 
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-06-30 15:15 +00:00
+**By**: Claude Code Agent (Claude Opus)
+<!-- Independent: the plan was authored by a separate fresh-context Sonnet dispatch;
+this review is a separate Opus dispatch. The shared workspace identity "Claude Code Agent"
+matches by name for every agent, so the mechanical self-review check does not apply here. -->
+
+**Plan**: `.agent/work-plans/issue-152/plan.md` at `40d4749`
+**PR**: PR-less (`gh` unauthenticated in this environment; reviewed local plan file)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (must-fix) `test_vector_dataset_cleanup` has no library to link — `vectordataset.cpp`/`group.cpp`/`autonomousvehicleproject.cpp` compile only into the `CCOMAutonomousMissionPlanner` executable, and `open()` drags the full QGraphics item graph + `AutonomousVehicleProject` (mission_manager, platform_manager, map/raster). Settle the build strategy (bounded source list vs. valgrind-only descope) before implementing — `plan.md:26,36,37`
+- [ ] (must-fix) In `VectorDataset::open`, destroy the per-layer `unprojectTransformation` at end-of-layer (else all but the last layer leak), and destroy the interior-ring `OGRPointIterator` inside the ring loop (`:119`, reassigned per ring) — `plan.md:34`
+- [ ] (suggestion) Automated tests cover only the GDAL-dataset leak; `GetOpenDatasets()` does not see the `OGRCoordinateTransformation` handles that are the primary ~180 KB `Georeferenced` leak (valgrind-only). The `DepthRaster` test guards the pre-existing `GDALClose`, not this PR's dtor. State this in test comments so the names don't mislead — `plan.md:25,26,45`
+- [ ] (suggestion) Rule of three: `= delete` copy ctor/assignment on `Georeferenced` when adding the owning dtor (latent double-free if ever copied; currently heap-only so no live bug) — `plan.md:23,32`
+
+### Notes
+- Source fixes verified against actual code: all five leak sites confirmed real and correctly located (`georeferenced.cpp:48-49`; `vectordataset.cpp:22,35,72,100,119`). Approach correctly reuses the `gdal_closer` RAII pattern (`raster_layer.cpp:176`) and the `GetOpenDatasets()` baseline-delta test pattern (`test_raster_layer_gdal_cleanup.cpp`).
+- `virtual ~Georeferenced()` is not strictly required (no call site deletes through `Georeferenced*`) but is a sound defensive choice; review-issue already tracks the PR rationale.
