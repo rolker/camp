@@ -24,6 +24,7 @@
   <depend>pluginlib</depend>
   <depend>marine_autonomy</depend>
   <depend>marine_colormap</depend>
+  <depend>marine_colormap_widgets</depend>
   <depend>marine_interfaces</depend>
   <depend>marine_tiled_raster_store</depend>
   <depend>marine_nav_interfaces</depend>

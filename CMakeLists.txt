@@ -19,6 +19,7 @@ find_package(nav2_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(marine_autonomy REQUIRED)
 find_package(marine_colormap REQUIRED)
+find_package(marine_colormap_widgets REQUIRED)
 find_package(marine_interfaces REQUIRED)
 find_package(marine_tiled_raster_store REQUIRED)
 find_package(marine_nav_interfaces REQUIRED)
@@ -260,6 +261,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_tree_view/map_tree_view.cpp
     src/camp_map/map_view/map_view.cpp
     src/camp_map/map_view/web_mercator.cpp
+    src/camp_map/raster/colormap_range_dialog.cpp
     src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
     src/camp_map/raster/gggs_tile.cpp
@@ -301,6 +303,10 @@ target_link_libraries(camp_map
         # consumer of those headers (camp_map_ros, the camp executable, the tests).
         marine_colormap::marine_colormap
     PRIVATE
+        # [camp#142 PR2] The interactive colorbar dialog (colormap_range_dialog.cpp)
+        # is the only user of the widget, and only in the .cpp — the public header
+        # forward-declares QWidget and exposes no widget type — so link PRIVATE.
+        marine_colormap_widgets::marine_colormap_widgets
         ${GDAL_LIBRARY}
 )
 
