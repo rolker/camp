@@ -30,3 +30,16 @@ issue: 160
   fold timing, overview chain depth, reconciler-on-evict semantics) with the issue's stated
   leanings (distance-from-vessel + byte budget; full overview chain) and record them in the
   ADR-0006 addendum / new camp ADR.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-01 13:30 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-160/plan.md` at `d523a1d`
+**Branch**: feature/issue-160 at `d523a1d`
+**Phases**: 2 (Phase A: unh_marine_autonomy GGGS helpers PR; Phase B: camp eviction + overview PR)
+
+### Open questions
+- [ ] Vessel position source: which ROS topic does camp subscribe to for operator vessel position — if not yet wired to SonarLiveCacheLayer, fall back to view-center distance or pure LRU.
+- [ ] Overview tile resolution: fixed 64×64 per overview tile (caps memory, simpler) vs. matching the fine tile's width/height?
