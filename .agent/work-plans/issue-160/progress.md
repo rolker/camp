@@ -65,3 +65,36 @@ out-of-context, different-model review.
 - [ ] (suggestion) `scheduleWriteThrough(const SonarLiveTile&)` currently writes to `cache_dir_` root (`sonar_live_cache_layer.h:151`); folding overviews into an `overviews/` sub-dir needs a destination/subdir parameter — spell out that small API change — `plan.md:129`
 - [ ] (suggestion) Vessel-position source (open question) materially drives the eviction ordering in `evictIfOverBudget()`; resolve it or commit to the LRU/view-center fallback before implementing step 8, rather than mid-implementation — `plan.md:216`
 - [ ] (suggestion) `children()` is added to GGGS but not consumed by camp ("Only what's needed" tension); operator-sanctioned per the checkpoint note and unit-tested, so acceptable — no change required, noted for the record — `plan.md:190`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-01 03:34 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-160 at `479071a`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + ~700 LOC memory-lifecycle/concurrency-critical caching)
+**Must-fix**: 1 | **Suggestions**: 9
+**Round**: 1 | **Ship**: continue — one genuine design/honesty concern (overview footprint is unbudgeted, contradicting the ADR's boundedness claim); address before pushing as "closes #153"
+
+Static analysis (ament_cpplint): no new actionable findings — only camp house-style
+(Allman `else`, `CAMP_ROS_` guards, no copyright headers, C++-first includes, C-style
+numeric casts) applied consistently with surrounding code, plus one trivial new
+`kOverviewSubdir` `std::string`-vs-`char[]` nit. camp does not enforce stock ament_cpplint.
+Cross-repo dep satisfied: GGGS `parent()`/`children()` (unh_marine_autonomy #249/#250)
+merged into the underlay `jazzy` and present. Adversarial: 2 disjoint-lens Claude passes.
+Concurrency / GL-texture lifetime / shutdown-join ordering all verified sound.
+
+### Findings
+- [ ] (must-fix) Overview pyramid is excluded from the budget and never evicted, growing ≈O(survey area) at fine-tile byte size (recurses to level 0; `accountedBytes()` sums only `tiles_`) — contradicts ADR-0010's "no longer grow memory/VRAM without bound" / "closes #153"; cross-confirmed by both adversarial lenses + governance. Correct the ADR-0010 Consequences + ADR-0006 addendum and cap/evict overviews or open a tracked follow-up — `docs/decisions/0010-bounded-eviction-overview-pyramid.md:116`, `sonar_live_cache_layer.h:225`
+- [ ] (suggestion) `handleCatalog` prune erases `tiles_`/disk/reconciler but never `overview_tiles_` (or `overviews/` on disk) — retracted regions leave stale/orphaned overview coverage + slow leak (compounds the must-fix) — `sonar_live_cache_layer.cpp:413`
+- [ ] (suggestion) `accountedBytes()` recomputed per eviction-loop iteration + in the sort; bounded by trim-every-64 (so ~linear in N, not O(N²)), but a running incremental byte total removes the rescans — `sonar_live_cache_layer.cpp:562`
+- [ ] (suggestion) `evictIfOverBudget()` after warm-load re-writes just-read, byte-identical fine tiles back to disk; guard persist-then-drop with a dirty flag to avoid the write-back storm on enabling a large cache — `sonar_live_cache_layer.cpp:332`
+- [ ] (suggestion) `foldChild` assumes the parent geographically contains the child; across GGGS latitude-band boundaries (±72°/±80°) bounds guards prevent corruption but child cells whose centre falls outside the parent are silently dropped → possible overview gaps on high-latitude surveys. Add a boundary test / note it — `sonar_live_tile.cpp:141`
+- [ ] (suggestion) Warm-load eviction has no viewport and all tiles share `last_access_seq=0`, so survivors are filesystem order, not most-relevant (acceptable — no history yet) — `sonar_live_cache_layer.cpp:297`
+- [ ] (suggestion) Missing reconciler-isolation test (plan step 13): no assertion that `overview_tiles_` keys never enter the reconciler's held set (D4 constraint, currently design-only) — `test/test_sonar_live_eviction.cpp`
+- [ ] (suggestion) Overview level-parse guard is `lvl < 256` rather than the real gggs level count (~21); `valid()` catches it downstream but tighten the bound — `sonar_live_cache_layer.cpp:313`
+- [ ] (suggestion) Plan Consequences table still says eviction calls `reconciler_.drop()`, contradicting the as-built `markHave`-keep note — reconcile — `plan.md:228`
+- [ ] (suggestion) ADR-0006 addendum's four descriptive lines edge past ADR-0012's navigational scope (borderline; passes the "misleading?" test) — trim to pointer + one-liner — `docs/decisions/0006-live-tile-cache-persistence.md:161`
+- [ ] (noted, not a finding) Evicted fine tiles don't reload on pan-back within a session — captured in ADR-0010 D2 as a deferred follow-up; accepted limitation.
