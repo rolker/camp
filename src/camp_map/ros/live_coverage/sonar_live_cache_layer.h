@@ -16,6 +16,7 @@
 
 #include <QFutureWatcher>
 #include <QImage>
+#include <QPointF>
 #include <QSize>
 #include <cstdint>
 #include <map>
@@ -79,6 +80,14 @@ public:
   /// Whether the tile stream is currently subscribed (operator-enabled).
   bool isEnabled() const { return enabled_; }
 
+  /// [camp#160] Resident fine-tile count and coarse overview (pyramid) tile count.
+  /// Introspection for tests and the future status indicator (#158).
+  std::size_t residentTileCount() const { return tiles_.size(); }
+  std::size_t overviewTileCount() const { return overview_tiles_.size(); }
+  /// [camp#160] Number of indices the reconciler holds — used by tests to assert
+  /// overview tiles never enter the anti-entropy set (ADR-0010 D4).
+  std::size_t reconcilerHeldCount() const { return reconciler_.size(); }
+
   /// [camp#121] Render the in-memory tiles into an offscreen image of @p size
   /// spanning the layer extent. Null image if there is no data / GL is
   /// unavailable. Exposed for a headless render check (skips with no GL).
@@ -134,6 +143,9 @@ private:
     SonarLiveTile tile;
     std::unique_ptr<QOpenGLTexture> texture;
     bool texture_dirty = true;
+    // [camp#160] Monotonic access stamp for the LRU eviction fallback (bumped on
+    // patch + on render). Unused for overview entries (they are never evicted).
+    std::uint64_t last_access_seq = 0;
   };
 
   void subscribeCatalog();
@@ -148,10 +160,27 @@ private:
   // onWriteThroughFinished() (GUI thread) re-launches once more if a newer patch
   // arrived during the write — so writes for a tile are serialized and never race
   // on the shared <stem>.tif.tmp path.
-  void scheduleWriteThrough(const SonarLiveTile& tile);
+  // [camp#160] @p subdir is a cache sub-directory ("" = fine tiles at cache_dir_
+  // root, "overviews" = pyramid parents) so fine and overview writes never share
+  // a `<stem>.tif.tmp` path. Fine and overview indices are at different GGGS
+  // levels, so the per-index write-state map keys never collide.
+  void scheduleWriteThrough(const SonarLiveTile& tile, const std::string& subdir = "");
   void startWriteThrough(const gggs::GridIndex& index);
   void onWriteThroughFinished(const gggs::GridIndex& index,
                               QFutureWatcher<void>* watcher);
+
+  // [camp#160] Bounded eviction + overview pyramid (view-based LOD).
+  // accountedBytes(): resident fine-tile footprint (CPU band data + any uploaded
+  // GL texture). evictIfOverBudget(): while over vram_budget_bytes_, fold the
+  // fine tile farthest from the viewport centre into its coarse parent, persist
+  // it, free its texture, and drop it (LRU by last_access_seq when no view is
+  // attached). foldIntoParent(): 2x2-decimate a fine tile up the full overview
+  // chain to level 0. currentViewCentre(): viewport centre in Web-Mercator scene
+  // coords, or nullopt when headless.
+  std::size_t accountedBytes() const;
+  void evictIfOverBudget();
+  void foldIntoParent(const SonarLiveTile& fine);
+  std::optional<QPointF> currentViewCentre() const;
 
   void recomputeBounds();
   void resetAutoRange();
@@ -169,6 +198,13 @@ private:
   QOpenGLTexture* textureFor(Entry& entry);
 
   static constexpr int kMaxImageEdge = 4096;
+
+  // [camp#160] Overview tiles at level <= this coarse "apex" are never evicted, so a
+  // whole-survey zoomed-out view always has coverage. The apex is inherently a small,
+  // bounded handful for any realistic survey extent (level-6 tiles span ~0.125 deg),
+  // while the numerous near-fine overview levels ARE evicted by view like fine tiles —
+  // so total resident memory stays bounded (ADR-0010 D1/D3).
+  static constexpr std::uint8_t kApexProtectLevel = 6;
 
   std::string base_namespace_;   // e.g. "/cube_bathymetry"
   std::string cache_dir_;        // <base cache dir>/<sanitized source ns>
@@ -189,6 +225,22 @@ private:
 
   marine_tiled_raster_store::TileCatalogReconciler reconciler_;
   std::map<gggs::GridIndex, Entry> tiles_;
+
+  // [camp#160] Coarse overview (pyramid) tiles keyed by their own GGGS index at a
+  // level below tiles_'s. Built by folding evicted fine tiles into their parents,
+  // kept resident (never evicted — a handful of tiles), and rendered *under* the
+  // fine tiles so an evicted area degrades to a coarser resolution instead of
+  // going blank. These are a LOCAL derived product: they are NEVER entered into
+  // `reconciler_`, so anti-entropy prune-on-absence can't delete them.
+  std::map<gggs::GridIndex, Entry> overview_tiles_;
+
+  // [camp#160] Monotonic access counter feeding Entry::last_access_seq (LRU
+  // eviction fallback), and the resident-footprint budget for eviction
+  // (QSettings "LiveTileCache/max_vram_bytes", default 512 MiB — ADR-0006 D2 /
+  // #117 no-hardcoded-defaults).
+  std::uint64_t access_seq_ = 0;
+  std::size_t vram_budget_bytes_ = 0;
+  bool eviction_warned_ = false;   // log the shed-load path once, not per evict
 
   QRectF scene_bounds_;
   double data_min_ = 1.0;        // auto-range over the selected band (crossed => none)
@@ -214,6 +266,7 @@ private:
     bool in_flight = false;
     bool dirty = false;
     std::optional<SonarLiveTile> pending;   // SonarLiveTile has no default ctor
+    std::string subdir;                     // [camp#160] "" (root) or "overviews"
   };
   std::map<gggs::GridIndex, WriteState> write_states_;
 

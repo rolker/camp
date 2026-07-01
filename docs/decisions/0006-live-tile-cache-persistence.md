@@ -158,6 +158,9 @@ discovered source from an active one. Selected band + colormap persist per sourc
 - No eviction beyond prune-on-absence. A long survey could accumulate many tiles;
   eviction-by-area is a deferred follow-up (`// TODO(camp): eviction-by-area`),
   not implemented here (operator secondary-question default).
+  **Addendum (camp#160): superseded by
+  [ADR-0010](0010-bounded-eviction-overview-pyramid.md)** — bounded view-based-LOD
+  eviction plus a consumer-side overview pyramid now cap the cache.
 
 ## Alternatives considered
 

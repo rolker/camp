@@ -127,6 +127,73 @@ void SonarLiveTile::applyPatch(const marine_interfaces::msg::SonarVisualizationT
   version_ = std::max(version_, toNanoseconds(msg.header));
 }
 
+void SonarLiveTile::foldChild(const SonarLiveTile& child)
+{
+  // [camp#160] Decimate a finer child into this coarser parent's matching
+  // sub-window for the overview pyramid. Both tiles are the same width x height
+  // (a parent cell therefore spans ~2x2 child cells). We area-map each child
+  // cell to the parent cell containing its geographic centre and average the
+  // finite, non-NoData samples landing in each parent cell — north-up, so row 0
+  // is the northernmost row. Only cells the child covers are written, so folding
+  // each of a parent's children in turn accumulates the full parent.
+  if(width_ <= 0 || height_ <= 0 || child.width_ <= 0 || child.height_ <= 0)
+    return;
+  const double parent_lon0 = minLon();
+  const double parent_lat1 = maxLat();
+  const double parent_lon_span = maxLon() - parent_lon0;
+  const double parent_lat_span = parent_lat1 - minLat();
+  if(parent_lon_span <= 0.0 || parent_lat_span <= 0.0)
+    return;
+  const double child_lon0 = child.minLon();
+  const double child_lat1 = child.maxLat();
+  const double child_lon_span = child.maxLon() - child_lon0;
+  const double child_lat_span = child_lat1 - child.minLat();
+
+  const std::size_t cells = static_cast<std::size_t>(width_) * height_;
+  for(const auto& [name, cband] : child.bands_)
+  {
+    SonarLiveBand& pband = bands_[name];
+    if(pband.data.empty())
+    {
+      // Uncovered parent cells stay transparent: the child's NoData sentinel if
+      // it has one, else NaN (both are discarded by the renderer, camp#134).
+      const float fill = cband.has_nodata ? cband.nodata
+                                          : std::numeric_limits<float>::quiet_NaN();
+      pband.name = name;
+      pband.data.assign(cells, fill);
+      pband.has_nodata = cband.has_nodata;
+      pband.nodata = cband.nodata;
+    }
+
+    std::vector<double> sum(cells, 0.0);
+    std::vector<std::uint32_t> count(cells, 0);
+    for(int cr = 0; cr < child.height_; ++cr)
+    {
+      const double lat = child_lat1 - ((cr + 0.5) / child.height_) * child_lat_span;
+      const int pr = static_cast<int>((parent_lat1 - lat) / parent_lat_span * height_);
+      if(pr < 0 || pr >= height_)
+        continue;
+      for(int cc = 0; cc < child.width_; ++cc)
+      {
+        const float v = cband.data[static_cast<std::size_t>(cr) * child.width_ + cc];
+        if(!std::isfinite(v) || (cband.has_nodata && v == cband.nodata))
+          continue;
+        const double lon = child_lon0 + ((cc + 0.5) / child.width_) * child_lon_span;
+        const int pc = static_cast<int>((lon - parent_lon0) / parent_lon_span * width_);
+        if(pc < 0 || pc >= width_)
+          continue;
+        const std::size_t idx = static_cast<std::size_t>(pr) * width_ + pc;
+        sum[idx] += v;
+        count[idx] += 1;
+      }
+    }
+    for(std::size_t i = 0; i < cells; ++i)
+      if(count[i] > 0)
+        pband.data[i] = static_cast<float>(sum[i] / count[i]);
+    refoldRange(pband);
+  }
+}
+
 void SonarLiveTile::refoldRange(SonarLiveBand& band)
 {
   // A patch can overwrite a former extreme cell, so re-fold the whole band rather

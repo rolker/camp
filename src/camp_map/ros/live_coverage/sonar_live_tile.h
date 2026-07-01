@@ -63,6 +63,17 @@ public:
   /// skipped rather than throwing.
   void applyPatch(const marine_interfaces::msg::SonarVisualizationTile& msg);
 
+  /// [camp#160] Decimate a finer child tile into this coarser (parent) tile for
+  /// the live-coverage overview pyramid. `parent(child.index())` must equal this
+  /// tile's index and both tiles must be the same width x height. The child
+  /// covers ~1/4 of this tile's geographic extent (a quadrant in temperate
+  /// bands); its cells are area-mapped by geographic centre and averaged
+  /// (skipping NoData / non-finite) into the corresponding parent cells, leaving
+  /// the rest of the parent untouched. Area-mapping (rather than a fixed 2x2
+  /// quadrant) keeps the polar `latitudeScaleFactor` column scaling correct.
+  /// Creates missing parent bands (NoData/NaN-filled) and re-folds their ranges.
+  void foldChild(const SonarLiveTile& child);
+
   /// [camp#121] Warm-load one cached Float32 GeoTIFF (all bands, band names from
   /// band descriptions, per-band NoData, GridIndex recovered from the
   /// geotransform at @p level — the marine_tiled_raster_store::loadTile

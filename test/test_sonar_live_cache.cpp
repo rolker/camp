@@ -261,3 +261,77 @@ TEST(SonarLiveCache, PruneTimestampGate)
   EXPECT_TRUE(result.to_prune.empty());
   EXPECT_TRUE(result.to_request.empty());       // A,B held at current version
 }
+
+// 5. [camp#160] foldChild decimates a fine tile into its coarse parent. A uniform
+// child covers ~1/4 of the (same-sized) parent, so exactly (kEdge/2)^2 parent cells
+// take the child value and the rest stay NoData (untouched by this one child).
+TEST(SonarLiveCache, FoldChildDecimatesIntoParentQuadrant)
+{
+  const gggs::Level fine_level(kLevel);
+  const gggs::GridIndex fine_idx = fine_level.gridIndex(43.07, -70.76);
+  ASSERT_TRUE(fine_idx.valid());
+  const gggs::GridIndex parent_idx = gggs::parent(fine_idx);
+  ASSERT_TRUE(parent_idx.valid());
+
+  // Uniform fine tile: every cell = 3.0 (raw 300, scale 0.01).
+  SonarLiveTile fine(fine_idx, kEdge, kEdge);
+  fine.applyPatch(makeDepthPatch(fine_idx, 300, 100));
+
+  // Parent matches the fine tile's dimensions (standard pyramid).
+  SonarLiveTile parent(parent_idx, kEdge, kEdge);
+  parent.foldChild(fine);
+
+  const auto* pb = parent.band("depth");
+  ASSERT_NE(pb, nullptr);
+  ASSERT_EQ(pb->data.size(), static_cast<size_t>(kEdge) * kEdge);
+
+  int written = 0;
+  for(float v : pb->data)
+    if(v == 3.0f)
+      ++written;
+  EXPECT_EQ(written, (kEdge / 2) * (kEdge / 2));   // one quadrant, 2x2-decimated
+  EXPECT_FLOAT_EQ(pb->data_min, 3.0f);             // uniform child -> uniform mean
+  EXPECT_FLOAT_EQ(pb->data_max, 3.0f);
+  EXPECT_TRUE(pb->has_nodata);
+}
+
+// 6. [camp#160] foldChild NoData handling: a 2x2 child block that is entirely NoData
+// leaves its parent cell a NoData hole; a partial block averages only the finite
+// samples.
+TEST(SonarLiveCache, FoldChildPropagatesNoData)
+{
+  const gggs::Level fine_level(kLevel);
+  const gggs::GridIndex fine_idx = fine_level.gridIndex(43.07, -70.76);
+  const gggs::GridIndex parent_idx = gggs::parent(fine_idx);
+  ASSERT_TRUE(parent_idx.valid());
+
+  // Base 400 (= 4.0). One 2x2 child block (gggs rows 6-7, cols 0-1) entirely NoData
+  // -> a single parent NoData hole. One extra NoData cell (7,2) makes an adjacent
+  // parent cell a partial block averaging the 3 finite samples to 4.0.
+  SonarLiveTile fine(fine_idx, kEdge, kEdge);
+  fine.applyPatch(makeDepthPatch(fine_idx, 400, 100,
+                                 {{7, 0, -32768}, {7, 1, -32768},
+                                  {6, 0, -32768}, {6, 1, -32768},
+                                  {7, 2, -32768}}));
+
+  SonarLiveTile parent(parent_idx, kEdge, kEdge);
+  parent.foldChild(fine);
+  const auto* pb = parent.band("depth");
+  ASSERT_NE(pb, nullptr);
+
+  int written = 0;
+  int holes = 0;
+  for(float v : pb->data)
+  {
+    if(v == 4.0f)
+      ++written;
+    else if(pb->has_nodata && v == pb->nodata)
+      ++holes;
+  }
+  // (kEdge/2)^2 parent cells are in the child's quadrant; the all-NoData block is a
+  // hole, the rest (incl. the partial block averaged to 4.0) are written.
+  EXPECT_EQ(written, (kEdge / 2) * (kEdge / 2) - 1);
+  EXPECT_GE(holes, 1);
+  EXPECT_FLOAT_EQ(pb->data_min, 4.0f);
+  EXPECT_FLOAT_EQ(pb->data_max, 4.0f);
+}
