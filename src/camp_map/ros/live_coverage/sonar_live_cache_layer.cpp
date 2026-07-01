@@ -10,6 +10,8 @@
 #include <QDebug>
 #include <QDir>
 #include <QGeoCoordinate>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QMenu>
 #include <QMetaObject>
 #include <QOpenGLTexture>
@@ -46,6 +48,21 @@ namespace
 QString sanitize(const std::string& ns)
 {
   return QString::fromLatin1(QUrl::toPercentEncoding(QString::fromStdString(ns)));
+}
+
+// [camp#160] Cache sub-directory for overview pyramid tiles, kept apart from the
+// fine tiles at the cache-dir root so warm-load of fine tiles can't pick them up.
+const std::string kOverviewSubdir = "overviews";
+
+// [camp#160] Squared distance (Web-Mercator scene units) from a tile's centre to
+// a scene point — the eviction key for view-based LOD (farthest tile evicts first).
+double tileSceneDistanceSquared(const SonarLiveTile& tile, const QPointF& point)
+{
+  const QPointF centre = web_mercator::geoToMap(QGeoCoordinate(
+    0.5 * (tile.minLat() + tile.maxLat()), 0.5 * (tile.minLon() + tile.maxLon())));
+  const double dx = centre.x() - point.x();
+  const double dy = centre.y() - point.y();
+  return dx * dx + dy * dy;
 }
 
 // Off-thread write-through worker. Takes everything by value so it is fully
@@ -87,6 +104,13 @@ SonarLiveCacheLayer::SonarLiveCacheLayer(MapItem* parent, Node* node,
       "/live_tile_cache").toString();
   cache_dir_ = QDir(base_dir).filePath(sanitize(base_namespace_)).toStdString();
 
+  // [camp#160] Resident fine-tile footprint budget for eviction. Default 512 MiB,
+  // operator-overridable (ADR-0006 D2 / #117: a default, never an un-changeable
+  // hardcode). 0 disables eviction (unbounded — the pre-#160 behaviour).
+  constexpr qulonglong kDefaultBudgetBytes = 512ull * 1024 * 1024;
+  vram_budget_bytes_ = static_cast<std::size_t>(
+    settings.value("LiveTileCache/max_vram_bytes", kDefaultBudgetBytes).toULongLong());
+
   // Availability is cheap: subscribe to the catalog even while inactive so the
   // operator can see how much coverage the source holds. The tile stream stays
   // unsubscribed until enableLiveCoverage().
@@ -114,6 +138,8 @@ SonarLiveCacheLayer::~SonarLiveCacheLayer()
   if(renderer_.makeCurrent())
   {
     for(auto& item : tiles_)
+      item.second.texture.reset();
+    for(auto& item : overview_tiles_)   // [camp#160] overview textures too
       item.second.texture.reset();
     renderer_.doneCurrent();
   }
@@ -246,36 +272,64 @@ void SonarLiveCacheLayer::warmLoad()
   if(!level_)
     return;   // nothing cached yet
 
-  // [camp#134] insert_or_assign below replaces any pre-existing Entry for an index
-  // (reachable on a disable→re-enable: disable leaves tiles_ — and their GL textures
-  // — intact). A displaced Entry's QOpenGLTexture must be freed under a current GL
-  // context, so make it current for the seed loop when tiles already hold textures.
-  // On the first (empty-map) warm load there is nothing to displace, so skip it.
-  // Gate on hasContext() (mirrors GggsTileLayer::applyBand): when no context exists
-  // yet no texture was ever uploaded, so skip makeCurrent() rather than forcing the
-  // offscreen context into existence to reset null textures.
-  const bool gl_current =
-    !tiles_.empty() && renderer_.hasContext() && renderer_.makeCurrent();
+  // [camp#160] Load fine tiles INCREMENTALLY (not SonarLiveTile::loadCacheDir, which
+  // would materialize the whole disk cache in one vector) and trim to the budget as
+  // we go, so a large cache can't spike memory during warm-load — the salmon
+  // accelerant (#153). An index already resident is kept (memory is >= the disk
+  // copy), so a re-enable never displaces a live Entry — which also means no GL
+  // context is needed here (no displaced texture to free; evictIfOverBudget() manages
+  // its own context).
   const gggs::Level level(*level_);
-  for(auto& tile : SonarLiveTile::loadCacheDir(cache_dir_, level))
+  QDir fine_dir(QString::fromStdString(cache_dir_));
+  int since_trim = 0;
+  for(const QString& name : fine_dir.entryList(QStringList() << "*.tif", QDir::Files))
   {
-    const gggs::GridIndex index = tile.index();
-    if(!index.valid())
+    auto tile = SonarLiveTile::loadFromGeoTiff(fine_dir.filePath(name).toStdString(), level);
+    if(!tile || !tile->index().valid())
       continue;
+    const gggs::GridIndex index = tile->index();
+    if(tiles_.count(index))
+      continue;   // keep the resident (>= disk) copy; skip re-load on re-enable
     // Seed the reconciler at version 0: "have something" — older than any real
-    // catalog version, so the next catalog re-requests it if the boat is newer,
-    // and the prune gate never deletes it spuriously (ADR-0006 D3).
+    // catalog version, so the next catalog re-requests it if the boat is newer, and
+    // the prune gate never deletes it spuriously (ADR-0006 D3).
     reconciler_.markHave(index, 0);
-    tiles_.insert_or_assign(index, Entry{std::move(tile), nullptr, true});
+    tiles_.insert_or_assign(index, Entry{std::move(*tile), nullptr, true, 0});
+    if(++since_trim >= 64)   // cap the load peak at ~budget + 64 tiles
+    {
+      since_trim = 0;
+      evictIfOverBudget();
+    }
   }
-  if(gl_current)
-    renderer_.doneCurrent();
+
+  // [camp#160] Warm-load the overview pyramid. Overview tiles span multiple coarse
+  // levels, so recover each file's level from its `<level>_<row>_<col>.tif` stem
+  // rather than assuming the fine level. Kept resident (never evicted).
+  QDir overview_dir(
+    QDir(QString::fromStdString(cache_dir_)).filePath(QString::fromStdString(kOverviewSubdir)));
+  for(const QString& name : overview_dir.entryList(QStringList() << "*.tif", QDir::Files))
+  {
+    bool ok = false;
+    const int lvl = name.section('.', 0, 0).section('_', 0, 0).toInt(&ok);
+    if(!ok || lvl < 0 || lvl >= 256)
+      continue;
+    auto tile = SonarLiveTile::loadFromGeoTiff(overview_dir.filePath(name).toStdString(),
+                                               gggs::Level(static_cast<std::uint8_t>(lvl)));
+    if(tile && tile->index().valid())
+      overview_tiles_.insert_or_assign(tile->index(),
+                                       Entry{std::move(*tile), nullptr, true, 0});
+  }
+
   if(band_name_.empty())
     band_name_ = defaultBand();
   recomputeBounds();
   resetAutoRange();
   foldAutoRange();
   updateDisplay();
+
+  // [camp#160] Trim the freshly warm-loaded fine tiles to the budget before the
+  // tile stream is subscribed, so a large disk cache can't spike memory on enable.
+  evictIfOverBudget();
 }
 
 // ------------------------------ message handlers -----------------------------
@@ -305,11 +359,16 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
   Entry& entry = it->second;
   entry.tile.applyPatch(msg);
   entry.texture_dirty = true;
+  entry.last_access_seq = ++access_seq_;   // [camp#160] freshest — LRU fallback
   reconciler_.markHave(index, entry.tile.version());
-  // TODO(camp): eviction-by-area follow-up — only prune-on-absence bounds the
-  // cache today, so a long survey can accumulate many tiles (ADR-0006 consequences).
 
   scheduleWriteThrough(entry.tile);
+
+  // [camp#160] Bound the resident fine-tile cache: over budget, the farthest
+  // tiles from the viewport fold into their overview parent, persist, and drop.
+  // May erase entries other than this one (or this one if it is the farthest and
+  // we are over budget), so do not touch `entry` after this call.
+  evictIfOverBudget();
 
   if(band_name_.empty())
     band_name_ = defaultBand();
@@ -385,7 +444,8 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   updateDisplay();
 }
 
-void SonarLiveCacheLayer::scheduleWriteThrough(const SonarLiveTile& tile)
+void SonarLiveCacheLayer::scheduleWriteThrough(const SonarLiveTile& tile,
+                                               const std::string& subdir)
 {
   // GUI thread. Coalesce per tile: snapshot the latest state and launch a worker
   // only if this tile is idle. If a worker is already in flight for this tile, mark
@@ -395,6 +455,7 @@ void SonarLiveCacheLayer::scheduleWriteThrough(const SonarLiveTile& tile)
   WriteState& ws = write_states_[tile.index()];
   ws.pending = tile;   // latest wins
   ws.dirty = true;
+  ws.subdir = subdir;  // [camp#160] "" (fine, root) or "overviews" (pyramid)
   if(!ws.in_flight)
     startWriteThrough(tile.index());
 }
@@ -411,7 +472,11 @@ void SonarLiveCacheLayer::startWriteThrough(const gggs::GridIndex& index)
   write_watchers_.push_back(watcher);
   connect(watcher, &QFutureWatcher<void>::finished, this,
           [this, index, watcher]() { onWriteThroughFinished(index, watcher); });
-  watcher->setFuture(QtConcurrent::run(writeTileToCache, std::move(*ws.pending), cache_dir_));
+  // [camp#160] Destination = cache_dir_[/subdir]; the worker creates it.
+  const std::string dir = ws.subdir.empty()
+    ? cache_dir_
+    : (std::filesystem::path(cache_dir_) / ws.subdir).string();
+  watcher->setFuture(QtConcurrent::run(writeTileToCache, std::move(*ws.pending), dir));
 }
 
 void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
@@ -434,6 +499,133 @@ void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
     write_states_.erase(it);    // clean: drop the per-tile state
 }
 
+// -------------------------- eviction / overview pyramid ----------------------
+
+std::size_t SonarLiveCacheLayer::accountedBytes() const
+{
+  // Resident fine-tile footprint: CPU band data (always present) plus the
+  // selected band's GL texture when it has been uploaded. Overview tiles are
+  // excluded — they are bounded (a handful) and intentionally kept resident.
+  std::size_t bytes = 0;
+  for(const auto& item : tiles_)
+  {
+    const SonarLiveTile& tile = item.second.tile;
+    for(const auto& name : tile.bandNames())
+      if(const SonarLiveBand* band = tile.band(name))
+        bytes += band->data.size() * sizeof(float);
+    if(item.second.texture)
+      bytes += static_cast<std::size_t>(tile.width()) * tile.height() * sizeof(float);
+  }
+  return bytes;
+}
+
+std::optional<QPointF> SonarLiveCacheLayer::currentViewCentre() const
+{
+  // Viewport centre in Web-Mercator scene coords (the eviction reference point).
+  // Null when headless (no scene/view attached, e.g. the render tests).
+  const QGraphicsScene* graphics_scene = scene();
+  if(!graphics_scene)
+    return std::nullopt;
+  const QList<QGraphicsView*> views = graphics_scene->views();
+  if(views.isEmpty() || !views.first())
+    return std::nullopt;
+  QGraphicsView* view = views.first();
+  return view->mapToScene(view->viewport()->rect()).boundingRect().center();
+}
+
+void SonarLiveCacheLayer::foldIntoParent(const SonarLiveTile& fine)
+{
+  // Decimate a fine tile into its coarse parent and recurse up to level 0, so a
+  // zoomed-out view always has coverage even after the fine tiles are evicted.
+  // Overview tiles match the fine tile's width/height (standard pyramid) and are
+  // persisted under the `overviews/` cache sub-dir. They are never added to the
+  // reconciler (a local derived product; prune-on-absence must not touch them).
+  const gggs::GridIndex parent_index = gggs::parent(fine.index());
+  if(!parent_index.valid())
+    return;
+  auto it = overview_tiles_.find(parent_index);
+  if(it == overview_tiles_.end())
+    it = overview_tiles_
+           .emplace(parent_index,
+                    Entry{SonarLiveTile(parent_index, fine.width(), fine.height()),
+                          nullptr, true, 0})
+           .first;
+  Entry& overview = it->second;
+  overview.tile.foldChild(fine);
+  overview.texture_dirty = true;
+  scheduleWriteThrough(overview.tile, kOverviewSubdir);
+  foldIntoParent(overview.tile);   // build the full chain to level 0
+}
+
+void SonarLiveCacheLayer::evictIfOverBudget()
+{
+  if(vram_budget_bytes_ == 0 || accountedBytes() <= vram_budget_bytes_)
+    return;
+
+  // Order candidates: farthest fine tile from the viewport centre first (view-based
+  // LOD). Headless (no view) falls back to LRU by last_access_seq (oldest first).
+  const std::optional<QPointF> centre = currentViewCentre();
+  std::vector<gggs::GridIndex> order;
+  order.reserve(tiles_.size());
+  for(const auto& item : tiles_)
+    order.push_back(item.first);
+  std::sort(order.begin(), order.end(),
+            [&](const gggs::GridIndex& a, const gggs::GridIndex& b)
+            {
+              const Entry& ea = tiles_.at(a);
+              const Entry& eb = tiles_.at(b);
+              if(centre)
+                return tileSceneDistanceSquared(ea.tile, *centre) >
+                       tileSceneDistanceSquared(eb.tile, *centre);   // farthest first
+              return ea.last_access_seq < eb.last_access_seq;        // oldest first
+            });
+
+  if(!eviction_warned_)
+  {
+    qWarning().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
+                         << "] resident tile budget exceeded ("
+                         << qulonglong(accountedBytes()) << ">"
+                         << qulonglong(vram_budget_bytes_)
+                         << "bytes) — evicting fine tiles into the overview pyramid";
+    eviction_warned_ = true;
+  }
+
+  // Free GL textures under the renderer's context (mirrors handleCatalog's prune).
+  const bool gl_current = renderer_.hasContext() && renderer_.makeCurrent();
+  bool evicted = false;
+  for(const gggs::GridIndex& index : order)
+  {
+    if(accountedBytes() <= vram_budget_bytes_)
+      break;
+    auto it = tiles_.find(index);
+    if(it == tiles_.end())
+      continue;
+    foldIntoParent(it->second.tile);           // degrade to coarse parent first
+    scheduleWriteThrough(it->second.tile);     // persist-then-drop (durable disk)
+    it->second.texture.reset();                // free VRAM under the context
+    tiles_.erase(it);
+    // Deliberately DO NOT reconciler_.drop(index): we still *possess* this tile
+    // (it is persisted on disk), so its markHave stays. Dropping it would make the
+    // next catalog reconcile re-request it from the boat -> re-receive -> re-evict
+    // (still the farthest, still over budget) = request/evict churn wasting the
+    // very bandwidth #71 guards. The reconciler tracks possession (disk); tiles_
+    // tracks residency (memory) — the two intentionally decouple under eviction.
+    // A genuine catalog prune later still frees the disk copy via handleCatalog.
+    evicted = true;
+  }
+  if(gl_current)
+    renderer_.doneCurrent();
+
+  if(evicted)
+  {
+    recomputeBounds();
+    resetAutoRange();
+    foldAutoRange();
+    cached_image_ = QImage();
+    update(boundingRect());
+  }
+}
+
 // ------------------------------ extent / range -------------------------------
 
 void SonarLiveCacheLayer::recomputeBounds()
@@ -441,15 +633,20 @@ void SonarLiveCacheLayer::recomputeBounds()
   prepareGeometryChange();
   QRectF bounds;
   bool first = true;
-  for(const auto& entry : tiles_)
+  auto expand = [&](const SonarLiveTile& tile)
   {
-    const SonarLiveTile& tile = entry.second.tile;
     const QPointF lo = web_mercator::geoToMap(QGeoCoordinate(tile.minLat(), tile.minLon()));
     const QPointF hi = web_mercator::geoToMap(QGeoCoordinate(tile.maxLat(), tile.maxLon()));
     const QRectF rect = QRectF(lo, hi).normalized();
     bounds = first ? rect : bounds.united(rect);
     first = false;
-  }
+  };
+  for(const auto& entry : tiles_)
+    expand(entry.second.tile);
+  // [camp#160] Include overviews so the extent stays correct after fine tiles are
+  // evicted (an all-evicted region is still covered by its resident overview).
+  for(const auto& entry : overview_tiles_)
+    expand(entry.second.tile);
   scene_bounds_ = bounds;
   if(!scene_bounds_.isNull())
   {
@@ -469,15 +666,21 @@ void SonarLiveCacheLayer::resetAutoRange()
 void SonarLiveCacheLayer::foldAutoRange()
 {
   bool first = (data_min_ > data_max_);
-  for(const auto& entry : tiles_)
+  auto fold = [&](const Entry& e)
   {
-    const SonarLiveBand* band = entry.second.tile.band(band_name_);
+    const SonarLiveBand* band = e.tile.band(band_name_);
     if(!band || band->data_min > band->data_max)
-      continue;
+      return;
     if(first || band->data_min < data_min_) data_min_ = band->data_min;
     if(first || band->data_max > data_max_) data_max_ = band->data_max;
     first = false;
-  }
+  };
+  for(const auto& entry : tiles_)
+    fold(entry.second);
+  // [camp#160] Fold overview ranges too so the colormap tracks the full visible
+  // extent when only overviews remain for a region.
+  for(const auto& entry : overview_tiles_)
+    fold(entry.second);
   // [camp#142] Keep the Auto resolved range current with the freshly-folded extents
   // (a no-op while the operator holds a Manual override). camp#138 coordination:
   // this update_auto() call site is where #138's fold changes meet this PR — the
@@ -504,7 +707,9 @@ std::string SonarLiveCacheLayer::defaultBand() const
 void SonarLiveCacheLayer::updateDisplay()
 {
   if(enabled_)
-    setStatus(QString("(live: %1 tiles)").arg(qulonglong(tiles_.size())));
+    setStatus(QString("(live: %1 fine + %2 overview tiles)")
+                .arg(qulonglong(tiles_.size()))
+                .arg(qulonglong(overview_tiles_.size())));
   else
     setStatus("(available)");
 }
@@ -518,6 +723,9 @@ QRectF SonarLiveCacheLayer::boundingRect() const
 
 QOpenGLTexture* SonarLiveCacheLayer::textureFor(Entry& entry)
 {
+  // [camp#160] Rendering a tile marks it recently used (the LRU eviction fallback
+  // approximates "in view"). Harmless for overview entries (never evicted).
+  entry.last_access_seq = ++access_seq_;
   const SonarLiveBand* band = entry.tile.band(band_name_);
   if(!band || band->data.empty())
     return nullptr;
@@ -581,16 +789,15 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
   // textureFor() may lazily (re)upload here. The geo->Web-Mercator warp lives in
   // the renderer; this only forwards each tile's lat/lon extent + NoData sentinel.
   QList<raster::RasterFieldItem> result;
-  result.reserve(int(tiles_.size()));
-  for(auto& item : tiles_)
+  result.reserve(int(overview_tiles_.size() + tiles_.size()));
+  auto append = [&](Entry& entry)
   {
-    Entry& entry = item.second;
     const SonarLiveBand* band = entry.tile.band(band_name_);
     if(!band)
-      continue;
+      return;
     QOpenGLTexture* texture = textureFor(entry);
     if(!texture)
-      continue;
+      return;
     raster::RasterFieldItem fi;
     fi.texture = texture;
     fi.format = raster::RasterFieldItem::Format::Scalar;
@@ -602,13 +809,22 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
     fi.has_nodata = band->has_nodata;
     fi.nodata = band->has_nodata ? band->nodata : 0.0f;
     result.push_back(fi);
-  }
+  };
+  // [camp#160] LOD fallback by draw order: overviews first (coarse->fine, the
+  // std::map orders by GGGS level), then the fine tiles on top. Where a fine tile
+  // is present it fully covers its parent; where it was evicted, the coarse parent
+  // shows through instead of a blank gap.
+  for(auto& item : overview_tiles_)
+    append(item.second);
+  for(auto& item : tiles_)
+    append(item.second);
   return result;
 }
 
 QImage SonarLiveCacheLayer::renderImage(const QSize& size)
 {
-  if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
+  if((tiles_.empty() && overview_tiles_.empty()) || data_min_ > data_max_ ||
+     size.isEmpty())
     return QImage();
   // [camp#134] Make the renderer's context current, collect the held tiles
   // (uploading textures under it), then delegate the warp + draw.
@@ -625,7 +841,7 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size)
 
 void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
 {
-  if(tiles_.empty() || data_min_ > data_max_)
+  if((tiles_.empty() && overview_tiles_.empty()) || data_min_ > data_max_)
     return;
 
   const QRectF dev = painter->worldTransform().mapRect(boundingRect());

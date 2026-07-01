@@ -158,6 +158,12 @@ discovered source from an active one. Selected band + colormap persist per sourc
 - No eviction beyond prune-on-absence. A long survey could accumulate many tiles;
   eviction-by-area is a deferred follow-up (`// TODO(camp): eviction-by-area`),
   not implemented here (operator secondary-question default).
+  **Addendum (camp#160): superseded — see [ADR-0010](0010-bounded-eviction-overview-pyramid.md).**
+  Bounded view-based-LOD eviction against a resident-footprint budget, plus a
+  consumer-side overview pyramid (evicted fine tiles fold into their coarse parent
+  so a zoomed-out view keeps coverage) and warm-load bounding, now cap the cache.
+  Overview tiles reuse this ADR's `<level>_<row>_<col>.tif` format under an
+  `overviews/` sub-dir and stay out of the reconciler (a local derived product).
 
 ## Alternatives considered
 

@@ -846,6 +846,32 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # [camp#160] Bounded eviction + overview pyramid, layer level. Same offscreen
+  # QApplication + Map harness as test_range_persist (GL-free / ROS-free).
+  ament_add_gtest(test_sonar_live_eviction
+    test/test_sonar_live_eviction.cpp
+  )
+  target_include_directories(test_sonar_live_eviction PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_eviction
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_eviction
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
 endif()
 
 
