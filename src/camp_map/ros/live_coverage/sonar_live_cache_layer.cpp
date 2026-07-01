@@ -73,6 +73,8 @@ void writeTileToCache(SonarLiveTile tile, std::string dir)
   namespace fs = std::filesystem;
   std::error_code ec;
   fs::create_directories(dir, ec);
+  if(ec)
+    return;   // unwritable cache dir — skip the GDAL round-trip (best-effort cache)
   const std::string stem = std::to_string(static_cast<int>(tile.index().level())) + "_" +
                            std::to_string(tile.index().row()) + "_" +
                            std::to_string(tile.index().column());
@@ -354,7 +356,7 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
   const bool is_new = (it == tiles_.end());
   if(is_new)
     it = tiles_.emplace(index,
-                        Entry{SonarLiveTile(index, msg.width, msg.height), nullptr, true})
+                        Entry{SonarLiveTile(index, msg.width, msg.height), nullptr, true, 0})
            .first;
   Entry& entry = it->second;
   entry.tile.applyPatch(msg);
@@ -649,6 +651,9 @@ void SonarLiveCacheLayer::evictIfOverBudget()
       evicted = true;
     }
   }
+  // May intentionally return still-over-budget when only the protected apex remains
+  // (apex bytes > budget) — that is the O(small) floor that guarantees zoom-out
+  // coverage, not a leak (ADR-0010 D1 / Consequences).
 
   if(gl_current)
     renderer_.doneCurrent();
