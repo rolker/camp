@@ -98,3 +98,33 @@ Concurrency / GL-texture lifetime / shutdown-join ordering all verified sound.
 - [ ] (suggestion) Plan Consequences table still says eviction calls `reconciler_.drop()`, contradicting the as-built `markHave`-keep note — reconcile — `plan.md:228`
 - [ ] (suggestion) ADR-0006 addendum's four descriptive lines edge past ADR-0012's navigational scope (borderline; passes the "misleading?" test) — trim to pointer + one-liner — `docs/decisions/0006-live-tile-cache-persistence.md:161`
 - [ ] (noted, not a finding) Evicted fine tiles don't reload on pan-back within a session — captured in ADR-0010 D2 as a deferred follow-up; accepted limitation.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-01 04:10 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-160 at `56db193`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR-0010 + ~700 LOC memory-lifecycle/concurrency-critical caching)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 2 | **Ship**: recommended — round-1 must-fix (unbounded overview pyramid) resolved and cross-confirmed; no new must-fix, only cosmetic/defensive suggestions.
+
+Round-1 must-fix RESOLVED: `accountedBytes()` now sums fine + overview maps
+(`sonar_live_cache_layer.cpp:519-524`); `evictIfOverBudget()` is two-phase with
+apex protection (`:366-383`); ADR-0010 D1/Consequences corrected. Round-1 suggestions
+cleared or tracked-deferred: overview level-parse guard → `gggs::levels.size()` (`:314`);
+eviction no longer writes (write-back storm gone); reconciler-isolation test added
+(D4); plan Consequences reconciled to `markHave`-keep; ADR-0006 addendum trimmed to a
+navigational pointer; `handleCatalog` overview-prune + high-latitude `foldChild` seam
+captured as deferred follow-ups in ADR-0010. Static analysis (ament_cpplint): 47
+findings, all consistent camp house-style (camp does not enforce stock cpplint) — no
+new actionable findings. Adversarial: 2 disjoint-lens Claude passes (Deep horizon);
+threading / GL-texture lifetime / write-worker path all verified sound. Base fetch
+failed offline; reviewed against local `origin/jazzy`.
+
+### Findings
+- [ ] (suggestion) `evictIfOverBudget()` can intentionally exit still-over-budget when only the protected apex (`level ≤ 6`) remains — documented in ADR-0010 Consequences but not noted in the function; add a one-line comment (not a boundedness bug: apex is bounded by survey extent) — `sonar_live_cache_layer.cpp:366`
+- [ ] (suggestion) `writeTileToCache`: `fs::create_directories(dir, ec)` swallows `ec`; an early `if(ec) return;` avoids a wasted GDAL round-trip on an unwritable cache dir (safe today — `writeToGeoTiff` fails gracefully) — `sonar_live_cache_layer.cpp:75`
+- [ ] (suggestion) `handleTile`'s new-`Entry{...}` omits the explicit `last_access_seq` initializer used at the other call sites; cosmetic only (in-class default 0, overwritten at `:362`) — `sonar_live_cache_layer.cpp:357`
