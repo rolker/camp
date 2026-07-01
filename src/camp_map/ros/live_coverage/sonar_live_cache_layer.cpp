@@ -311,7 +311,7 @@ void SonarLiveCacheLayer::warmLoad()
   {
     bool ok = false;
     const int lvl = name.section('.', 0, 0).section('_', 0, 0).toInt(&ok);
-    if(!ok || lvl < 0 || lvl >= 256)
+    if(!ok || lvl < 0 || lvl >= static_cast<int>(gggs::levels.size()))
       continue;
     auto tile = SonarLiveTile::loadFromGeoTiff(overview_dir.filePath(name).toStdString(),
                                                gggs::Level(static_cast<std::uint8_t>(lvl)));
@@ -503,19 +503,25 @@ void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
 
 std::size_t SonarLiveCacheLayer::accountedBytes() const
 {
-  // Resident fine-tile footprint: CPU band data (always present) plus the
-  // selected band's GL texture when it has been uploaded. Overview tiles are
-  // excluded — they are bounded (a handful) and intentionally kept resident.
+  // Total resident footprint: CPU band data (always present) plus the selected
+  // band's GL texture when uploaded, over BOTH fine tiles and overview (pyramid)
+  // tiles — the overviews grow with survey area, so they must count toward the
+  // budget or they'd be an unbounded second cache (ADR-0010 D1).
+  auto tileBytes = [](const Entry& e) -> std::size_t
+  {
+    std::size_t bytes = 0;
+    for(const auto& name : e.tile.bandNames())
+      if(const SonarLiveBand* band = e.tile.band(name))
+        bytes += band->data.size() * sizeof(float);
+    if(e.texture)
+      bytes += static_cast<std::size_t>(e.tile.width()) * e.tile.height() * sizeof(float);
+    return bytes;
+  };
   std::size_t bytes = 0;
   for(const auto& item : tiles_)
-  {
-    const SonarLiveTile& tile = item.second.tile;
-    for(const auto& name : tile.bandNames())
-      if(const SonarLiveBand* band = tile.band(name))
-        bytes += band->data.size() * sizeof(float);
-    if(item.second.texture)
-      bytes += static_cast<std::size_t>(tile.width()) * tile.height() * sizeof(float);
-  }
+    bytes += tileBytes(item.second);
+  for(const auto& item : overview_tiles_)
+    bytes += tileBytes(item.second);
   return bytes;
 }
 
@@ -562,57 +568,88 @@ void SonarLiveCacheLayer::evictIfOverBudget()
   if(vram_budget_bytes_ == 0 || accountedBytes() <= vram_budget_bytes_)
     return;
 
-  // Order candidates: farthest fine tile from the viewport centre first (view-based
-  // LOD). Headless (no view) falls back to LRU by last_access_seq (oldest first).
-  const std::optional<QPointF> centre = currentViewCentre();
-  std::vector<gggs::GridIndex> order;
-  order.reserve(tiles_.size());
-  for(const auto& item : tiles_)
-    order.push_back(item.first);
-  std::sort(order.begin(), order.end(),
-            [&](const gggs::GridIndex& a, const gggs::GridIndex& b)
-            {
-              const Entry& ea = tiles_.at(a);
-              const Entry& eb = tiles_.at(b);
-              if(centre)
-                return tileSceneDistanceSquared(ea.tile, *centre) >
-                       tileSceneDistanceSquared(eb.tile, *centre);   // farthest first
-              return ea.last_access_seq < eb.last_access_seq;        // oldest first
-            });
-
   if(!eviction_warned_)
   {
     qWarning().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
                          << "] resident tile budget exceeded ("
                          << qulonglong(accountedBytes()) << ">"
                          << qulonglong(vram_budget_bytes_)
-                         << "bytes) — evicting fine tiles into the overview pyramid";
+                         << "bytes) — shedding to the overview pyramid";
     eviction_warned_ = true;
   }
 
-  // Free GL textures under the renderer's context (mirrors handleCatalog's prune).
+  // Order candidate indices farthest-from-viewport-centre first (view-based LOD);
+  // LRU by last_access_seq (oldest first) when headless (no view attached).
+  const std::optional<QPointF> centre = currentViewCentre();
+  auto orderByDistance = [&](const std::map<gggs::GridIndex, Entry>& pool,
+                             std::vector<gggs::GridIndex> keys)
+  {
+    std::sort(keys.begin(), keys.end(),
+              [&](const gggs::GridIndex& a, const gggs::GridIndex& b)
+              {
+                const Entry& ea = pool.at(a);
+                const Entry& eb = pool.at(b);
+                if(centre)
+                  return tileSceneDistanceSquared(ea.tile, *centre) >
+                         tileSceneDistanceSquared(eb.tile, *centre);
+                return ea.last_access_seq < eb.last_access_seq;
+              });
+    return keys;
+  };
+
+  // Fine tiles and overviews are already persisted (handleTile / foldIntoParent write
+  // through), so eviction just frees memory — the disk cache is the durable backing
+  // (ADR-0010 D2). Reconciler markHave is kept (possession on disk), NOT dropped, so
+  // eviction can't trigger a re-request/re-evict churn (#71): tiles_ = residency, the
+  // reconciler = possession. Free GL textures under the renderer's context.
   const bool gl_current = renderer_.hasContext() && renderer_.makeCurrent();
   bool evicted = false;
-  for(const gggs::GridIndex& index : order)
+
+  // Phase 1 — evict fine tiles (the detail) farthest-first, folding each into its
+  // coarse parent so its coverage survives at lower resolution.
   {
-    if(accountedBytes() <= vram_budget_bytes_)
-      break;
-    auto it = tiles_.find(index);
-    if(it == tiles_.end())
-      continue;
-    foldIntoParent(it->second.tile);           // degrade to coarse parent first
-    scheduleWriteThrough(it->second.tile);     // persist-then-drop (durable disk)
-    it->second.texture.reset();                // free VRAM under the context
-    tiles_.erase(it);
-    // Deliberately DO NOT reconciler_.drop(index): we still *possess* this tile
-    // (it is persisted on disk), so its markHave stays. Dropping it would make the
-    // next catalog reconcile re-request it from the boat -> re-receive -> re-evict
-    // (still the farthest, still over budget) = request/evict churn wasting the
-    // very bandwidth #71 guards. The reconciler tracks possession (disk); tiles_
-    // tracks residency (memory) — the two intentionally decouple under eviction.
-    // A genuine catalog prune later still frees the disk copy via handleCatalog.
-    evicted = true;
+    std::vector<gggs::GridIndex> keys;
+    keys.reserve(tiles_.size());
+    for(const auto& item : tiles_)
+      keys.push_back(item.first);
+    for(const gggs::GridIndex& index : orderByDistance(tiles_, std::move(keys)))
+    {
+      if(accountedBytes() <= vram_budget_bytes_)
+        break;
+      auto it = tiles_.find(index);
+      if(it == tiles_.end())
+        continue;
+      foldIntoParent(it->second.tile);   // degrade to coarse parent (persists it)
+      it->second.texture.reset();
+      tiles_.erase(it);
+      evicted = true;
+    }
   }
+
+  // Phase 2 — if the pyramid itself is still over budget, evict the numerous
+  // near-fine overview tiles farthest-first, but NEVER the coarse apex
+  // (level <= kApexProtectLevel) so a whole-survey zoom-out always has coverage. An
+  // evicted overview's data already lives in its coarser ancestors (built by the same
+  // fold chain), so dropping it loses no coverage — just some mid-zoom fidelity.
+  if(accountedBytes() > vram_budget_bytes_)
+  {
+    std::vector<gggs::GridIndex> keys;
+    for(const auto& item : overview_tiles_)
+      if(item.first.level() > kApexProtectLevel)
+        keys.push_back(item.first);
+    for(const gggs::GridIndex& index : orderByDistance(overview_tiles_, std::move(keys)))
+    {
+      if(accountedBytes() <= vram_budget_bytes_)
+        break;
+      auto it = overview_tiles_.find(index);
+      if(it == overview_tiles_.end())
+        continue;
+      it->second.texture.reset();
+      overview_tiles_.erase(it);
+      evicted = true;
+    }
+  }
+
   if(gl_current)
     renderer_.doneCurrent();
 

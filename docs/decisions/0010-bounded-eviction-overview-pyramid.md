@@ -50,23 +50,40 @@ Forces:
 ### D1 — View-based LOD eviction against a resident-footprint budget
 
 A configurable budget (`QSettings LiveTileCache/max_vram_bytes`, default 512 MiB;
-`0` disables — the pre-#160 behaviour) caps the **resident fine-tile** footprint
-(CPU band data + any uploaded GL texture; overviews are excluded, being bounded and
-intentionally resident). `evictIfOverBudget()` runs on the GUI thread after every
-applied patch and after warm-load. When over budget it evicts fine tiles **farthest
-from the current viewport centre first** (classic slippy-map LOD — keep what's near
-the view, discard the rest), obtaining the viewport centre from
-`scene()->views()`. When no view is attached (headless / tests) it falls back to
-**LRU** by a monotonic `last_access_seq` (bumped on patch and on render). No
-vessel-position / tf dependency — the operator explicitly chose view-based LOD over
-distance-from-vessel as the simpler, more natural model.
+`0` disables — the pre-#160 behaviour) caps the **total resident** footprint (CPU
+band data + any uploaded GL texture) across **both** fine tiles **and** overview
+tiles — the overviews grow with survey area (see D3), so they must count toward the
+budget or they'd be an unbounded second cache. `evictIfOverBudget()` runs on the
+GUI thread after every
+applied patch and after warm-load, in **two phases**, always **farthest from the
+current viewport centre first** (classic slippy-map LOD — keep what's near the view,
+discard the rest; viewport centre from `scene()->views()`, LRU by a monotonic
+`last_access_seq` fallback when headless):
+
+1. **Fine tiles** (the detail) are evicted first, each folded into its coarse parent
+   (D3) so its coverage survives at lower resolution.
+2. If the pyramid *itself* is still over budget, the **numerous near-fine overview
+   tiles** are evicted next — but **never the coarse apex** (`level <=
+   kApexProtectLevel`, currently 6), so a whole-survey zoomed-out view always has
+   coverage. An evicted overview's data already lives in its coarser ancestors (built
+   by the same fold chain), so dropping it loses no coverage, only mid-zoom fidelity.
+
+The apex is inherently a small, bounded handful for any realistic survey extent
+(level-6 tiles span ~0.125°), so total resident memory is bounded: fine tiles +
+near-view overviews to the budget, plus the O(small) apex. No vessel-position / tf
+dependency — the operator chose view-based LOD over distance-from-vessel as the
+simpler, more natural model.
 
 ### D2 — Persist-then-drop; keep possession in the reconciler (no churn)
 
-On eviction a tile is (a) folded into its overview parent, (b) written through to
-the disk cache (reusing the existing coalesced `scheduleWriteThrough` path), then
-(c) its GL texture is freed under the renderer's context and it is erased from
-`tiles_`. The reconciler's `markHave` for that index is **kept, not dropped**: we
+Tiles are persisted continuously — a fine tile on every applied patch
+(`handleTile`), an overview on every fold (`foldIntoParent`), both via the existing
+coalesced `scheduleWriteThrough`. So by eviction time the tile (or an in-flight write
+holding a copy of it) is already on disk, and eviction just folds a fine tile into
+its parent, frees the GL texture under the renderer's context, and erases the entry —
+**no write at eviction time** (which avoids a write-back storm when warm-load trims a
+large cache of byte-identical tiles). The reconciler's `markHave` for that index is
+**kept, not dropped**: we
 still *possess* the tile (it is on disk), so the next catalog reconcile will not
 re-request it. `tiles_` tracks residency (memory); the reconciler tracks possession
 (disk) — the two intentionally decouple under eviction. Dropping it would cause a
@@ -113,16 +130,31 @@ only overviews remain for a region.
 
 ## Consequences
 
-- Long surveys no longer grow memory/VRAM without bound; the crash scenario (#153)
-  is closed. A one-time `qWarning` logs when the shed-load path is first entered.
-- Warm-load is bounded: enabling a source with a large disk cache trims to budget
-  before subscribing, so it can't spike memory on enable (the salmon accelerant).
+- Long surveys no longer grow resident memory/VRAM without bound; the crash scenario
+  (#153) is closed. Total residency = fine tiles + near-view overviews to the budget,
+  plus the O(small) protected apex. A one-time `qWarning` logs when the shed path is
+  first entered. (Residual: the protected apex grows *minimally* — at the coarsest
+  resolution — with survey *extent*, unavoidable if whole-survey zoom-out must always
+  show coverage; negligible for the lake/harbour envelope.)
+- Warm-load is bounded: it loads fine tiles incrementally and trims every 64 inserts,
+  so enabling a source with a large disk cache can't spike memory on enable (the
+  salmon accelerant) — not just a post-load trim.
 - Evicted coverage degrades gracefully to a coarser resolution rather than vanishing.
 - The `LiveTileCache/max_vram_bytes` budget is self-accounted today; when the #155
   `ResourceMonitor` lands, its VRAM feed replaces `accountedBytes()` self-accounting
   behind the same knob (a named integration seam, not in this change).
-- Deferred: on-demand disk reload of an evicted fine tile when the operator pans back
-  into its area (D2 limitation).
+- **Deferred follow-ups:**
+  - On-demand disk reload of an evicted fine/overview tile when the operator pans back
+    into its area (no view-change → disk-reload hook yet; D2 limitation).
+  - `handleCatalog` prune removes a retracted fine tile from `tiles_`/disk/reconciler
+    but does not invalidate the overview cells it was folded into, nor delete orphaned
+    `overviews/` files — a retracted region keeps stale coarse coverage and the
+    `overviews/` dir grows slowly. Bounded (overviews are display-grade + evictable),
+    but overview lifecycle-on-retraction is a tracked follow-up.
+  - `foldChild` silently drops a child cell whose geographic centre falls outside the
+    parent (only reachable across a ±72°/±80° GGGS latitude-band boundary) → a possible
+    overview seam on a high-latitude survey; add a boundary test / handling if such
+    surveys arise.
 
 ## Alternatives considered
 

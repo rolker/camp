@@ -84,6 +84,9 @@ public:
   /// Introspection for tests and the future status indicator (#158).
   std::size_t residentTileCount() const { return tiles_.size(); }
   std::size_t overviewTileCount() const { return overview_tiles_.size(); }
+  /// [camp#160] Number of indices the reconciler holds — used by tests to assert
+  /// overview tiles never enter the anti-entropy set (ADR-0010 D4).
+  std::size_t reconcilerHeldCount() const { return reconciler_.size(); }
 
   /// [camp#121] Render the in-memory tiles into an offscreen image of @p size
   /// spanning the layer extent. Null image if there is no data / GL is
@@ -195,6 +198,13 @@ private:
   QOpenGLTexture* textureFor(Entry& entry);
 
   static constexpr int kMaxImageEdge = 4096;
+
+  // [camp#160] Overview tiles at level <= this coarse "apex" are never evicted, so a
+  // whole-survey zoomed-out view always has coverage. The apex is inherently a small,
+  // bounded handful for any realistic survey extent (level-6 tiles span ~0.125 deg),
+  // while the numerous near-fine overview levels ARE evicted by view like fine tiles —
+  // so total resident memory stays bounded (ADR-0010 D1/D3).
+  static constexpr std::uint8_t kApexProtectLevel = 6;
 
   std::string base_namespace_;   // e.g. "/cube_bathymetry"
   std::string cache_dir_;        // <base cache dir>/<sanitized source ns>

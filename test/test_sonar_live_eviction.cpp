@@ -117,14 +117,19 @@ TEST(SonarLiveEviction, WarmLoadTrimsToBudgetAndBuildsOverviews)
   ASSERT_NE(layers, nullptr);
   auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
 
-  layer->enableLiveCoverage();   // incremental warm-load + evict-to-budget
+  layer->enableLiveCoverage();   // incremental warm-load + two-phase evict-to-budget
 
-  // Resident fine tiles are bounded by the budget (4 tiles' worth)...
-  EXPECT_LE(layer->residentTileCount(), std::size_t(4));
+  // Resident fine tiles are bounded (evicted well below the 24 loaded)...
   EXPECT_LT(layer->residentTileCount(), kTiles);
-  // ...and the evicted tiles were folded into resident overview parents, so a
-  // zoomed-out view still has coverage rather than a blank gap.
+  EXPECT_LE(layer->residentTileCount(), std::size_t(4));
+  // ...evicted tiles were folded into resident overview parents, so a zoomed-out
+  // view still has coverage (the coarse apex is protected, never fully evicted)...
   EXPECT_GT(layer->overviewTileCount(), std::size_t(0));
+  // ...and the overviews are a LOCAL derived product: every fine tile's possession is
+  // kept (markHave, never dropped) and NO overview leaks into the reconciler, so the
+  // held count is exactly the fine tiles loaded — asserts both the no-drop / no-churn
+  // policy (D2) and the reconciler-isolation invariant (D4).
+  EXPECT_EQ(layer->reconcilerHeldCount(), kTiles);
 }
 
 int main(int argc, char** argv)
