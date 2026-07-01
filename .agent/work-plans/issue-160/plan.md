@@ -35,9 +35,10 @@ The work spans two repos:
 - Fold timing: fold-on-evict only (cheapest). The overview is updated only when a fine
   tile is actually dropped. The overview may lag the latest fine data until first eviction;
   this is acceptable per ADR-0006 D1 (display-grade, rebuildable).
-- Reconciler on evict: call `reconciler_.drop(index)` on eviction. The evicted tile is
-  on disk (persist-then-drop); the next catalog re-requests it if the boat still has it.
-  This keeps the reconciler's in-memory set consistent with the in-memory tile map.
+- Reconciler on evict: **REVISED as-built → keep `markHave`, do NOT `drop`** (see the
+  "Implementation notes" section). Dropping would make the next catalog reconcile
+  re-request the evicted tile → re-receive → re-evict = churn wasting bandwidth (#71).
+  `tiles_` tracks residency (memory); the reconciler tracks possession (disk).
 
 ## Approach
 
@@ -124,7 +125,7 @@ the body, merged and the underlay rebuilt before camp Phase B can build against 
        existing coalesced write path).
      - Free the GL texture under the renderer context (reuse the `hasContext()` /
        `makeCurrent()` guard from `handleCatalog()`).
-     - Erase from `tiles_`; call `reconciler_.drop(index)`.
+     - Erase from `tiles_` (keep the reconciler `markHave` — revised as-built, see notes).
    - Call `evictIfOverBudget()` at the end of `handleTile()` and after `warmLoad()`.
    - Log (qWarning) when entering the shed-load path so the operator can see it in
      the console.
@@ -225,7 +226,7 @@ the body, merged and the underlay rebuilt before camp Phase B can build against 
 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
-| `tiles_` eviction | `reconciler_.drop()` call so anti-entropy re-requests if still current | Yes (step 8) |
+| `tiles_` eviction | keep reconciler `markHave` (possession); NOT `drop()` — avoids re-request churn (revised as-built) | Yes (step 8) |
 | Overview tile write (overviews/ sub-dir) | `warmLoad()` must load overviews from that sub-dir on re-enable | Yes (step 10) |
 | `recomputeBounds()` now unions overview tiles | `foldAutoRange()` must also fold overview tile ranges | Yes (step 11) |
 | Camp depends on `gggs::parent()` | unh_marine_autonomy Phase A must land and underlay be rebuilt before camp Phase B can build | Yes — two-PR structure; Phase A merges first |
@@ -281,5 +282,15 @@ Deviations from the approach above, made during implementation and kept in sync 
   camp suite: 158 tests, 0 failures. Render-fallback draw order and the distance-based
   (viewed) eviction ordering are covered by design + the SIM-VERIFY gate that
   live-coverage changes carry, not headless unit tests (no GL / no attached view).
-- **Public introspection accessors** `residentTileCount()` / `overviewTileCount()` added
-  (tests + the future #158 status indicator).
+- **Public introspection accessors** `residentTileCount()` / `overviewTileCount()` /
+  `reconcilerHeldCount()` added (tests + the future #158 status indicator).
+- **Overview bounding (pre-push review must-fix)**: the overview pyramid is NOT
+  unbounded/resident-forever. `accountedBytes()` counts fine **and** overview tiles, and
+  `evictIfOverBudget()` is **two-phase** — evict fine tiles first (folding into parents),
+  then, if still over, evict the numerous near-fine overview tiles farthest-from-view,
+  always protecting the coarse apex (`level <= kApexProtectLevel`, =6) so whole-survey
+  zoom-out stays covered. Total residency is bounded (fine + near-view overviews to the
+  budget + O(small) apex). Eviction no longer writes (tiles are already persisted at
+  patch/fold time — fixes the warm-load write-back storm). See ADR-0010 D1/D2/D3 + the
+  deferred follow-ups (pan-back reload, prune-retraction overview cleanup, high-latitude
+  foldChild seam).
