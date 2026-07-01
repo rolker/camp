@@ -43,3 +43,25 @@ issue: 160
 ### Open questions
 - [ ] Vessel position source: which ROS topic does camp subscribe to for operator vessel position — if not yet wired to SonarLiveCacheLayer, fall back to view-center distance or pure LRU.
 - [ ] Overview tile resolution: fixed 64×64 per overview tile (caps memory, simpler) vs. matching the fine tile's width/height?
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-01 01:26 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-160/plan.md` at `d523a1d`
+**PR**: PR-less (`--issue 160`, layer worktree `issue-camp-160`)
+**Verdict**: approve-with-suggestions
+
+Independent review (fresh-context sub-agent, Opus; plan authored by a Sonnet
+sub-agent). Not annotated as author self-review: the name-based detection is
+degenerate here (all Claude agents share the name "Claude Code Agent"), and the
+"in-context — author self-review" tag would be factually false for an
+out-of-context, different-model review.
+
+### Findings
+- [ ] (suggestion) `parent()` sketch calls `Level(child.level()-1).gridIndex(center_lat, center_lon)`, but `GridIndex` has no `center_lat`/`center_lon` accessors — compute the center from `northLatitude()/southLatitude()/eastLongitude()/westLongitude()` (verified in `gggs/grid_index.h:87-102`) — `plan.md:43`
+- [ ] (suggestion) Phase A "separate PR" doesn't name a separate `unh_marine_autonomy` issue; the issue-review orchestrator note calls for a standalone GGGS-helper issue tagged `Part of rolker/camp#160` — state it explicitly — `plan.md:40`, `plan.md:227`
+- [ ] (suggestion) `scheduleWriteThrough(const SonarLiveTile&)` currently writes to `cache_dir_` root (`sonar_live_cache_layer.h:151`); folding overviews into an `overviews/` sub-dir needs a destination/subdir parameter — spell out that small API change — `plan.md:129`
+- [ ] (suggestion) Vessel-position source (open question) materially drives the eviction ordering in `evictIfOverBudget()`; resolve it or commit to the LRU/view-center fallback before implementing step 8, rather than mid-implementation — `plan.md:216`
+- [ ] (suggestion) `children()` is added to GGGS but not consumed by camp ("Only what's needed" tension); operator-sanctioned per the checkpoint note and unit-tested, so acceptable — no change required, noted for the record — `plan.md:190`
