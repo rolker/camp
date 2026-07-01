@@ -248,3 +248,38 @@ Two PRs:
 - **Phase A (unh_marine_autonomy)**: ~80 lines (header + tests + CMake) — small, independent.
 - **Phase B (camp)**: ~500–700 lines across 4 files — medium; the bulk is
   `evictIfOverBudget()`, `foldIntoParent()`, and the test extensions.
+
+## Implementation notes (as-built)
+
+Deviations from the approach above, made during implementation and kept in sync here:
+
+- **`Entry` reused for overviews** (not a separate `OverviewEntry`): the structs are
+  identical, so `overview_tiles_` uses `Entry` and `textureFor()` serves both — DRY.
+  `Entry` gained a `last_access_seq` (LRU fallback stamp).
+- **`SonarLiveTile::foldChild(child)`** encapsulates the decimation (the tile owns
+  `bands_`/`refoldRange`). It **area-maps** each child cell to the parent cell
+  containing its geographic centre (not a fixed 2×2 quadrant), so the polar
+  `latitudeScaleFactor` and any non-2×2 subdivision are handled generally.
+- **LOD fallback by draw order** (D5): `items()` emits overviews first (coarse→fine,
+  natural `std::map` order) then fine tiles on top — simpler and more robust than a
+  per-overview occlusion check; fine covers its parent, evicted areas show the parent.
+- **Eviction keeps `reconciler_.markHave` (does NOT `drop`)**: dropping would make the
+  next catalog reconcile re-request the evicted tile → re-receive → re-evict = churn
+  wasting bandwidth (#71). `tiles_` tracks residency (memory); the reconciler tracks
+  possession (disk). Known limitation: an evicted fine tile is not re-loaded from disk
+  on pan-back within a session (no view-change→reload hook yet) — deferred follow-up;
+  the coarse overview covers it meanwhile. (Recorded in ADR-0010 D2.)
+- **Incremental `warmLoad`** (not `SonarLiveTile::loadCacheDir`, which materializes the
+  whole cache in one vector): loads fine tiles one file at a time, skips
+  already-resident indices (memory ≥ disk, so no displaced-texture context dance), and
+  trims every 64 inserts — bounding the load *peak*, not just steady state (the salmon
+  crash was warm-load slurping the cache). Overviews warm-load from `overviews/` with a
+  per-file level probe (they span multiple coarse levels).
+- **Tests**: `foldChild` decimation + NoData in `test_sonar_live_cache.cpp` (tile-level,
+  no new deps); layer-level warm-load-bounding + overview-build in a new
+  `test_sonar_live_eviction.cpp` (offscreen-QApplication + `Map` harness, GL/ROS-free).
+  camp suite: 158 tests, 0 failures. Render-fallback draw order and the distance-based
+  (viewed) eviction ordering are covered by design + the SIM-VERIFY gate that
+  live-coverage changes carry, not headless unit tests (no GL / no attached view).
+- **Public introspection accessors** `residentTileCount()` / `overviewTileCount()` added
+  (tests + the future #158 status indicator).
