@@ -21,9 +21,13 @@ The work spans two repos:
 - **unh_marine_autonomy** (GGGS `parent()`/`children()` helpers) — Phase A, prerequisite PR
 - **camp** (eviction + overview pyramid) — Phase B, depends on Phase A
 
-**Sub-decisions resolved** (operator/issue lean → applied here):
-- Eviction trigger: distance-from-vessel radius (tracks survey head) + configurable byte
-  budget for VRAM accounting. Self-account locally (camp knows every texture size); adopt
+**Sub-decisions resolved** (operator checkpoint 2, 2026-07-01 → applied here):
+- Eviction trigger: **view-based LOD** — a configurable byte budget for VRAM accounting;
+  when over budget, evict the fine tiles **farthest from the current viewport centre**
+  (classic slippy-map/LOD behaviour — keep what's near the view, discard the rest), with
+  pure LRU as the fallback when no view is available (headless / tests). **No
+  vessel-position / tf dependency** (operator dropped distance-from-vessel as needless
+  complication). Self-account locally (camp knows every texture size); adopt
   `ResourceMonitor` VRAM feed when #155 lands (the plan leaves a named integration seam).
 - Overview chain depth: full chain from received fine level all the way to level 0 (one
   whole-survey tile). Levels are 4× smaller per step; the full chain is a handful of
@@ -39,8 +43,14 @@ The work spans two repos:
 
 ### Phase A — GGGS index math helpers (unh_marine_autonomy, separate PR)
 
+**Phase A lands as its own standalone `unh_marine_autonomy` issue + PR** (title ~"Add
+GGGS `parent()`/`children()` index-math helpers"), tagged **`Part of rolker/camp#160`** in
+the body, merged and the underlay rebuilt before camp Phase B can build against it.
+
 1. **Add `marine_autonomy/gggs/index_math.h`** — two free functions:
-   - `GridIndex parent(const GridIndex& child)` — uses
+   - `GridIndex parent(const GridIndex& child)` — computes the child cell centre from
+     `child.northLatitude()/southLatitude()/eastLongitude()/westLongitude()` (GridIndex has
+     **no** `center_lat`/`center_lon` accessor — verified `gggs/grid_index.h:87-102`), then
      `Level(child.level()-1).gridIndex(center_lat, center_lon)` to handle polar
      `latitudeScaleFactor` (1/3/9) column-scale changes at the 72°/80° latitude
      boundaries correctly, without manual column arithmetic. Returns an invalid
@@ -92,19 +102,22 @@ The work spans two repos:
 7. **Add eviction budget state** to `SonarLiveCacheLayer`:
    - `size_t vram_budget_bytes_` — loaded from
      `QSettings("LiveTileCache/max_vram_bytes")` in the constructor; default 512 MiB.
-   - `float vessel_lat_`, `vessel_lon_` — updated from a ROS position subscription
-     (reuse whatever position source camp already wires; if none exists yet, fall back
-     to a configurable `LiveTileCache/eviction_radius_deg` distance metric from the
-     center of the current view — whichever is simpler to wire without new dependencies).
+   - `uint64_t access_seq_` — monotonic counter; each `Entry` carries a
+     `uint64_t last_access_seq` bumped in `handleTile()` and `textureFor()` (the LRU
+     fallback ordering when no view is available).
+   - **No vessel-position state** — eviction ordering uses the current viewport centre
+     (below), obtained on demand from `scene()->views()`; no ROS position subscription.
    - `size_t accountedBytes() const` — sum of `width * height * 4` (R32F) across all
      `Entry` textures in `tiles_` that have a non-null texture.
 
 8. **Implement `evictIfOverBudget()`** (GUI thread):
    - Compute `accountedBytes()`. If under `vram_budget_bytes_`, return immediately.
-   - Build a sorted eviction candidate list: entries in `tiles_` ordered by distance
-     from vessel (farthest first); if no vessel position is available, fall back to
-     LRU (add a `uint64_t last_access_seq` to `Entry`, incremented in `handleTile()`
-     and `textureFor()`).
+   - Build a sorted eviction candidate list: entries in `tiles_` ordered by distance of
+     the tile's scene-space centre from the **current viewport centre** (farthest first).
+     Obtain the viewport centre in Web-Mercator scene coords via
+     `scene()->views().first()->mapToScene(viewport rect).boundingRect().center()`. When
+     no view is attached (headless / tests), fall back to LRU order by `last_access_seq`
+     (oldest first).
    - For each candidate until under budget:
      - Call `foldIntoParent(entry.tile)` (step 9).
      - Call `scheduleWriteThrough(entry.tile)` (persist before drop, reusing the
@@ -119,15 +132,22 @@ The work spans two repos:
 9. **Implement `foldIntoParent(const SonarLiveTile& fine)`** (GUI thread):
    - Compute `parent_idx = gggs::parent(fine.index())`. If invalid (level 0), return.
    - Look up or create an `OverviewEntry` in `overview_tiles_[parent_idx]`:
-     - On first creation: `SonarLiveTile(parent_idx, fine.width()/2, fine.height()/2)`
-       (or a fixed overview resolution — e.g. 64×64 per level — to decouple overview
-       size from fine tile size).
-   - For each band in the fine tile: 2×2 mean-decimation into the parent band,
-     skipping NoData cells (a 2×2 block with all NoData stays NoData). Mark the
-     overview `texture_dirty = true`.
-   - Schedule write-through for the updated overview tile (reuse `scheduleWriteThrough`,
-     writing to a sub-directory `overviews/` within `cache_dir_` so warm-load of fine
-     tiles cannot accidentally pick up overview files).
+     - On first creation: `SonarLiveTile(parent_idx, fine.width(), fine.height())` — the
+       parent tile **matches the fine tile's `width`/`height`** (operator decision:
+       standard pyramid where every tile is the same pixel size, so a parent W×H tile
+       covers the area of its 4 children at half linear resolution).
+   - Determine the child's **quadrant** within the parent (NW/NE/SW/SE) from the child's
+     row/col parity relative to `parent(child)`'s children (or from the child vs parent
+     geographic bounds). 2×2 mean-decimate the fine `W×H` band into the corresponding
+     `W/2 × H/2` quadrant of the parent band, skipping NoData cells (a 2×2 block that is
+     all NoData stays NoData). Mark the overview `texture_dirty = true`.
+   - Schedule write-through for the updated overview tile, writing to a sub-directory
+     `overviews/` within `cache_dir_` so warm-load of fine tiles cannot accidentally pick
+     up overview files. **Small API change (review-plan finding):** `scheduleWriteThrough`
+     / `startWriteThrough` currently hard-target `cache_dir_` root
+     (`sonar_live_cache_layer.h:151`); add an optional destination-subdir parameter (default
+     "" = root for fine tiles, "overviews" for parents) threaded through the write-state
+     bookkeeping so overview and fine writes stay serialized on distinct paths.
    - Recurse: `foldIntoParent(overview_tiles_[parent_idx].tile)` to build the full
      chain to level 0.
 
@@ -211,15 +231,16 @@ The work spans two repos:
 | Camp depends on `gggs::parent()` | unh_marine_autonomy Phase A must land and underlay be rebuilt before camp Phase B can build | Yes — two-PR structure; Phase A merges first |
 | `#155 ResourceMonitor` lands | Replace `accountedBytes()` self-accounting with `ResourceMonitor` VRAM feed; the `vram_budget_bytes_` knob stays the same | Not in this PR — named integration seam (leave a `// TODO(#155)` comment) |
 
-## Open Questions
+## Open Questions (resolved at operator checkpoint 2, 2026-07-01)
 
-- [ ] Vessel position source: which ROS topic does camp subscribe to for the operator's
-  vessel position, and is it already wired to `SonarLiveCacheLayer`? If not, the
-  fallback to view-center-based distance or pure LRU may be simpler to avoid a new
-  dependency.
-- [ ] Overview resolution: should each overview tile match the fine tile's `width`/`height`
-  (giving the same pixel budget at half the frequency), or use a fixed 64×64 to cap
-  overview memory? Fixed 64×64 is simpler and the overview is only for visual reference.
+- [x] **Eviction ordering / vessel source** → **view-based LOD, no vessel source.** Evict
+  fine tiles farthest from the current viewport centre (via `scene()->views()`), pure LRU
+  fallback when headless. No ROS position subscription / tf dependency. (Operator: distance-
+  from-vessel needlessly complicates; use traditional LOD — discard those farthest from the
+  viewpoint.)
+- [x] **Overview resolution** → **match the fine tile's `width`/`height`.** Standard pyramid:
+  every tile is the same pixel size; a parent W×H tile covers 4 children at half linear
+  resolution, each child decimated into its W/2×H/2 quadrant.
 
 ## Estimated Scope
 
