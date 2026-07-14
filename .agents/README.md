@@ -161,7 +161,8 @@ coverage of the Map model's insert/remove/reorder paths).
   Likewise ADR-0005 reset GGGS store persistence: the old `GggsStores/roots` key
   is ignored and cleared once on startup (not migrated) — stores re-added through
   the Stores tab persist as flat `GggsTileLayers/dirs`.
-- **No CI / no pre-commit** — local build + gtest are the gate.
+- **CI + pre-commit are configured** — GitHub Actions runs the colcon build +
+  gtest suite on PRs; pre-commit hooks guard formatting/config hygiene.
 
 ## Instructions for Use
 
