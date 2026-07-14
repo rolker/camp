@@ -8,8 +8,9 @@ desktop GUI for planning and monitoring autonomous marine-vehicle missions.
 Standard worktree/PR workflow (this is a GitHub-origin repo). The default branch
 is **`jazzy`**, not `main`.
 
-There is **no CI and no pre-commit config** in this repo. The build + the gtest
-suite are the only automated gates — run them locally before pushing.
+CI (`.github/workflows/ci.yml`, colcon build + gtest suite) and pre-commit
+(`.pre-commit-config.yaml`) are both configured — run the tests locally and
+let pre-commit hooks run before pushing.
 
 > When developed inside the `ros2_agent_workspace` (the usual case), the
 > workspace's `.agent/scripts/` (field-mode detection, worktree helpers, etc.)

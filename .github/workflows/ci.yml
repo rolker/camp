@@ -1,0 +1,101 @@
+# CI for camp.
+# Based on the workspace template (ros2_agent_workspace .agent/templates/ci_workflow.yml).
+
+name: CI
+
+on:
+  push:
+    branches: [jazzy]
+  pull_request:
+    branches: [jazzy]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ros:jazzy-ros-core
+
+    steps:
+      - name: Update apt
+        run: apt-get update
+
+      - name: Install ros dev tools
+        run: DEBIAN_FRONTEND=noninteractive apt-get -y install ros-dev-tools
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Init rosdep
+        run: |
+          if [ ! -f /etc/ros/rosdep/sources.list.d/20-default.list ]; then
+            rosdep init
+          fi
+
+      - name: Update rosdep
+        run: rosdep update
+
+      - name: Create workspace
+        run: mkdir -p ../ws/src && ln -s "$GITHUB_WORKSPACE" ../ws/src/camp
+
+      # Source-sibling dependencies not in rosdep. camp needs marine_autonomy,
+      # marine_interfaces, and marine_tiled_raster_store (unh_marine_autonomy);
+      # marine_colormap and marine_colormap_widgets (marine_colormap);
+      # marine_nav_interfaces and marine_nav_tasks — plus their sibling
+      # marine_nav_utilities — (unh_marine_navigation); and marine_ais_msgs
+      # (marine_ais). Everything else resolves via rosdep.
+      - name: Clone unh_marine_autonomy (source-sibling dependency, not in rosdep)
+        run: >
+          git clone --depth 1 -b jazzy
+          https://github.com/rolker/unh_marine_autonomy.git
+          ../ws/src/unh_marine_autonomy
+
+      - name: Clone marine_colormap (source-sibling dependency, not in rosdep)
+        run: >
+          git clone --depth 1 -b jazzy
+          https://github.com/rolker/marine_colormap.git
+          ../ws/src/marine_colormap
+
+      - name: Clone unh_marine_navigation (source-sibling dependency, not in rosdep)
+        run: >
+          git clone --depth 1 -b jazzy
+          https://github.com/rolker/unh_marine_navigation.git
+          ../ws/src/unh_marine_navigation
+
+      - name: Clone marine_ais (source-sibling dependency, not in rosdep)
+        run: >
+          git clone --depth 1 -b jazzy
+          https://github.com/rolker/marine_ais.git
+          ../ws/src/marine_ais
+
+      - name: Install ROS dependencies
+        working-directory: ../ws
+        run: >
+          DEBIAN_FRONTEND=noninteractive
+          rosdep install --from-paths src --ignore-src -r -y
+
+      - name: Build
+        working-directory: ../ws
+        run: >
+          bash -c 'source /opt/ros/jazzy/setup.bash &&
+          colcon build --packages-up-to camp
+          --cmake-args -DBUILD_TESTING=ON'
+
+      - name: Test
+        working-directory: ../ws
+        # The gtest suite forces QT_QPA_PLATFORM=offscreen internally, so it
+        # runs headless in this container.
+        run: >
+          bash -c 'source /opt/ros/jazzy/setup.bash &&
+          source install/setup.bash &&
+          colcon test --packages-select camp
+          --event-handlers console_direct+
+          --return-code-on-test-failure'
+
+      - name: Test results
+        working-directory: ../ws
+        run: >
+          bash -c 'source /opt/ros/jazzy/setup.bash &&
+          colcon test-result --verbose'
+        if: always()
