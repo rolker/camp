@@ -56,6 +56,14 @@ public slots:
   void wmtsCapabilitiesReady();
 
 protected:
+  // [camp#117] Tile layers created through BackgroundManager persist under
+  // BackgroundTileLayers so they are recreated next session; removal happens on
+  // the layer's own Layers-tree "Remove" action (ADR-0003 §4), so the layer
+  // itself must de-persist — the GggsTileLayer pattern. A MapTiles that was
+  // never persisted (objectName not in BackgroundTileLayers/ids) no-ops,
+  // keeping the hook safe for non-persisted uses of this generic class.
+  void onRemovedFromMap() override;
+
   // [#111] When a refreshing layer (radar) becomes visible, drop its disk cache
   // and advance the cache-buster so the FIRST paint after the operator enables it
   // fetches a fresh frame instead of serving a tile cached in a previous session

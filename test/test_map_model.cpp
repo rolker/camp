@@ -277,6 +277,10 @@ int main(int argc, char** argv)
   // is required; force the offscreen platform so the test runs headless in CI.
   qputenv("QT_QPA_PLATFORM", "offscreen");
   QApplication app(argc, argv);
+  // [camp#117] Map construction now writes QSettings (the tile-layer seed);
+  // a test org/app name keeps that out of the developer's real camp settings.
+  QCoreApplication::setOrganizationName("camp_test");
+  QCoreApplication::setApplicationName("test_map_model");
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

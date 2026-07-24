@@ -131,6 +131,35 @@ reference simply lives in Map state. Chart removal moves from the Mission tree's
 delete to a **Remove action on the layer** in the Layers tab (the layer's
 context menu), where backgrounds now live.
 
+#### Addendum ([#117](https://github.com/rolker/camp/issues/117), 2026-07-24): tile-layer persistence schema and seed
+
+Tile/WMTS background layers, the last hard-coded holdouts from before this
+ADR's implementation, now follow §4's app-level persistence. The QSettings
+schema (`tile_layer_presets.h`):
+
+- `BackgroundTileLayers/seeded` — first-run sentinel. The one-time seed fires
+  only when this key is absent (covers fresh installs *and* upgrades from the
+  hard-coded era) and writes it. Gating on the sentinel rather than the ids
+  list means an operator who removes every tile layer stays at zero layers
+  across restarts.
+- `BackgroundTileLayers/ids` — QStringList of layer names, creation order.
+- `BackgroundTileLayers/<enc(name)>/` — per-layer **construction parameters
+  only** (`type` = `xyz`|`wmts`, `url`, `refresh_ms`, WMTS `layer_id` /
+  `tile_matrix_set`), the name percent-encoded to one flat key (the
+  `GggsTileLayer::settingsKey()` pattern).
+
+Presentation state (opacity, visibility) is deliberately **not** duplicated
+here — the existing `MapItem/<settingsKey()>` mechanism owns it; the add path
+writes the preset's defaults there once so the deferred `readSettings()`
+applies them. The seed is **OSM only** (operator decision, 2026-07-24);
+everything else — including the former hard-coded OpenSeaMap / NOAA ENC /
+NEXRAD layers and verified bathymetry sources (NOAA BlueTopo WMTS; GEBCO,
+inert until [#118](https://github.com/rolker/camp/issues/118) lands WMS) — is
+operator-added via the preset table in the "Add tile layer" dialog. Removal
+de-persists in `MapTiles::onRemovedFromMap()` (the layer owns its Remove, per
+§4), gated on membership in `ids` so non-persisted `MapTiles` uses are
+untouched.
+
 ### 5. A depth-only load may offer to generate a visual layer
 
 When a file carries depth but no displayable image (e.g. a bathymetry grid),

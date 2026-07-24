@@ -143,7 +143,7 @@ set (UIS
 add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 
 target_include_directories(CCOMAutonomousMissionPlanner
-    PRIVATE 
+    PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
 )
 
@@ -199,7 +199,7 @@ add_library(rqt_helm_manager SHARED
 )
 
 target_include_directories(rqt_helm_manager
-    PRIVATE 
+    PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp/helm_manager
 )
@@ -244,6 +244,7 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 # this library has no ROS dependency. Linked by CCOMAutonomousMissionPlanner.
 
 set(CAMP_MAP_SOURCES
+    src/camp_map/background/add_tile_layer_dialog.cpp
     src/camp_map/background/background_manager.cpp
     src/camp_map/catalog/catalog_model.cpp
     src/camp_map/catalog/catalog_browser.cpp
@@ -541,6 +542,22 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_map_model
+    camp_map
+    Qt5::Widgets
+    Qt5::Test
+  )
+
+  # [camp#117] Background tile-layer persistence: first-run OSM seed (sentinel-
+  # gated, so removing every layer sticks), restore round-trip with dedup,
+  # add-from-preset path, and de-persist-on-remove. Network never fires in the
+  # offscreen tests: layouts are built but no view paints tiles.
+  ament_add_gtest(test_background_persistence
+    test/test_background_persistence.cpp
+  )
+  target_include_directories(test_background_persistence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_background_persistence
     camp_map
     Qt5::Widgets
     Qt5::Test
@@ -877,4 +894,3 @@ endif()
 
 ament_package(
 )
-
