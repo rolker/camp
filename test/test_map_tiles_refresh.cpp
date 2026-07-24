@@ -320,6 +320,10 @@ int main(int argc, char** argv)
   // mirroring test/test_map_model.cpp.
   qputenv("QT_QPA_PLATFORM", "offscreen");
   QApplication app(argc, argv);
+  // [camp#117] Map's ctor now writes the BackgroundTileLayers seed into QSettings;
+  // a test org/app name keeps that out of the developer's real camp settings.
+  QCoreApplication::setOrganizationName("camp_test");
+  QCoreApplication::setApplicationName("test_map_tiles_refresh");
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

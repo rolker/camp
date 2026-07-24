@@ -1,5 +1,6 @@
 #include "background_manager.h"
 
+#include "add_tile_layer_dialog.h"
 #include "../map/layer_list.h"
 #include "../map_tiles/map_tiles.h"
 #include "../map_tiles/osm.h"
@@ -12,6 +13,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
+#include <QMessageBox>
 #include <QSet>
 #include <QSettings>
 #include "../wmts/capabilities.h"
@@ -31,39 +33,67 @@ void BackgroundManager::createDefaultLayers()
   map::LayerList* layers = topLevelLayers();
   if(layers)
   {
-    new camp::map_tiles::MapTiles(layers, "openstreetmap", camp::osm::generateTileLayout("https://tile.openstreetmap.org/"));
+    // [camp#117] Tile/WMTS layers are no longer hard-coded (the pre-#117 OSM/
+    // OpenSeaMap/NOAA/NEXRAD blocks): the operator's chosen layers persist
+    // under BackgroundTileLayers and are restored here, the same model GGGS
+    // tile-sets and rasters already follow below. A one-time seed (OSM only —
+    // operator decision 2026-07-24) keeps the first launch from being blank;
+    // the seeded sentinel (not the ids list) gates it so removing every layer
+    // sticks across restarts. Presets for the former hard-coded four (and
+    // verified bathymetry sources) live in tile_layer_presets.h, added via the
+    // "Add tile layer" context-menu action.
+    QSettings settings;
+    if(!settings.contains(tileLayerSeededKey()))
+    {
+      seedDefaultTileLayers(settings, layers);
+      // [camp#117] Flush the seed to the backing store now. The seeded layer's
+      // deferred readSettings() (itemConstructed's singleShot) runs through a
+      // *separate* QSettings instance, so make the ordering explicit rather than
+      // resting on this local instance's destruct-time sync.
+      settings.sync();
+    }
+    const QStringList tile_ids = settings.value(tileLayerIdsKey()).toStringList();
+    QSet<QString> restored_tiles;
+    QStringList normalized_ids;   // deduped + constructible-only, rewritten below
+    for(const QString& name : tile_ids)
+    {
+      if(restored_tiles.contains(name))
+        continue;
+      restored_tiles.insert(name);   // seen — drop any later duplicate of this name
+      bool live = false;   // dedup against an already-live layer of this name
+      for(map::MapItem* child : layers->childMapItems())
+        if(auto* t = dynamic_cast<map_tiles::MapTiles*>(child))
+          if(t->objectName() == name) { live = true; break; }
+      if(live)
+      {
+        normalized_ids.append(name);   // a valid live layer already carries this id
+        continue;
+      }
+      TileLayerPreset stored;
+      stored.name = name;
+      settings.beginGroup(tileLayerRootGroup());
+      settings.beginGroup(tileLayerGroupKey(name));
+      stored.type = settings.value("type").toString();
+      stored.url = settings.value("url").toString();
+      stored.layer_id = settings.value("layer_id").toString();
+      stored.tile_matrix_set = settings.value("tile_matrix_set").toString();
+      stored.refresh_ms = settings.value("refresh_ms", 0).toInt();
+      settings.endGroup();
+      settings.endGroup();
+      if(createTileLayer(layers, stored))
+        normalized_ids.append(name);   // constructed — keep; else drop the dead id
+    }
+    // [camp#117] Rewrite the persisted ids to the normalized set the restore just
+    // proved out: duplicates (kept once) and entries whose type can't be built
+    // (e.g. a "wms" id saved before #118) are dropped so they don't linger in
+    // QSettings across future launches. Harmless at runtime, but keeps the stored
+    // list honest. Only write when it actually changed to avoid churn.
+    if(normalized_ids != tile_ids)
+    {
+      settings.setValue(tileLayerIdsKey(), normalized_ids);
+      settings.sync();   // same flush discipline as the seed above
+    }
 
-    new camp::map_tiles::MapTiles(layers, "openseamap", camp::osm::generateTileLayout("https://tiles.openseamap.org/seamark/"));
-
-    auto caps = new camp::wmts::Capabilities("NOAA_Charts", this);
-    camp::map_tiles::MapTiles* noaa_charts = new camp::map_tiles::MapTiles(layers, "NOAA_charts");
-    noaa_charts->setLayoutFromWMTS(*caps);
-    caps->setUrl("https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS");
-
-    // [#99] Weather radar (NEXRAD base reflectivity) as a stacked, auto-refreshing
-    // overlay. Source: NOAA NEXRAD base reflectivity, redistributed as XYZ
-    // Web-Mercator (EPSG:3857) tiles by Iowa State University's Environmental
-    // Mesonet (IEM). nowCOAST itself serves this product only via WMS (dynamic
-    // GetMap), not tiled WMTS, so it does not fit the MapTiles z/x/y path; IEM's
-    // tile cache does (same NEXRAD origin). Endpoint verified live 2026-06-18.
-    // The "n0q" product alias always serves the LATEST frame, so the 5-minute
-    // refresh (Phase 2) genuinely fetches fresh imagery (no timestamp pinning).
-    // Layer is:
-    //   - default OFF (operator toggles it in the Layers tree),
-    //   - ~0.65 opacity so it reads as a transparent overlay on the basemap, and
-    //   - refreshed every 5 minutes since radar imagery is time-varying.
-    // Radar is a QPixmap MapTiles layer, so it rides the #98 tile lifecycle, NOT
-    // the #96 GDAL raster path. On a fetch failure the tile stays blank (graceful
-    // degradation in CachedFileLoader::downloadFinished — no crash, no UI block).
-    camp::map_tiles::MapTiles* radar = new camp::map_tiles::MapTiles(layers, "nexrad_radar",
-        camp::osm::generateTileLayout("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/"));
-    radar->setOpacity(0.65);   // transparent overlay on the basemap
-    radar->setVisible(false);  // default OFF — operator opt-in via the layer tree
-    radar->setRefreshInterval(5 * 60 * 1000);  // [#99 Phase 2] 5-minute cadence
-
-    // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_1.KAP");
-
-    // new raster::RasterLayer(layers, "/home/roland/data/BSB_ROOT/13283/13283_2.KAP");
 
     // [camp#104] Restore the operator's selected flat GGGS tile layers (ADR-0005).
     // Persistence moved off store *roots* (the retired nested GggsStoreLayer) and
@@ -75,7 +105,6 @@ void BackgroundManager::createDefaultLayers()
     // load lazily off a QtConcurrent worker, kicked from the first paint() of a
     // *visible* tile-set (tile-sets default OFF). So restoring tile layers does
     // not block startup — only layers the operator turns on read pixels.
-    QSettings settings;
     // [camp#104] One-time reset of the retired store-roots key (ADR-0003 §4
     // no-back-compat / ADR-0005): drop it, do not migrate, so a stale value can't
     // resurrect a nested store tree.
@@ -114,6 +143,143 @@ void BackgroundManager::contextMenu(QMenu* menu)
   connect(open_raster_action, &QAction::triggered, this, &BackgroundManager::openRaster);
   // [camp#104] "Open tile store" is retired: GGGS stores are now browsed and
   // composed through the catalog browser tab (ADR-0005), not mounted from here.
+  auto add_tile_action = menu->addAction("Add tile layer");
+  connect(add_tile_action, &QAction::triggered, this, &BackgroundManager::addTileLayer);
+}
+
+map_tiles::MapTiles* BackgroundManager::createTileLayer(map::LayerList* layers, const TileLayerPreset& preset)
+{
+  if(preset.type == "xyz")
+  {
+    auto tiles = new map_tiles::MapTiles(layers, preset.name,
+                                         osm::generateTileLayout(preset.url.toStdString()));
+    if(preset.refresh_ms > 0)
+      tiles->setRefreshInterval(preset.refresh_ms);
+    return tiles;
+  }
+  if(preset.type == "wmts")
+  {
+    // Async ordering matters: the layer registers for the layout first, then
+    // setUrl() comes LAST — the URL fetch is what fires ready().
+    auto tiles = new map_tiles::MapTiles(layers, preset.name);
+    // [camp#117] Parent Capabilities to the layer, not to this (the long-lived
+    // BackgroundManager). MapTiles keeps only a non-owning pointer, so parenting
+    // to `this` leaked one Capabilities per WMTS add/remove/re-add. As a child of
+    // the layer it still outlives construction (the layer is not destroyed here)
+    // and is destroyed with the layer on removal — matching its actual lifetime.
+    auto caps = new wmts::Capabilities(preset.name, tiles);
+    tiles->setLayoutFromWMTS(*caps, preset.layer_id, preset.tile_matrix_set);
+    caps->setUrl(preset.url);
+    if(preset.refresh_ms > 0)
+      tiles->setRefreshInterval(preset.refresh_ms);
+    return tiles;
+  }
+  // No constructible layer for this type (e.g. "wms" until #118).
+  return nullptr;
+}
+
+map_tiles::MapTiles* BackgroundManager::addTileLayerFromPreset(const TileLayerPreset& preset)
+{
+  auto layers = topLevelLayers();
+  if(!layers)
+    return nullptr;
+  // The name is the persistence identity — an empty one would persist an empty
+  // ids entry. The dialog gates this, but this method is public (tests,
+  // programmatic callers), so guard here too.
+  if(preset.name.isEmpty())
+    return nullptr;
+  // One layer per name: the name is the persistence identity (ids list +
+  // settings group + MapItem/<settingsKey>), so a duplicate would alias state.
+  QSettings settings;
+  if(settings.value(tileLayerIdsKey()).toStringList().contains(preset.name))
+    return nullptr;
+  for(map::MapItem* child : layers->childMapItems())
+    if(auto* t = dynamic_cast<map_tiles::MapTiles*>(child))
+      if(t->objectName() == preset.name)
+        return nullptr;
+
+  auto tiles = createTileLayer(layers, preset);
+  if(!tiles)
+    return nullptr;
+
+  // Apply the preset's default presentation state now AND write it into the
+  // layer's own settings group: readSettings() runs deferred (itemConstructed's
+  // singleShot timer) and would otherwise clobber these with its 1.0/true
+  // defaults. From here on the standard MapItem mechanism owns opacity/visible.
+  tiles->setOpacity(preset.opacity);
+  tiles->setVisible(preset.visible);
+  persistTileLayerPresentation(settings, tiles->settingsKey(), preset);
+
+  persistTileLayer(settings, preset);
+  return tiles;
+}
+
+void BackgroundManager::addTileLayer()
+{
+  AddTileLayerDialog dialog;
+  if(dialog.exec() != QDialog::Accepted)
+    return;
+  const TileLayerPreset selection = dialog.selection();
+  if(!addTileLayerFromPreset(selection))
+    // The dialog's OK-gate blocks inert/empty selections, so a refusal here
+    // means a name collision with an existing/persisted layer — say so instead
+    // of closing silently.
+    QMessageBox::warning(nullptr, tr("Add tile layer"),
+                         tr("A tile layer named \"%1\" already exists.").arg(selection.name));
+}
+
+void BackgroundManager::seedDefaultTileLayers(QSettings& settings, map::LayerList* layers)
+{
+  // OSM only (operator decision 2026-07-24): a single basemap so the first
+  // launch is not blank; everything else is operator-added from presets. The
+  // sentinel is written even if the preset table were to lose "openstreetmap" —
+  // seeding must never re-fire.
+  for(const auto& preset : builtinPresets())
+    if(preset.name == "openstreetmap")
+    {
+      persistTileLayer(settings, preset);
+      // Write the presentation group under the key the restored layer will read.
+      // settingsKey() defaults to itemID() (parent path + objectName), so the
+      // restore loop's MapTiles named preset.name under `layers` resolves to
+      // exactly this key — the seed thus round-trips presentation like the add
+      // path, even if a future seed preset carries non-default opacity/visible.
+      persistTileLayerPresentation(settings, layers->itemID() + "/" + preset.name, preset);
+      break;
+    }
+  settings.setValue(tileLayerSeededKey(), true);
+}
+
+void BackgroundManager::persistTileLayerPresentation(QSettings& settings,
+                                                     const QString& settings_key,
+                                                     const TileLayerPreset& preset)
+{
+  settings.beginGroup("MapItem");
+  settings.beginGroup(settings_key);
+  settings.setValue("opacity", preset.opacity);
+  settings.setValue("visible", preset.visible);
+  settings.endGroup();
+  settings.endGroup();
+}
+
+void BackgroundManager::persistTileLayer(QSettings& settings, const TileLayerPreset& preset)
+{
+  QStringList ids = settings.value(tileLayerIdsKey()).toStringList();
+  if(!ids.contains(preset.name))
+  {
+    ids.append(preset.name);
+    settings.setValue(tileLayerIdsKey(), ids);
+  }
+  settings.beginGroup(tileLayerRootGroup());
+  settings.beginGroup(tileLayerGroupKey(preset.name));
+  settings.setValue("type", preset.type);
+  settings.setValue("url", preset.url);
+  settings.setValue("refresh_ms", preset.refresh_ms);
+  if(!preset.layer_id.isEmpty())
+    settings.setValue("layer_id", preset.layer_id);
+  if(!preset.tile_matrix_set.isEmpty())
+    settings.setValue("tile_matrix_set", preset.tile_matrix_set);
+  settings.endGroup();
+  settings.endGroup();
 }
 
 void BackgroundManager::openRaster()

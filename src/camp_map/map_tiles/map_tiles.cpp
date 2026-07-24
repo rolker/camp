@@ -6,6 +6,7 @@
 #include <QDoubleSpinBox>
 #include "cached_tile_loader.h"
 #include <QDir>
+#include <QSettings>
 #include <QStyleOptionGraphicsItem>
 #include <QTimer>
 #include <QVariant>
@@ -13,6 +14,7 @@
 #include <set>
 #include <utility>
 #include <vector>
+#include "background/tile_layer_presets.h"
 #include "wmts/capabilities.h"
 
 namespace camp
@@ -59,7 +61,7 @@ void MapTiles::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, 
 {
   auto lod = QStyleOptionGraphicsItem::levelOfDetailFromTransform(painter->worldTransform());
 
-  // scale up view 
+  // scale up view
   lod /= 2.0;
 
   auto wt = painter->worldTransform();
@@ -336,8 +338,33 @@ void MapTiles::tileLoaded(QPixmap pixmap, TileAddress tile_address)
     // The < operator used for map does not consider layout, but the == operator does.
     // This is to make sure an old pixmap loading before a setLayout call doesn't make
     // it to a new layout's tile.
-    if(tiles_[tile_address]->address() == tile_address) 
+    if(tiles_[tile_address]->address() == tile_address)
       tiles_[tile_address]->updatePixmap(pixmap);
+}
+
+void MapTiles::onRemovedFromMap()
+{
+  // [camp#117] Drop this layer from the BackgroundManager restore list so a
+  // user-removed tile layer stays gone next session. Only fires for layers that
+  // were persisted (name present in the ids list) — the ids removal gates the
+  // group removal, so a non-persisted MapTiles never touches settings.
+  QSettings settings;
+  QStringList ids = settings.value(background::tileLayerIdsKey()).toStringList();
+  if(ids.removeAll(objectName()) > 0)
+  {
+    settings.setValue(background::tileLayerIdsKey(), ids);
+    settings.beginGroup(background::tileLayerRootGroup());
+    settings.remove(background::tileLayerGroupKey(objectName()));
+    settings.endGroup();
+    // [camp#117] Also drop the MapItem/<settingsKey> presentation group (the
+    // opacity/visible the add path wrote). onRemovedFromMap runs before the
+    // item is detached (Layer::removeFromMap), so settingsKey() is still valid.
+    // Without this the group orphans and a same-named re-add briefly inherits the
+    // stale opacity/visible before its own preset write lands.
+    settings.beginGroup("MapItem");
+    settings.remove(settingsKey());
+    settings.endGroup();
+  }
 }
 
 } // namespace map_tiles

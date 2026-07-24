@@ -23,7 +23,7 @@ MapItem::MapItem(MapItem* parent_item, const QString& object_name)
 
   connect(QApplication::instance(), &QCoreApplication::aboutToQuit, this, &MapItem::applicationQuitting);
 
-  QTimer::singleShot( 0, this, &MapItem::itemConstructed); 
+  QTimer::singleShot( 0, this, &MapItem::itemConstructed);
 }
 
 MapItem::MapItem(const QString& object_name)
@@ -184,6 +184,12 @@ void MapItem::itemConstructed()
 
 void MapItem::applicationQuitting()
 {
+  // [camp#117] A layer removed via removeFromMap() has already erased its settings
+  // and is only awaiting deleteLater; persisting it again here (on a quit before
+  // that delete lands) would resurrect its MapItem/<settingsKey> group as an
+  // orphan. Skip persistence for a removed item.
+  if(removed_from_map_)
+    return;
   writeSettings();
 }
 

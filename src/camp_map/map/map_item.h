@@ -15,7 +15,7 @@ class Map;
 /// MapItems are QGraphicsObjects so they can be displayed
 /// in a MapView and also implement the methods needed
 /// by Map for use in a MapTreeView.
-/// By inheriting from QGraphicsObject, MapItem is also 
+/// By inheriting from QGraphicsObject, MapItem is also
 /// a QObject and can use signals and slots.
 class MapItem: public QGraphicsObject
 {
@@ -121,7 +121,7 @@ public slots:
 protected:
   /// Allows item to modify Model/View flags.
   virtual void updateFlags(Qt::ItemFlags& flags) const;
-  
+
   /// Sets the status text to be displayed in tree view.
   void setStatus(const QString& status);
 
@@ -133,6 +133,12 @@ protected:
 
   virtual void readSettings();
   virtual void writeSettings();
+
+  /// [camp#117] Set once removeFromMap() has run. A removed layer has already
+  /// de-persisted itself (onRemovedFromMap) and is awaiting deleteLater; this
+  /// suppresses the shutdown writeSettings() (applicationQuitting) so a quit that
+  /// races the pending delete can't re-persist its settings group as an orphan.
+  bool removed_from_map_ = false;
 
 private:
   // Make sure Map can create a top level item without a parent.

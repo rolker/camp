@@ -57,6 +57,9 @@ void Layer::removeFromMap()
   // drop itself from its restore list so it stays removed next session (app
   // shutdown does not call this path, so persisted layers survive a normal quit).
   onRemovedFromMap();
+  // [camp#117] Mark removed so a shutdown that races the deleteLater below does not
+  // re-persist this layer's settings group (see MapItem::applicationQuitting).
+  removed_from_map_ = true;
   // [#59 ADR-0003] Detach through the Map model (fires rowsAboutToBeRemoved so
   // owners can sync their bookkeeping), drop it from the scene so it stops
   // rendering at once, then delete after the current event unwinds.
@@ -108,7 +111,7 @@ void Layer::readSettings()
 void Layer::writeSettings()
 {
   MapItem::writeSettings();
-  
+
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
