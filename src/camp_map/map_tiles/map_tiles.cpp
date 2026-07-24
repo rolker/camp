@@ -356,6 +356,14 @@ void MapTiles::onRemovedFromMap()
     settings.beginGroup(background::tileLayerRootGroup());
     settings.remove(background::tileLayerGroupKey(objectName()));
     settings.endGroup();
+    // [camp#117] Also drop the MapItem/<settingsKey> presentation group (the
+    // opacity/visible the add path wrote). onRemovedFromMap runs before the
+    // item is detached (Layer::removeFromMap), so settingsKey() is still valid.
+    // Without this the group orphans and a same-named re-add briefly inherits the
+    // stale opacity/visible before its own preset write lands.
+    settings.beginGroup("MapItem");
+    settings.remove(settingsKey());
+    settings.endGroup();
   }
 }
 
