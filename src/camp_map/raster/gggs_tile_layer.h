@@ -37,9 +37,10 @@ class GggsTile;
 /// it registered with the vector overlays and CPU raster/tile layers.
 ///
 /// Auto-ranged value mapped through a colormap LUT (camp#90); fixed
-/// tessellation; whole-extent render cached by on-screen size. Multi-band
-/// GeoTIFFs expose a per-layer band picker (camp#108); visible-region-only
-/// render is Slice 2.
+/// tessellation. Multi-band GeoTIFFs expose a per-layer band picker (camp#108).
+/// [camp#103 / ADR-0011] paint() renders only the viewport-visible clip of the
+/// extent, sized to the on-screen pixels, so zoomed-in renders stay crisp on
+/// stores far larger than kMaxImageEdge.
 class GggsTileLayer: public map::Layer, public RasterFieldSource
 {
   Q_OBJECT
@@ -78,6 +79,13 @@ public:
   /// data or GL is unavailable. Exposed so a headless test can render + inspect
   /// without a window.
   QImage renderImage(const QSize& size);
+
+  /// [camp#103 / ADR-0011] Clip-aware overload: warp only the tiles whose scene
+  /// extent intersects @p clip_bounds (a sub-rect of sceneBounds(), Web-Mercator
+  /// metres) into an image of @p size spanning exactly @p clip_bounds. paint()
+  /// uses it with the viewport-derived clip; public (mirroring renderImage(size))
+  /// so the headless clip-filter test can call it directly.
+  QImage renderImage(const QSize& size, const QRectF& clip_bounds);
 
   /// [camp#90 / camp#141] Select the colour ramp by marine_colormap palette name
   /// (baked to a GPU LUT). Persists and re-renders. Unknown name -> grayscale.
@@ -166,6 +174,11 @@ private:
   /// load, and repaints. No-op if @p band is out of range or unchanged.
   void applyBand(int band);
   void loadDirectory(const QString& directory);
+  /// [camp#103] items() body with an optional scene-space clip: a non-null
+  /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
+  /// tested BEFORE the lazy texture upload so offscreen tiles cost nothing.
+  /// items() (the RasterFieldSource interface) delegates with a null rect.
+  QList<RasterFieldItem> itemsIntersecting(const QRectF& clip_scene);
   /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
   /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.
   void loadTilesWorker();
@@ -211,8 +224,13 @@ private:
   QMutex abort_flag_mutex_;
   bool load_started_ = false;  // first paint() kicks the load exactly once
 
-  QImage cached_image_;        // last render, reused on pan (re-rendered on zoom)
+  // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes the
+  // size, pan changes the clip, so both re-render. (Pre-#103, pan reused the
+  // cached whole-extent image via the world transform; a viewport-sized FBO makes
+  // the per-frame re-render cheap and is required for correctness.)
+  QImage cached_image_;
   QSize cached_size_;
+  QRectF cached_clip_;
 };
 
 }  // namespace raster

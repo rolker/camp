@@ -3,6 +3,7 @@
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
 #include "colormap_range_dialog.h"
+#include "viewport_clip.h"
 #include <marine_colormap/palette.hpp>
 #include <QPainter>
 #include <QOpenGLTexture>
@@ -76,27 +77,26 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
   if(is_scalar_ && data_min_ > data_max_)   // scalar: nothing valid to colour yet
     return;
 
-  // Target the offscreen render at the extent's on-screen size, so the image is
-  // crisp at the current zoom. Re-render only when that size changes (zoom); pan
-  // reuses the cached image (drawImage repositions it via the world transform).
-  const QRectF dev = painter->worldTransform().mapRect(boundingRect());
-  const int w = std::min(kMaxImageEdge,
-                         std::max(1, int(std::ceil(std::abs(dev.width())))));
-  const int h = std::min(kMaxImageEdge,
-                         std::max(1, int(std::ceil(std::abs(dev.height())))));
-  const QSize size(w, h);
+  // [camp#103 / ADR-0011] Render only the viewport-visible clip of the extent,
+  // sized to its on-screen pixels — a zoomed-in view of a chart far larger than
+  // kMaxImageEdge stays crisp. Re-render when the size (zoom) OR the clip (pan)
+  // changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
+  const ViewportClip clip =
+    deriveViewportClip(painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
 
-  if(cached_image_.isNull() || cached_size_ != size)
+  if(cached_image_.isNull() || cached_size_ != clip.size ||
+     cached_clip_ != clip.scene)
   {
-    cached_image_ = renderImage(size);
-    cached_size_ = size;
+    cached_image_ = renderImage(clip.size, clip.scene);
+    cached_size_ = clip.size;
+    cached_clip_ = clip.scene;
   }
   if(cached_image_.isNull())
     return;
 
   painter->save();
   painter->setRenderHint(QPainter::SmoothPixmapTransform);
-  painter->drawImage(boundingRect(), cached_image_);
+  painter->drawImage(clip.local, cached_image_);
   painter->restore();
 }
 
@@ -414,7 +414,12 @@ void RasterLayer::imageReady()
 
 QImage RasterLayer::renderImage(const QSize& size)
 {
-  if(scene_bounds_.isNull() || size.isEmpty())
+  return renderImage(size, scene_bounds_);
+}
+
+QImage RasterLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
+{
+  if(scene_bounds_.isNull() || size.isEmpty() || clip_bounds.isEmpty())
     return QImage();
   if(is_scalar_ && data_min_ > data_max_)
     return QImage();
@@ -424,7 +429,9 @@ QImage RasterLayer::renderImage(const QSize& size)
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max. Scalar charts shade
   // through it; RGB charts bypass the LUT, so the range is a don't-care for them.
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+  // [camp#103] clip_bounds (a sub-rect of scene_bounds_) crops via the MVP —
+  // quad vertices outside it fall outside NDC. No item filtering (one texture).
+  const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
                                                range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;

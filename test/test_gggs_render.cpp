@@ -18,10 +18,12 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QGraphicsView>
 #include <QImage>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QTemporaryDir>
+#include <QTransform>
 
 #include "map/map.h"
 #include "map/layer_list.h"
@@ -31,11 +33,12 @@ namespace
 {
 
 QString writeTile(const QTemporaryDir& dir, int w, int h, const double geo[6],
-                  const std::vector<uint16_t>& samples)
+                  const std::vector<uint16_t>& samples,
+                  const QString& name = "13_0_0.tif")
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
-  const QString path = dir.filePath("13_0_0.tif");
+  const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
   // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
   // cleanly instead of dereferencing null. (These helpers return QString, so a
@@ -338,6 +341,212 @@ TEST(GggsRenderTest, RealStoreRendersWhenProvided)
   const QImage img = layer->renderImage(QSize(900, 900));
   ASSERT_FALSE(img.isNull());
   img.save("/tmp/gggs_real.png");
+}
+
+// [camp#103] The clip-aware renderImage(size, clip) must (a) render ONLY the
+// clipped region — a clip covering tile A yields an image of A's pixels alone —
+// and (b) keep tiles that PARTIALLY intersect the clip (a straddling clip shows
+// both tiles). Two horizontally-adjacent uniform tiles with distinct values are
+// distinguishable through the auto-ranged grayscale LUT (A=max -> bright,
+// B=min -> dark, both opaque; outside coverage transparent).
+TEST(GggsRenderTest, ClipFilterRendersOnlyIntersectingTiles)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  // Tile A spans lon [-71.40, -71.39]; tile B spans [-71.39, -71.38]; both span
+  // lat [42.99, 43.00] (north-up, row 0 = north edge).
+  const double geo_a[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double geo_b[6] = {-71.39, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const std::vector<uint16_t> samples_a(w * h, 60000);   // -> LUT max: bright
+  const std::vector<uint16_t> samples_b(w * h, 20000);   // -> LUT min: dark
+  ASSERT_FALSE(writeTile(dir, w, h, geo_a, samples_a, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_b, samples_b, "13_0_1.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QRectF sb = layer->sceneBounds();
+  auto countPixels = [](const QImage& img, int& bright, int& dark)
+  {
+    bright = dark = 0;
+    for(int y = 0; y < img.height(); ++y)
+      for(int x = 0; x < img.width(); ++x)
+      {
+        const QColor px = img.pixelColor(x, y);
+        if(px.alpha() == 0)
+          continue;
+        if(px.red() > 200)
+          ++bright;
+        else if(px.red() < 60)
+          ++dark;
+      }
+  };
+
+  // Full extent: both tiles contribute.
+  int bright = 0, dark = 0;
+  countPixels(layer->renderImage(QSize(200, 100)), bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_GT(dark, 0);
+
+  // Clip strictly inside tile A's (western) half: only A's pixels appear.
+  const QRectF clip_a(sb.left(), sb.top(), sb.width() * 0.45, sb.height());
+  const QImage img_a = layer->renderImage(QSize(100, 100), clip_a);
+  ASSERT_FALSE(img_a.isNull());
+  countPixels(img_a, bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_EQ(dark, 0);
+  img_a.save("/tmp/gggs_clip_a.png");
+
+  // Clip straddling the A|B boundary: BOTH partially-intersecting tiles are
+  // kept (the intersect predicate must not drop a partially-visible tile).
+  const QRectF clip_mid(sb.left() + sb.width() * 0.25, sb.top(),
+                        sb.width() * 0.5, sb.height());
+  countPixels(layer->renderImage(QSize(100, 100), clip_mid), bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_GT(dark, 0);
+}
+
+// [camp#103] The clip render's pixel density scales with the CLIP, not the whole
+// extent — the fix for the field-observed blur. The "L" tile's bright west band
+// is 10% of the tile width; rendered at the same image size, a west-half clip
+// makes that band span ~twice as many image columns as the full-extent render.
+TEST(GggsRenderTest, ClipRenderScalesResolutionToClip)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  const double geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  std::vector<uint16_t> samples(w * h, 8000);
+  for(int r = 0; r < h; ++r)
+    for(int c = 0; c < w; ++c)
+      if(c < 10)                             // bright west band only
+        samples[r * w + c] = 60000;
+  ASSERT_FALSE(writeTile(dir, w, h, geo, samples).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  auto brightColumns = [](const QImage& img)
+  {
+    int cols = 0;
+    for(int x = 0; x < img.width(); ++x)
+      for(int y = 0; y < img.height(); ++y)
+        if(img.pixelColor(x, y).alpha() > 0 && img.pixelColor(x, y).red() > 200)
+        {
+          ++cols;
+          break;
+        }
+    return cols;
+  };
+
+  const QSize size(200, 200);
+  const int full_cols = brightColumns(layer->renderImage(size));
+  const QRectF sb = layer->sceneBounds();
+  const QRectF west_half(sb.left(), sb.top(), sb.width() * 0.5, sb.height());
+  const QImage img_clip = layer->renderImage(size, west_half);
+  ASSERT_FALSE(img_clip.isNull());
+  const int clip_cols = brightColumns(img_clip);
+
+  EXPECT_GT(full_cols, 0);
+  // Same band, half the scene width, same image width -> ~2x the columns.
+  EXPECT_GT(clip_cols, full_cols * 3 / 2);
+  img_clip.save("/tmp/gggs_clip_res.png");
+}
+
+// [camp#103] Paint-path regression: with a view ATTACHED, paint() must render at
+// the view's resolution — the field bug was a whole-extent <=4096px render
+// upscaled over the viewport (blurry). This drives the REAL paint() path through
+// a QGraphicsView (grab()), not renderImage() directly, so the viewport
+// derivation itself is under test: the derivation must come from the attached
+// view (painter clip state is unreliable — empty on live full-viewport
+// repaints). A 2000x2000 per-pixel checkerboard zoomed to 40 screen-px per data
+// cell makes the whole extent 80000 screen px (>> 4096): the fixed path renders
+// the viewport crisp (pixels cluster at the two LUT extremes), the broken path
+// renders cells at ~2px in the 4096-clamped image and upscales ~20x with
+// smoothing, smearing most pixels into mid-tones (verified fails-without-fix).
+TEST(GggsRenderTest, ViewAttachedPaintRendersAtViewResolution)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 2000, h = 2000;
+  const double geo[6] = {-71.40, 0.00002, 0.0, 43.00, 0.0, -0.00002};
+  std::vector<uint16_t> samples(w * h);
+  for(int r = 0; r < h; ++r)
+    for(int c = 0; c < w; ++c)
+      samples[r * w + c] = ((r + c) % 2) ? 60000 : 20000;   // per-pixel checker
+  ASSERT_FALSE(writeTile(dir, w, h, geo, samples).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QRectF sb = layer->sceneBounds();
+  const double cell_m = sb.width() / w;
+  const double scale = 40.0 / cell_m;   // 40 screen px per data cell
+
+  QGraphicsView view(map.scene());
+  view.resize(400, 300);
+  // Match MapView's convention: scale(s, -s) composes with the layer's
+  // fromScale(1,-1) to a net-upright draw.
+  view.setTransform(QTransform::fromScale(scale, -scale));
+  view.centerOn(QPointF(sb.center().x(), sb.center().y()));
+  view.show();
+  QApplication::processEvents();
+  // AFTER scene-add/settings side effects: tile-set layers default to
+  // hidden (camp#102 readSettings false-fallback), which would leave the
+  // grab blank white.
+  layer->setVisible(true);
+  QApplication::processEvents();
+
+  // Grab the viewport widget only (no frame/scrollbars).
+  const QImage img = view.viewport()->grab().toImage();
+  ASSERT_FALSE(img.isNull());
+  img.save("/tmp/gggs_view_paint.png");
+
+  // Sample the central region (well inside the tile). Crisp = the checker's two
+  // LUT extremes each cover ~half the pixels; blurred = mid-tones dominate;
+  // blank/white (layer didn't paint) = no dark pixels at all. Requiring BOTH
+  // extremes discriminates all three.
+  int sampled = 0, dark = 0, mid = 0;
+  for(int y = img.height() / 4; y < 3 * img.height() / 4; ++y)
+    for(int x = img.width() / 4; x < 3 * img.width() / 4; ++x)
+    {
+      const int red = img.pixelColor(x, y).red();
+      ++sampled;
+      if(red < 60)
+        ++dark;
+      else if(red <= 200)
+        ++mid;
+    }
+  ASSERT_GT(sampled, 1000);
+  // Presence: a blank grab (layer never painted) has no dark cells at all; a
+  // crisp checker is ~half dark. Crispness: the broken whole-extent upscale
+  // smears ~half the pixels into mid-tones (measured 0.5); the crisp render has
+  // almost none. Together the two discriminate blank, blurred, and crisp.
+  EXPECT_GT(double(dark) / sampled, 0.25)
+    << "dark checker cells missing — layer blank or washed out (fraction "
+    << double(dark) / sampled << ")";
+  EXPECT_LT(double(mid) / sampled, 0.15)
+    << "mid-tone fraction " << double(mid) / sampled
+    << " — paint() rendered blurred; viewport derivation regressed";
 }
 
 int main(int argc, char** argv)

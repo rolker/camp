@@ -3,6 +3,7 @@
 #include "../node.h"
 #include "../../map_view/web_mercator.h"
 #include "../../raster/colormap_range_dialog.h"
+#include "../../raster/viewport_clip.h"
 
 #include <marine_colormap/palette.hpp>
 
@@ -826,14 +827,33 @@ QPair<float, float> SonarLiveCacheLayer::dataRange() const
 
 QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 {
+  return itemsIntersecting(QRectF());
+}
+
+QList<raster::RasterFieldItem> SonarLiveCacheLayer::itemsIntersecting(
+  const QRectF& clip_scene)
+{
   // [camp#134] Collect the held tiles' selected band as Scalar items for the shared
   // renderer. Called with the renderer's GL context current (renderImage()), so
   // textureFor() may lazily (re)upload here. The geo->Web-Mercator warp lives in
   // the renderer; this only forwards each tile's lat/lon extent + NoData sentinel.
+  // [camp#103] A non-null @p clip_scene keeps only tiles whose Web-Mercator extent
+  // intersects it — tested BEFORE textureFor(), so offscreen tiles are neither
+  // uploaded nor drawn. Both pools are filtered with the same predicate, keeping
+  // the overviews-first order below intact.
   QList<raster::RasterFieldItem> result;
   result.reserve(int(overview_tiles_.size() + tiles_.size()));
   auto append = [&](Entry& entry)
   {
+    if(!clip_scene.isNull())
+    {
+      const QPointF lo = web_mercator::geoToMap(
+        QGeoCoordinate(entry.tile.minLat(), entry.tile.minLon()));
+      const QPointF hi = web_mercator::geoToMap(
+        QGeoCoordinate(entry.tile.maxLat(), entry.tile.maxLon()));
+      if(!QRectF(lo, hi).normalized().intersects(clip_scene))
+        return;
+    }
     const SonarLiveBand* band = entry.tile.band(band_name_);
     if(!band)
       return;
@@ -865,17 +885,24 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 
 QImage SonarLiveCacheLayer::renderImage(const QSize& size)
 {
+  return renderImage(size, scene_bounds_);
+}
+
+QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
+{
   if((tiles_.empty() && overview_tiles_.empty()) || data_min_ > data_max_ ||
-     size.isEmpty())
+     size.isEmpty() || clip_bounds.isEmpty())
     return QImage();
   // [camp#134] Make the renderer's context current, collect the held tiles
   // (uploading textures under it), then delegate the warp + draw.
   if(!renderer_.makeCurrent())
     return QImage();
-  const QList<raster::RasterFieldItem> draw = items();
+  // [camp#103] Only tiles intersecting the clip contribute (both pools,
+  // overviews-first order preserved — the ADR-0010 LOD fallback).
+  const QList<raster::RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+  const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
                                                range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;
@@ -886,22 +913,25 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
   if((tiles_.empty() && overview_tiles_.empty()) || data_min_ > data_max_)
     return;
 
-  const QRectF dev = painter->worldTransform().mapRect(boundingRect());
-  const int w = std::min(kMaxImageEdge, std::max(1, int(std::ceil(std::abs(dev.width())))));
-  const int h = std::min(kMaxImageEdge, std::max(1, int(std::ceil(std::abs(dev.height())))));
-  const QSize size(w, h);
+  // [camp#103 / ADR-0011] Render only the viewport-visible clip of the extent,
+  // sized to its on-screen pixels. Re-render when the size (zoom) OR the clip
+  // (pan) changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
+  const raster::ViewportClip clip = raster::deriveViewportClip(
+    painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
 
-  if(cached_image_.isNull() || cached_size_ != size)
+  if(cached_image_.isNull() || cached_size_ != clip.size ||
+     cached_clip_ != clip.scene)
   {
-    cached_image_ = renderImage(size);
-    cached_size_ = size;
+    cached_image_ = renderImage(clip.size, clip.scene);
+    cached_size_ = clip.size;
+    cached_clip_ = clip.scene;
   }
   if(cached_image_.isNull())
     return;
 
   painter->save();
   painter->setRenderHint(QPainter::SmoothPixmapTransform);
-  painter->drawImage(boundingRect(), cached_image_);
+  painter->drawImage(clip.local, cached_image_);
   painter->restore();
 }
 

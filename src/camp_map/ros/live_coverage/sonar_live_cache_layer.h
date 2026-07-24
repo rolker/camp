@@ -93,6 +93,14 @@ public:
   /// unavailable. Exposed for a headless render check (skips with no GL).
   QImage renderImage(const QSize& size);
 
+  /// [camp#103 / ADR-0011] Clip-aware overload: render only the tiles whose
+  /// scene extent intersects @p clip_bounds (a sub-rect of sceneBounds(),
+  /// Web-Mercator metres) into an image of @p size spanning exactly
+  /// @p clip_bounds. Filters BOTH pools while preserving the overviews-first
+  /// draw order (the ADR-0010 LOD fallback). paint() uses it with the
+  /// viewport-derived clip; public (mirroring renderImage(size)) for tests.
+  QImage renderImage(const QSize& size, const QRectF& clip_bounds);
+
   /// The layer's Web-Mercator extent (union of tile extents). Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
 
@@ -197,6 +205,13 @@ private:
   // (owned by the Entry). The shader + LUT + tessellation now live in renderer_.
   QOpenGLTexture* textureFor(Entry& entry);
 
+  /// [camp#103] items() body with an optional scene-space clip: a non-null
+  /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
+  /// tested BEFORE the lazy texture upload. Filters both pools, preserving the
+  /// overviews-first draw order (ADR-0010 LOD fallback). items() (the
+  /// RasterFieldSource interface) delegates with a null rect.
+  QList<raster::RasterFieldItem> itemsIntersecting(const QRectF& clip_scene);
+
   static constexpr int kMaxImageEdge = 4096;
 
   // [camp#160] Overview tiles at level <= this coarse "apex" are never evicted, so a
@@ -277,8 +292,12 @@ private:
   std::vector<QFutureWatcher<void>*> write_watchers_;
   bool shutting_down_ = false;
 
+  // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes
+  // the size, pan changes the clip, so both re-render (the FBO is viewport-sized,
+  // so the per-frame pan re-render is cheap).
   QImage cached_image_;
   QSize cached_size_;
+  QRectF cached_clip_;
 };
 
 }  // namespace live_coverage
