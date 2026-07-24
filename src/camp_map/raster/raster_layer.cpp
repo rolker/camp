@@ -82,7 +82,7 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
   // kMaxImageEdge stays crisp. Re-render when the size (zoom) OR the clip (pan)
   // changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
   const ViewportClip clip =
-    deriveViewportClip(painter, boundingRect(), scene_bounds_, kMaxImageEdge);
+    deriveViewportClip(painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
 
   if(cached_image_.isNull() || cached_size_ != clip.size ||
      cached_clip_ != clip.scene)
