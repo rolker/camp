@@ -27,26 +27,50 @@ Checkpoint resolutions (operator, 2026-07-24):
    attributes (name, type, URL, opacity, visible, refresh_ms, enabled). WMS entries
    have `enabled=false` until #118.
 
-2. **Define QSettings schema** — `BackgroundTileLayers` as a QSettings array
-   (beginWriteArray / beginReadArray), one entry per operator-created tile layer.
-   Each entry stores: `name`, `type` ("xyz" | "wmts"), `url`, `opacity`, `visible`,
-   `refresh_ms`. WMS layers are not written (no type exists yet).
+2. **Define QSettings schema** — per-layer **keyed groups**, not an index-addressed
+   array (plan-review suggestion: keyed removal must not rewrite the whole array;
+   mirrors GGGS `settingsKey()`):
+   - `BackgroundTileLayers/ids` — QStringList of layer names, creation order.
+   - `BackgroundTileLayers/<percent-encoded-name>/` — **construction parameters
+     only**: `type` ("xyz" | "wmts"), `url`, `refresh_ms`, and for WMTS the
+     non-default `layer_id` / `tile_matrix_set`.
+   - Presentation state (opacity, visibility) is NOT duplicated here — the
+     existing `MapItem/<settingsKey()>` mechanism (`Layer::read/writeSettings`)
+     already round-trips it. At add time the preset's default opacity/visible are
+     written into that group so the deferred `readSettings()` (itemConstructed
+     timer) applies them instead of the 1.0/true defaults; thereafter the standard
+     mechanism owns them.
+   WMS presets are never written (no constructible type until #118).
 
 3. **Update `createDefaultLayers()`** — replace the four hard-coded `new MapTiles`
    calls with:
-   - If `BackgroundTileLayers` array is absent (size == 0 on first read), call
+   - If the `BackgroundTileLayers/ids` key is absent, call
      `seedDefaultTileLayers()` to write the OSM preset to QSettings.
-   - Restore loop over the QSettings array, instantiating each saved entry as a
-     `MapTiles` layer (XYZ via `osm::generateTileLayout`, WMTS via `Capabilities`).
+   - Restore loop over `ids`, instantiating each saved entry as a `MapTiles`
+     layer (XYZ via `osm::generateTileLayout`, WMTS via `Capabilities`), deduped
+     against already-live MapTiles of the same name.
+   - WMTS restore replicates the async ordering/ownership of the current
+     hard-coded block (plan-review suggestion): `Capabilities` parented to
+     `this`, then `MapTiles` + `setLayoutFromWMTS(*caps, layer_id,
+     tile_matrix_set)`, then `caps->setUrl(url)` — the URL fetch is what fires
+     `ready()`, so it must come last.
    This mirrors the existing GGGS restore block in the same function.
 
 4. **Add `seedDefaultTileLayers()`** — private method that writes a single OSM
    entry to the `BackgroundTileLayers` QSettings array. Called only when the key
    is absent.
 
-5. **Add `persistTileLayer()`** — private method that appends a layer's config to
-   the `BackgroundTileLayers` QSettings array. Called by `addTileLayer()` after
-   the layer is successfully created, and symmetrically when removing a layer.
+5. **Add `persistTileLayer()`** — private method that adds a layer's name to
+   `BackgroundTileLayers/ids` and writes its construction group. Called by
+   `addTileLayer()` after the layer is successfully created.
+
+5b. **De-persist on removal (plan-review must-fix)** — removal happens via the
+   layer's own Layers-tree "Remove" action (ADR-0003 §4), not BackgroundManager,
+   so `MapTiles` overrides `Layer::onRemovedFromMap()` (the GGGS pattern,
+   `gggs_tile_layer.cpp:778`): drop `objectName()` from
+   `BackgroundTileLayers/ids` and remove its construction group. A MapTiles that
+   was never persisted (name not in `ids`) no-ops, keeping the hook safe for
+   non-persisted uses of the generic class. Covered by a dedicated test.
 
 6. **Add "Add tile layer" context menu action** in `BackgroundManager::contextMenu()`
    alongside "Open raster".
@@ -62,10 +86,28 @@ Checkpoint resolutions (operator, 2026-07-24):
 9. **Update `CMakeLists.txt`** — add `add_tile_layer_dialog.cpp` to
    `CAMP_MAP_SOURCES`.
 
-10. **Add tests** — new `test/test_background_persistence.cpp`:
+10. **Add tests** — new `test/test_background_persistence.cpp` (with a test
+    org/app name in `main()` like `test_gggs_persistence.cpp:399-400`, so runs
+    never touch the developer's real QSettings — plan-review suggestion):
     - Fresh QSettings → `createDefaultLayers()` seeds OSM, one layer present.
-    - Key already present → no re-seeding, existing entries restored.
-    - `persistTileLayer()` round-trips correctly (write then read back).
+    - Key already present → no re-seeding, existing entries restored (deduped).
+    - Persist round-trip: add → restart (new Map) → layer restored with its
+      construction params; preset defaults (opacity/visible) applied.
+    - **De-persist on remove (must-fix)**: `removeFromMap()` on a persisted
+      MapTiles drops it from `ids` + removes its group; next Map does not
+      recreate it.
+
+11. **Fix `test_map_model.cpp` QSettings leakage (plan-review suggestion)** —
+    its `main()` sets no org/app name, so the new seed would write into the
+    developer's real QSettings; set `camp_test`/`test_map_model` like the other
+    suites. Its top-3-prefix assertion (`test_map_model.cpp:262`) tolerates the
+    1-layer OSM seed by design; verify it passes.
+
+12. **ADR** — add a short addendum to camp ADR-0003 documenting the
+    `BackgroundTileLayers` schema (ids + per-name construction groups,
+    presentation state delegated to `MapItem/<settingsKey>`) and the OSM-only
+    key-absent seed strategy (plan-review suggestion; GGGS's equivalent key is
+    documented in ADR-0005).
 
 ## Files to Change
 
@@ -76,8 +118,11 @@ Checkpoint resolutions (operator, 2026-07-24):
 | `src/camp_map/background/tile_layer_presets.h` | New: `TileLayerPreset` struct + `builtinPresets()` function |
 | `src/camp_map/background/add_tile_layer_dialog.h` | New: `AddTileLayerDialog` class header |
 | `src/camp_map/background/add_tile_layer_dialog.cpp` | New: `AddTileLayerDialog` implementation |
+| `src/camp_map/map_tiles/map_tiles.h/.cpp` | Override `onRemovedFromMap()` to de-persist (must-fix) |
 | `CMakeLists.txt` | Add `add_tile_layer_dialog.cpp` to `CAMP_MAP_SOURCES`; add `test_background_persistence` test target |
-| `test/test_background_persistence.cpp` | New: fresh-start seed, upgrade-path, persistence round-trip tests |
+| `test/test_background_persistence.cpp` | New: fresh-start seed, upgrade-path, persistence round-trip, de-persist-on-remove tests |
+| `test/test_map_model.cpp` | Set test org/app name in `main()` (QSettings isolation) |
+| `docs/decisions/0003-*.md` | Addendum: `BackgroundTileLayers` schema + seed strategy |
 
 ## Principles Self-Check
 
