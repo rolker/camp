@@ -31,11 +31,12 @@ namespace
 {
 
 QString writeTile(const QTemporaryDir& dir, int w, int h, const double geo[6],
-                  const std::vector<uint16_t>& samples)
+                  const std::vector<uint16_t>& samples,
+                  const QString& name = "13_0_0.tif")
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
-  const QString path = dir.filePath("13_0_0.tif");
+  const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
   // [camp#122] Guard the GDAL handles so a driver/create failure fails the test
   // cleanly instead of dereferencing null. (These helpers return QString, so a
@@ -338,6 +339,129 @@ TEST(GggsRenderTest, RealStoreRendersWhenProvided)
   const QImage img = layer->renderImage(QSize(900, 900));
   ASSERT_FALSE(img.isNull());
   img.save("/tmp/gggs_real.png");
+}
+
+// [camp#103] The clip-aware renderImage(size, clip) must (a) render ONLY the
+// clipped region — a clip covering tile A yields an image of A's pixels alone —
+// and (b) keep tiles that PARTIALLY intersect the clip (a straddling clip shows
+// both tiles). Two horizontally-adjacent uniform tiles with distinct values are
+// distinguishable through the auto-ranged grayscale LUT (A=max -> bright,
+// B=min -> dark, both opaque; outside coverage transparent).
+TEST(GggsRenderTest, ClipFilterRendersOnlyIntersectingTiles)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  // Tile A spans lon [-71.40, -71.39]; tile B spans [-71.39, -71.38]; both span
+  // lat [42.99, 43.00] (north-up, row 0 = north edge).
+  const double geo_a[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double geo_b[6] = {-71.39, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const std::vector<uint16_t> samples_a(w * h, 60000);   // -> LUT max: bright
+  const std::vector<uint16_t> samples_b(w * h, 20000);   // -> LUT min: dark
+  ASSERT_FALSE(writeTile(dir, w, h, geo_a, samples_a, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_b, samples_b, "13_0_1.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QRectF sb = layer->sceneBounds();
+  auto countPixels = [](const QImage& img, int& bright, int& dark)
+  {
+    bright = dark = 0;
+    for(int y = 0; y < img.height(); ++y)
+      for(int x = 0; x < img.width(); ++x)
+      {
+        const QColor px = img.pixelColor(x, y);
+        if(px.alpha() == 0)
+          continue;
+        if(px.red() > 200)
+          ++bright;
+        else if(px.red() < 60)
+          ++dark;
+      }
+  };
+
+  // Full extent: both tiles contribute.
+  int bright = 0, dark = 0;
+  countPixels(layer->renderImage(QSize(200, 100)), bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_GT(dark, 0);
+
+  // Clip strictly inside tile A's (western) half: only A's pixels appear.
+  const QRectF clip_a(sb.left(), sb.top(), sb.width() * 0.45, sb.height());
+  const QImage img_a = layer->renderImage(QSize(100, 100), clip_a);
+  ASSERT_FALSE(img_a.isNull());
+  countPixels(img_a, bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_EQ(dark, 0);
+  img_a.save("/tmp/gggs_clip_a.png");
+
+  // Clip straddling the A|B boundary: BOTH partially-intersecting tiles are
+  // kept (the intersect predicate must not drop a partially-visible tile).
+  const QRectF clip_mid(sb.left() + sb.width() * 0.25, sb.top(),
+                        sb.width() * 0.5, sb.height());
+  countPixels(layer->renderImage(QSize(100, 100), clip_mid), bright, dark);
+  EXPECT_GT(bright, 0);
+  EXPECT_GT(dark, 0);
+}
+
+// [camp#103] The clip render's pixel density scales with the CLIP, not the whole
+// extent — the fix for the field-observed blur. The "L" tile's bright west band
+// is 10% of the tile width; rendered at the same image size, a west-half clip
+// makes that band span ~twice as many image columns as the full-extent render.
+TEST(GggsRenderTest, ClipRenderScalesResolutionToClip)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 100, h = 100;
+  const double geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  std::vector<uint16_t> samples(w * h, 8000);
+  for(int r = 0; r < h; ++r)
+    for(int c = 0; c < w; ++c)
+      if(c < 10)                             // bright west band only
+        samples[r * w + c] = 60000;
+  ASSERT_FALSE(writeTile(dir, w, h, geo, samples).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  auto brightColumns = [](const QImage& img)
+  {
+    int cols = 0;
+    for(int x = 0; x < img.width(); ++x)
+      for(int y = 0; y < img.height(); ++y)
+        if(img.pixelColor(x, y).alpha() > 0 && img.pixelColor(x, y).red() > 200)
+        {
+          ++cols;
+          break;
+        }
+    return cols;
+  };
+
+  const QSize size(200, 200);
+  const int full_cols = brightColumns(layer->renderImage(size));
+  const QRectF sb = layer->sceneBounds();
+  const QRectF west_half(sb.left(), sb.top(), sb.width() * 0.5, sb.height());
+  const QImage img_clip = layer->renderImage(size, west_half);
+  ASSERT_FALSE(img_clip.isNull());
+  const int clip_cols = brightColumns(img_clip);
+
+  EXPECT_GT(full_cols, 0);
+  // Same band, half the scene width, same image width -> ~2x the columns.
+  EXPECT_GT(clip_cols, full_cols * 3 / 2);
+  img_clip.save("/tmp/gggs_clip_res.png");
 }
 
 int main(int argc, char** argv)

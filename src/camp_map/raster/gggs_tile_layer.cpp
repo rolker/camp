@@ -3,6 +3,7 @@
 #include "gggs_tile.h"
 #include "gggs_tile_util.h"
 #include "colormap_range_dialog.h"
+#include "viewport_clip.h"
 #include "../map_view/web_mercator.h"
 
 #include <marine_colormap/palette.hpp>
@@ -376,11 +377,20 @@ QPair<float, float> GggsTileLayer::dataRange() const
 
 QList<RasterFieldItem> GggsTileLayer::items()
 {
+  return itemsIntersecting(QRectF());
+}
+
+QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene)
+{
   // [camp#134] Collect the loaded tiles as Scalar items for the shared renderer.
   // Called with the renderer's GL context current (renderImage()), so tile->
   // texture() may lazily upload here. The geo->Web-Mercator warp + tessellation
   // now lives in the renderer, so this only forwards each tile's lat/lon extent +
   // per-tile NoData sentinel.
+  // [camp#103] A non-null @p clip_scene keeps only tiles whose Web-Mercator
+  // extent intersects it — tested BEFORE texture(), so offscreen tiles are
+  // neither uploaded nor drawn. geoToMap is monotonic in both axes, so the
+  // SW/NE corners bound the tile's scene rect.
   QList<RasterFieldItem> result;
   result.reserve(int(tiles_.size()));
   for(auto& tile : tiles_)
@@ -390,6 +400,15 @@ QList<RasterFieldItem> GggsTileLayer::items()
     // true the data_/texture() reads see the worker's completed writes — no race.
     if(!tile->pixelsLoaded())
       continue;
+    if(!clip_scene.isNull())
+    {
+      const QPointF lo = web_mercator::geoToMap(
+        QGeoCoordinate(tile->minLat(), tile->minLon()));
+      const QPointF hi = web_mercator::geoToMap(
+        QGeoCoordinate(tile->maxLat(), tile->maxLon()));
+      if(!QRectF(lo, hi).normalized().intersects(clip_scene))
+        continue;
+    }
     QOpenGLTexture* texture = tile->texture();
     if(!texture)
       continue;
@@ -412,17 +431,23 @@ QList<RasterFieldItem> GggsTileLayer::items()
 
 QImage GggsTileLayer::renderImage(const QSize& size)
 {
-  if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty())
+  return renderImage(size, scene_bounds_);
+}
+
+QImage GggsTileLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
+{
+  if(tiles_.empty() || data_min_ > data_max_ || size.isEmpty() ||
+     clip_bounds.isEmpty())
     return QImage();
   // [camp#134] Make the renderer's context current, collect the loaded tiles
   // (uploading their textures under it), then delegate the warp + draw. The
   // returned image is top-down ARGB32 premultiplied (as before).
   if(!renderer_.makeCurrent())
     return QImage();
-  const QList<RasterFieldItem> draw = items();
+  const QList<RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
-  const QImage image = renderer_.renderToImage(draw, scene_bounds_, range_model_.lo(),
+  const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
                                                range_model_.hi(), size);
   renderer_.doneCurrent();
   return image;
@@ -447,27 +472,26 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   if(data_min_ > data_max_)   // no tile's pixels/range folded yet
     return;
 
-  // Target the offscreen render at the extent's on-screen size, so the image is
-  // crisp at the current zoom. Re-render only when that size changes (zoom);
-  // pan reuses the cached image (drawImage repositions it via the world xform).
-  const QRectF dev = painter->worldTransform().mapRect(boundingRect());
-  const int w = std::min(kMaxImageEdge,
-                         std::max(1, int(std::ceil(std::abs(dev.width())))));
-  const int h = std::min(kMaxImageEdge,
-                         std::max(1, int(std::ceil(std::abs(dev.height())))));
-  const QSize size(w, h);
+  // [camp#103 / ADR-0011] Render only the viewport-visible clip of the extent,
+  // sized to its on-screen pixels — a zoomed-in view of a store far larger than
+  // kMaxImageEdge stays crisp. Re-render when the size (zoom) OR the clip (pan)
+  // changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
+  const ViewportClip clip =
+    deriveViewportClip(painter, boundingRect(), scene_bounds_, kMaxImageEdge);
 
-  if(cached_image_.isNull() || cached_size_ != size)
+  if(cached_image_.isNull() || cached_size_ != clip.size ||
+     cached_clip_ != clip.scene)
   {
-    cached_image_ = renderImage(size);
-    cached_size_ = size;
+    cached_image_ = renderImage(clip.size, clip.scene);
+    cached_size_ = clip.size;
+    cached_clip_ = clip.scene;
   }
   if(cached_image_.isNull())
     return;
 
   painter->save();
   painter->setRenderHint(QPainter::SmoothPixmapTransform);
-  painter->drawImage(boundingRect(), cached_image_);
+  painter->drawImage(clip.local, cached_image_);
   painter->restore();
 }
 

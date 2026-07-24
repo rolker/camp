@@ -68,6 +68,12 @@ public:
   /// is nothing to draw or GL is unavailable. Exposed for headless tests.
   QImage renderImage(const QSize& size);
 
+  /// [camp#103 / ADR-0011] Clip-aware overload: render only @p clip_bounds (a
+  /// sub-rect of sceneBounds(), Web-Mercator metres) into an image of @p size.
+  /// No item filtering (single-texture layer) — the clipped scene_bounds crops
+  /// via the renderer's MVP. paint() uses it with the viewport-derived clip.
+  QImage renderImage(const QSize& size, const QRectF& clip_bounds);
+
   /// The layer's Web-Mercator extent. Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
 
@@ -155,8 +161,12 @@ private:
   bool has_nodata_ = false;
   float nodata_ = 0.0f;
 
-  QImage cached_image_;       // last render, reused on pan (re-rendered on zoom)
+  // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes
+  // the size, pan changes the clip, so both re-render (the FBO is viewport-sized,
+  // so the per-frame pan re-render is cheap).
+  QImage cached_image_;
   QSize cached_size_;
+  QRectF cached_clip_;
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
   // Compute the reprojected extent + Web-Mercator scene placement from file
