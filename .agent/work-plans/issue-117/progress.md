@@ -189,7 +189,7 @@ Specialists: Static Analysis (cppcheck; no actionable findings — Qt `slots` MO
 Round-1 must-fixes re-verified as correctly resolved: Capabilities leak (now parented to the MapTiles layer, `background_manager.cpp:388`) and test QSettings isolation (8 mains set `camp_test` org + per-suite app name).
 
 ### Findings
-- [ ] (suggestion) Dialog OK-enable ignores whether the current preset row is inert (disabled); clicking OK on e.g. GEBCO silently no-ops (defended downstream — nullptr) — `src/camp_map/background/add_tile_layer_dialog.cpp:189`
+- [x] (suggestion) Dialog OK-enable ignores whether the current preset row is inert (disabled); clicking OK on e.g. GEBCO silently no-ops (defended downstream — nullptr) — `src/camp_map/background/add_tile_layer_dialog.cpp:189`
 - [ ] (suggestion) Restore loop dedups at creation but never rewrites `BackgroundTileLayers/ids`, so duplicate or non-constructible entries persist (harmless at runtime; can't normally occur) — `src/camp_map/background/background_manager.cpp:63`
 - [ ] (suggestion) Remove-then-quit race: `aboutToQuit→writeSettings()` on the not-yet-deleted removed layer re-persists the `MapItem/<settingsKey>` presentation group `onRemovedFromMap()` deleted (orphan only; layer does not resurrect; near-impossible via UI; pre-existing convention shared with GggsTileLayer) — `src/camp_map/map_tiles/map_tiles.cpp:341`
 - [ ] (suggestion) No explicit `settings.sync()` after the seed; deferred `readSettings` correctness rests implicitly on local QSettings destruct-ordering (correct today, fragile to refactor) — `src/camp_map/background/background_manager.cpp:44`

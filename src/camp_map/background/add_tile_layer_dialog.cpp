@@ -82,7 +82,12 @@ void AddTileLayerDialog::updateFields()
   url_edit_->setReadOnly(!custom);
   type_combo_->setEnabled(custom);
 
-  const bool acceptable = row >= 0 &&
+  // [camp#117] An inert preset row (e.g. a WMS entry parked until #118) is shown
+  // but not selectable; keep OK disabled on it too, so clicking OK can't silently
+  // no-op (selection()/createTileLayer would yield an unconstructible entry).
+  const bool preset_ok = custom ||
+    (row >= 0 && row < presets_.size() && presets_[row].enabled);
+  const bool acceptable = preset_ok &&
     !name_edit_->text().trimmed().isEmpty() && !url_edit_->text().trimmed().isEmpty();
   buttons_->button(QDialogButtonBox::Ok)->setEnabled(acceptable);
 }
