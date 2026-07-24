@@ -259,6 +259,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_tiles/tile_address.cpp
     src/camp_map/map_tiles/tile_layout.cpp
     src/camp_map/map_tiles/osm.cpp
+    src/camp_map/map_tiles/wms.cpp
     src/camp_map/map_tree_view/map_item_delegate.cpp
     src/camp_map/map_tree_view/map_tree_view.cpp
     src/camp_map/map_view/map_view.cpp
@@ -551,6 +552,22 @@ if(BUILD_TESTING)
   # gated, so removing every layer sticks), restore round-trip with dedup,
   # add-from-preset path, and de-persist-on-remove. Network never fires in the
   # offscreen tests: layouts are built but no view paints tiles.
+  # [camp#118] Per-tile WMS GetMap URL generation (ADR-0012): bbox expansion vs
+  # the OSM tile math, required GetMap parameters, grid identity with the OSM
+  # layout. Pure logic — no network, no GUI.
+  ament_add_gtest(test_wms_url_generation
+    test/test_wms_url_generation.cpp
+  )
+  target_include_directories(test_wms_url_generation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_wms_url_generation
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+  )
+
   ament_add_gtest(test_background_persistence
     test/test_background_persistence.cpp
   )

@@ -144,7 +144,7 @@ schema (`tile_layer_presets.h`):
   across restarts.
 - `BackgroundTileLayers/ids` — QStringList of layer names, creation order.
 - `BackgroundTileLayers/<enc(name)>/` — per-layer **construction parameters
-  only** (`type` = `xyz`|`wmts`, `url`, `refresh_ms`, WMTS `layer_id` /
+  only** (`type` = `xyz`|`wmts`|`wms` ([#118](https://github.com/rolker/camp/issues/118), ADR-0012), `url`, `refresh_ms`, WMTS/WMS `layer_id` /
   `tile_matrix_set`), the name percent-encoded to one flat key (the
   `GggsTileLayer::settingsKey()` pattern).
 
