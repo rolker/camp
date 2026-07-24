@@ -98,3 +98,32 @@ are related but explicitly out of scope. The design must not make them harder to
 
 ### Open questions
 - [ ] `option->exposedRect` under Qt's BSP update scheme may equal `boundingRect()` for large layers even when only part is visible — should we add a viewport-rect fallback via `painter->clipBoundingRect()`?
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-24 14:04 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-103/plan.md` at `83d9945`
+**PR**: PR-less (`--issue 103`, layer worktree)
+**Verdict**: changes-requested
+
+The approach is fundamentally sound — the fix belongs at the ADR-0007
+`renderToImage()` seam, the coordinate math is correct (verified against
+`raster_gl_renderer.cpp`'s MVP build), the scope is a clean single PR, and it
+correctly defers the LOD half. But one **critical correctness gap** would make
+the fix a silent no-op, plus two small mechanical must-fixes.
+
+### Findings
+- [ ] (must-fix) `option->exposedRect` defaults to `boundingRect()` unless `QGraphicsItem::ItemUsesExtendedStyleOption` is set on each layer — grep confirms it is set nowhere in camp. With the default, `clip_local == boundingRect()`, FBO sizing is unchanged, and the blur is **not fixed**. The plan's Open Question dismisses this ("Likely no") with flawed reasoning: if `clip_local == boundingRect()`, `mapRect(clip_local)` does *not* correct the resolution — it reproduces today's buggy full-extent sizing. Resolve by either `setFlag(ItemUsesExtendedStyleOption)` per layer, or (more robust, no flag) derive the viewport as `painter->clipBoundingRect().intersected(boundingRect())`. — `plan.md:139-143`, `plan.md:48-52`
+- [ ] (must-fix) `CMakeLists.txt` is missing from "Files to Change". A new `test/test_gggs_tile_layer.cpp` needs a full `ament_add_gtest(...)` + `target_include_directories` + `target_link_libraries` block (see `CMakeLists.txt:602-635`). Either add `CMakeLists.txt` to the plan, or extend the already-registered `test/test_gggs_render.cpp` (whose synthetic-store + `renderImage()` seam matches this test exactly). — `plan.md:105`
+- [ ] (must-fix) Testability contradiction: step 2 makes `renderImage(size, clip)` a **private** overload (`plan.md:98`), but the step-7 test calls `renderImage(size, clip_A)` directly (`plan.md:88-91`). Make the clip overload **public** (mirroring the existing public `renderImage(size)`), or add a friend/test seam. — `plan.md:61`, `plan.md:98`
+- [ ] (suggestion) The planned test bypasses the actual fix wiring: calling `renderImage(size, clip)` directly exercises the tile-filter seam but not `paint()`'s `exposedRect`/clip derivation — the risky part that closes the field bug. The test would pass even with the no-op derivation of finding 1. Note that `paint()`'s viewport derivation needs visual/manual verification (extend `test_gggs_render.cpp`'s `/tmp/*.png` inspection), and consider asserting improved resolution, not just tile presence/absence. — `plan.md:87-92`
+- [ ] (suggestion) Adding `cached_clip_` to the cache key means a **pan** (clip_scene changes each frame) now re-renders every frame, where today pan reuses the cached image via the world transform. Cheap for a viewport-sized FBO and arguably required, but the inherited "pan reuses the cached image" comment becomes stale — acknowledge the behavior change. — `plan.md:56-58`
+- [ ] (suggestion) `SonarLiveCacheLayer::items()` appends overviews-first then fine tiles for the ADR-0010 LOD fallback (`sonar_live_cache_layer.cpp:855-863`). The clip filter must preserve that ordering while filtering **both** pools, or a clipped region that lost its fine tiles could also drop its overview fallback (a blank gap). — `plan.md:78-80`
+
+### Notes (verified positives)
+- The item-local → scene coordinate conversion (`plan.md:39-44`) is **correct** — verified against the `setTransform(fromScale(1,-1))` + NW-anchor placement and `renderToImage()`'s `origin = scene_bounds.topLeft()` / `ortho(0,w,0,h)` MVP. Passing a `scene_bounds_` sub-rect as `scene_bounds` clips correctly (out-of-rect vertices fall outside NDC).
+- The three seam callers (GggsTileLayer / RasterLayer / SonarLiveCacheLayer) are correctly identified and all share the same `paint()` → `renderImage(size)` → `renderToImage(draw, scene_bounds_, …)` shape, so the change is uniform. Matches the Issue Review's "cover all three callers" recommendation.
+- ADR-0011 is the correct next number (0001–0010 present; 0004 already absent). No `RasterGlRenderer` API change is required — confirmed.
+- ROS conventions: N/A (Qt/GL offscreen rendering, no topics/QoS/params).
