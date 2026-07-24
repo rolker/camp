@@ -57,6 +57,26 @@ computes the EPSG:3857 tile bbox from `TileAddress::topLeftCorner()`.
 
 8. **Register test in `CMakeLists.txt`** under `ament_add_gtest(test_wms_url_generation ...)`.
 
+### Plan-review amendments (folded 2026-07-24, all 5 suggestions)
+
+- **ADR-0012 records why `VERSION=1.3.0` / `CRS=EPSG:3857` are hardcoded** rather
+  than schema fields: the per-tile path only works against the Web-Mercator tile
+  grid, so the CRS is structural, not configurable; 1.3.0 is the current WMS
+  spec both target endpoints accept (verified live).
+- **`WIDTH`/`HEIGHT` derive from `osm::tile_size`** in `generateWmsLayout` (not a
+  literal 256) so the raster size and the bbox math cannot drift apart.
+- **Graceful degradation stated explicitly**: WMS tiles inherit the
+  `CachedFileLoader` blank-tile fallback contract (fetch failure → blank tile,
+  no crash/UI block) because they ride the same `MapTiles`/loader path — noted
+  in ADR-0012 and asserted in the plan's consequences (review-issue items 4/5).
+- **Live smoke check at implementation time**: manual `GetMap` against both
+  endpoints (nowCOAST GeoServer `base_reflectivity_mosaic`, GEBCO mapserv
+  `GEBCO_LATEST`) with WMS 1.3.0 + EPSG:3857 + a real tile bbox; record results
+  in the PR. Not coverable by the pure-logic tests.
+- **Preset name `nexrad_radar` is retained** for persisted-state continuity
+  (ids list + `MapItem/<settingsKey>`), even though nowCOAST
+  `base_reflectivity_mosaic` is MRMS-based — noted in the preset comment.
+
 ## Files to Change
 
 | File | Change |
