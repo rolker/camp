@@ -163,6 +163,17 @@ TEST(BackgroundPersistence, InertWmsPresetRefused)
   EXPECT_FALSE(QSettings().value(tileLayerIdsKey()).toStringList().contains("GEBCO_bathymetry"));
 }
 
+// An empty preset name is refused outright (the name IS the persistence
+// identity; the dialog gates this, but the method is public).
+TEST(BackgroundPersistence, EmptyPresetNameRefused)
+{
+  QSettings().clear();
+  Map map;
+  EXPECT_EQ(backgroundManager(map)->addTileLayerFromPreset({}), nullptr);
+  EXPECT_EQ(QSettings().value(tileLayerIdsKey()).toStringList(),
+            QStringList{"openstreetmap"});
+}
+
 // The must-fix: removing a persisted tile layer de-persists it (ids + group)
 // and it stays gone on the next start — the seed does NOT re-fire, because the
 // sentinel, not the ids list, gates seeding.

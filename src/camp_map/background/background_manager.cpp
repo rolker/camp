@@ -13,6 +13,7 @@
 #include <QMenu>
 #include <QAction>
 #include <QFileDialog>
+#include <QMessageBox>
 #include <QSet>
 #include <QSettings>
 #include "../wmts/capabilities.h"
@@ -88,7 +89,10 @@ void BackgroundManager::createDefaultLayers()
     // QSettings across future launches. Harmless at runtime, but keeps the stored
     // list honest. Only write when it actually changed to avoid churn.
     if(normalized_ids != tile_ids)
+    {
       settings.setValue(tileLayerIdsKey(), normalized_ids);
+      settings.sync();   // same flush discipline as the seed above
+    }
 
 
     // [camp#104] Restore the operator's selected flat GGGS tile layers (ADR-0005).
@@ -179,6 +183,11 @@ map_tiles::MapTiles* BackgroundManager::addTileLayerFromPreset(const TileLayerPr
   auto layers = topLevelLayers();
   if(!layers)
     return nullptr;
+  // The name is the persistence identity — an empty one would persist an empty
+  // ids entry. The dialog gates this, but this method is public (tests,
+  // programmatic callers), so guard here too.
+  if(preset.name.isEmpty())
+    return nullptr;
   // One layer per name: the name is the persistence identity (ids list +
   // settings group + MapItem/<settingsKey>), so a duplicate would alias state.
   QSettings settings;
@@ -210,7 +219,13 @@ void BackgroundManager::addTileLayer()
   AddTileLayerDialog dialog;
   if(dialog.exec() != QDialog::Accepted)
     return;
-  addTileLayerFromPreset(dialog.selection());
+  const TileLayerPreset selection = dialog.selection();
+  if(!addTileLayerFromPreset(selection))
+    // The dialog's OK-gate blocks inert/empty selections, so a refusal here
+    // means a name collision with an existing/persisted layer — say so instead
+    // of closing silently.
+    QMessageBox::warning(nullptr, tr("Add tile layer"),
+                         tr("A tile layer named \"%1\" already exists.").arg(selection.name));
 }
 
 void BackgroundManager::seedDefaultTileLayers(QSettings& settings, map::LayerList* layers)
