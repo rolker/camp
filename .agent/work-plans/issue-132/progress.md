@@ -69,3 +69,15 @@ imagery stays smoothed unconditionally.
 - [ ] Ensure the stacked PR targets `feature/issue-103`, not `jazzy`; PR diff description should not include #103 commits.
 - [ ] Add a note in the PR description capturing *why* Nearest is the default (QA use case: interpolation fabricates values, masking artifacts the operator is looking for).
 - [ ] Check for any snapshot or integration tests that render the map view and may need updating to reflect the new Nearest default appearance.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-24 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-132/plan.md` at `236b128`
+**Branch**: feature/issue-132 at `236b128`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
