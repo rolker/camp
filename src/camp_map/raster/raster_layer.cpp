@@ -95,7 +95,11 @@ void RasterLayer::paint(QPainter *painter, const QStyleOptionGraphicsItem *optio
     return;
 
   painter->save();
-  painter->setRenderHint(QPainter::SmoothPixmapTransform);
+  // [camp#132] Scalar (data) charts default to a faithful Nearest blit with a
+  // per-layer opt-in; RGBA charts (palette/RGB imagery, not data under QA)
+  // always blit smooth.
+  painter->setRenderHint(QPainter::SmoothPixmapTransform,
+                         smooth_interpolation_ || !is_scalar_);
   painter->drawImage(clip.local, cached_image_);
   painter->restore();
 }
@@ -518,6 +522,14 @@ void RasterLayer::contextMenu(QMenu* menu)
   map::Layer::contextMenu(menu);
   if(!is_scalar_)              // colormap only applies to scalar (depth) rasters
     return;
+
+  // [camp#132] Per-layer blit-smoothing opt-in for scalar (data) charts
+  // (default OFF = Nearest, the faithful-QA baseline).
+  QAction* smooth_action = menu->addAction("Smooth interpolation");
+  smooth_action->setCheckable(true);
+  smooth_action->setChecked(smooth_interpolation_);
+  connect(smooth_action, &QAction::triggered, this,
+          [this](bool on) { setSmoothInterpolation(on); });
   // [camp#141] Expose the FULL marine_colormap registry, not just the legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
   for(const std::string& name : marine_colormap::palette_names())
@@ -551,12 +563,28 @@ void RasterLayer::contextMenu(QMenu* menu)
   });
 }
 
+void RasterLayer::setSmoothInterpolation(bool smooth)
+{
+  // For non-scalar (RGBA) charts this setter and its persisted key are
+  // intentionally inert: the context-menu toggle is scalar-gated and paint()
+  // forces a smooth blit via `|| !is_scalar_` — imagery is not data under QA.
+  // Kept unconditional so a file later re-opened as scalar honors the stored
+  // preference.
+  if(smooth == smooth_interpolation_)
+    return;
+  smooth_interpolation_ = smooth;
+  writeSettings();
+  update(boundingRect());   // blit-hint-only change: no re-render needed
+}
+
 void RasterLayer::readSettings()
 {
   map::Layer::readSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
+  // [camp#132] Persisted blit-smoothing opt-in (default OFF = Nearest).
+  smooth_interpolation_ = settings.value("smooth_interpolation", false).toBool();
   // [camp#141] Persisted palette name; case-insensitive read + registry-validated
   // (unknown -> grayscale).
   std::string colormap = settings.value(
@@ -608,6 +636,7 @@ void RasterLayer::writeSettings()
   settings.beginGroup("MapItem");
   settings.beginGroup(itemID());
   settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
+  settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
   // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
   // its [lo, hi]) survives a restart; Auto persists as "auto".
   settings.setValue("range_mode",

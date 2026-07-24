@@ -930,7 +930,9 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
     return;
 
   painter->save();
-  painter->setRenderHint(QPainter::SmoothPixmapTransform);
+  // [camp#132] Smoothing is operator-opt-in per layer; the default Nearest blit
+  // keeps data cells faithful for QA (the GL data filter is Nearest regardless).
+  painter->setRenderHint(QPainter::SmoothPixmapTransform, smooth_interpolation_);
   painter->drawImage(clip.local, cached_image_);
   painter->restore();
 }
@@ -1007,6 +1009,14 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
             &SonarLiveCacheLayer::enableLiveCoverage);
   }
 
+  // [camp#132] Per-layer blit-smoothing opt-in (default OFF = Nearest, the
+  // faithful-QA baseline).
+  QAction* smooth_action = menu->addAction("Smooth interpolation");
+  smooth_action->setCheckable(true);
+  smooth_action->setChecked(smooth_interpolation_);
+  connect(smooth_action, &QAction::triggered, this,
+          [this](bool on) { setSmoothInterpolation(on); });
+
   // [camp#141] Expose the FULL marine_colormap registry, not just the legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
   for(const std::string& name : marine_colormap::palette_names())
@@ -1061,12 +1071,23 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
 
 // --------------------------------- persistence -------------------------------
 
+void SonarLiveCacheLayer::setSmoothInterpolation(bool smooth)
+{
+  if(smooth == smooth_interpolation_)
+    return;
+  smooth_interpolation_ = smooth;
+  writeSettings();
+  update(boundingRect());   // blit-hint-only change: no re-render needed
+}
+
 void SonarLiveCacheLayer::readSettings()
 {
   Layer::readSettings();
   QSettings settings;
   settings.beginGroup("MapItem");
   settings.beginGroup(settingsKey());
+  // [camp#132] Persisted blit-smoothing opt-in (default OFF = Nearest).
+  smooth_interpolation_ = settings.value("smooth_interpolation", false).toBool();
   // Default discovered layers OFF in the tree (like GGGS tile-sets) — the operator
   // turns coverage on explicitly.
   setVisible(settings.value("visible", false).toBool());
@@ -1119,6 +1140,7 @@ void SonarLiveCacheLayer::writeSettings()
   settings.setValue("colormap", QString::fromStdString(renderer_.colormap()));
   settings.setValue("band", QString::fromStdString(band_name_));
   settings.setValue("live_enabled", enabled_);
+  settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
   // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
   // its [lo, hi]) survives a restart; Auto persists as "auto".
   settings.setValue("range_mode",

@@ -490,9 +490,20 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     return;
 
   painter->save();
-  painter->setRenderHint(QPainter::SmoothPixmapTransform);
+  // [camp#132] Smoothing is operator-opt-in per layer; the default Nearest blit
+  // keeps data cells faithful for QA (the GL data filter is Nearest regardless).
+  painter->setRenderHint(QPainter::SmoothPixmapTransform, smooth_interpolation_);
   painter->drawImage(clip.local, cached_image_);
   painter->restore();
+}
+
+void GggsTileLayer::setSmoothInterpolation(bool smooth)
+{
+  if(smooth == smooth_interpolation_)
+    return;
+  smooth_interpolation_ = smooth;
+  writeSettings();
+  update(boundingRect());   // blit-hint-only change: no re-render needed
 }
 
 void GggsTileLayer::setColormap(const std::string& name)
@@ -657,6 +668,15 @@ void GggsTileLayer::contextMenu(QMenu* menu)
   QAction* rescan_action = menu->addAction("Rescan");
   connect(rescan_action, &QAction::triggered, this, [this]() { rescan(); });
 
+  // [camp#132] Per-layer blit-smoothing opt-in (default OFF = Nearest, the
+  // faithful-QA baseline; interpolation fabricates values that aren't in the
+  // data and can mask the artifacts the operator is looking for).
+  QAction* smooth_action = menu->addAction("Smooth interpolation");
+  smooth_action->setCheckable(true);
+  smooth_action->setChecked(smooth_interpolation_);
+  connect(smooth_action, &QAction::triggered, this,
+          [this](bool on) { setSmoothInterpolation(on); });
+
   // [camp#141] Expose the FULL marine_colormap registry (grayscale/bronze/thermal/
   // viridis/turbo/quality), not just the three legacy ramps.
   QMenu* colormap_menu = menu->addMenu("Colormap");
@@ -762,6 +782,8 @@ void GggsTileLayer::readSettings()
     settings.contains("range_min") && settings.contains("range_max");
   const float range_min = settings.value("range_min", 0.0).toFloat();
   const float range_max = settings.value("range_max", 1.0).toFloat();
+  // [camp#132] Persisted blit-smoothing opt-in (default OFF = Nearest).
+  smooth_interpolation_ = settings.value("smooth_interpolation", false).toBool();
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())
@@ -794,6 +816,7 @@ void GggsTileLayer::writeSettings()
                                                                               : "auto");
   settings.setValue("range_min", range_model_.lo());
   settings.setValue("range_max", range_model_.hi());
+  settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
   settings.endGroup();
   settings.endGroup();
 }

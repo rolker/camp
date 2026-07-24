@@ -53,6 +53,13 @@ public:
   /// the LUT — no re-warp). No effect on RGB rasters. Unknown name -> grayscale.
   void setColormap(const std::string& name);
 
+  /// [camp#132] Toggle the QPainter blit smoothing for scalar charts (default
+  /// OFF = Nearest). Blit hint only — the GL scalar filter stays Nearest
+  /// (camp#122 NoData-halo guard). RGBA charts always blit smooth. Persists
+  /// (itemID group) and repaints.
+  void setSmoothInterpolation(bool smooth);
+  bool smoothInterpolation() const { return smooth_interpolation_; }
+
   /// [#59 ADR-0003] Source file this layer renders (kept for re-render, removal,
   /// and app-state persistence of the loaded-chart list).
   const QString& filename() const { return filename_; }
@@ -167,6 +174,7 @@ private:
   QImage cached_image_;
   QSize cached_size_;
   QRectF cached_clip_;
+  bool smooth_interpolation_ = false;   // [camp#132] scalar blit hint (persisted)
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
 
   // Compute the reprojected extent + Web-Mercator scene placement from file

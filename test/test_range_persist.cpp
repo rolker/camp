@@ -124,6 +124,30 @@ TEST(RangePersist, GggsManualRoundTrips)
   }
 }
 
+// [camp#132] The per-layer blit-smoothing opt-in round-trips: default OFF,
+// enabled + persisted by one layer instance, restored by the next.
+TEST(RangePersist, GggsSmoothInterpolationRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    EXPECT_FALSE(layer->smoothInterpolation());   // faithful-QA default
+    layer->setSmoothInterpolation(true);          // persists via writeSettings
+  }
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    layer->readSettings();
+    EXPECT_TRUE(layer->smoothInterpolation())
+        << "persisted smooth-interpolation opt-in must survive a restart";
+  }
+}
+
 TEST(RangePersist, GggsAutoRoundTrips)
 {
   QSettings().clear();
@@ -195,6 +219,31 @@ TEST(RangePersist, RasterManualRoundTrips)
     EXPECT_EQ(layer->rangeMode(), RangeMode::Manual);
     EXPECT_FLOAT_EQ(layer->rangeLo(), 2.0f);
     EXPECT_FLOAT_EQ(layer->rangeHi(), 8.0f);
+  }
+}
+
+// [camp#132] RasterLayer's smooth opt-in persists under the itemID() group (NOT
+// settingsKey()) — this round-trip catches a future group/key mismatch.
+TEST(RangePersist, RasterSmoothInterpolationRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString file = dir.filePath("chart.tif");   // need not exist for this API
+
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    EXPECT_FALSE(layer->smoothInterpolation());   // faithful-QA default
+    layer->setSmoothInterpolation(true);          // persists via writeSettings
+  }
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    layer->readSettings();
+    EXPECT_TRUE(layer->smoothInterpolation())
+        << "persisted smooth opt-in must restore from the itemID() group";
   }
 }
 
@@ -287,6 +336,28 @@ TEST(RangePersist, SonarAutoRoundTrips)
     // override; with no source loaded it stays at the RangeModel default extents.
     EXPECT_FLOAT_EQ(layer->rangeLo(), 0.0f);
     EXPECT_FLOAT_EQ(layer->rangeHi(), 1.0f);
+  }
+}
+
+// [camp#132] SonarLiveCacheLayer's smooth opt-in persists under its settingsKey()
+// group ("live:" + namespace) — round-trip catches a future group/key mismatch.
+TEST(RangePersist, LiveSmoothInterpolationRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    EXPECT_FALSE(layer->smoothInterpolation());   // faithful-QA default
+    layer->setSmoothInterpolation(true);          // persists via writeSettings
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_TRUE(layer->smoothInterpolation())
+        << "persisted smooth opt-in must restore from the settingsKey() group";
   }
 }
 

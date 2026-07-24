@@ -116,6 +116,15 @@ public:
   /// QSettings. No-op if @p band is out of range or unchanged.
   void setBand(int band);
 
+  /// [camp#132] Toggle the QPainter blit smoothing for this layer's paint()
+  /// (default OFF = Nearest, the faithful-QA baseline). Governs ONLY the blit
+  /// hint — the GL scalar data-texture filter stays Nearest always (a Linear
+  /// filter would blend the finite NoData sentinel into fabricated values the
+  /// shader's exact-equality discard can't catch — the camp#122 halo).
+  /// Persists and repaints.
+  void setSmoothInterpolation(bool smooth);
+  bool smoothInterpolation() const { return smooth_interpolation_; }
+
   /// [camp#108] Test-only: the 1-indexed band each held tile is currently set to
   /// read, in tile order. Exposed as the narrow, GL-free seam a headless test uses
   /// to assert applyBand()/rescan() propagated the layer band to EVERY tile (the
@@ -197,6 +206,7 @@ private:
 
   QString directory_;
   int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
+  bool smooth_interpolation_ = false;   // [camp#132] blit hint only (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
   QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)
