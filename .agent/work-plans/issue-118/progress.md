@@ -66,3 +66,24 @@ ADR compliance all Good. No must-fix findings.
 - [ ] (suggestion) Add an implementation-time manual `GetMap` smoke check for both live endpoints (nowCOAST GeoServer, GEBCO mapserv accepting WMS 1.3.0 + EPSG:3857) — not coverable by the pure-logic tests — `plan.md:32`
 - [ ] (suggestion, minor) URL template hardcodes `WIDTH/HEIGHT=256` while bbox math uses `tile_width/height` (both 256 via `osm.h` `tile_size`); derive together or note the coupling — `plan.md:32`
 - [ ] (suggestion, minor) Note that preset name `nexrad_radar` is retained for persisted-state continuity even though nowCOAST `base_reflectivity_mosaic` is MRMS-based, not NEXRAD — `plan.md:40`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-24 21:55 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-118 at `1c19451`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR docs/decisions/0012 — Deep promotion trigger)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 1 | **Ship**: recommended — no must-fix findings; suggestions are low-severity or already-accepted tradeoffs
+**Specialists**: Static Analysis (cppcheck + ament_cpplint), Governance, Plan Drift, Claude Adversarial ×2 (Lens A+B, Deep). Local Adversarial skipped (no Ollama server at localhost:11434); Copilot off (default).
+
+### Findings
+- [ ] (suggestion) Pre-existing persisted `nexrad_radar` (xyz) keeps retired IEM source on restore — already accepted/documented in plan.md Consequences (informational) — `tile_layer_presets.h:93`, `background_manager.cpp:73`
+- [ ] (suggestion) `layer_id`/`base_url` injected unencoded into WMS query; safe (trusted presets, Custom offers xyz/wmts only) — add "presets-only" note before a future Custom-WMS entry — `wms.cpp:26`, `background_manager.cpp:178`
+- [ ] (suggestion) No guard for empty `layer_id` → `LAYERS=` malformed request → blank tile; not currently reachable (presets set it; persist skips empty) — `wms.cpp:24`, `background_manager.cpp:178`
+- [ ] (suggestion, minor) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&` (matches osm::generateTileLayout by-value convention) — `wms.cpp:11`
+
+**Note**: ROS 2 build/tests not compiled in this review (heavy colcon build); new tests are pure-logic and reasoned through. Plan adherence full; positive deviation — radar layer_id workspace-qualified (`weather_radar:base_reflectivity_mosaic`) per live smoke check, documented in ADR-0012.
