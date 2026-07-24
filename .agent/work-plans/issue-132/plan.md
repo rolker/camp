@@ -25,46 +25,46 @@ RGBA charts and basemap/OSM/WMTS imagery must stay smoothed unconditionally
 (not data under QA). The colormap LUT texture stays Linear (it's a color ramp,
 not data — correct as-is).
 
-The PR targets `feature/issue-103` (stacked).
+The PR targets `jazzy` (#103 / PR#173 merged 2026-07-24; this branch carries
+the landed base via a forward-merge of jazzy).
 
 ## Approach
 
-1. **Add `smooth` field to `RasterFieldItem`** — the flag travels from layer to
-   renderer so the GL filter decision stays centralized in `RasterGlRenderer`.
+**Plan-review must-fix 1 (folded): the GL Scalar filter stays `Nearest`
+ALWAYS.** Driving it from the toggle would reintroduce the camp#122 NoData
+halo — Linear filtering blends the finite NoData sentinel with neighboring
+data into fabricated values the shader's exact-equality discard can't catch
+(the property `test_raster_gl_renderer.cpp:114-115` guards). The toggle
+governs ONLY the QPainter blit hint; a true GL smooth mode (NoData→NaN at
+upload) is out of scope.
 
-2. **Add `smooth_interpolation_` member to each data layer** — default `false`
-   (Nearest). Non-scalar `RasterLayer` (RGBA charts) always renders smooth
+1. **Add `smooth_interpolation_` member to each data layer** — default `false`
+   (Nearest). Non-scalar `RasterLayer` (RGBA charts) always blits smooth
    regardless; the toggle and its persistence are Scalar-only.
 
-3. **Update `RasterGlRenderer::renderToImage`** — for Scalar items, use
-   `item.smooth ? Linear : Nearest` instead of always Nearest. Rgba path
-   stays `Linear` as today.
+2. **Condition `SmoothPixmapTransform` in each `paint()`** on the flag
+   (`RasterLayer`: `smooth_interpolation_ || !is_scalar_`).
 
-4. **Set `item.smooth` in each layer's `items()` / `itemsIntersecting()`** so
-   the renderer picks up the per-layer choice.
-
-5. **Condition `SmoothPixmapTransform` in each `paint()`** on the same flag,
-   so the QPainter blit matches the GL filter.
-
-6. **Add context-menu toggle** — checkable "Smooth interpolation" action in each
+3. **Add context-menu toggle** — checkable "Smooth interpolation" action in each
    layer's `contextMenu()`. `RasterLayer` gates it behind the existing
    `if(!is_scalar_) return;` guard (same gate as Colormap/Range).
 
-7. **Persist** `smooth_interpolation_` via `readSettings`/`writeSettings` under
-   key `"smooth_interpolation"` in the existing `MapItem/<settingsKey()>` group.
+4. **Persist** `smooth_interpolation_` via `readSettings`/`writeSettings` under
+   key `"smooth_interpolation"` in **each layer's EXISTING settings group**
+   (plan-review must-fix 2): `GggsTileLayer`/`SonarLiveCacheLayer` use
+   `MapItem/<settingsKey()>`; `RasterLayer` persists under `MapItem/<itemID()>`
+   (raster_layer.cpp:558-559,608-609) — do NOT move it to settingsKey().
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/raster_field_source.h` | Add `bool smooth = false` to `RasterFieldItem` |
-| `src/camp_map/raster/raster_gl_renderer.cpp` | Scalar filter: `item.smooth ? Linear : Nearest` |
 | `src/camp_map/raster/gggs_tile_layer.h` | Add `bool smooth_interpolation_ = false` |
-| `src/camp_map/raster/gggs_tile_layer.cpp` | Set `item.smooth` in `itemsIntersecting()`; condition `paint()` hint; add context-menu toggle; read/write settings |
+| `src/camp_map/raster/gggs_tile_layer.cpp` | Condition `paint()` hint; add context-menu toggle; read/write settings (settingsKey group) |
 | `src/camp_map/raster/raster_layer.h` | Add `bool smooth_interpolation_ = false` |
-| `src/camp_map/raster/raster_layer.cpp` | Set `item.smooth` in `items()`; condition `paint()` hint (`smooth_interpolation_ \|\| !is_scalar_`); add context-menu toggle (scalar-gated); read/write settings |
+| `src/camp_map/raster/raster_layer.cpp` | Condition `paint()` hint (`smooth_interpolation_ \|\| !is_scalar_`); add context-menu toggle (scalar-gated); read/write settings (itemID group) |
 | `src/camp_map/ros/live_coverage/sonar_live_cache_layer.h` | Add `bool smooth_interpolation_ = false` |
-| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp` | Set `item.smooth` in `itemsIntersecting()`; condition `paint()` hint; add context-menu toggle; read/write settings |
+| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp` | Condition `paint()` hint; add context-menu toggle; read/write settings (settingsKey group) |
 
 Paths relative to `ui_ws/src/camp/`.
 
@@ -89,18 +89,19 @@ Paths relative to `ui_ws/src/camp/`.
 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
-| `RasterFieldItem` (add `smooth`) | `items()` callers in all three layers | Yes |
-| `RasterGlRenderer::renderToImage` Scalar filter logic | `test_raster_gl_renderer.cpp` if it asserts filter state | Verify in step 3 — no existing filter-state test found; likely no change needed |
+| GL filter behavior | NOTHING — the GL Scalar filter is untouched (must-fix 1); `test_raster_gl_renderer.cpp:114-115` (Nearest / no-bleed assertion) keeps passing unchanged | Yes |
 | `paint()` in all three layers | No other callers of `cached_image_` | Yes — no other blit sites |
 | Per-layer persistence | `readSettings`/`writeSettings` in each layer | Yes |
 
 ## Open Questions
 
-- None — approach is fully specified by orchestrator context. RGBA `RasterLayer`
-  (palette/RGB charts) always gets `smooth = true` via `format_ == Format::Rgba`
-  check; the context-menu toggle is scalar-only, matching the existing Colormap gate.
-  No operator confirmation needed before implementation.
+- None. RGBA `RasterLayer` (palette/RGB charts) always blits smooth; the
+  context-menu toggle is scalar-only, matching the existing Colormap gate.
+- PR description must record the default-Nearest QA rationale (plan-review
+  suggestion): interpolation fabricates values that aren't in the data and can
+  mask the artifacts the operator is looking for; Nearest is the faithful
+  default for data under QA, smoothing is the opt-in.
 
 ## Estimated Scope
 
-Single stacked PR targeting `feature/issue-103`.
+Single PR targeting `jazzy` (~60-line diff + toggle wiring).
