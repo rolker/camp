@@ -97,3 +97,19 @@ radar — preserved via its preset, behavior unchanged); independent of #116/#69
 
 ### Open questions
 - [ ] No open questions — all operator checkpoints resolved (2026-07-24). Plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-24 18:11 +00:00
+**By**: Claude Code Agent (Claude Opus) (in-context — author self-review)
+
+**Plan**: `.agent/work-plans/issue-117/plan.md` at `4f2d109`
+**PR**: PR-less (--issue / worktree mode)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (must-fix) De-persistence on layer *removal* is unspecified — `MapTiles` is generic (also used for non-persisted overlays like radar) and removal happens on the layer's own Layers-tree context menu (ADR-0003 §4), not `BackgroundManager`; without a concrete hook, removed tile layers resurrect on restart (GGGS de-persists in the layer's own removal hook, `test_gggs_persistence.cpp:174`). Add a de-persist-on-remove test with the fix — `plan.md:49`
+- [ ] (suggestion) QSettings `beginWriteArray` schema makes keyed removal clunky (index-addressed, whole-array rewrite); consider a per-layer keyed group like GGGS `settingsKey()`, or describe the array rewrite-on-remove — `plan.md:33`
+- [ ] (suggestion) Capture the `test_map_model.cpp` consequence: confirm it tolerates the 1-layer OSM seed (it asserts only the top-3 user prefix, `test_map_model.cpp:262`), and note it builds `Map` without a test org/app name so the new seed writes into the developer's real QSettings — set a test org/app name or clear — `plan.md:65`
+- [ ] (suggestion) WMTS restore must replicate the async ordering/ownership: `Capabilities` parented to `this`, then `setLayoutFromWMTS()`, then `caps->setUrl()` (per `background_manager.cpp:38-41`); persist any non-default layer_id/tile_matrix_set — `plan.md:40`
+- [ ] (suggestion) Commit to a short camp ADR-0003 addendum for the `BackgroundTileLayers` schema + seed strategy rather than leaving it conditional (GGGS's equivalent key is documented in ADR-0005) — `plan.md:90`
