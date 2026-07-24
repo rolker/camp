@@ -76,3 +76,24 @@ radar — preserved via its preset, behavior unchanged); independent of #116/#69
 - [ ] Define the `BackgroundTileLayers` QSettings key schema (name/type/url/opacity/visibility/refresh-interval) explicitly in the plan before implementation.
 - [ ] Add tests: fresh-start seed, upgrade-path seed, persistence round-trip, preset-add-via-UI.
 - [ ] Decide and document GEBCO/WMS preset treatment: include as a data entry now (greyed-out/hidden until #118) or defer to #118 — record the decision in the plan.
+
+### Checkpoint resolutions (operator, 2026-07-24)
+
+- **Seed strategy**: seed **OSM only**, firing whenever the
+  `BackgroundTileLayers` key is absent (covers fresh install and upgrade).
+  Upgrading operators re-add OpenSeaMap/NOAA/NEXRAD from presets as wanted.
+- **GEBCO/WMS presets**: **include now as inert data entries** (type=WMS,
+  greyed-out/hidden until the WMS layer type from #118 exists). Preset table
+  stays complete in one place; #118 only enables the type.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-24 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-117/plan.md` at `4f2d109`
+**Branch**: feature/issue-117 at `4f2d109`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — all operator checkpoints resolved (2026-07-24). Plan is review-plan-ready.
