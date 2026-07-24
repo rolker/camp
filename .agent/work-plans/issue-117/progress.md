@@ -135,3 +135,39 @@ Specialists: Static Analysis (cppcheck; no actionable findings) · Governance ·
 - [x] (suggestion) Seed path writes construction params but not the `MapItem/<settingsKey>` presentation group the add path writes; latent if the seed set ever widens past default-presentation OSM — `src/camp_map/background/background_manager.cpp:439`
 - [x] (suggestion) De-persist leaves the `MapItem/<settingsKey>` presentation group orphaned (pre-existing GggsTileLayer convention; orphans accumulate, re-add briefly inherits stale opacity/visible) — `src/camp_map/map_tiles/map_tiles.cpp:341`
 - [x] (suggestion) Seed is written via a separate QSettings instance then read back through the outer one; correct in-process but pass the outer `settings` in to make ordering explicit — `src/camp_map/background/background_manager.cpp:44`
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-24 19:15 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-117 at `a45ad71`
+**Addressed**: Local Review (Pre-Push) — 2026-07-24 18:57, at `95fe4ff` (verdict changes-requested; 2 must-fix, 4 suggestions)
+**Commits**: `da6f2c6`, `0c0225a`, `9c9f8a7`, `6d26c4c`, `a45ad71`
+
+All six open findings from the source review were actioned (none deferred). The
+cited line numbers in the review (…:383/:439) were stale — the reviewed file is
+258 lines; each finding was verified against the current source before fixing.
+
+### Actions
+- [x] (must-fix) `Capabilities` object leak — parented `wmts::Capabilities` to the MapTiles layer instead of the long-lived `BackgroundManager`, so it is destroyed with the layer (fixes the per-add/remove/re-add leak). `src/camp_map/background/background_manager.cpp` (`da6f2c6`)
+- [x] (must-fix) Test-isolation for the 8 un-isolated Map-constructing mains — added `setOrganizationName("camp_test")` + a per-suite `setApplicationName` so the new `Map`-ctor QSettings seed writes to a test scope, not the developer's real camp settings. `test/{test_gggs_band_select,test_gggs_layer_name,test_gggs_render,test_gggs_rescan,test_map_tiles_eviction,test_map_tiles_refresh,test_raster_layer_gdal_cleanup,test_sonar_live_eviction}.cpp:main()` (`0c0225a`)
+- [x] (suggestion) De-persist orphaned presentation group — `MapTiles::onRemovedFromMap` now removes the `MapItem/<settingsKey>` group alongside the ids/construction entry (settingsKey() still valid pre-detach). `src/camp_map/map_tiles/map_tiles.cpp` (`9c9f8a7`)
+- [x] (suggestion) Seed writes presentation group + (suggestion) seed uses the outer QSettings instance — threaded the caller's `QSettings&` (and the target `LayerList`) into `seedDefaultTileLayers`/`persistTileLayer`, and added a shared `persistTileLayerPresentation` helper used by both the add path and the seed, so the seed writes the `MapItem/<settingsKey>` group under the exact key the restored layer reads. `src/camp_map/background/background_manager.{h,cpp}` (`6d26c4c`)
+- [x] (suggestion) `AddFromPresetRoundTrips` never pumps the event loop — added `QCoreApplication::processEvents()` after add and after restart, then re-asserted opacity/visible, so the deferred `readSettings` presentation round-trip is genuinely exercised (both live and restored layer). `test/test_background_persistence.cpp` (`a45ad71`)
+
+### Verification
+Pre-commit hooks (trailing-whitespace, EOF, merge-conflict, line-ending,
+large-file, and the branch guard) passed on every commit. A package build/test
+could **not** be run in this worktree: `colcon build --packages-select camp`
+fails at CMake `find_package(marine_ais_msgs)` — that dependency is absent from
+every layer install here (a pre-existing worktree/environment gap, unrelated to
+these changes; CMake errors before any of the edited files are compiled). The
+changes were self-reviewed against the current source instead; the re-review
+should build in an environment with the lower layers installed.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to
+a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 117 --skill review-code
