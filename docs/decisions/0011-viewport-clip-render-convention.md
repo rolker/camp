@@ -36,13 +36,15 @@ the zoom range:
 clip's on-screen pixels.** Concretely, via the shared helper
 `raster/viewport_clip.h` (`deriveViewportClip()`):
 
-1. **Viewport derivation**: `clip_local =
-   painter->clipBoundingRect().intersected(boundingRect())`, falling back to
-   `boundingRect()` when empty (offscreen/test renders keep the pre-#103
-   whole-extent behavior). NOT `QStyleOptionGraphicsItem::exposedRect` — that
-   silently defaults to `boundingRect()` unless
-   `ItemUsesExtendedStyleOption` is set (it is set nowhere in camp), which
-   would make the clip a no-op.
+1. **Viewport derivation**: from the **attached view** — the first view's
+   `mapToScene(viewport)` mapped into the item and intersected with
+   `boundingRect()`. The painter's state is NOT a reliable viewport signal
+   and is only a secondary fallback: `QStyleOptionGraphicsItem::exposedRect`
+   silently defaults to `boundingRect()` without `ItemUsesExtendedStyleOption`
+   (set nowhere in camp), and `painter->clipBoundingRect()` is empty on live
+   full-viewport repaints (field-verified — the blur came back). With no view
+   and no painter clip, fall back to `boundingRect()` (pre-#103 whole-extent
+   behavior for offscreen/QA renders). First view only — CAMP has one MapView.
 2. **Scene conversion**: `clip_local` → `clip_scene` under the camp_map raster
    convention (item at the NW corner with `fromScale(1,-1)`, so local y
    increases southward while scene y increases northward).

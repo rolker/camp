@@ -1,6 +1,9 @@
 #ifndef RASTER_VIEWPORT_CLIP_H
 #define RASTER_VIEWPORT_CLIP_H
 
+#include <QGraphicsItem>
+#include <QGraphicsScene>
+#include <QGraphicsView>
 #include <QPainter>
 #include <QRectF>
 #include <QSize>
@@ -28,17 +31,35 @@ struct ViewportClip
 /// setPos()'d at the NW corner of @p scene_bounds with a fromScale(1,-1)
 /// transform, so local y increases southward while scene y increases northward.
 ///
-/// The viewport comes from painter->clipBoundingRect() — NOT
-/// QStyleOptionGraphicsItem::exposedRect, which silently defaults to
-/// boundingRect() unless ItemUsesExtendedStyleOption is set (it is set nowhere
-/// in camp), which would make viewport clipping a no-op. An empty clip (no
-/// clipping active, e.g. an offscreen/test render) falls back to the full
-/// bounding rect, reproducing the pre-#103 whole-extent behavior.
-inline ViewportClip deriveViewportClip(QPainter* painter, const QRectF& bounding,
+/// The viewport comes from the attached view — mapToScene(viewport) mapped into
+/// the item — because the painter's state is NOT a reliable viewport signal:
+/// QStyleOptionGraphicsItem::exposedRect defaults to boundingRect() without
+/// ItemUsesExtendedStyleOption (set nowhere in camp), and
+/// painter->clipBoundingRect() is only populated on repaint paths where
+/// QGraphicsView happens to set a clip (verified empty on live full-viewport
+/// repaints — the blur came back in the field). The painter clip is kept as a
+/// secondary signal for painter-only render paths; with neither, fall back to
+/// the full bounding rect (pre-#103 whole-extent behavior, e.g. headless
+/// QA renders). First view only — CAMP has a single MapView.
+inline ViewportClip deriveViewportClip(QPainter* painter,
+                                       const QGraphicsItem* item,
+                                       const QRectF& bounding,
                                        const QRectF& scene_bounds, int max_edge)
 {
   ViewportClip clip;
-  clip.local = painter->clipBoundingRect().intersected(bounding);
+  if(const QGraphicsScene* scene = item ? item->scene() : nullptr)
+  {
+    const QList<QGraphicsView*> views = scene->views();
+    if(!views.isEmpty() && views.first())
+    {
+      QGraphicsView* view = views.first();
+      const QRectF view_scene =
+        view->mapToScene(view->viewport()->rect()).boundingRect();
+      clip.local = item->mapRectFromScene(view_scene).intersected(bounding);
+    }
+  }
+  if(clip.local.isEmpty())
+    clip.local = painter->clipBoundingRect().intersected(bounding);
   if(clip.local.isEmpty())
     clip.local = bounding;
 

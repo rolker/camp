@@ -18,10 +18,12 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QGraphicsView>
 #include <QImage>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QTemporaryDir>
+#include <QTransform>
 
 #include "map/map.h"
 #include "map/layer_list.h"
@@ -462,6 +464,89 @@ TEST(GggsRenderTest, ClipRenderScalesResolutionToClip)
   // Same band, half the scene width, same image width -> ~2x the columns.
   EXPECT_GT(clip_cols, full_cols * 3 / 2);
   img_clip.save("/tmp/gggs_clip_res.png");
+}
+
+// [camp#103] Paint-path regression: with a view ATTACHED, paint() must render at
+// the view's resolution — the field bug was a whole-extent <=4096px render
+// upscaled over the viewport (blurry). This drives the REAL paint() path through
+// a QGraphicsView (grab()), not renderImage() directly, so the viewport
+// derivation itself is under test: the derivation must come from the attached
+// view (painter clip state is unreliable — empty on live full-viewport
+// repaints). A 2000x2000 per-pixel checkerboard zoomed to 40 screen-px per data
+// cell makes the whole extent 80000 screen px (>> 4096): the fixed path renders
+// the viewport crisp (pixels cluster at the two LUT extremes), the broken path
+// renders cells at ~2px in the 4096-clamped image and upscales ~20x with
+// smoothing, smearing most pixels into mid-tones (verified fails-without-fix).
+TEST(GggsRenderTest, ViewAttachedPaintRendersAtViewResolution)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const int w = 2000, h = 2000;
+  const double geo[6] = {-71.40, 0.00002, 0.0, 43.00, 0.0, -0.00002};
+  std::vector<uint16_t> samples(w * h);
+  for(int r = 0; r < h; ++r)
+    for(int c = 0; c < w; ++c)
+      samples[r * w + c] = ((r + c) % 2) ? 60000 : 20000;   // per-pixel checker
+  ASSERT_FALSE(writeTile(dir, w, h, geo, samples).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  const QRectF sb = layer->sceneBounds();
+  const double cell_m = sb.width() / w;
+  const double scale = 40.0 / cell_m;   // 40 screen px per data cell
+
+  QGraphicsView view(map.scene());
+  view.resize(400, 300);
+  // Match MapView's convention: scale(s, -s) composes with the layer's
+  // fromScale(1,-1) to a net-upright draw.
+  view.setTransform(QTransform::fromScale(scale, -scale));
+  view.centerOn(QPointF(sb.center().x(), sb.center().y()));
+  view.show();
+  QApplication::processEvents();
+  // AFTER scene-add/settings side effects: tile-set layers default to
+  // hidden (camp#102 readSettings false-fallback), which would leave the
+  // grab blank white.
+  layer->setVisible(true);
+  QApplication::processEvents();
+
+  // Grab the viewport widget only (no frame/scrollbars).
+  const QImage img = view.viewport()->grab().toImage();
+  ASSERT_FALSE(img.isNull());
+  img.save("/tmp/gggs_view_paint.png");
+
+  // Sample the central region (well inside the tile). Crisp = the checker's two
+  // LUT extremes each cover ~half the pixels; blurred = mid-tones dominate;
+  // blank/white (layer didn't paint) = no dark pixels at all. Requiring BOTH
+  // extremes discriminates all three.
+  int sampled = 0, dark = 0, mid = 0;
+  for(int y = img.height() / 4; y < 3 * img.height() / 4; ++y)
+    for(int x = img.width() / 4; x < 3 * img.width() / 4; ++x)
+    {
+      const int red = img.pixelColor(x, y).red();
+      ++sampled;
+      if(red < 60)
+        ++dark;
+      else if(red <= 200)
+        ++mid;
+    }
+  ASSERT_GT(sampled, 1000);
+  // Presence: a blank grab (layer never painted) has no dark cells at all; a
+  // crisp checker is ~half dark. Crispness: the broken whole-extent upscale
+  // smears ~half the pixels into mid-tones (measured 0.5); the crisp render has
+  // almost none. Together the two discriminate blank, blurred, and crisp.
+  EXPECT_GT(double(dark) / sampled, 0.25)
+    << "dark checker cells missing — layer blank or washed out (fraction "
+    << double(dark) / sampled << ")";
+  EXPECT_LT(double(mid) / sampled, 0.15)
+    << "mid-tone fraction " << double(mid) / sampled
+    << " — paint() rendered blurred; viewport derivation regressed";
 }
 
 int main(int argc, char** argv)
