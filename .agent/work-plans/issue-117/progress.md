@@ -113,3 +113,25 @@ radar — preserved via its preset, behavior unchanged); independent of #116/#69
 - [ ] (suggestion) Capture the `test_map_model.cpp` consequence: confirm it tolerates the 1-layer OSM seed (it asserts only the top-3 user prefix, `test_map_model.cpp:262`), and note it builds `Map` without a test org/app name so the new seed writes into the developer's real QSettings — set a test org/app name or clear — `plan.md:65`
 - [ ] (suggestion) WMTS restore must replicate the async ordering/ownership: `Capabilities` parented to `this`, then `setLayoutFromWMTS()`, then `caps->setUrl()` (per `background_manager.cpp:38-41`); persist any non-default layer_id/tile_matrix_set — `plan.md:40`
 - [ ] (suggestion) Commit to a short camp ADR-0003 addendum for the `BackgroundTileLayers` schema + seed strategy rather than leaving it conditional (GGGS's equivalent key is documented in ADR-0005) — `plan.md:90`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-24 18:57 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-117 at `95fe4ff`
+**Mode**: pre-push
+**Depth**: Deep (reason: 13 files, 200+ lines, ADR-0003 addendum = Deep promotion trigger)
+**Must-fix**: 2 | **Suggestions**: 4
+**Round**: 1 | **Ship**: continue — must-fix findings present; both mechanical, re-review after fixes
+
+Specialists: Static Analysis (cppcheck; no actionable findings) · Governance · Plan Drift · Claude Adversarial ×2 (Lens A + Lens B). Copilot off (default). Local Adversarial skipped (Ollama server not reachable).
+
+### Findings
+- [ ] (must-fix) Test-isolation consequence handled for only 1 of ~10 Map-constructing test mains — `Map` ctor now writes the QSettings seed; add `setOrganizationName`/`setApplicationName` to the 8 un-isolated suites (`test_gggs_band_select`, `test_gggs_layer_name`, `test_gggs_render`, `test_gggs_rescan`, `test_map_tiles_eviction`, `test_map_tiles_refresh`, `test_raster_layer_gdal_cleanup`, `test_sonar_live_eviction`) — `test/*.cpp:main()`
+- [ ] (must-fix) `Capabilities` object leak (cross-pass confirmed, Lens A+B): `new wmts::Capabilities(name, this)` parented to the long-lived BackgroundManager, never deleted; `MapTiles` holds only a non-owning raw ptr — repeatable via WMTS add/remove/re-add. Parent caps to the MapTiles layer or delete after `ready()` — `src/camp_map/background/background_manager.cpp:383`
+- [ ] (suggestion) `AddFromPresetRoundTrips` never pumps the event loop, so the deferred `MapItem/<settingsKey>` readSettings (the claimed presentation round-trip) is untested — asserts only the immediate setOpacity — `test/test_background_persistence.cpp:889`
+- [ ] (suggestion) Seed path writes construction params but not the `MapItem/<settingsKey>` presentation group the add path writes; latent if the seed set ever widens past default-presentation OSM — `src/camp_map/background/background_manager.cpp:439`
+- [ ] (suggestion) De-persist leaves the `MapItem/<settingsKey>` presentation group orphaned (pre-existing GggsTileLayer convention; orphans accumulate, re-add briefly inherits stale opacity/visible) — `src/camp_map/map_tiles/map_tiles.cpp:341`
+- [ ] (suggestion) Seed is written via a separate QSettings instance then read back through the outer one; correct in-process but pass the outer `settings` in to make ordering explicit — `src/camp_map/background/background_manager.cpp:44`
