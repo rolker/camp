@@ -565,6 +565,11 @@ void RasterLayer::contextMenu(QMenu* menu)
 
 void RasterLayer::setSmoothInterpolation(bool smooth)
 {
+  // For non-scalar (RGBA) charts this setter and its persisted key are
+  // intentionally inert: the context-menu toggle is scalar-gated and paint()
+  // forces a smooth blit via `|| !is_scalar_` — imagery is not data under QA.
+  // Kept unconditional so a file later re-opened as scalar honors the stored
+  // preference.
   if(smooth == smooth_interpolation_)
     return;
   smooth_interpolation_ = smooth;
