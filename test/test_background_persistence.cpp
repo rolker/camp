@@ -123,6 +123,14 @@ TEST(BackgroundPersistence, AddFromPresetRoundTrips)
     ASSERT_NE(radar, nullptr);
     EXPECT_DOUBLE_EQ(radar->opacity(), 0.65);
     EXPECT_FALSE(radar->isVisible());
+    // Pump the event loop so the deferred readSettings fires (MapItem's ctor
+    // schedules itemConstructed via QTimer::singleShot(0)). The add path wrote
+    // the presentation group, so readSettings must restore 0.65/hidden rather
+    // than clobber to the 1.0/visible defaults — without the group write this
+    // would regress here, not just on restart.
+    QCoreApplication::processEvents();
+    EXPECT_DOUBLE_EQ(radar->opacity(), 0.65);
+    EXPECT_FALSE(radar->isVisible());
     // Re-adding the same preset is refused: name = persistence identity.
     EXPECT_EQ(backgroundManager(map)->addTileLayerFromPreset(presetNamed("nexrad_radar")),
               nullptr);
@@ -130,6 +138,19 @@ TEST(BackgroundPersistence, AddFromPresetRoundTrips)
   Map map;
   EXPECT_EQ(tileLayersNamed(map.topLevelLayers(), "nexrad_radar"), 1);
   EXPECT_EQ(tileLayersNamed(map.topLevelLayers(), "openstreetmap"), 1);
+
+  // Presentation truly round-trips through QSettings: the restore path only
+  // builds the layer (default 1.0/visible), then the deferred readSettings pulls
+  // back the persisted 0.65/hidden. Pump the loop and confirm on the restored layer.
+  MapTiles* restored = nullptr;
+  for(MapItem* child : map.topLevelLayers()->childMapItems())
+    if(auto* t = dynamic_cast<MapTiles*>(child))
+      if(t->objectName() == "nexrad_radar")
+        restored = t;
+  ASSERT_NE(restored, nullptr);
+  QCoreApplication::processEvents();
+  EXPECT_DOUBLE_EQ(restored->opacity(), 0.65);
+  EXPECT_FALSE(restored->isVisible());
 }
 
 // An inert preset (WMS until #118) is persisted-nothing and creates nothing.
