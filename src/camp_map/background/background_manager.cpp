@@ -43,7 +43,7 @@ void BackgroundManager::createDefaultLayers()
     // "Add tile layer" context-menu action.
     QSettings settings;
     if(!settings.contains(tileLayerSeededKey()))
-      seedDefaultTileLayers();
+      seedDefaultTileLayers(settings, layers);
     const QStringList tile_ids = settings.value(tileLayerIdsKey()).toStringList();
     QSet<QString> restored_tiles;
     for(const QString& name : tile_ids)
@@ -180,14 +180,9 @@ map_tiles::MapTiles* BackgroundManager::addTileLayerFromPreset(const TileLayerPr
   // defaults. From here on the standard MapItem mechanism owns opacity/visible.
   tiles->setOpacity(preset.opacity);
   tiles->setVisible(preset.visible);
-  settings.beginGroup("MapItem");
-  settings.beginGroup(tiles->settingsKey());
-  settings.setValue("opacity", preset.opacity);
-  settings.setValue("visible", preset.visible);
-  settings.endGroup();
-  settings.endGroup();
+  persistTileLayerPresentation(settings, tiles->settingsKey(), preset);
 
-  persistTileLayer(preset);
+  persistTileLayer(settings, preset);
   return tiles;
 }
 
@@ -199,25 +194,41 @@ void BackgroundManager::addTileLayer()
   addTileLayerFromPreset(dialog.selection());
 }
 
-void BackgroundManager::seedDefaultTileLayers()
+void BackgroundManager::seedDefaultTileLayers(QSettings& settings, map::LayerList* layers)
 {
   // OSM only (operator decision 2026-07-24): a single basemap so the first
   // launch is not blank; everything else is operator-added from presets. The
   // sentinel is written even if the preset table were to lose "openstreetmap" —
   // seeding must never re-fire.
-  QSettings settings;
   for(const auto& preset : builtinPresets())
     if(preset.name == "openstreetmap")
     {
-      persistTileLayer(preset);
+      persistTileLayer(settings, preset);
+      // Write the presentation group under the key the restored layer will read.
+      // settingsKey() defaults to itemID() (parent path + objectName), so the
+      // restore loop's MapTiles named preset.name under `layers` resolves to
+      // exactly this key — the seed thus round-trips presentation like the add
+      // path, even if a future seed preset carries non-default opacity/visible.
+      persistTileLayerPresentation(settings, layers->itemID() + "/" + preset.name, preset);
       break;
     }
   settings.setValue(tileLayerSeededKey(), true);
 }
 
-void BackgroundManager::persistTileLayer(const TileLayerPreset& preset)
+void BackgroundManager::persistTileLayerPresentation(QSettings& settings,
+                                                     const QString& settings_key,
+                                                     const TileLayerPreset& preset)
 {
-  QSettings settings;
+  settings.beginGroup("MapItem");
+  settings.beginGroup(settings_key);
+  settings.setValue("opacity", preset.opacity);
+  settings.setValue("visible", preset.visible);
+  settings.endGroup();
+  settings.endGroup();
+}
+
+void BackgroundManager::persistTileLayer(QSettings& settings, const TileLayerPreset& preset)
+{
   QStringList ids = settings.value(tileLayerIdsKey()).toStringList();
   if(!ids.contains(preset.name))
   {
