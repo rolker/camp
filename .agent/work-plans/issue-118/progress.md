@@ -87,3 +87,34 @@ ADR compliance all Good. No must-fix findings.
 - [ ] (suggestion, minor) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&` (matches osm::generateTileLayout by-value convention) — `wms.cpp:11`
 
 **Note**: ROS 2 build/tests not compiled in this review (heavy colcon build); new tests are pure-logic and reasoned through. Plan adherence full; positive deviation — radar layer_id workspace-qualified (`weather_radar:base_reflectivity_mosaic`) per live smoke check, documented in ADR-0012.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-24 18:08 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #176 at `a1a9b77`
+**Sources**: 3 (Copilot R1 @ `a1a9b77`, Local Review (Pre-Push) R1, CI rollup)
+**Cross-source confirmations**: 1
+**CI**: build-and-test pending at triage time; copilot check pass
+
+### Findings
+- [ ] (cross-confirmed: Copilot + Local Review R1 suggestion) No guard for empty
+  `layer_id` in the WMS construction path — a persisted entry read back without
+  the key constructs `LAYERS=` requests that always fail (repeated pointless
+  traffic on refresh layers). Refuse to construct WMS with empty `layer_id` —
+  `src/camp_map/background/background_manager.cpp:188`
+- [ ] (valid, Copilot) WMS 1.3.0 GetMap template omits the spec-required
+  `STYLES` parameter (may be empty); both live endpoints tolerate its absence
+  (smoke-checked) but stricter servers reject. Add `&STYLES=` + update the
+  required-params test — `src/camp_map/map_tiles/wms.cpp:30`
+- [ ] (valid-minor, Copilot) `wms.h` uses `std::string` in its public API via a
+  transitive `<string>` include from `tile_layout.h`; include `<string>`
+  directly — `src/camp_map/map_tiles/wms.h:4`
+- [ ] (valid-minor, Copilot) `test_wms_url_generation.cpp` calls `sscanf`
+  without `<cstdio>` (compiles via transitive includes today) — add the
+  include — `test/test_wms_url_generation.cpp:9`
+
+### False positives
+- (none — all four Copilot comments verified against local code as real,
+  spec-supported, or hygiene-valid)
