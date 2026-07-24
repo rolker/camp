@@ -127,3 +127,26 @@ the fix a silent no-op, plus two small mechanical must-fixes.
 - The three seam callers (GggsTileLayer / RasterLayer / SonarLiveCacheLayer) are correctly identified and all share the same `paint()` → `renderImage(size)` → `renderToImage(draw, scene_bounds_, …)` shape, so the change is uniform. Matches the Issue Review's "cover all three callers" recommendation.
 - ADR-0011 is the correct next number (0001–0010 present; 0004 already absent). No `RasterGlRenderer` API change is required — confirmed.
 - ROS conventions: N/A (Qt/GL offscreen rendering, no topics/QoS/params).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-24 15:26 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-103 at `db8d2d7`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR addition — docs/decisions/0011; 3-layer seam change)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 1 | **Ship**: recommended — no must-fix; coordinate math verified by 2 adversarial passes + lead, all 3 plan-review must-fixes resolved
+
+### Findings
+- [ ] (suggestion) Headless tests call renderImage(size,clip) directly; paint()'s clipBoundingRect() clip (the field-bug path) needs manual GUI verification on a >4096px store before merge — `gggs_tile_layer.cpp:472` / `viewport_clip.h`
+- [ ] (suggestion) Per-frame geoToMap trig in itemsIntersecting on GUI thread during pan (O(tiles)); cache tile scene-rect at load for large stores — `gggs_tile_layer.cpp:404` · `sonar_live_cache_layer.cpp:848`
+- [ ] (suggestion) cached_clip_ float-equality key relies on view-transform determinism for the "cheap idle" claim; add a one-line comment noting it — `viewport_clip.h:51`
+
+### Notes
+- Static analysis: cppcheck clean (parse-only syntaxError, not defects); ament_cpplint 144 errors are all pre-existing repo convention (short RASTER_*_H guards, no copyright, C-style casts) and unenforced by CI (colcon build/test only) or pre-commit — new viewport_clip.h matches its neighbors; dropped as noise. Pre-commit-enforced checks (trailing-ws, final-newline) clean.
+- Governance: ADR-0007 seam fix with no renderer API change; ADR-0010 overviews-first order + no-blank-gap preserved; ADR-0011 accurate. All consequences (3 callers, cached_clip_, ADR) addressed.
+- Plan drift: matches plan; positive deviation — clip derivation factored into shared raster/viewport_clip.h vs planned per-layer copies. No CMake change (test extended in already-registered test_gggs_render.cpp).
+- Local Model Adversarial skipped: Ollama not installed on this host. Copilot Adversarial off (default, --copilot not passed).
