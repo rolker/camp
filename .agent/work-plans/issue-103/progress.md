@@ -86,3 +86,15 @@ are related but explicitly out of scope. The design must not make them harder to
 - [ ] Note in the PR that camp#172 (on-demand reload of evicted tiles) is the natural
   next step enabled by a visible-region render loop; ensure the implementation doesn't
   foreclose it
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-24 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-103/plan.md` at `83d9945`
+**Branch**: feature/issue-103 at `83d9945`
+**Phases**: single
+
+### Open questions
+- [ ] `option->exposedRect` under Qt's BSP update scheme may equal `boundingRect()` for large layers even when only part is visible — should we add a viewport-rect fallback via `painter->clipBoundingRect()`?
