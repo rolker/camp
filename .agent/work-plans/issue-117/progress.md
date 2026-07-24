@@ -198,3 +198,40 @@ Round-1 must-fixes re-verified as correctly resolved: Capabilities leak (now par
 Lifecycle: **Local Review** (approved) → push / open PR → **triage-reviews**. All findings are optional low-severity suggestions; none block the push. Hand off to a fresh-context sub-agent after push:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 117 --skill triage-reviews
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-24 19:44 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-117 at `3413ca9`
+**Addressed**: Local Review (Pre-Push) — 2026-07-24 19:29, at `49ca2bb` (verdict approved; 0 must-fix, 4 suggestions)
+**Commits**: `6764d87`, `546e67e`, `3413ca9`
+
+All four open suggestions from the source review were actioned (none deferred).
+Cited line numbers were stale (e.g. `add_tile_layer_dialog.cpp:189` in a 104-line
+file); each finding was verified against the current source before fixing.
+
+### Actions
+- [x] (suggestion) Dialog OK-enable ignored inert preset rows — `updateFields()` now gates OK on the selected preset being enabled (or Custom), so OK can't be clicked on an inert row (e.g. a WMS entry parked until #118) to silently no-op. `src/camp_map/background/add_tile_layer_dialog.cpp` (`6764d87`)
+- [x] (suggestion) Restore loop never rewrote `BackgroundTileLayers/ids` — the loop now builds a normalized id list (dedup + drop entries whose type can't be constructed) and writes it back only when it differs, so stale/duplicate ids don't linger in QSettings. `src/camp_map/background/background_manager.cpp` (`3413ca9`)
+- [x] (suggestion) Remove-then-quit race re-persisting the presentation group — added a base-class `removed_from_map_` guard set in `Layer::removeFromMap()` and checked in `MapItem::applicationQuitting()`, so a shutdown that races the pending `deleteLater` skips `writeSettings()` for a removed layer (fixes the shared MapTiles/GggsTileLayer convention at its root, not just MapTiles). `src/camp_map/map/{map_item.h,map_item.cpp,layer.cpp}` (`546e67e`)
+- [x] (suggestion) No explicit `settings.sync()` after the seed — added `settings.sync()` immediately after `seedDefaultTileLayers()`, making the deferred `readSettings()` ordering explicit rather than resting on the local QSettings instance's destruct-time flush. `src/camp_map/background/background_manager.cpp` (`3413ca9`)
+
+### Verification
+Pre-commit hooks (trailing-whitespace, EOF, merge-conflict, line-ending,
+large-file, and the branch guard) passed on every commit; the trailing-whitespace
+hook incidentally cleaned pre-existing whitespace on unrelated lines in the map
+base files (folded into `546e67e`). A package build/test could **not** be run
+here: `colcon build --packages-select camp` still fails at CMake
+`find_package(marine_ais_msgs)` — that dependency is absent from every layer in
+this worktree (the same pre-existing environment gap the prior Implementation
+entry recorded; CMake errors before any edited file is compiled). The changes
+were self-reviewed against the current source; the re-review should build in an
+environment with the lower layers installed.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to
+a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 117 --skill review-code
