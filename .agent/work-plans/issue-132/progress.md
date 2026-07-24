@@ -81,3 +81,23 @@ imagery stays smoothed unconditionally.
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-24 18:38 +00:00
+**By**: Claude Code Agent (Claude Opus)
+<!-- Independent review: the Plan Authored entry's agent-name portion matches
+     $AGENT_NAME ("Claude Code Agent"), but that is a workspace naming artifact —
+     this review is a fresh-context dispatch on a different model (Sonnet authored,
+     Opus reviewed), so no "author self-review" annotation is applied. -->
+
+**Plan**: `.agent/work-plans/issue-132/plan.md` at `236b128`
+**PR**: PR-less (--issue / worktree mode)
+**Verdict**: changes-requested
+
+### Findings
+- [ ] (must-fix) GL Scalar filter driven by `smooth` (steps 1 & 3) reintroduces the camp#122 NoData halo — a finite sentinel linearly blends with real data into a fabricated cell that no longer `== u_nodata` and isn't discarded (the property `test_raster_gl_renderer.cpp:114-115` guards). Toggle only the QPainter blit hint; keep GL Scalar filter Nearest always (drops steps 1 & 3). — `plan.md:32-44`
+- [ ] (must-fix) Step 7 assumes `MapItem/<settingsKey()>` for all three layers, but `RasterLayer` persists under `MapItem/itemID()`, NOT `settingsKey()` (raster_layer.cpp:558-559,608-609; note at :566-567). Match each layer's existing group. — `plan.md:53-54`
+- [ ] (suggestion) Consequences claim "no existing filter-state test found" is false — `test_raster_gl_renderer.cpp:7,114-115` asserts Nearest scalar sampling / no bleed. If the GL-filter coupling is kept, add a smooth=true scalar test. — `plan.md:93`
+- [ ] (suggestion) Record the default-Nearest QA rationale in the PR description (review-issue Action 3 / ADR-0001 watch) — plan explains basemap/LUT/flag-placement but not why Nearest is the data-layer default. — `plan.md:76`
+- [ ] (note) Confirm layer-render/persistence tests (`test_gggs_render.cpp`, `test_gggs_persistence.cpp`, `test_depth_raster.cpp`) need no changes — default behavior unchanged, low risk. — review-issue Action 4
