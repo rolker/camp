@@ -101,3 +101,22 @@ imagery stays smoothed unconditionally.
 - [ ] (suggestion) Consequences claim "no existing filter-state test found" is false — `test_raster_gl_renderer.cpp:7,114-115` asserts Nearest scalar sampling / no bleed. If the GL-filter coupling is kept, add a smooth=true scalar test. — `plan.md:93`
 - [ ] (suggestion) Record the default-Nearest QA rationale in the PR description (review-issue Action 3 / ADR-0001 watch) — plan explains basemap/LUT/flag-placement but not why Nearest is the data-layer default. — `plan.md:76`
 - [ ] (note) Confirm layer-render/persistence tests (`test_gggs_render.cpp`, `test_gggs_persistence.cpp`, `test_depth_raster.cpp`) need no changes — default behavior unchanged, low risk. — review-issue Action 4
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-24 19:41 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-132 at `2105e8c`
+**Mode**: pre-push
+**Depth**: Standard (reason: 9 files / ~124 code lines; no security/cross-layer/ADR Deep triggers)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 1 | **Ship**: recommended — no must-fix; both adversarial passes + static/governance/plan-drift converged clean; plan-review must-fixes verified folded (GL filter untouched; Raster persists under itemID()).
+
+**Specialists**: Static Analysis (ament_cpplint + cppcheck — clean on changed lines) · Governance · Plan Drift · Claude Adversarial x2 (Lens A + Lens B) · Local Adversarial skipped (no Ollama server at http://localhost:11434). Copilot off (default).
+
+### Findings
+- [ ] (suggestion) Persistence round-trip tested for GggsTileLayer only; RasterLayer (itemID group) and SonarLiveCacheLayer (settingsKey group) untested — a future group/key mismatch would go uncaught; harnesses already exist. Cross-pass confirmed (Lens A + Lens B + Governance). — `test/test_range_persist.cpp:127`
+- [ ] (suggestion) For non-scalar (RGBA) RasterLayer the setSmoothInterpolation setter + persistence are dead (menu gated out, paint forces smooth via `|| !is_scalar_`); harmless but writes/reads a pointless key — drop, gate, or note as intentionally inert. — `src/camp_map/raster/raster_layer.cpp:566`
+- [ ] (suggestion) Record the default-Nearest QA rationale in the PR description when opening the PR (plan-review Action 3 / ADR-0001 watch). — PR body
