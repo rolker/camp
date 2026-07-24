@@ -40,3 +40,29 @@ issue: 118
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-24 21:21 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-118/plan.md` at `e90d541`
+**PR**: PR-less (`--issue` mode; gh unauthenticated — issue context from the review-issue + checkpoint entries above)
+**Verdict**: approve-with-suggestions
+
+All code claims verified against source: the `"wms"` stub returns `nullptr`
+(`background_manager.cpp:177`); GEBCO preset already exists as `type="wms"`,
+`enabled=false` (`tile_layer_presets.h:124`); `getUrl()` key-dispatch
+(`tile_layout.cpp:32`) and `TileAddress::topLeftCorner()`/`scale()` support the
+`WMS_BBOX` computation; the cache-buster already joins with `&` when the URL
+has a query (`cached_tile_loader.cpp:134`), so refreshing WMS URLs cache-bust
+correctly with no new work; `layer_id` already round-trips through
+`persistTileLayer` (`background_manager.cpp:277`). Scope, file targeting, and
+ADR compliance all Good. No must-fix findings.
+
+### Findings
+- [ ] (suggestion) ADR-0012 should record why WMS `version`/`crs` are hardcoded (`VERSION=1.3.0`, `CRS=EPSG:3857`) rather than added as schema fields, per review-issue item 3 — `plan.md:32,45`
+- [ ] (suggestion) State the inherited blank-tile graceful-degradation coverage (CachedFileLoader fallback) explicitly instead of silently dropping review-issue items 4/5 — `plan.md:51`
+- [ ] (suggestion) Add an implementation-time manual `GetMap` smoke check for both live endpoints (nowCOAST GeoServer, GEBCO mapserv accepting WMS 1.3.0 + EPSG:3857) — not coverable by the pure-logic tests — `plan.md:32`
+- [ ] (suggestion, minor) URL template hardcodes `WIDTH/HEIGHT=256` while bbox math uses `tile_width/height` (both 256 via `osm.h` `tile_size`); derive together or note the coupling — `plan.md:32`
+- [ ] (suggestion, minor) Note that preset name `nexrad_radar` is retained for persisted-state continuity even though nowCOAST `base_reflectivity_mosaic` is MRMS-based, not NEXRAD — `plan.md:40`
