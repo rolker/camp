@@ -124,6 +124,30 @@ TEST(RangePersist, GggsManualRoundTrips)
   }
 }
 
+// [camp#132] The per-layer blit-smoothing opt-in round-trips: default OFF,
+// enabled + persisted by one layer instance, restored by the next.
+TEST(RangePersist, GggsSmoothInterpolationRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    EXPECT_FALSE(layer->smoothInterpolation());   // faithful-QA default
+    layer->setSmoothInterpolation(true);          // persists via writeSettings
+  }
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    layer->readSettings();
+    EXPECT_TRUE(layer->smoothInterpolation())
+        << "persisted smooth-interpolation opt-in must survive a restart";
+  }
+}
+
 TEST(RangePersist, GggsAutoRoundTrips)
 {
   QSettings().clear();

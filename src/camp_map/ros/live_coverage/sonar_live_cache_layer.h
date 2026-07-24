@@ -108,6 +108,12 @@ public:
   /// (data_min_/data_max_, folded in foldAutoRange()); Manual pins an operator
   /// [lo, hi] so an outlier band can't collapse the useful colour range. Applied at
   /// render time (shader u_min/u_max via renderToImage), transparent to the fold.
+  /// [camp#132] Toggle the QPainter blit smoothing (default OFF = Nearest).
+  /// Blit hint only — the GL scalar filter stays Nearest (camp#122 NoData-halo
+  /// guard). Persists (settingsKey group) and repaints.
+  void setSmoothInterpolation(bool smooth);
+  bool smoothInterpolation() const { return smooth_interpolation_; }
+
   void setRangeOverride(float lo, float hi);   ///< -> Manual [lo, hi]
   void resetRangeToAuto();                      ///< -> Auto (tracks the data extents)
   marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
@@ -298,6 +304,7 @@ private:
   QImage cached_image_;
   QSize cached_size_;
   QRectF cached_clip_;
+  bool smooth_interpolation_ = false;   // [camp#132] blit hint only (persisted)
 };
 
 }  // namespace live_coverage
