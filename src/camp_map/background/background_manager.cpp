@@ -136,11 +136,15 @@ map_tiles::MapTiles* BackgroundManager::createTileLayer(map::LayerList* layers, 
   }
   if(preset.type == "wmts")
   {
-    // Async ordering matters: Capabilities is parented to this (it outlives the
-    // layer's construction), the layer registers for the layout first, and
+    // Async ordering matters: the layer registers for the layout first, then
     // setUrl() comes LAST — the URL fetch is what fires ready().
-    auto caps = new wmts::Capabilities(preset.name, this);
     auto tiles = new map_tiles::MapTiles(layers, preset.name);
+    // [camp#117] Parent Capabilities to the layer, not to this (the long-lived
+    // BackgroundManager). MapTiles keeps only a non-owning pointer, so parenting
+    // to `this` leaked one Capabilities per WMTS add/remove/re-add. As a child of
+    // the layer it still outlives construction (the layer is not destroyed here)
+    // and is destroyed with the layer on removal — matching its actual lifetime.
+    auto caps = new wmts::Capabilities(preset.name, tiles);
     tiles->setLayoutFromWMTS(*caps, preset.layer_id, preset.tile_matrix_set);
     caps->setUrl(preset.url);
     if(preset.refresh_ms > 0)
