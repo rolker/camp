@@ -43,19 +43,31 @@ void BackgroundManager::createDefaultLayers()
     // "Add tile layer" context-menu action.
     QSettings settings;
     if(!settings.contains(tileLayerSeededKey()))
+    {
       seedDefaultTileLayers(settings, layers);
+      // [camp#117] Flush the seed to the backing store now. The seeded layer's
+      // deferred readSettings() (itemConstructed's singleShot) runs through a
+      // *separate* QSettings instance, so make the ordering explicit rather than
+      // resting on this local instance's destruct-time sync.
+      settings.sync();
+    }
     const QStringList tile_ids = settings.value(tileLayerIdsKey()).toStringList();
     QSet<QString> restored_tiles;
+    QStringList normalized_ids;   // deduped + constructible-only, rewritten below
     for(const QString& name : tile_ids)
     {
       if(restored_tiles.contains(name))
         continue;
+      restored_tiles.insert(name);   // seen — drop any later duplicate of this name
       bool live = false;   // dedup against an already-live layer of this name
       for(map::MapItem* child : layers->childMapItems())
         if(auto* t = dynamic_cast<map_tiles::MapTiles*>(child))
           if(t->objectName() == name) { live = true; break; }
       if(live)
+      {
+        normalized_ids.append(name);   // a valid live layer already carries this id
         continue;
+      }
       TileLayerPreset stored;
       stored.name = name;
       settings.beginGroup(tileLayerRootGroup());
@@ -67,9 +79,16 @@ void BackgroundManager::createDefaultLayers()
       stored.refresh_ms = settings.value("refresh_ms", 0).toInt();
       settings.endGroup();
       settings.endGroup();
-      createTileLayer(layers, stored);
-      restored_tiles.insert(name);
+      if(createTileLayer(layers, stored))
+        normalized_ids.append(name);   // constructed — keep; else drop the dead id
     }
+    // [camp#117] Rewrite the persisted ids to the normalized set the restore just
+    // proved out: duplicates (kept once) and entries whose type can't be built
+    // (e.g. a "wms" id saved before #118) are dropped so they don't linger in
+    // QSettings across future launches. Harmless at runtime, but keeps the stored
+    // list honest. Only write when it actually changed to avoid churn.
+    if(normalized_ids != tile_ids)
+      settings.setValue(tileLayerIdsKey(), normalized_ids);
 
 
     // [camp#104] Restore the operator's selected flat GGGS tile layers (ADR-0005).
