@@ -235,3 +235,31 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 117 --skill review-code
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-24 20:33 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-117 at `830c0d1`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR-0003 addendum + cross-cutting persistence/lifecycle change touching shared MapItem/Layer base classes, ~1.3k lines)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 3 | **Ship**: recommended — 0 must-fix; the 4 round-2 suggestions (dialog OK-gate, id normalization, shutdown-race guard, seed sync) all implemented and independently re-verified correct
+
+Specialists: Static Analysis (cppcheck 2.13; no actionable findings — only Qt `slots` MOC false positives) · Governance (all principles Pass; ADR-0003/0006/ws-0001/ws-0002 compliant; consequences map complete) · Plan Drift (faithful; one documented beneficial deviation — sentinel-gated seed vs. plan's ids-absent check) · Claude Adversarial ×2 (Lens A logic + Lens B systemic — both clean of must-fix). Copilot off (default). Local Adversarial skipped (Ollama server not reachable).
+
+Round-2 suggestion fixes re-verified correct: (1) dialog OK gated off inert preset rows (`add_tile_layer_dialog.cpp` updateFields); (2) restore loop normalizes/rewrites `BackgroundTileLayers/ids` on change; (3) shutdown-race guard `removed_from_map_` added to the shared `MapItem`/`Layer` base — correctly generalizes to every layer type, and a removed-then-re-added layer is a fresh object so its settings still persist; (4) `settings.sync()` after the seed. Lens A/B both confirmed the seed presentation key equals the restored layer's `settingsKey()` and the `wmts::Capabilities` re-parenting fixes the prior leak without a use-after-free.
+
+Build note: `colcon build --packages-select camp` still fails at CMake `find_package(marine_ais_msgs)` (pre-existing worktree env gap, errors before any changed file compiles); static + adversarial review substituted. CI/full-layer build should confirm the new `test_background_persistence` target links and passes.
+
+### Findings
+- [ ] (suggestion) `addTileLayerFromPreset()` (public; tests/programmatic) does not reject an empty preset name — UI-defended but would persist an empty ids entry; add an early `if(preset.name.isEmpty()) return nullptr;` — `src/camp_map/background/background_manager.cpp`
+- [ ] (suggestion) Custom layer name colliding with an existing/persisted layer is silently refused (nullptr discarded by `addTileLayer()`); dialog closes with no feedback — consider a warning — `src/camp_map/background/background_manager.cpp`
+- [ ] (suggestion) `normalized_ids` rewrite is not `sync()`'d unlike the seed; purely defensive (rewrite is idempotent on next launch, self-heals) — `src/camp_map/background/background_manager.cpp`
+
+### Next step
+Lifecycle: **Local Review** (approved) → push / open PR → **triage-reviews**. All three findings are optional low-severity suggestions; none block the push. Hand off to a fresh-context sub-agent after push:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 117 --skill triage-reviews
