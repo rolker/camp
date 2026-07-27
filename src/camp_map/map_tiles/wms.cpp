@@ -27,7 +27,7 @@ map_tiles::TileLayout generateWmsLayout(std::string base_url, std::string layer_
   layout.url_variable_keys.push_back("WMS_BBOX");
   layout.url_static_parts.push_back(
     "&CRS=EPSG:3857&WIDTH=" + size + "&HEIGHT=" + size +
-    "&FORMAT=image/png&TRANSPARENT=TRUE&LAYERS=" + layer_id);
+    "&FORMAT=image/png&TRANSPARENT=TRUE&STYLES=&LAYERS=" + layer_id);
 
   return layout;
 }

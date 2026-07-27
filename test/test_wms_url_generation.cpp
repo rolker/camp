@@ -68,7 +68,7 @@ TEST(WmsUrlGeneration, TemplateHasRequiredParameters)
   EXPECT_EQ(url.find("https://example.org/wms?"), 0u);
   for(const char* param : {"SERVICE=WMS", "VERSION=1.3.0", "REQUEST=GetMap",
                            "CRS=EPSG:3857", "FORMAT=image/png", "TRANSPARENT=TRUE",
-                           "LAYERS=my:layer", "BBOX="})
+                           "STYLES=", "LAYERS=my:layer", "BBOX="})
     EXPECT_NE(url.find(param), std::string::npos) << param << " missing in " << url;
   const std::string size = std::to_string(camp::osm::tile_size);
   EXPECT_NE(url.find("WIDTH=" + size), std::string::npos);
