@@ -156,3 +156,39 @@ ADR compliance all Good. No must-fix findings.
 - [ ] (suggestion, minor) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&` (kept by-value to match `osm::generateTileLayout` convention) — `src/camp_map/map_tiles/wms.cpp:11`
 
 **Note**: cpplint findings on `wms.h`/tests (legal/copyright, build/header_guard, build/include_subdir) match the established `osm.h` sibling convention exactly and are repo-wide, not this-PR defects — correctly silenced. ROS 2 colcon build/tests not compiled (heavy build; changes are pure-logic URL assembly + a guard clause, reasoned through and tested pure-logic) — matches the R1 convention for this diff. Plan adherence full; documented positive deviation: radar `layer_id` workspace-qualified (`weather_radar:base_reflectivity_mosaic`) per live smoke check (ADR-0012).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-27 16:11 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #176 at `4ab991d`
+**Sources**: 3 (Copilot R2 @ `4ab991d`, Local Review (Pre-Push) @ `ed71cba`, CI rollup @ `4ab991d`)
+**Cross-source confirmations**: 0
+**CI**: all-pass (`build-and-test` success, `copilot-pull-request-reviewer` success)
+
+### Findings
+- [ ] (valid-minor, Copilot R2) Test duplicates the Web-Mercator half-circumference as a
+  13-digit literal (`kHalfEarth = 20037508.3427892`) instead of deriving it from
+  `web_mercator::earth_radius_at_equator * M_PI` — the same constant
+  `osm::generateTileLayout()` uses. Fix: include `map_view/web_mercator.h` (compiles as-is —
+  `camp_map` links `Qt5::Positioning` PUBLIC) and make `kHalfEarth` a derived `constexpr`.
+  — `test/test_wms_url_generation.cpp:21`
+
+### Carried forward (informational, single-source Local Review @ `ed71cba`, no action this round)
+- (suggestion) `base_url`/`layer_id` injected unencoded into the WMS query; not reachable
+  today (builtin presets only; Custom dialog offers xyz/wmts; empty `layer_id` now refused)
+  — add a presets-only note before a future Custom-WMS entry — `src/camp_map/map_tiles/wms.cpp:26`
+- (suggestion, minor) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&`
+  — kept by-value to match `osm::generateTileLayout` convention — `src/camp_map/map_tiles/wms.cpp:11`
+
+### Resolved since R1 (verified in code at `4ab991d`)
+- (Copilot R1) Missing spec-required `STYLES=` — present in the template (`wms.cpp:30`) and
+  asserted by the test's required-parameter list (`test_wms_url_generation.cpp:72`).
+- (Copilot R1 + Local Review, cross-confirmed) Empty `layer_id` not refused — guarded at
+  `background_manager.cpp:185-186`.
+- (Copilot R1) `wms.h` transitive `<string>` — now included directly (`wms.h:4`).
+- (Copilot R1) Test `sscanf` without `<cstdio>` — now included (`test_wms_url_generation.cpp:8`).
+
+### False positives
+- (none this round)
