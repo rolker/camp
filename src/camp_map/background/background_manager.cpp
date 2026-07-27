@@ -177,6 +177,13 @@ map_tiles::MapTiles* BackgroundManager::createTileLayer(map::LayerList* layers, 
   }
   if(preset.type == "wms")
   {
+    // [camp#118] Refuse to construct a WMS layer with an empty layer_id: it
+    // would build LAYERS= GetMap requests that every server rejects, so the
+    // refresh timer would spew pointless failing traffic. Presets always set
+    // layer_id and persist skips empty ids, so this only guards a corrupt
+    // restore, but the check is cheap and keeps the failure mode contained.
+    if(preset.layer_id.isEmpty())
+      return nullptr;
     // [camp#118] Per-tile WMS 1.3.0 GetMap on the OSM grid (ADR-0012): rides
     // the identical MapTiles lifecycle as XYZ — cache, eviction, refresh and
     // cache-buster (the buster's '&' branch handles the query string).
