@@ -1,6 +1,8 @@
 #ifndef CAMP_MAP_TILES_WMS_H
 #define CAMP_MAP_TILES_WMS_H
 
+#include <string>
+
 #include "tile_layout.h"
 
 namespace camp
