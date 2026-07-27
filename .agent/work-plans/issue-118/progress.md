@@ -137,3 +137,22 @@ ADR compliance all Good. No must-fix findings.
 ### Checks
 - `ament_cpplint` on the four touched files: my added includes introduce no new `include_order`/`line_length` errors; the remaining categories (`legal/copyright`, `build/include_subdir`) are pre-existing repo-wide conventions present on unrelated files (e.g. `osm.h`), not from this pass.
 - ROS 2 colcon build/tests not compiled (heavy build; changes are pure-logic hygiene + a guard clause and a test-param addition, reasoned through) — matches the Local Review's convention for this diff.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-27 19:32 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-118 at `ed71cba`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR docs/decisions/0012 — Deep promotion trigger)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 2 | **Ship**: recommended — no must-fix; R1 integrated-review findings (empty layer_id guard, STYLES=, <string>, <cstdio>) all verified fixed in code; remaining suggestions are known/accepted.
+**Specialists**: Static Analysis (cppcheck + ament_cpplint), Governance, Plan Drift, Claude Adversarial ×2 (Lens A+B, Deep). Local Adversarial skipped (no Ollama server at localhost:11434); Copilot off (default).
+
+### Findings
+- [ ] (suggestion) `base_url`/`layer_id` injected unencoded into the WMS query; not reachable today (builtin presets only; Custom dialog offers xyz/wmts; persist skips empty ids) — add a presets-only note before a future Custom-WMS entry — `src/camp_map/map_tiles/wms.cpp:26`
+- [ ] (suggestion, minor) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&` (kept by-value to match `osm::generateTileLayout` convention) — `src/camp_map/map_tiles/wms.cpp:11`
+
+**Note**: cpplint findings on `wms.h`/tests (legal/copyright, build/header_guard, build/include_subdir) match the established `osm.h` sibling convention exactly and are repo-wide, not this-PR defects — correctly silenced. ROS 2 colcon build/tests not compiled (heavy build; changes are pure-logic URL assembly + a guard clause, reasoned through and tested pure-logic) — matches the R1 convention for this diff. Plan adherence full; documented positive deviation: radar `layer_id` workspace-qualified (`weather_radar:base_reflectivity_mosaic`) per live smoke check (ADR-0012).
