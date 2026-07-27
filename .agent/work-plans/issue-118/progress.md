@@ -99,22 +99,41 @@ ADR compliance all Good. No must-fix findings.
 **CI**: build-and-test pending at triage time; copilot check pass
 
 ### Findings
-- [ ] (cross-confirmed: Copilot + Local Review R1 suggestion) No guard for empty
+- [x] (cross-confirmed: Copilot + Local Review R1 suggestion) No guard for empty
   `layer_id` in the WMS construction path — a persisted entry read back without
   the key constructs `LAYERS=` requests that always fail (repeated pointless
   traffic on refresh layers). Refuse to construct WMS with empty `layer_id` —
   `src/camp_map/background/background_manager.cpp:188`
-- [ ] (valid, Copilot) WMS 1.3.0 GetMap template omits the spec-required
+- [x] (valid, Copilot) WMS 1.3.0 GetMap template omits the spec-required
   `STYLES` parameter (may be empty); both live endpoints tolerate its absence
   (smoke-checked) but stricter servers reject. Add `&STYLES=` + update the
   required-params test — `src/camp_map/map_tiles/wms.cpp:30`
-- [ ] (valid-minor, Copilot) `wms.h` uses `std::string` in its public API via a
+- [x] (valid-minor, Copilot) `wms.h` uses `std::string` in its public API via a
   transitive `<string>` include from `tile_layout.h`; include `<string>`
   directly — `src/camp_map/map_tiles/wms.h:4`
-- [ ] (valid-minor, Copilot) `test_wms_url_generation.cpp` calls `sscanf`
+- [x] (valid-minor, Copilot) `test_wms_url_generation.cpp` calls `sscanf`
   without `<cstdio>` (compiles via transitive includes today) — add the
   include — `test/test_wms_url_generation.cpp:9`
 
 ### False positives
 - (none — all four Copilot comments verified against local code as real,
   spec-supported, or hygiene-valid)
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-27 19:19 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-118 at `092318b`
+**Addressed**: Integrated Review (When 2026-07-24 18:08 -04:00, PR #176 @ `a1a9b77`)
+**Commits**: `c8fb5e5`, `c098a6a`, `ac8818d`, `092318b`
+
+### Actions
+- [x] Refuse to construct a WMS layer with empty `layer_id` — early `return nullptr` before build, so a corrupt restore can't spew failing `LAYERS=` GetMap traffic on refresh — `src/camp_map/background/background_manager.cpp:178` (`c8fb5e5`)
+- [x] Add spec-required `STYLES=` (empty) to the WMS 1.3.0 GetMap template + extend the required-params test — `src/camp_map/map_tiles/wms.cpp:30`, `test/test_wms_url_generation.cpp:71` (`c098a6a`)
+- [x] Include `<string>` directly in `wms.h` (public API uses `std::string`, previously via transitive `tile_layout.h`) — `src/camp_map/map_tiles/wms.h:4` (`ac8818d`)
+- [x] Include `<cstdio>` for `sscanf` in `test_wms_url_generation.cpp` (was compiling via transitive includes) — `test/test_wms_url_generation.cpp:9` (`092318b`)
+
+### Checks
+- `ament_cpplint` on the four touched files: my added includes introduce no new `include_order`/`line_length` errors; the remaining categories (`legal/copyright`, `build/include_subdir`) are pre-existing repo-wide conventions present on unrelated files (e.g. `osm.h`), not from this pass.
+- ROS 2 colcon build/tests not compiled (heavy build; changes are pure-logic hygiene + a guard clause and a test-param addition, reasoned through) — matches the Local Review's convention for this diff.
