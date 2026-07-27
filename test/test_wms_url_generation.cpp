@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <string>
 
 #include "map_tiles/osm.h"
