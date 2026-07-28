@@ -51,7 +51,8 @@ void CachedTileLoader::load(TileAddress address)
 
   QFileInfo file_path(local_cache_path_, address);
 
-  CachedFileClient* client = new CachedFileClient(this);
+  // [#177] expects_image opts tile loads into the loader's image gate.
+  CachedFileClient* client = new CachedFileClient(this, true);
   connect(client, &CachedFileClient::dataLoaded, this, &CachedTileLoader::dataLoaded);
 
   QVariant address_variant;

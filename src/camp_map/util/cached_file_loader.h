@@ -15,9 +15,18 @@ class CachedFileClient: public QObject
 {
   Q_OBJECT
 public:
-  CachedFileClient(QObject* parent=nullptr);
+  // expects_image opts this client's loads into CachedFileLoader's image
+  // validation gate. Default false: non-tile payloads (WMTS capabilities XML)
+  // load through the same shared loader and must not be gated.
+  CachedFileClient(QObject* parent=nullptr, bool expects_image=false);
+
+  bool expectsImage() const;
+
 signals:
   void dataLoaded(QByteArray &data, CachedFileClient* client);
+
+private:
+  bool expects_image_ = false;
 };
 
 /// Loads file from a drive or
@@ -33,6 +42,14 @@ public:
   static CachedFileLoader* instance();
 
   QDir cachePath() const;
+
+  /// Returns true if data may be cached and delivered as an image body.
+  /// A declared text/XML Content-Type (a WMS ServiceExceptionReport arrives
+  /// as HTTP 200 + text/xml) is rejected without a decode attempt; any other
+  /// type — image/*, empty, or odd-but-valid ones like
+  /// application/octet-stream — is decided by whether the bytes decode as an
+  /// image.
+  static bool isAcceptableImageBody(const QByteArray& data, const QString& content_type);
 
 public slots:
   void setCachePath(QString cache_path);

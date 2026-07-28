@@ -6,6 +6,7 @@
 #include <QNetworkRequest>
 #include <QJsonObject>
 #include <QJsonDocument>
+#include <QImage>
 
 #include <QDebug>
 
@@ -38,6 +39,19 @@ CachedFileLoader* CachedFileLoader::instance()
 QDir CachedFileLoader::cachePath() const
 {
   return QDir(cache_path_);
+}
+
+bool CachedFileLoader::isAcceptableImageBody(const QByteArray& data, const QString& content_type)
+{
+  // [#177] Fast reject: declared text or XML bodies (a WMS error report is
+  // HTTP 200 + text/xml or application/vnd.ogc.se_xml) never decode as tiles.
+  // Other non-image declarations (e.g. application/octet-stream) may still be
+  // valid images — the decode below decides those.
+  const auto type = content_type.toLower();
+  if(type.startsWith("text/") || type.contains("xml"))
+    return false;
+  QImage image;
+  return image.loadFromData(data);
 }
 
 void CachedFileLoader::setCachePath(QString cache_path)
@@ -84,6 +98,21 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
       auto cache_local_path = local_path_variant.value<QString>();
       auto data = reply->readAll();
 
+      if(client->expectsImage())
+      {
+        // [#177] WMS servers report errors as HTTP 200 + XML; caching such a
+        // body would poison the tile cache until LRU eviction (#98) for
+        // layers with no refresh interval. Only image-expecting clients are
+        // gated — WMTS capabilities XML loads through this same loader.
+        auto content_type = reply->header(QNetworkRequest::ContentTypeHeader).toString();
+        if(!isAcceptableImageBody(data, content_type))
+        {
+          qDebug() << "Rejecting non-image body (Content-Type " << content_type << ") from " << reply->request().url();
+          reply->deleteLater();
+          return;
+        }
+      }
+
       if(!reply->request().url().isLocalFile())
       {
         // Save the data to a local cache location if not a local source
@@ -105,7 +134,7 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
         for(auto pair: reply->rawHeaderPairs())
           header[pair.first] = QString(pair.second);
         meta["reply-header"] = header;
-        
+
         QFile reply_file(file_path.filePath()+".json");
         reply_file.open(QIODevice::WriteOnly);
         reply_file.write(QJsonDocument(meta).toJson());
@@ -128,9 +157,15 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
 
 
 
-CachedFileClient::CachedFileClient(QObject* parent):
-  QObject(parent)
+CachedFileClient::CachedFileClient(QObject* parent, bool expects_image):
+  QObject(parent),
+  expects_image_(expects_image)
 {
+}
+
+bool CachedFileClient::expectsImage() const
+{
+  return expects_image_;
 }
 
 } // namespace camp
