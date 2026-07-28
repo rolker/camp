@@ -56,3 +56,29 @@ issue: 177
 - CMake registration mirrors existing `test_wms_url_generation` (`camp_map Qt5::Core Qt5::Gui`).
 - `&EXCEPTIONS=BLANK` correctly excluded with rationale (blank image would decode and cache as a "valid" tile).
 - Decode-as-authority + header-as-early-out is a sound, testable structure.
+
+## Implementation
+**Status**: blocked
+**When**: 2026-07-28 14:07 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-177 at `39a9eb8`
+**Addressed**: none — no qualifying review entry exists to address
+
+### Actions
+- (no-op) `address-findings` found no `## Integrated Review` (post-PR) or `## Local Review (Pre-Push)` (pre-push) entry — the shared parser (`progress_read.py --type "Integrated Review" --type "Local Review (Pre-Push)"`) returns an empty `entries[]`. Per the skill's Step 2, this is the "no qualifying entry" case: report and exit without addressing anything. The skill must **not** fall back to the `## Plan Review` entry (a pre-implementation review it does not act on).
+
+### Why this is a no-op
+`address-findings` sits downstream of **implement → review-code**. The latest
+review here is a `## Plan Review` with verdict `changes-requested` — the
+lifecycle has only reached **review-plan**, and no implementation commits exist
+on `feature/issue-177` (`git log main..feature/issue-177` is empty). There is no
+post-implementation review whose findings could be addressed.
+
+### Next step
+Revise the plan to resolve the two **must-fix** Plan Review findings (the blanket
+gate in shared `downloadFinished` regressing WMTS capabilities loading, and the
+factually-wrong consequences table claiming WMTS uses separate loaders), then
+re-run **review-plan**. Only once the plan is approved and **implement →
+review-code** have run will there be a review entry for `address-findings` to
+consume.
