@@ -82,3 +82,28 @@ factually-wrong consequences table claiming WMTS uses separate loaders), then
 re-run **review-plan**. Only once the plan is approved and **implement →
 review-code** have run will there be a review entry for `address-findings` to
 consume.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-28 19:08 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-177 at `c6cb142`
+**Mode**: pre-push
+**Depth**: Standard (reason: medium change touching the shared singleton `CachedFileLoader` used by all tile sources + WMTS capabilities — cross-source regression risk; no security/concurrency/cross-repo signal for Deep)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix; both must-fix items from the earlier Plan Review are resolved by the `expects_image` design; only two low-severity suggestions remain.
+
+### Findings
+- [ ] (suggestion) Format-authority asymmetry: gate `isAcceptableImageBody` accepts any QImage-decodable format, but consumer forces `pixmap.loadFromData(data,"png")` — a valid non-PNG image would pass the gate, cache, then render blank. Not exploitable today (all sources PNG). — `src/camp_map/map_tiles/cached_tile_loader.cpp:143`
+- [ ] (suggestion) Redundant full-image decode per disk-cache hit: gate `QImage` decode + consumer `QPixmap` decode on every `file://` re-read. Negligible per 256px tile; optional. — `src/camp_map/util/cached_file_loader.cpp:108`
+
+### Notes
+- Static analysis: cppcheck clean (only the known Qt `slots`-macro config limitation); camp does not enforce ament_cpplint (no `ament_lint_auto` in CMakeLists, sibling tests carry no copyright header, custom include guards) — the 25 cpplint items are repo-convention noise, not actionable.
+- Adversarial: 2 disjoint-lens Claude passes (Lens A logic, Lens B systemic/safety) both returned clean; the format-authority point surfaced in Lens A and was echoed by Lens B. Local Adversarial skipped (Ollama not running).
+- Governance: both `CachedFileClient` construction sites verified (`cached_tile_loader.cpp:55` → `true`; `wmts/capabilities.cpp:24` → default `false`, ungated). Consequences map satisfied.
+- ADR-0018: full `colcon build` could not reconfigure in this shell (lower-layer `marine_ais_msgs` not on prefix path in this worktree). Gate logic was independently compiled & run headless against all 7 test-case inputs — all matched expectations, confirming the unit test needs no QApplication. Run `./build.sh camp && ./test.sh camp` on a fully-sourced env before push.
+
+### Next step
+Approved pre-push review. Address the two suggestions (optional) or track them, then push / open PR and hand off to **triage-reviews** in a fresh-context sub-agent. Per ADR-0018, complete a full local `build + test` on a properly-sourced environment before pushing.
