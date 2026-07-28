@@ -555,6 +555,21 @@ if(BUILD_TESTING)
   # [camp#118] Per-tile WMS GetMap URL generation (ADR-0012): bbox expansion vs
   # the OSM tile math, required GetMap parameters, grid identity with the OSM
   # layout. Pure logic — no network, no GUI.
+  # [camp#177] Shared-cache image gate: Content-Type fast reject + decode
+  # authority, and the CachedFileClient opt-in contract.
+  ament_add_gtest(test_cached_file_loader_validation
+    test/test_cached_file_loader_validation.cpp
+  )
+  target_include_directories(test_cached_file_loader_validation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_cached_file_loader_validation
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+  )
+
   ament_add_gtest(test_wms_url_generation
     test/test_wms_url_generation.cpp
   )
