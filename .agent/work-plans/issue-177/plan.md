@@ -29,10 +29,13 @@ persists until LRU eviction (#98).
 1. **Extract `CachedFileLoader::isAcceptableImageBody` (static, testable)** —
    add a `static bool isAcceptableImageBody(const QByteArray& data,
    const QString& content_type)` method that encodes both checks:
-   - Fast reject: if `content_type` is non-empty and does not start with
-     `"image/"`, return false immediately (non-image MIME types such as
-     `text/xml`, `application/xml`, `application/vnd.ogc.se_xml` are skipped
-     without decoding).
+   - Fast reject: if `content_type` (lowercased) starts with `text/` or
+     contains `xml`, return false immediately (`text/xml`, `application/xml`,
+     `application/vnd.ogc.se_xml` are skipped without decoding). It must NOT
+     reject other non-`image/*` types — odd-but-valid types like
+     `application/octet-stream` fall through to the decode check (operator
+     decision: decode decides anything the header check doesn't clearly
+     identify as an error report).
    - Decode gate (authority): `QImage check; return check.loadFromData(data);`
      Any body that passes the header check (or has no/odd Content-Type) must
      decode as an image to be cached.
