@@ -18,3 +18,15 @@ issue: 177
 - [ ] Add test coverage for the decode gate: a unit test that verifies `CachedFileLoader` does NOT write a cache file when an HTTP 200 response carries a non-image body (mock a WMS XML `ServiceExceptionReport` 200 response).
 - [ ] Confirm `&EXCEPTIONS=BLANK` (Option 1) is intended as complementary hardening or is out of scope — the issue says "the two can be combined" but plan-task should state the PR scope explicitly.
 - [ ] Verify that the decode gate does not regress OSM or radar tile loading — `CachedFileLoader` is shared by all sources; any content-type or image-decode check must tolerate the bodies those sources return.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-28 12:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-177/plan.md` at `3c92151`
+**Branch**: feature/issue-177 at `3c92151`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
