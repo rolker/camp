@@ -4,6 +4,7 @@
 #include "../map/layer_list.h"
 #include "../map_tiles/map_tiles.h"
 #include "../map_tiles/osm.h"
+#include "../map_tiles/wms.h"
 #include "../raster/raster_layer.h"
 #include "../raster/gggs_tile_layer.h"
 #include "../tools/tools_manager.h"
@@ -174,7 +175,25 @@ map_tiles::MapTiles* BackgroundManager::createTileLayer(map::LayerList* layers, 
       tiles->setRefreshInterval(preset.refresh_ms);
     return tiles;
   }
-  // No constructible layer for this type (e.g. "wms" until #118).
+  if(preset.type == "wms")
+  {
+    // [camp#118] Refuse to construct a WMS layer with an empty layer_id: it
+    // would build LAYERS= GetMap requests that every server rejects, so the
+    // refresh timer would spew pointless failing traffic. Presets always set
+    // layer_id and persist skips empty ids, so this only guards a corrupt
+    // restore, but the check is cheap and keeps the failure mode contained.
+    if(preset.layer_id.isEmpty())
+      return nullptr;
+    // [camp#118] Per-tile WMS 1.3.0 GetMap on the OSM grid (ADR-0012): rides
+    // the identical MapTiles lifecycle as XYZ — cache, eviction, refresh and
+    // cache-buster (the buster's '&' branch handles the query string).
+    auto tiles = new map_tiles::MapTiles(layers, preset.name,
+        wms::generateWmsLayout(preset.url.toStdString(), preset.layer_id.toStdString()));
+    if(preset.refresh_ms > 0)
+      tiles->setRefreshInterval(preset.refresh_ms);
+    return tiles;
+  }
+  // No constructible layer for this type.
   return nullptr;
 }
 

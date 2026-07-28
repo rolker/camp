@@ -18,9 +18,9 @@ namespace background
 struct TileLayerPreset
 {
   QString name;                  // layer objectName + display name
-  QString type;                  // "xyz" | "wmts" | "wms" (wms inert until #118)
+  QString type;                  // "xyz" | "wmts" | "wms" (per-tile GetMap, #118)
   QString url;
-  QString layer_id;              // WMTS: advertised layer id ({} = first)
+  QString layer_id;              // WMTS: advertised layer id ({} = first); WMS: LAYERS value
   QString tile_matrix_set;       // WMTS: matrix set id ({} = auto)
   qreal opacity = 1.0;
   bool visible = true;
@@ -79,21 +79,24 @@ inline QVector<TileLayerPreset> builtinPresets()
   noaa_charts.url = "https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS";
   presets.append(noaa_charts);
 
-  // [#99] Weather radar (NEXRAD base reflectivity) as a stacked, auto-refreshing
-  // overlay. Source: NOAA NEXRAD base reflectivity, redistributed as XYZ
-  // Web-Mercator (EPSG:3857) tiles by Iowa State University's Environmental
-  // Mesonet (IEM). nowCOAST itself serves this product only via WMS (dynamic
-  // GetMap), not tiled WMTS, so it does not fit the MapTiles z/x/y path; IEM's
-  // tile cache does (same NEXRAD origin). The "n0q" product alias always serves
-  // the LATEST frame, so the 5-minute refresh genuinely fetches fresh imagery.
-  // Default OFF, ~0.65 opacity so it reads as a transparent overlay, refreshed
-  // every 5 minutes since radar imagery is time-varying. On a fetch failure the
-  // tile stays blank (graceful degradation in CachedFileLoader). #118 tracks
-  // switching this to authoritative NOAA nowCOAST once WMS support lands.
+  // [#99/#118] Weather radar as a stacked, auto-refreshing overlay — now
+  // authoritative NOAA nowCOAST (`base_reflectivity_mosaic`, MRMS-based,
+  // time-enabled, WMS-only) via the per-tile GetMap path (ADR-0012), replacing
+  // the IEM XYZ redistribution stopgap that #118 retired. Latest-frame only:
+  // TIME is omitted so the server returns the newest frame; the 5-minute
+  // refresh + #111 cache-buster keep it fresh. Default OFF, ~0.65 opacity so
+  // it reads as a transparent overlay. On a fetch failure the tile stays blank
+  // (graceful degradation in CachedFileLoader).
+  // The preset name stays "nexrad_radar" for persisted-state continuity (ids
+  // list + MapItem/<settingsKey>) even though the MRMS mosaic is broader than
+  // NEXRAD proper.
   TileLayerPreset radar;
   radar.name = "nexrad_radar";
-  radar.type = "xyz";
-  radar.url = "https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/";
+  radar.type = "wms";
+  radar.url = "https://nowcoast.noaa.gov/geoserver/wms";
+  // Workspace-qualified: GeoServer rejects the bare mosaic name with
+  // LayerNotDefined (smoke-checked live 2026-07-24).
+  radar.layer_id = "weather_radar:base_reflectivity_mosaic";
   radar.opacity = 0.65;
   radar.visible = false;
   radar.refresh_ms = 5 * 60 * 1000;
@@ -118,16 +121,14 @@ inline QVector<TileLayerPreset> builtinPresets()
   bluetopo_hillshade.tile_matrix_set = "EPSG:3857";
   presets.append(bluetopo_hillshade);
 
-  // GEBCO global bathymetry — GEBCO publishes WMS only (no official WMTS), so
-  // this preset is inert (greyed out) until #118 lands the WMS layer type
-  // (operator decision 2026-07-24: keep the preset table complete in one place).
+  // GEBCO global bathymetry — GEBCO publishes WMS only (no official WMTS);
+  // served via the per-tile GetMap path (#118, ADR-0012). Global ~450 m grid:
+  // coarse next to BlueTopo nearshore, but worldwide coverage.
   TileLayerPreset gebco;
   gebco.name = "GEBCO_bathymetry";
   gebco.type = "wms";
   gebco.url = "https://wms.gebco.net/mapserv";
   gebco.layer_id = "GEBCO_LATEST";
-  gebco.enabled = false;
-  gebco.note = "GEBCO serves WMS only — requires WMS layer support (#118)";
   presets.append(gebco);
 
   return presets;

@@ -153,14 +153,33 @@ TEST(BackgroundPersistence, AddFromPresetRoundTrips)
   EXPECT_FALSE(restored->isVisible());
 }
 
-// An inert preset (WMS until #118) is persisted-nothing and creates nothing.
-TEST(BackgroundPersistence, InertWmsPresetRefused)
+// A preset with no constructible type is persisted-nothing and creates
+// nothing. ([camp#118] the builtin WMS presets are live now — GEBCO
+// constructs via the per-tile GetMap path — so this uses a synthetic type.)
+TEST(BackgroundPersistence, UnconstructibleTypeRefused)
 {
   QSettings().clear();
   Map map;
-  EXPECT_EQ(backgroundManager(map)->addTileLayerFromPreset(presetNamed("GEBCO_bathymetry")),
-            nullptr);
-  EXPECT_FALSE(QSettings().value(tileLayerIdsKey()).toStringList().contains("GEBCO_bathymetry"));
+  TileLayerPreset bogus;
+  bogus.name = "bogus_layer";
+  bogus.type = "notatype";
+  bogus.url = "https://tiles.example.org/";
+  EXPECT_EQ(backgroundManager(map)->addTileLayerFromPreset(bogus), nullptr);
+  EXPECT_FALSE(QSettings().value(tileLayerIdsKey()).toStringList().contains("bogus_layer"));
+}
+
+// [camp#118] A live WMS preset (GEBCO) constructs through the per-tile GetMap
+// path and round-trips like any other tile layer.
+TEST(BackgroundPersistence, WmsPresetConstructsAndRoundTrips)
+{
+  QSettings().clear();
+  {
+    Map map;
+    ASSERT_NE(backgroundManager(map)->addTileLayerFromPreset(presetNamed("GEBCO_bathymetry")),
+              nullptr);
+  }
+  Map map;
+  EXPECT_EQ(tileLayersNamed(map.topLevelLayers(), "GEBCO_bathymetry"), 1);
 }
 
 // An empty preset name is refused outright (the name IS the persistence

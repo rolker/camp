@@ -1,6 +1,9 @@
 #include "tile_layout.h"
 #include "tile_address.h"
 
+#include <iomanip>
+#include <sstream>
+
 namespace camp
 {
 
@@ -35,6 +38,23 @@ std::string TileLayout::getUrl(const TileAddress& address) const
         url += std::to_string(address.index().y());
       if(key == "TileCol")
         url += std::to_string(address.index().x());
+      // [camp#118] WMS per-tile GetMap: expand to this tile's EPSG:3857 bbox
+      // (minx,miny,maxx,maxy — WMS 1.3.0 axis order for EPSG:3857 is easting,
+      // northing). Two decimal places (centimeter precision in Web-Mercator
+      // meters) keeps URLs stable and short.
+      if(key == "WMS_BBOX")
+      {
+        const auto& level = zoom_levels[address.zoomLevel()];
+        const QPointF top_left = address.topLeftCorner();
+        const double min_x = top_left.x();
+        const double max_y = top_left.y();
+        const double max_x = min_x + level.scale*level.tile_width;
+        const double min_y = max_y - level.scale*level.tile_height;
+        std::ostringstream bbox;
+        bbox << std::fixed << std::setprecision(2)
+             << min_x << ',' << min_y << ',' << max_x << ',' << max_y;
+        url += bbox.str();
+      }
     }
   }
   return url;
