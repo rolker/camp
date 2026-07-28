@@ -192,3 +192,23 @@ ADR compliance all Good. No must-fix findings.
 
 ### False positives
 - (none this round)
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-28 00:00 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-118 at `ec92b6d`
+**Addressed**: Integrated Review (When 2026-07-27 16:11 -04:00, PR #176 @ `4ab991d`)
+**Commits**: `ec92b6d`
+
+### Actions
+- [x] Derive the WMS test's `kHalfEarth` from `web_mercator::earth_radius_at_equator * M_PI` — the same constant `osm::generateTileLayout()` uses — instead of the repeated 13-digit literal `20037508.3427892`, so the test can't drift from the layout it verifies. Added `#include "map_view/web_mercator.h"` (resolves via the test's `src/camp_map` include dir; `QGeoCoordinate` available since `camp_map` links `Qt5::Positioning` PUBLIC) and `#include <cmath>` for `M_PI` — `test/test_wms_url_generation.cpp:23` (`ec92b6d`)
+
+### Checks
+- Numeric equivalence confirmed: `6378137 * M_PI` = `20037508.3427892` (diff ≈ 4.5e-8, well inside the tests' `EXPECT_NEAR` 0.01 tolerance).
+- `ament_cpplint` on the touched file: only the pre-existing repo-wide `legal/copyright` convention (also on `osm.h`, noted in prior reviews) — the new includes introduce no `include_order` or other errors.
+- ROS 2 colcon build/tests not compiled (heavy build; change is a pure-logic `constexpr` derivation + two direct includes, reasoned through) — matches this diff's established review convention.
+
+### Carried forward (not this round — informational bullets in the source Integrated Review, no `- [ ]` action)
+- `base_url`/`layer_id` unencoded in the WMS query (presets-only note deferred to a future Custom-WMS entry) and `generateWmsLayout` by-value params (kept to match `osm::generateTileLayout`) remain single-source suggestions carried by the Integrated Review as plain bullets — no open checkbox, so out of scope for this pass.
