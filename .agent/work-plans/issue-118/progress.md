@@ -212,3 +212,23 @@ ADR compliance all Good. No must-fix findings.
 
 ### Carried forward (not this round — informational bullets in the source Integrated Review, no `- [ ]` action)
 - `base_url`/`layer_id` unencoded in the WMS query (presets-only note deferred to a future Custom-WMS entry) and `generateWmsLayout` by-value params (kept to match `osm::generateTileLayout`) remain single-source suggestions carried by the Integrated Review as plain bullets — no open checkbox, so out of scope for this pass.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-28 12:44 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-118 at `a89006c`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR docs/decisions/0012 — Deep promotion trigger)
+**Must-fix**: 0 | **Suggestions**: 3
+**Round**: 3 | **Ship**: recommended — no must-fix; this round's only code delta (kHalfEarth derived constant) verified correct; one fresh low-severity systemic suggestion + two accepted carry-forwards remain.
+**Specialists**: Static Analysis (cppcheck + ament_cpplint), Governance, Plan Drift, Claude Adversarial ×2 (Lens A+B, Deep). Local Adversarial skipped (no Ollama server at localhost:11434); Copilot off (default).
+
+### Findings
+- [ ] (suggestion) WMS error responses (HTTP 200 + XML ServiceExceptionReport) cache-poison non-refreshing layers: `CachedFileLoader` caches any body on `error()==NoError` with no decode gate, so a transient GEBCO backend blip writes an XML body to `<z>/<x>/<y>.png`; display stays blank (graceful) but GEBCO sets no refresh_ms so it never `invalidateCache()`s — persists until #98 LRU eviction. Radar self-heals via 5-min refresh. Cheap mitigation: add `&EXCEPTIONS=BLANK` to the GetMap template; fuller fix (decode-gate the cache write) is cross-cutting — track as follow-up — `src/camp_map/map_tiles/wms.cpp:30`, `src/camp_map/util/cached_file_loader.cpp:97`
+- [ ] (suggestion, carried) `base_url`/`layer_id` injected unencoded into the WMS query; not reachable today (Custom dialog offers xyz/wmts only, no wms/layer_id field — Lens B traced; builtin presets only) — add a presets-only note before a future Custom-WMS entry — `src/camp_map/map_tiles/wms.cpp:26`
+- [ ] (suggestion, minor, carried) cppcheck: `generateWmsLayout` `base_url`/`layer_id` could be `const&` — kept by-value to match `osm::generateTileLayout` convention — `src/camp_map/map_tiles/wms.cpp:11`
+
+**Note**: This round's code delta vs R2 (`ed71cba`) is a single line — `kHalfEarth` derived from `web_mercator::earth_radius_at_equator * M_PI` (the R2 Integrated-Review action). Verified: numerically correct (6378137·π = 20037508.3427892) and the transitive `<QGeoCoordinate>` include resolves via `camp_map`'s PUBLIC `Qt5::Positioning` link. The Lens B cache-poisoning finding is new (not surfaced in R1/R2 or the two Copilot integrated rounds); verified end-to-end (refreshTiles→invalidateCache at map_tiles.cpp:287 vs GEBCO refresh_ms=0). cpplint findings on changed files (legal/copyright, header_guard, include_subdir, include_order) match the repo-wide osm.h sibling convention — pre-existing, correctly silenced. ROS 2 colcon build/tests not compiled (pure-logic diff; reasoned through) — matches this diff's established convention. Plan adherence full.
