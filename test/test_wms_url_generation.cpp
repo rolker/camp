@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstdio>
 #include <string>
 
@@ -12,13 +13,16 @@
 #include "map_tiles/tile_address.h"
 #include "map_tiles/tile_layout.h"
 #include "map_tiles/wms.h"
+#include "map_view/web_mercator.h"
 
 using camp::map_tiles::TileAddress;
 using camp::map_tiles::TileLayout;
 
 namespace
 {
-constexpr double kHalfEarth = 20037508.3427892;  // Web-Mercator half-circumference
+// Web-Mercator half-circumference, derived from the same constant
+// osm::generateTileLayout() uses rather than a repeated magic literal.
+constexpr double kHalfEarth = web_mercator::earth_radius_at_equator * M_PI;
 }
 
 // Zoom 0 is a single tile spanning the whole Web-Mercator square: its bbox is

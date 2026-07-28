@@ -168,7 +168,7 @@ ADR compliance all Good. No must-fix findings.
 **CI**: all-pass (`build-and-test` success, `copilot-pull-request-reviewer` success)
 
 ### Findings
-- [ ] (valid-minor, Copilot R2) Test duplicates the Web-Mercator half-circumference as a
+- [x] (valid-minor, Copilot R2) Test duplicates the Web-Mercator half-circumference as a
   13-digit literal (`kHalfEarth = 20037508.3427892`) instead of deriving it from
   `web_mercator::earth_radius_at_equator * M_PI` — the same constant
   `osm::generateTileLayout()` uses. Fix: include `map_view/web_mercator.h` (compiles as-is —
