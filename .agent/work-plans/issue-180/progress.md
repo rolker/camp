@@ -102,3 +102,22 @@ finest available tile regardless of rendered LOD, which requires no dependency o
 ### Open questions
 - [ ] `sampleAt()` opens the GDAL file per call; on network-mounted stores this may lag. Add a debounce or cursor-stop trigger now, or treat as follow-on if latency is observed?
 - [ ] When both a GGGS store and a chart raster cover the cursor, the plan shows both labels ("Elev: X (ellipsoid)" and "Depth: Y"). Preferred UX: show both, or suppress chart depth when a store value is present?
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-31 18:05 +00:00
+**By**: Claude Code Agent (Claude Opus) (in-context — author self-review)
+
+**Plan**: `.agent/work-plans/issue-180/plan.md` at `4b4af74`
+**PR**: PR-less (`--issue` / file-path mode; no draft PR — `gh` unauthenticated in this environment)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (must-fix) `sampleAt()` "apply the tile's NoData mask" relies on `has_nodata_`/`nodata_`, which are populated only by `loadPixels()` (constructor defers them — `gggs_tile.h:30`; confirmed `test_gggs_tile.cpp:208`). Since `getElevation()` queries the finest-level tile regardless of rendered LOD, it may sample a tile that was never painted → `has_nodata_==false` → the NoData sentinel is returned as a real elevation. Query the band's NoData directly via GDAL in `sampleAt()`, and add a NoData-on-unloaded-tile test — `plan.md:29`
+- [ ] (suggestion) Test coverage stops at `GggsTile::sampleAt()`. The riskier new logic — `getElevation()`'s extent filter, `<level>_<row>_<col>` basename parse, descending-level sort, and `getStoreElevation()`'s dynamic-cast walk — is untested. Add a multi-tile `getElevation()` test (overlapping levels: finest covering tile wins; out-of-extent → NaN), or at least a manual protocol in the PR — `plan.md:51`
+- [ ] (suggestion) `getStoreElevation()` walks all `GggsTileLayer`s regardless of the operator's Layers-tab enable/disable, whereas ADR-0003 §2 specifies `getDepth` walks *enabled* depth layers. (Current `getDepth`/`m_depthRasters` also ignores visibility — `autonomousvehicleproject.cpp:381` checks only `depthValid()` — so this matches today's behavior.) State the decision explicitly: should a hidden store still report elevation at the cursor? — `plan.md:39`
+- [ ] (suggestion) `sampleAt()` opens the GeoTIFF per call and `mouseMoveEvent` runs on the GUI thread → a synchronous GDAL open per cursor move (the "safe on any thread" property isn't exploited; the call chain is GUI-thread). Deferring a debounce/cache is fine, but commit to defer-and-revisit-if-observed rather than leaving Open Question #1 fully open — it directly affects the operator UX this issue targets — `plan.md:99`
+
+Non-blocking: `gggs_tile_layer.h` will need a `<QGeoCoordinate>` include for the new `getElevation(const QGeoCoordinate&)` signature (trivial implementation detail).
+
+Strengths worth noting: file targeting is accurate (all 8 files verified to exist with the described members; integration point confirmed exact at `projectview.cpp:212`). The dynamic `topLevelLayers()->childMapItems()` walk (no stored pointer list) elegantly resolves the deregister/dangling-pointer lifecycle concern the Issue Review flagged, addressing its Actions 1–2. The separate `getStoreElevation()` path plus the distinct "Elev: (ellipsoid)" label is a defensible interim reading of ADR-0003 §2 that keeps ellipsoidal height and chart-datum depth semantically distinct until the datum service (#288).
