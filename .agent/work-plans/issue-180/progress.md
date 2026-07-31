@@ -242,3 +242,26 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 180 --skill review-code
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 19:44 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-180 at `0b90cf1`
+**Mode**: pre-push
+**Depth**: Standard (reason: camp↔camp_map boundary + camp#102 threading contract; focused confirmation of the R1-approved fix delta)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 2 | **Ship**: recommended — R1 approved (0 must-fix); this round confirms the 4 fix commits (`cda1ebb`,`d095e94`,`d38258a`,`4da941d`) are correct, complete, regression-free. Two disjoint-lens adversarial passes clean. Full-stack rebuild (installs had been wiped post-R1) clean; camp tests 194/0/0/12 (12 pre-existing GL skips), gggs_elevation 3/0 + gggs_tile 13/0 green.
+
+### Findings
+- [ ] (suggestion) Shear guard has no dedicated unit test — low-value (can't-happen-by-construction input); track or skip — `src/camp_map/raster/gggs_tile.cpp:157`
+
+### Notes
+- `cda1ebb` LOD cache: `level_` parsed once from immutable `path_` in ctor; value identical to the old per-move `tileLevel(QFileInfo(path).fileName())`. Coherent with lifecycle — `setBand()` leaves `level_` untouched; `rescan()` builds fresh tiles. Thread-safe: ctor write happens-before publish to `tiles_`; `level()` read on GUI thread. Covered by `FinestCoveringTileWins` + `TileLevelParse`.
+- `d095e94` shear guard: returns NaN before the col/row inversion on `geo[2]!=0||geo[4]!=0` — a miss, never a mis-indexed value; caller treats NaN as no-value and falls through.
+- `d38258a` / `4da941d`: comment-only; both claims verified factually accurate against the code (CPU buffer held by every loaded tile; `getDepth` filters `depthValid()` only vs `getStoreElevation` honoring `isVisible()`).
+
+### Next step
+Lifecycle: **Local Review** (approved) → push / open PR → **triage-reviews**. No must-fix; the single suggestion is optional. Ready to publish.
