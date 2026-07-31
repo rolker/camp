@@ -15,6 +15,7 @@
 #include <QGeoCoordinate>
 #include <QMenu>
 #include <QSet>
+#include <QThread>
 #include <QSettings>
 #include <QOpenGLTexture>
 #include <QPainter>
@@ -414,6 +415,9 @@ void GggsTileLayer::tilesReady()
   // (progressive refinement — see itemsIntersecting). Only when no worker is
   // running: this mutates tiles the worker iterates, and a re-kick may already
   // be in flight; the release then happens at that load's own tilesReady().
+  // The safety of the mutation rests on the GUI-thread-only invariant (both
+  // this slot and every loadTiles() caller) — assert it.
+  Q_ASSERT(thread() == QThread::currentThread());
   if(selected_level_ != -1 && !future_watcher_.isRunning() &&
      !hasUnloadedVisibleTiles(load_viewport_))
   {
@@ -462,9 +466,14 @@ void GggsTileLayer::waitForLoad()
   // [camp#103] Also re-kick when idle with unloaded visible tiles at the current
   // selection — the headless analogue of paint()'s pan/level re-kick, so a test
   // that changes the LOD via setLodForTest() can drive the load the same way
-  // the paint path would.
+  // the paint path would. Same moved-since-last-kick guard as paint(): a tile
+  // that permanently fails to load must not trigger a redundant kick+join on
+  // every call with an unchanged filter.
   if(!load_started_ ||
-     (!future_watcher_.isRunning() && hasUnloadedVisibleTiles(load_viewport_)))
+     (!future_watcher_.isRunning() &&
+      (selected_level_ != last_kick_level_ ||
+       load_viewport_ != last_kick_viewport_) &&
+      hasUnloadedVisibleTiles(load_viewport_)))
   {
     load_started_ = true;
     loadTiles();
@@ -558,9 +567,11 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
   }
   // [camp#103 / ADR-0013] Progressive refinement across a level switch: tiles
   // from OTHER levels stay resident (paint() no longer eager-releases them)
-  // and draw FIRST, coarse→fine, so the outgoing level backs the view while
-  // the selected level streams in — no blank/flicker on zoom. The selected
-  // level draws LAST (on top), so each arriving tile covers its backdrop.
+  // and draw FIRST, in ascending level order (coarse→fine), so the outgoing
+  // level backs the view while the selected level streams in — no
+  // blank/flicker on zoom in EITHER direction (the stale backdrop is coarser
+  // on zoom-in, finer on zoom-out). The selected level draws LAST (on top),
+  // so each arriving tile covers its backdrop.
   // tilesReady() releases the stale levels once the selected level's visible
   // set is complete, so steady-state renders only the selected level.
   for(const int level : available_levels_)
@@ -628,8 +639,9 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     {
       // [camp#103 field verify] Do NOT release the outgoing level here. Its
       // loaded tiles keep rendering as the backdrop (itemsIntersecting draws
-      // stale levels coarse-first UNDER the selected level) until the new
-      // level's visible tiles finish loading — tilesReady() releases them
+      // stale levels UNDER the selected level — stale may be coarser on
+      // zoom-in or finer on zoom-out; selected is always on top) until the
+      // new level's visible tiles finish loading — tilesReady() releases them
       // then. The original eager release blanked the layer for the whole load
       // on every zoom across a level boundary — very visible flicker.
       selected_level_ = target;

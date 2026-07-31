@@ -73,8 +73,13 @@ load on every zoom across a level boundary (very visible flicker in the
 GL `releaseGL()` — a CPU-only clear leaves a stale texture shadowing any
 re-load) once the selected level's visible set has fully loaded and no worker
 is running, so steady-state renders — and holds resident — only the selected
-level. Transient cost: up to one viewport's worth of outgoing-level tiles stays
-resident for the duration of the incoming load; memory stays viewport-bounded.
+level. Transient cost: the outgoing level's visible tiles stay resident for
+the duration of the incoming load. A rapid multi-level zoom/pan sweep can
+transiently stack several stale levels (each load aborted before the release
+condition fires), bounded by the levels traversed and freed wholesale at the
+first idle completed load — self-healing, and still far below the pre-#103
+eager whole-store residency. If that transient ever matters in practice, a
+release-on-abort pass is the follow-up shape.
 
 **Headless / no-selection defaults**: `selected_level_ == -1` disables the
 level filter everywhere (worker, `itemsIntersecting()`, the range fold) and a
