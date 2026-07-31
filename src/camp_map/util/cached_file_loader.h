@@ -1,8 +1,10 @@
 #ifndef CAMP_CACHED_FILE_LOADER_H
 #define CAMP_CACHED_FILE_LOADER_H
 
-#include <QObject>
+#include <QByteArray>
 #include <QDir>
+#include <QObject>
+#include <QString>
 
 class QApplication;
 class QNetworkAccessManager;
