@@ -82,6 +82,10 @@ void CachedFileLoader::load(QString url, QString cache_local_path, CachedFileCli
   QVariant local_path_variant;
   local_path_variant.setValue(cache_local_path);
   client->setProperty("cache_local_path", local_path_variant);
+  // [#177] Stash the original network URL so a poisoned-cache rejection in
+  // downloadFinished can re-issue the fetch against the network (the request
+  // URL itself may have been rewritten to file:// above).
+  client->setProperty("network_url", url);
   request.setOriginatingObject(client);
 
   network_access_manager_->get(request);
@@ -108,6 +112,25 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
         if(!isAcceptableImageBody(data, content_type))
         {
           qDebug() << "Rejecting non-image body (Content-Type " << content_type << ") from " << reply->request().url();
+
+          if(reply->request().url().isLocalFile())
+          {
+            // [#177] Self-heal a poisoned disk cache entry. A pre-fix cache file
+            // holding a WMS error body would otherwise be re-read from disk
+            // forever (blank tile, no refetch) for layers with no refresh
+            // interval — exactly the field symptom #177 was filed for. Delete
+            // the poisoned file and its .json sidecar, then re-issue the fetch
+            // against the original network URL. The retry is a network request,
+            // so a second rejection falls through to the non-local return below
+            // — no retry loop is possible.
+            QFileInfo poisoned(cache_path_, cache_local_path);
+            QFile::remove(poisoned.filePath());
+            QFile::remove(poisoned.filePath()+".json");
+            auto network_url = client->property("network_url").value<QString>();
+            reply->deleteLater();
+            load(network_url, cache_local_path, client);
+            return;
+          }
           reply->deleteLater();
           return;
         }

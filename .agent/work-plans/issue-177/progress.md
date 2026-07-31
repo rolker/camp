@@ -119,7 +119,7 @@ Approved pre-push review. Address the two suggestions (optional) or track them, 
 **CI**: all-pass (`build-and-test` success, `copilot-pull-request-reviewer` success)
 
 ### Findings
-- [ ] (must-fix, Copilot) Existing poisoned cache entries never self-heal: `load()` prefers the on-disk `file://` copy, so a pre-fix `<z>/<x>/<y>.png` holding a `ServiceExceptionReport` is re-read, rejected by the new gate, and returned from without deleting — the tile stays blank forever (no refetch) for non-refreshing layers until LRU eviction (#98). Field caches are already poisoned; that is what #177 was filed for. Fix: in the rejection branch, when `reply->request().url().isLocalFile()`, delete the cache file and its `.json` sidecar, then re-issue the fetch against the original network URL (stash it as a client property in `load()` alongside `cache_local_path`). No retry loop is possible — the retry is a non-local request, and a second rejection returns without re-entering. — `src/camp_map/util/cached_file_loader.cpp:108`
+- [x] (must-fix, Copilot) Existing poisoned cache entries never self-heal: `load()` prefers the on-disk `file://` copy, so a pre-fix `<z>/<x>/<y>.png` holding a `ServiceExceptionReport` is re-read, rejected by the new gate, and returned from without deleting — the tile stays blank forever (no refetch) for non-refreshing layers until LRU eviction (#98). Field caches are already poisoned; that is what #177 was filed for. Fix: in the rejection branch, when `reply->request().url().isLocalFile()`, delete the cache file and its `.json` sidecar, then re-issue the fetch against the original network URL (stash it as a client property in `load()` alongside `cache_local_path`). No retry loop is possible — the retry is a non-local request, and a second rejection returns without re-entering. — `src/camp_map/util/cached_file_loader.cpp:108`
 - [ ] (suggestion, Local Review) Format-authority asymmetry: the gate accepts any `QImage`-decodable body, but the consumer forces `pixmap.loadFromData(data, "png")`, so a valid non-PNG image would pass the gate, be cached, and render blank permanently — the same persistent-silent-blank failure class this PR exists to close. Not reachable today (WMS forces `FORMAT=image/png`; XYZ sources are PNG). One-line fix: drop the `"png"` format hint and let Qt sniff. — `src/camp_map/map_tiles/cached_tile_loader.cpp:143`
 - [ ] (suggestion, Local Review) Redundant full-image decode per disk-cache hit (gate `QImage` decode + consumer `QPixmap` decode on every `file://` re-read). Negligible per 256 px tile; optional. — `src/camp_map/util/cached_file_loader.cpp:108`
 
@@ -128,3 +128,8 @@ Approved pre-push review. Address the two suggestions (optional) or track them, 
 
 ### Next step
 Hand off to `address-findings` for the must-fix (self-healing of poisoned cache entries) plus the one-line format-hint suggestion; the decode-cost suggestion may be closed as won't-fix. A re-review (`review-code`) and another triage round follow before merge.
+
+**Operator decision (2026-07-31, run-issue checkpoint)**: fix finding 1 (must-fix,
+self-heal) and finding 2 (format-hint drop); finding 3 (redundant double decode)
+is declined as won't-fix — do not implement it, note it as closed by operator
+decision.
