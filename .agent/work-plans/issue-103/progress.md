@@ -320,3 +320,31 @@ plus API/ODR details to pin down.
 - Local Model Adversarial: off (--no-local, workspace#590 standing decision). Copilot Adversarial: off (default).
 
 **Post-review fix pass (a95a773):** both R1 suggestions actioned host-inline — std::isfinite guard in selectLodLevel (+<cmath>), plan.md extent wording synced to as-built. camp rebuilt, selector tests 5/5 green.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 15:23 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #183 at `21897c7`
+**Sources**: 3 (Copilot R1 @ `21897c7` — 1 inline; Local Review (Pre-Push) R1 @ `e141449` — approved, suggestions closed; CI rollup)
+**Cross-source confirmations**: 0
+**CI**: all-pass (build-and-test green on `21897c7`, 10m12s)
+
+Copilot's single comment verified VALID with nuance: `rescan()` recomputes
+`scene_bounds_` via `rebuildLevelIndex()` (union can extend west/north; a new
+finest level can re-base it entirely) but re-anchors the item (`setPos`) only
+when there was previously NO extent — the item keeps its old NW-corner pos.
+Symptom is newly added footprint falling outside `boundingRect()` (clipped,
+unpaintable) rather than misregistration (clip.local/clip.scene stay mutually
+consistent through the item transform). The stale-anchor pattern is
+pre-existing (the old per-tile union had the same guard), but this PR's
+level-aware re-basing widens when bounds can move, so it is properly fixed
+here: re-anchor unconditionally after re-indexing (pos is derived state of
+`scene_bounds_`).
+
+### Findings
+- [ ] (low, Copilot) `rescan()` re-anchors only on first extent — re-run `setTransform`/`setPos` whenever `scene_bounds_` is non-null after `rebuildLevelIndex()` so a west/north extension or finest-level re-base keeps the item anchored at the true NW corner — `src/camp_map/raster/gggs_tile_layer.cpp:266-273`
+
+### False positives
+- (none)
