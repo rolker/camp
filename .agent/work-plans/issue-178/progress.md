@@ -80,3 +80,56 @@ Authored` entry was written by a Sonnet instance. Treated as an independent
 review (the mechanical name-match with the shared "Claude Code Agent" identity
 would false-positive as self-review; the differing model and fresh context make
 this a genuine second opinion), so no author-self-review annotation applied.
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 00:00 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-178/plan.md` (synced this phase; original at `d2d15a6`)
+**Branch**: feature/issue-178
+**Commits**:
+- `503d4af` fix(map_tiles): use declared TileMatrix id for WMTS tile URLs
+- `016c50f` test(map_tiles): cover WMTS TileMatrix id substitution
+- `f9ede27` docs(plan): sync #178 test step with existing URL-generation suite
+
+### What changed
+- **Fix** — `src/camp_map/map_tiles/tile_layout.cpp`: the `{TileMatrix}`
+  substitution in `getUrl()` now emits `zoom_levels[address.zoomLevel()].id`
+  (the identifier parsed from the WMTS `<ows:Identifier>` at
+  `capabilities.cpp:109`), falling back to `std::to_string(address.zoomLevel())`
+  when `id` is empty. GeoServer GWC (BlueTopo/nowCOAST) names its tile matrices
+  `<gridset>:<z>` (e.g. `EPSG:3857:3`), so the previous bare numeric produced
+  HTTP 400 (`Unknown TILEMATRIX`). Bare-numeric servers (OSM/XYZ via
+  `osm.cpp:27`, NOAA ArcGIS) keep working via the id-or-fallback, both of which
+  yield the plain index.
+- **Tests** — per the plan-checkpoint operator decision, extended the existing
+  `test/test_wms_url_generation.cpp` (rather than adding a new file + CMake
+  registration) with three `TileMatrix` cases: `TileMatrixUsesBareNumericIdForOsm`
+  (backward-compat, byte-for-byte), `TileMatrixUsesGridsetPrefixedId` (the #178
+  fix, `EPSG:3857:<z>`), and `TileMatrixFallsBackToNumericWhenIdEmpty` (empty-id
+  fallback). No CMake change — the target `test_wms_url_generation` is already
+  registered (`CMakeLists.txt:573`).
+- **Plan sync** — corrected plan step 2 and the Files-to-Change table to reflect
+  extending the existing suite, and noted the review-issue "no URL generation
+  tests exist" premise was wrong (the file predates this work).
+
+### Verification
+- Multi-layer camp build/test is **unavailable in this container** (the lower
+  layers — `underlay_ws`/`core_ws`/`platforms_ws`/etc. — have no `install/`
+  symlink targets, so `./ui_ws/build.sh camp` cannot resolve camp's ROS
+  dependencies). The host runs `./ui_ws/build.sh camp && ./ui_ws/test.sh camp`
+  before push.
+- As a standalone check the URL-generation suite (pure C++/Qt5, no ROS) was
+  compiled and run directly (`g++ -std=c++17` against `tile_layout.cpp`,
+  `tile_address.cpp`, `osm.cpp`, `wms.cpp`, `web_mercator.cpp` + Qt5
+  Core/Gui/Positioning + gtest): **all 7 tests pass** (4 pre-existing + 3 new).
+- **Counterfactual** — recompiling the new tests against the pre-fix
+  `tile_layout.cpp` (`503d4af~1`) fails exactly `TileMatrixUsesGridsetPrefixedId`
+  (got `.../3/...`, expected `.../EPSG:3857:3/...`) while the two backward-compat
+  cases still pass, confirming the test catches the regression and the fix
+  preserves bare-numeric behavior.
+
+### Notes for next phase
+- No push / PR / GitHub actions performed (per handoff contract).
+- Suggested next step: `review-code` on the pre-push diff, then the host build/test.
