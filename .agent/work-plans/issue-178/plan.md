@@ -20,18 +20,18 @@ servers keep working unchanged after the fix.
 
 1. **Fix `getUrl()` TileMatrix substitution** — replace the bare numeric lookup with the
    declared zoom-level identifier string, falling back to the numeric index if `id` is empty.
-2. **Add a unit test** — add a new test file covering `TileLayout::getUrl()` with both a
-   bare-numeric `id` (OSM/NOAA ArcGIS) and a `<gridset>:<z>` `id` (GeoServer GWC/BlueTopo)
-   to prevent this class of regression.
-3. **Register the test in CMakeLists.txt**.
+2. **Extend the existing URL-generation test** — `test/test_wms_url_generation.cpp` already
+   unit-tests `TileLayout::getUrl()`; add the new `TileMatrix` cases there (bare-numeric `id`
+   via the OSM layout, a `<gridset>:<z>` `id` for GeoServer GWC/BlueTopo, and the empty-id
+   numeric fallback) rather than adding a new file. The plan-review finding corrected the
+   review-issue premise that "no URL generation tests exist" (`progress.md`, Plan Review).
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
 | `src/camp_map/map_tiles/tile_layout.cpp` | Line 36: use `zoom_levels[address.zoomLevel()].id` for TileMatrix, fallback to numeric index if `id` is empty |
-| `test/test_tile_matrix_url.cpp` | New: two test cases — bare-numeric id and `EPSG:3857:N` id |
-| `CMakeLists.txt` | Register `test_tile_matrix_url` with `ament_add_gtest` |
+| `test/test_wms_url_generation.cpp` | Add three `TileMatrix` cases to the existing suite — bare-numeric id (OSM), `EPSG:3857:N` id, and empty-id numeric fallback |
 
 ## Principles Self-Check
 
