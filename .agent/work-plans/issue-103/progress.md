@@ -409,3 +409,23 @@ test_gggs_rescan 4/4 and test_gggs_render green (1 pre-existing skip).
 - Build/test: camp rebuilt clean; 201 tests, 0 failures, 1 pre-existing skip; new LevelSwitchKeepsPriorLevelUntilNewLoads + LevelSwitchBackdropRendersDuringTransition (GL-gated, runs on this host) pass.
 - Local Model Adversarial: off (--no-local, workspace#590 standing decision). Copilot Adversarial: off (default).
 - Round note: two prior ## Local Review (Pre-Push) entries exist on #103 — db8d2d7 (2026-07-24, original demand-driven/ADR-0011 loop) and e141449 (LOD/ADR-0013 loop, stamped Round 1). This continues the e141449 loop as the field-verify fix → Round 2.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 17:04 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #183 at `34bf260`
+**Sources**: 2 (Copilot R3 @ `34bf260` — 0 new, 2 suppressed; CI rollup)
+**Cross-source confirmations**: 0
+**CI**: all-pass on `34bf260`
+
+Merge-gate sweep round. Both suppressed comments triaged VALID (minor) and
+actioned immediately (`e57c064`) rather than merged past:
+
+### Findings
+- [x] (low, Copilot R3) parseTileLevel doc over-claims "can never disagree" — an int-overflow digit string regex-matches but parses -1; reworded (no producer emits >20 levels) (`e57c064`) — `src/camp_map/raster/gggs_tile_util.h:40`
+- [x] (low, Copilot R3) ctor scanned via raw `directory` param while rescan() dedups against canonicalized `directory_` paths — a non-canonical ctor arg would duplicate every tile on rescan; latent (both callers canonicalize) but closed: scan via `directory_` (`e57c064`) — `src/camp_map/raster/gggs_tile_layer.cpp:88`
+
+### False positives
+- (none)
