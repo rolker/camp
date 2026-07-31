@@ -661,6 +661,87 @@ TEST(GggsRenderTest, UnloadedVisibleTilesTriggerRekick)
   EXPECT_FALSE(layer->hasUnloadedVisibleTiles(over_tile));
 }
 
+// [camp#103 field verify] Progressive refinement across a level switch: the
+// outgoing level's tiles stay resident (no eager release in paint()) and are
+// only dropped by tilesReady() once the new level's visible set has loaded —
+// eager release blanked the layer for the whole load (zoom flicker).
+TEST(GggsRenderTest, LevelSwitchKeepsPriorLevelUntilNewLoads)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(QDir(dir.path()).mkdir("overviews"));
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double coarse_geo[6] = {-72.00, 0.1, 0.0, 44.00, 0.0, -0.1};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples,
+                         "overviews/0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  // Load at the coarse level only.
+  layer->setLodForTest(0, QRectF());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(0), 1);
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 0);
+
+  // Switch selection to the fine level: the coarse tile must STAY resident
+  // (it is the transition backdrop) until the fine level loads.
+  layer->setLodForTest(13, QRectF());
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
+    "outgoing level released eagerly — zoom would flicker blank";
+
+  // Drive the load to completion (waitForLoad re-kicks on the new selection):
+  // the fine level loads and tilesReady() then drops the stale coarse tile.
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 0) <<
+    "stale backdrop level not released after the new level completed";
+}
+
+// [camp#103 field verify] The mid-transition render: with the fine level
+// selected but not yet loaded, the resident coarse tile draws as backdrop —
+// the render must NOT be blank. (GL-gated; discriminates the old eager-release
+// behavior, under which this render was fully transparent.)
+TEST(GggsRenderTest, LevelSwitchBackdropRendersDuringTransition)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(QDir(dir.path()).mkdir("overviews"));
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double coarse_geo[6] = {-72.00, 0.1, 0.0, 44.00, 0.0, -0.1};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples,
+                         "overviews/0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setLodForTest(0, QRectF());
+  layer->waitForLoad();
+
+  // Mid-transition state: fine selected, fine not loaded, coarse resident.
+  layer->setLodForTest(13, QRectF());
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 0);
+  const QImage img = layer->renderImage(QSize(100, 100));
+  ASSERT_FALSE(img.isNull());
+  int opaque = 0;
+  for(int y = 0; y < img.height(); ++y)
+    for(int x = 0; x < img.width(); ++x)
+      if(img.pixelColor(x, y).alpha() > 0)
+        ++opaque;
+  EXPECT_GT(opaque, 0) <<
+    "mid-transition render is blank — the coarse backdrop is not drawn";
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");

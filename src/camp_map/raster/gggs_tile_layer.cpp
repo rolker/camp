@@ -409,6 +409,33 @@ void GggsTileLayer::tilesReady()
     if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
     first_range = false;
   }
+  // [camp#103] Once the selected level's visible set has fully loaded, release
+  // the stale levels kept resident as the zoom-transition backdrop
+  // (progressive refinement — see itemsIntersecting). Only when no worker is
+  // running: this mutates tiles the worker iterates, and a re-kick may already
+  // be in flight; the release then happens at that load's own tilesReady().
+  if(selected_level_ != -1 && !future_watcher_.isRunning() &&
+     !hasUnloadedVisibleTiles(load_viewport_))
+  {
+    bool have_context = false, context_tried = false;
+    for(auto& tile : tiles_)
+    {
+      if(tile->level() == selected_level_ || !tile->pixelsLoaded())
+        continue;
+      if(!context_tried)
+      {
+        context_tried = true;
+        have_context = renderer_.hasContext() && renderer_.makeCurrent();
+      }
+      // resetPixels()/releaseGL() pairing invariant (gggs_tile.h); with no GL
+      // context yet there are no textures, so the CPU half alone is complete.
+      if(have_context)
+        tile->releaseGL();
+      tile->resetPixels();
+    }
+    if(have_context)
+      renderer_.doneCurrent();
+  }
   cached_image_ = QImage();   // re-render now that pixels (and the range) exist
   // [camp#102] If the range is still crossed after the fold, every loaded tile was
   // all-NoData (or failed to read): there is nothing to draw and clearing the
@@ -432,7 +459,12 @@ void GggsTileLayer::waitForLoad()
 {
   // [camp#102] Test/headless seam: kick the load if it hasn't started, then join
   // and run the ready-fold so renderImage() sees loaded pixels + a valid range.
-  if(!load_started_)
+  // [camp#103] Also re-kick when idle with unloaded visible tiles at the current
+  // selection — the headless analogue of paint()'s pan/level re-kick, so a test
+  // that changes the LOD via setLodForTest() can drive the load the same way
+  // the paint path would.
+  if(!load_started_ ||
+     (!future_watcher_.isRunning() && hasUnloadedVisibleTiles(load_viewport_)))
   {
     load_started_ = true;
     loadTiles();
@@ -491,37 +523,57 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
   // SW/NE corners bound the tile's scene rect.
   QList<RasterFieldItem> result;
   result.reserve(int(tiles_.size()));
-  for(auto& tile : tiles_)
+  auto appendTile = [&](GggsTile& tile)
   {
     // [camp#102] Skip a tile whose pixels haven't loaded yet. pixelsLoaded() is an
     // ACQUIRE load pairing with the worker's RELEASE store in loadPixels(), so once
     // true the data_/texture() reads see the worker's completed writes — no race.
-    if(!tile->pixelsLoaded())
-      continue;
-    // [camp#103 / ADR-0013] Off-level tiles never reach the renderer, even if
-    // they still hold loaded pixels from a prior level (cheapest test first;
-    // -1 = no selection = no level filter, the headless default).
-    if(selected_level_ != -1 && tile->level() != selected_level_)
-      continue;
-    if(!clip_scene.isNull() && !tileSceneRect(*tile).intersects(clip_scene))
-      continue;
-    QOpenGLTexture* texture = tile->texture();
+    if(!tile.pixelsLoaded())
+      return;
+    if(!clip_scene.isNull() && !tileSceneRect(tile).intersects(clip_scene))
+      return;
+    QOpenGLTexture* texture = tile.texture();
     if(!texture)
-      continue;
+      return;
     RasterFieldItem item;
     item.texture = texture;
     item.format = RasterFieldItem::Format::Scalar;
     item.geographic = true;
-    item.west = tile->minLon();
-    item.east = tile->maxLon();
-    item.south = tile->minLat();
-    item.north = tile->maxLat();
+    item.west = tile.minLon();
+    item.east = tile.maxLon();
+    item.south = tile.minLat();
+    item.north = tile.maxLat();
     // [camp#122] Per-tile NoData: a non-uniform store can carry different NoData
     // per tile/band, so it travels per item rather than as one layer uniform.
-    item.has_nodata = tile->hasNoData();
-    item.nodata = tile->hasNoData() ? float(tile->noData()) : 0.0f;
+    item.has_nodata = tile.hasNoData();
+    item.nodata = tile.hasNoData() ? float(tile.noData()) : 0.0f;
     result.push_back(item);
+  };
+  if(selected_level_ == -1)
+  {
+    // No selection (headless default): everything loaded renders, as pre-LOD.
+    for(auto& tile : tiles_)
+      appendTile(*tile);
+    return result;
   }
+  // [camp#103 / ADR-0013] Progressive refinement across a level switch: tiles
+  // from OTHER levels stay resident (paint() no longer eager-releases them)
+  // and draw FIRST, coarse→fine, so the outgoing level backs the view while
+  // the selected level streams in — no blank/flicker on zoom. The selected
+  // level draws LAST (on top), so each arriving tile covers its backdrop.
+  // tilesReady() releases the stale levels once the selected level's visible
+  // set is complete, so steady-state renders only the selected level.
+  for(const int level : available_levels_)
+  {
+    if(level == selected_level_)
+      continue;
+    for(auto& tile : tiles_)
+      if(tile->level() == level)
+        appendTile(*tile);
+  }
+  for(auto& tile : tiles_)
+    if(tile->level() == selected_level_)
+      appendTile(*tile);
   return result;
 }
 
@@ -574,31 +626,13 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     level_changed = (target != selected_level_);
     if(level_changed)
     {
-      // Abort + join any in-flight load BEFORE mutating tiles the worker reads
-      // (same contract as applyBand()/rescan(); whole-tile granularity).
-      if(future_watcher_.isRunning())
-      {
-        abort_flag_mutex_.lock();
-        abort_flag_ = true;
-        abort_flag_mutex_.unlock();
-        future_watcher_.waitForFinished();
-      }
+      // [camp#103 field verify] Do NOT release the outgoing level here. Its
+      // loaded tiles keep rendering as the backdrop (itemsIntersecting draws
+      // stale levels coarse-first UNDER the selected level) until the new
+      // level's visible tiles finish loading — tilesReady() releases them
+      // then. The original eager release blanked the layer for the whole load
+      // on every zoom across a level boundary — very visible flicker.
       selected_level_ = target;
-      // Release the wrong-level tiles' CPU buffers AND GL textures together —
-      // the resetPixels()/releaseGL() pairing invariant (gggs_tile.h): a
-      // CPU-only clear would leave a stale texture shadowing any re-load. A
-      // not-yet-created context means no textures exist — skip the GL half.
-      const bool have_context = renderer_.hasContext() && renderer_.makeCurrent();
-      for(auto& tile : tiles_)
-      {
-        if(tile->level() == selected_level_ || !tile->pixelsLoaded())
-          continue;
-        if(have_context)
-          tile->releaseGL();
-        tile->resetPixels();
-      }
-      if(have_context)
-        renderer_.doneCurrent();
       cached_image_ = QImage();
     }
   }
