@@ -295,3 +295,26 @@ plus API/ODR details to pin down.
 - ROS conventions: N/A (Qt/GL offscreen rendering; no topics/QoS/params).
 
 **Plan revision `04b6bc9` (2026-07-31):** all 17 Plan Review findings folded into plan.md — viewport-delta re-kick with pre-kick `load_viewport_` assignment (MF1, doubles as the pan-storm debounce), -1/no-viewport headless no-filter defaults + regression test (MF2), ground-metres conversion, `.level()` extraction, `inline` selector, resetPixels/releaseGL invariant, auto-range note in ADR-0013. Operator approved revise-plan-and-implement (no second review-plan round; pre-push review-code validates).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 18:50 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-103 at `e141449`
+**Mode**: pre-push
+**Depth**: Deep (reason: ADR-0013 addition + QtConcurrent worker concurrency + GL lifecycle + cross-layer camp_map→marine_autonomy PUBLIC link)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix; concurrency (value-copy snapshot + abort+join at all 5 mutation sites) and resetPixels/releaseGL GL pairing verified correct by 2 disjoint-lens adversarial passes + lead; static analysis clean; all plan-review must-fixes present as-built
+
+### Findings
+- [ ] (suggestion) plan.md §4 still says scene_bounds_ "unions ALL tile extents … as before" but as-built (and ADR-0013 §Extent semantics) unions FINEST-level tiles only; the as-built sync at e141449 missed this line — doc consistency only — `.agent/work-plans/issue-103/plan.md:91`
+- [ ] (suggestion) selectLodLevel's std::max(mpp,1e-6) guard catches non-positive but not NaN; a NaN ground_mpp (unreachable for a valid-extent viewport, only via cos(NaN) from an out-of-range centre latitude) would hit static_cast<int>(ceil(NaN)) UB in fromCellSize — a one-token std::isfinite guard hardens the seam for the future chart-ladder caller — `src/camp_map/raster/lod_level_selector.h:657`
+
+### Notes
+- Static analysis: cppcheck clean (only an unknownMacro on Qt `slots` in map_item.h — parse limitation, not a defect); `git diff --check` clean (no trailing-ws/EOF, which ARE camp pre-commit-enforced). ament_cpplint's 80 findings (legal/copyright, readability/casting functional-cast style, short RASTER_*_H guards) are pre-existing camp house style, unenforced by camp's pre-commit (trailing-ws/EOF/yaml/xml/cmake-lint/yamllint only) or CI — dropped as noise; new files match their neighbors.
+- Adversarial: Lens A (logic) and Lens B (concurrency/lifecycle) both returned clean. Lens A's "selectLodLevel requires sorted input" was a false positive (best_coarser = running max over qualifying levels, coarsest = running min — both order-independent) and discarded. Lens B confirmed the value-copy worker snapshot timing (load_viewport_ assigned at :613 before every kick), abort+join at paint level-change/rescan/applyBand/loadTiles/dtor, and the makeCurrent-failure degradation matching applyBand's GL-failed latch.
+- Governance: ADR-0013 added (ws ADR-0001); ADR-0007 seam filter with no renderer API change; ADR-0011 clip-first ordering preserved. All consequences addressed (tilesReady guard, itemsIntersecting filter, resetPixels shared by setBand, headless -1 defaults regression-guarded). rescan() overview re-scan deferred per documented open question.
+- Plan drift: two POSITIVE deviations the ADR reflects — finest-only extent union (vs "all extents"), and the last_kick_* moved-since-kick re-kick guard (vs the plan's simpler hasUnloadedVisibleTiles-only form) that avoids per-frame abort+join churn and infinite re-kick on a permanently-failing tile.
+- Local Model Adversarial: off (--no-local, workspace#590 standing decision). Copilot Adversarial: off (default).
