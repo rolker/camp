@@ -4,6 +4,7 @@
 #include "marine_autonomy/gggs.h"
 
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace camp
@@ -41,8 +42,11 @@ inline int selectLodLevel(double ground_metres_per_pixel,
   if(available_levels.empty())
     return -1;
   // fromCellSize clamps into the valid GGGS level range, so any positive
-  // metres-per-pixel is safe; guard the degenerate non-positive input.
-  const double mpp = std::max(ground_metres_per_pixel, 1e-6);
+  // metres-per-pixel is safe; guard the degenerate non-positive input — and a
+  // NaN (which std::max would pass through into ceil() UB) from a future
+  // caller with a broken viewport centre.
+  const double mpp = std::isfinite(ground_metres_per_pixel)
+    ? std::max(ground_metres_per_pixel, 1e-6) : 1e-6;
   const int ideal = gggs::Level::fromCellSize(static_cast<float>(mpp)).level();
   int best_coarser = -1;   // largest available level number <= ideal
   int coarsest = available_levels.front();
