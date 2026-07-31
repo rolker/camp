@@ -170,7 +170,7 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 **Round**: 2 | **Ship**: continue — one genuine correctness must-fix newly introduced by the self-heal code (unbounded loop if `QFile::remove` fails, plus a false "no retry loop is possible" comment); mechanical one-line guard, warrants fix + a fast re-confirm. Round 1 had 0 must-fix, so this is a new edge in the self-heal code, not a rising trend.
 
 ### Findings
-- [ ] (must-fix) Self-heal can busy-loop if `QFile::remove()` fails: the re-issued `load()` re-selects the `file://` path while the poisoned file still exists (cpp:75), re-reading it → decode-reject → `isLocalFile()` → remove-fails-again → re-issue, an unbounded async loop via the QNAM `finished` signal. The "no retry loop is possible" comment holds only when removal succeeds. Guard the network re-issue on successful removal (or `!poisoned.exists()`); else fall through to `deleteLater(); return;`. — `src/camp_map/util/cached_file_loader.cpp:126`
+- [x] (must-fix) Self-heal can busy-loop if `QFile::remove()` fails: the re-issued `load()` re-selects the `file://` path while the poisoned file still exists (cpp:75), re-reading it → decode-reject → `isLocalFile()` → remove-fails-again → re-issue, an unbounded async loop via the QNAM `finished` signal. The "no retry loop is possible" comment holds only when removal succeeds. Guard the network re-issue on successful removal (or `!poisoned.exists()`); else fall through to `deleteLater(); return;`. — `src/camp_map/util/cached_file_loader.cpp:126`
 
 ### Notes
 - Round-2 re-review focused on the two new commits `c925cbd` (self-heal) + `6be1f4d` (format-hint drop), in the context of the full branch diff. The declined redundant-double-decode item (operator won't-fix 2026-07-31) was not re-raised, per instruction.
@@ -181,3 +181,24 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 
 ### Next step
 Changes-requested. Host (`/run-issue`) dispatches **address-findings** to work the single must-fix (guard the self-heal re-issue against `QFile::remove` failure + correct the comment), then re-dispatches **review-code** for Round 3. Diff is not pushed until a pre-push review returns **approved**.
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 15:31 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-177 at `77e28ad`
+**Addressed**: `## Local Review (Pre-Push)` (Round 2, 2026-07-31 15:26 +00:00, branch `feature/issue-177` @ `d6284d7`)
+**Commits**: `77e28ad` (must-fix)
+
+### Actions
+- [x] (must-fix) Guard the self-heal re-issue against `QFile::remove()` failure — capture the removal result (`const bool removed = QFile::remove(poisoned_path)`) and only re-issue the network fetch when `removed || !QFileInfo::exists(poisoned_path)`. If removal fails the poisoned `file://` path remains, so unconditionally re-issuing would let `load()` re-select it (cpp:75), re-read → decode-reject → re-issue in an unbounded async loop via the QNAM `finished` signal; now that branch drops the reply (`deleteLater(); return;`) and logs, leaving the tile blank rather than spinning. Corrected the stale "no retry loop is possible" comment to state the invariant only holds when removal succeeds. — `src/camp_map/util/cached_file_loader.cpp:116-138` (`77e28ad`)
+
+### Checks
+- Edited translation unit syntax-checks clean (`g++ -fsyntax-only -std=c++17 -fPIC` with Qt5 Core/Gui/Network/Widgets includes). The guard reuses `QFile`/`QFileInfo`/`load()` patterns already present in the function; `QFileInfo::exists(path)` is the static, non-caching form so it reflects the post-`remove()` state. `isAcceptableImageBody` (the unit-tested gate) is unchanged, so `test_cached_file_loader_validation` still applies. No new unit test: the guarded logic lives in `downloadFinished` (network + `QApplication` + file I/O), not cheaply unit-testable without a network mock — consistent with the established unit-only test scope; the finding requested a guard, not a test.
+- Full-workspace `colcon build`/`test` did not complete in this worktree (multi-layer prefix path unavailable — same limitation recorded in Rounds 1–2). Per ADR-0018, run `./build.sh camp && ./test.sh camp` on a properly-sourced environment before push.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (Round 3 re-review the fix). Hand off to a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code
