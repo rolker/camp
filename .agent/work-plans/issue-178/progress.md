@@ -366,3 +366,53 @@ transparent via the standalone snippet above.
   backward-compat intact), then the host build/test. The re-reviewer should note
   the test was consciously deferred (no cheap getLayout seam) and the "layer id"
   scope call above.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 18:27 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-178 at `f1ccbd5` (code reviewed through `f1ccbd5`; HEAD `439598f` is the progress commit)
+**Mode**: pre-push
+**Depth**: Standard (reason: same tier as R1/R2 — networked URL path + server-controlled input; scoped R3 re-confirm of one commit `f1ccbd5`)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 3 | **Ship**: recommended — single mechanical commit closes R2's remaining sibling-encoding suggestion; no must-fix; encoding is byte-identical to the already-verified TileMatrix-id path
+
+Specialists: Static Analysis (cppcheck — only the Qt `slots`-macro config error, not on
+changed lines; cpplint unavailable, as R1/R2), Governance, Plan Drift, Claude Adversarial
+×2 (Lens A logic + Lens B systemic, performed inline given the one-commit horizon). Local
+Adversarial off (--no-local, workspace#590). Copilot off (default). No plan drift — the fix
+matches the R2 operator decision file-for-file.
+
+**R2 fix confirmed** (`f1ccbd5`): both server-controlled seams in `getLayout()` now emit
+`QString::fromUtf8(QUrl::toPercentEncoding(value, ":"))` — `Style` (`capabilities.cpp:89`) and
+`TileMatrixSet` (`capabilities.cpp:99`), colon-aware, matching the TileMatrix-id encoding in
+`TileLayout::getUrl()`. `#include <QUrl>` added. Backward-compat holds (`:` preserved →
+`EPSG:3857` and simple style names pass through byte-for-byte).
+
+**Adversarial (inline)**: `QUrl::toPercentEncoding(tile_matrix_set, ":")` returns a new
+QByteArray and does **not** mutate `tile_matrix_set`, so the downstream `tms.id ==
+tile_matrix_set` lookup (`capabilities.cpp:113`) still matches on the raw value — no
+regression. Every real `/` delimiter encodes to `%2F`, closing delimiter injection at both
+seams (same reasoning as the R2-verified `getUrl()` path); `..` cannot form a traversal
+without unencoded separators.
+
+**Scope calls verified sound**: (1) the two seams (Style, TileMatrixSet) are the *only*
+server-controlled substitution points in `getLayout()`; the layer identifier is fused into
+`resource_url_template` upstream and used only for layer selection (`capabilities.cpp:70`) —
+correctly identified as a non-seam. (2) Test deferral is honest: `Capabilities` seeds its
+private `layers_`/`tile_matrix_sets_` only via `private slots: dataLoaded(...)` from network
+data — no public parse-from-XML entry to seed state for a focused test, and `capabilities.cpp`
+cannot compile in the standalone g++ harness (QtXml/moc/`CachedFileClient`). The encode
+transform is byte-identical to the already-tested `TileMatrixIdIsPercentEncoded` path.
+
+### Findings
+- [ ] (suggestion) No `getLayout()`-level test for the two newly-encoded seams — deferral accepted as sound (no public XML-seeding seam; transform identical to the tested `TileMatrixIdIsPercentEncoded` path); residual, non-blocking. Revisit if a public parse entry is ever added — `test/test_wms_url_generation.cpp`
+
+### Notes for next phase
+- No push / PR / GitHub actions performed (per handoff contract).
+- Verdict **approved**, Ship **recommended** (Round 3). R2's remaining suggestion is closed;
+  the only residual is the consciously-deferred getLayout test. Next: host build/test
+  (`./ui_ws/build.sh camp && ./ui_ws/test.sh camp`), then publish. The container cannot run
+  the multi-layer camp ROS build (lower layers have no `install/` targets).
