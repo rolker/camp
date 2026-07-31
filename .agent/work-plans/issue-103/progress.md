@@ -260,3 +260,36 @@ demand-driven loading. The scope is right-sized for a single PR.
 
 ### Open questions
 - [ ] Should `rescan()` also scan `overviews/` for newly-landed coarse tiles? Accepted for this PR: `rescan()` covers fine tiles only (overviews/ built at processing time, not live-updated). Follow-up if needed.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-31 18:07 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-103/plan.md` at `601b21d`
+**PR**: PR-less (`/review-plan` for #103, layer worktree feature/issue-103)
+**Verdict**: changes-requested
+
+Approach is sound and well-targeted: the LOD level-selection function is a clean
+pure-function seam over `gggs::Level::fromCellSize`, the demand-driven diagnosis
+(loadTilesWorker loads every tile's `data_`; only viewport tiles get freed via the
+`texture()` upload → the 3.6 GB residency) is correct, ADR-0013 is the right next
+number, and all five 2026-07-31 issue-review actions are addressed. But the
+load-*trigger* design has two correctness gaps that would ship a broken/blank layer,
+plus API/ODR details to pin down.
+
+### Findings
+- [ ] (must-fix) Demand-driven load never re-kicks on a pure **pan**. `paint()` calls `loadTiles()` only inside the `target != selected_level_` branch; a pan at the same level updates `load_viewport_` but never re-kicks the worker, so tiles panned into view are never `loadPixels()`'d → `itemsIntersecting()` skips them (`pixelsLoaded()==false`) → permanent blank regions. Also `load_viewport_ = clip.scene` is assigned AFTER the `loadTiles()` call in the pseudocode, so even the level-change re-kick reads a stale viewport. Re-kick when the viewport exposes not-yet-loaded intersecting tiles, and assign `load_viewport_` before kicking. — `plan.md:82-97`
+- [ ] (must-fix) The `loadTilesWorker()` filter breaks existing headless tests. The worker keeps only `tile->level() == selected_level_` ∧ intersects `load_viewport_`, but both fields are set **only in `paint()`**. The ~6 existing tests (`test_gggs_render.cpp` OffscreenWarp/NoData/NanNoData/ClipFilter/ClipRenderScales, `test_gggs_band_select.cpp`) call `waitForLoad()` then `renderImage()` directly, never through `paint()` — so `selected_level_` stays -1 (no tile matches; synthetic tiles are level 13) and `load_viewport_` is null → the worker loads zero tiles → blank renders → tests fail. The plan's consequences note "waitForLoad() sets selected_level_" is factually wrong (it does not). Fix: have `waitForLoad()`/the pre-paint path establish a default `selected_level_` (e.g. finest available) + `load_viewport_ = scene_bounds_`, or treat `selected_level_ == -1` / null viewport as "no filter". — `plan.md:90`, `plan.md:99-109`, `plan.md:190`
+- [ ] (suggestion) Level-selection input basis: `metres_per_pixel = clip.scene.width()/clip.size.width()` is in **Web-Mercator scene metres**, inflated by ~sec(latitude) (≈1.37 at Massabesic 43°N), but `gggs::Level::fromCellSize` expects **true-ground** cell size in metres — biasing selection up to ~half a level coarser. Convert to ground metres (×cos(lat) at the viewport-centre latitude) or explicitly document the approximation in ADR-0013. — `plan.md:81-83`
+- [ ] (suggestion) API detail: `gggs::Level::fromCellSize(float)` returns a `Level` object (marine_autonomy/include/marine_autonomy/gggs/level.h:64) — the int comes from `.level()`. The plan's `selectLodLevel` prose/signature should reflect the `.level()` extraction and the `<marine_autonomy/gggs.h>` include. — `plan.md:47-56`
+- [ ] (suggestion) `selectLodLevel()` in the new `lod_level_selector.h` must be declared `inline` (header included by both `gggs_tile_layer.cpp` and the test TU) or it is an ODR multiple-definition link error — follow `gggs_tile_util.h`'s `inline` pattern. — `plan.md:47-51`, `plan.md:157`
+- [ ] (suggestion) `resetPixels()` must always be paired with `releaseGL()` for the same tile. After `texture()` uploads, `data_` is already freed but `pixels_loaded_` stays true and `texture_` is non-null; `resetPixels()` alone clears the flag but leaves the stale texture, so a re-load re-reads `data_` yet `texture()` returns the OLD texture and never frees the new `data_`. The paint() pseudocode does pair them — state the invariant so it isn't lost in implementation. — `plan.md:40-44`, `plan.md:84-95`
+- [ ] (suggestion) Level switch does not reset `data_min_/data_max_` (unlike `applyBand()`); `tilesReady()`'s incremental fold only ever widens the auto-range across levels, so switching to a narrower-range overview level won't tighten the ramp. Usually benign (overviews ⊆ fine range) — note it or reset on switch. — `plan.md:112-116`
+- [ ] (suggestion) Pan-storm cost: once the load re-kicks on viewport change (finding 1's fix), the whole-tile abort+join runs on the GUI thread each pan; a fast pan can stall on the in-flight tile's RasterIO. Consider re-kicking only when the needed-but-unloaded tile set changes, or debounce (relates to the #173 Local Review's per-frame-trig note). — `plan.md:99-109`
+
+### Notes (verified positives)
+- `gggs::Level::fromCellSize` exists and camp links it (`marine_autonomy/gggs.h`, included via `sonar_live_tile.h`); level ordering is as the plan assumes (higher level = finer = smaller cell; L13 fine, L0 apex). Monotonic, so `selectLodLevel`'s "finest available ≤ ideal" is well-defined and both planned unit tests pass under it.
+- Demand-driven diagnosis is correct: `loadTilesWorker()` currently `loadPixels()`-es every tile; only clip-intersecting tiles get `texture()`-uploaded (and their `data_` freed), so off-viewport tiles keep resident `data_` — the 3.6 GB. Filtering the worker fixes it.
+- `parseTileLevel` reuses the existing anchored `isValueTile` grammar with a capture group; works for both `dir/<l>_<r>_<c>.tif` and `dir/overviews/<l>_<r>_<c>.tif` (matches on filename, not path). ADR-0013 is the correct next number (0001–0012 present, 0012 = WMS GetMap). No CMake change needed — tests extend already-registered `test_gggs_tile.cpp` / `test_gggs_render.cpp`; new selector is header-only (subject to the `inline` fix above).
+- ROS conventions: N/A (Qt/GL offscreen rendering; no topics/QoS/params).
