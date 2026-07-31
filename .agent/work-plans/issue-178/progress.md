@@ -235,3 +235,47 @@ too, that is a separate, one-line-each change at their insertion point in
 - Next: `review-code` (re-review) on the pre-push diff to confirm the two R1
   findings are genuinely resolved, then the host build/test. The re-reviewer
   should also weigh in on the sibling-encoding scope note above.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 18:08 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-178 at `cc6f028` (code reviewed through `3d813e5`)
+**Mode**: pre-push
+**Depth**: Standard (reason: same tier as R1 — networked URL path + server-controlled input; scoped R2 re-confirm of the two R1 fixes)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 2 | **Ship**: recommended — both R1 suggestions closed and independently verified; no must-fix; the one adversarial must-fix (path traversal via `..`) is a false positive disproven by direct Qt measurement
+
+Specialists: Static Analysis (cppcheck; cpplint unavailable — clean on changed lines),
+Governance, Plan Drift, Claude Adversarial ×2 (Lens A logic + Lens B systemic). Local
+Adversarial off (--no-local, workspace#590). Copilot off (default). No plan drift; the
+two code files match the plan file-for-file.
+
+**R1 fixes confirmed**:
+- Suggestion 1 (percent-encode TileMatrix id): `getUrl()` emits
+  `QUrl::toPercentEncoding(value, ":")` — empirically verified: `/`→`%2F`, `?`/`#`/space
+  encoded, `:` preserved (load-bearing for GWC `EPSG:3857:<z>`), digits-only fallback
+  byte-for-byte unchanged. Correct and backward-compatible.
+- Suggestion 2 (mismatched-id test): `TileMatrixPrefersIdOverIndexWhenMismatched`
+  (id `EPSG:3857:99` at zoom 3, asserts `…:99…` and not `/3/`) asserts id-over-index
+  directly; `TileMatrixIdIsPercentEncoded` guards the encoding and fails vs pre-fix.
+
+**Adversarial must-fix refuted (false positive)**: Lens B flagged "path traversal via
+`..`" (dots are unreserved, not encoded). Disproven by direct `QUrl::toPercentEncoding`
+measurement: every real `/` delimiter is encoded to `%2F`
+(`EPSG:3857:3/../evil` → `EPSG:3857:3%2F..%2Fevil`; `../../etc/passwd` →
+`..%2F..%2Fetc%2Fpasswd`), so `..` cannot form a traversal — it needs unencoded `/`
+separators, and none survive. Pre-encoded `%2e%2e` is also neutralized (`%`→`%25`).
+
+**Scope call (sibling insertions) — sound**: verified against `capabilities.cpp:getLayout()`
+(lines 77-99). `getUrl()` substitutes exactly one server-controlled value (the TileMatrix
+`id`); layer id / Style / TileMatrixSet are fused into `url_static_parts` upstream in
+`getLayout()`, outside both `getUrl()`'s remit and the operator's "do not expand beyond
+`getUrl()`" bound. The deferral is correct and correctly documented. Their residual
+un-encoded concatenation pre-dates this PR (not a regression) and remains a tracked,
+operator-deferred follow-up.
+
+### Findings
+- [ ] (suggestion) Sibling server-controlled values (layer `id` / `Style` / `TileMatrixSet`) fused into `url_static_parts` un-encoded — residual injection surface that pre-dates this PR; operator-deferred, closeable as a separate one-line-each encode at their insertion points — `src/camp_map/wmts/capabilities.cpp:82,89`
