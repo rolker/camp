@@ -54,3 +54,29 @@ issue: 178
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-07-31 17:23 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-178/plan.md` at `d2d15a6`
+**PR**: PR-less (dispatched via issue #178 in layer worktree)
+**Verdict**: approve-with-suggestions
+
+Verified all code claims against source: `tile_layout.cpp:36` uses the bare
+numeric zoom index for `TileMatrix` (the bug); `capabilities.cpp:109` already
+populates `ZoomLevel::id` from the WMTS `<gridset>:<z>` identifier; `osm.cpp:27`
+sets `id` to the numeric string so bare-numeric servers stay correct after the
+fix. The `zoom_levels[address.zoomLevel()].id` lookup matches the existing
+WMS_BBOX branch pattern (`tile_layout.cpp:47`) and won't regress the WMS path
+(which never uses the `TileMatrix` key).
+
+### Findings
+- [ ] (suggestion) Existing `test/test_wms_url_generation.cpp` already unit-tests `TileLayout::getUrl()`; plan step 2 and the review-issue premise ("no URL generation tests exist") missed it — reconcile the new TileMatrix cases with that file (extend it, or justify a separate `test_tile_matrix_url.cpp`) — `plan.md:24`, `plan.md:33`
+
+Independence note: dispatched as a fresh-context Opus sub-agent; the `## Plan
+Authored` entry was written by a Sonnet instance. Treated as an independent
+review (the mechanical name-match with the shared "Claude Code Agent" identity
+would false-positive as self-review; the differing model and fresh context make
+this a genuine second opinion), so no author-self-review annotation applied.
