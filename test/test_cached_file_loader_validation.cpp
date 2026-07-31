@@ -38,8 +38,8 @@ QByteArray validPngBytes()
   image.fill(Qt::blue);
   QByteArray bytes;
   QBuffer buffer(&bytes);
-  buffer.open(QIODevice::WriteOnly);
-  image.save(&buffer, "PNG");
+  EXPECT_TRUE(buffer.open(QIODevice::WriteOnly));
+  EXPECT_TRUE(image.save(&buffer, "PNG"));
   return bytes;
 }
 
