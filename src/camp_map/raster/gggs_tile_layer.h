@@ -8,6 +8,7 @@
 #include <marine_colormap/transfer.hpp>
 
 #include <QFutureWatcher>
+#include <QGeoCoordinate>
 #include <QImage>
 #include <QMutex>
 #include <QSize>
@@ -69,6 +70,17 @@ public:
 
   /// True once at least one valid tile loaded.
   bool valid() const { return !tiles_.empty(); }
+
+  /// [camp#180] Elevation at a geographic point from this store's tiles, or NaN
+  /// if no loaded tile covers it (or the covering tiles have no value there).
+  /// Among tiles whose extent contains @p location, the finest (highest tile
+  /// level, parsed from the `<level>_<row>_<col>` basename) is sampled first, so
+  /// inspection prefers the highest-resolution data regardless of the rendered
+  /// LOD (camp#103 follow-on). Values are the raw band samples — ellipsoidal
+  /// up-positive heights for a bathymetry store, NOT chart-datum depths. A pure
+  /// in-memory query (GggsTile::sampleAt over resident pixels); safe to call per
+  /// cursor move on the GUI thread.
+  float getElevation(const QGeoCoordinate& location) const;
 
   /// The layer's Web-Mercator extent (union of tile extents). The item is
   /// setPos()'d at its top-left; exposed for tests.

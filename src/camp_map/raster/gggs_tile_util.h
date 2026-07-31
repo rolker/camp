@@ -32,6 +32,21 @@ inline bool isValueTile(const QString& filename)
   return re.match(filename).hasMatch();
 }
 
+/// [camp#180] Parse the LEVEL (the first digit group) from a value-tile basename
+/// `<level>_<row>_<col>.tif`. Returns -1 if @p filename is not a value tile.
+/// GggsTileLayer::getElevation() uses it to query the finest (highest-level)
+/// covering tile first, independent of the rendered LOD. Match the basename only
+/// (as QDir::entryList / QFileInfo::fileName return), never a full path — a path
+/// separator makes isValueTile() (and so this) return no match.
+inline int tileLevel(const QString& filename)
+{
+  if(!isValueTile(filename))
+    return -1;
+  // isValueTile() guarantees the leading group is all digits, so section() +
+  // toInt() is unambiguous (the tail is stripped at the first '_').
+  return filename.section('_', 0, 0).toInt();
+}
+
 }  // namespace raster
 }  // namespace camp
 

@@ -37,6 +37,7 @@
 #include "map/map_item.h"
 #include "map/layer_list.h"
 #include "raster/raster_layer.h"
+#include "raster/gggs_tile_layer.h"
 #include <QSettings>
 #include <algorithm>
 
@@ -64,7 +65,7 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     m_root->setObjectName("root");
     m_currentGroup = m_root;
     setObjectName("projectModel");
-    
+
     //m_ROSLink =  new ROSLink(this);
     //connect(this,&AutonomousVehicleProject::showTail,m_ROSLink, &ROSLink::showTail);
     //connect(this,&AutonomousVehicleProject::followRobot,m_ROSLink, &ROSLink::followRobot);
@@ -397,6 +398,28 @@ bool AutonomousVehicleProject::hasDepth() const
     return false;
 }
 
+float AutonomousVehicleProject::getStoreElevation(QGeoCoordinate const &location) const
+{
+    // [camp#180] Walk the Map's top-level layers dynamically (no owned list, so
+    // add/remove needs no bookkeeping and can't dangle). Query only ENABLED
+    // (isVisible()) GGGS store layers — the Layers-tab checkbox maps to
+    // MapItem::isVisible() (map.cpp), matching ADR-0003 §2's enabled-layer
+    // contract for getDepth. First store with a value at the point wins.
+    auto* layers = m_map ? m_map->topLevelLayers() : nullptr;
+    if(!layers)
+        return std::nanf("");
+    for(auto* item : layers->childMapItems())
+    {
+        auto* store = dynamic_cast<camp::raster::GggsTileLayer*>(item);
+        if(!store || !store->isVisible())
+            continue;
+        const float elevation = store->getElevation(location);
+        if(!std::isnan(elevation))
+            return elevation;
+    }
+    return std::nanf("");
+}
+
 Behavior * AutonomousVehicleProject::createBehavior()
 {
     Behavior *b = potentialParentItemFor("Behavior")->createMissionItem<Behavior>(generateUniqueLabel("behavior"));
@@ -463,7 +486,7 @@ MissionItem *AutonomousVehicleProject::potentialParentItemFor(std::string const 
 
 Waypoint *AutonomousVehicleProject::addWaypoint(QGeoCoordinate position)
 {
-    
+
     Waypoint *wp = potentialParentItemFor("Waypoint")->createMissionItem<Waypoint>(generateUniqueLabel("waypoint"));
     wp->setLocation(position);
     connect(this,&AutonomousVehicleProject::updatingBackground,wp,&Waypoint::updateBackground);
@@ -477,7 +500,7 @@ SurveyPattern * AutonomousVehicleProject::createSurveyPattern(MissionItem* paren
     SurveyPattern *sp;
     if(label.isEmpty())
         label = generateUniqueLabel("pattern");
-    if(!parent) 
+    if(!parent)
         sp = potentialParentItemFor("SurveyPattern")->createMissionItem<SurveyPattern>(label, row);
     else
         sp = parent->createMissionItem<SurveyPattern>(label, row);
@@ -543,7 +566,7 @@ SearchPattern * AutonomousVehicleProject::createSearchPattern(MissionItem* paren
   SearchPattern *sp;
   if(label.isEmpty())
     label = generateUniqueLabel("pattern");
-  if(!parent) 
+  if(!parent)
     sp = potentialParentItemFor("SearchPattern")->createMissionItem<SearchPattern>(label, row);
   else
     sp = parent->createMissionItem<SearchPattern>(label, row);
@@ -700,13 +723,13 @@ QJsonDocument AutonomousVehicleProject::generateMissionTask(const QModelIndex& i
 {
     MissionItem *mi = itemFromIndex(index);
     QJsonDocument plan;// = generateMissionPlan(index);
-    
+
     QJsonArray topArray;
     QJsonObject miObject;
     mi->write(miObject);
     topArray.append(miObject);
     plan.setArray(topArray);
-    
+
     return plan;
 }
 
@@ -714,7 +737,7 @@ void AutonomousVehicleProject::sendToROS(const QModelIndex& index)
 {
     MissionItem *mi = itemFromIndex(index);
     QJsonDocument plan = generateMissionTask(index);
-    
+
     if(m_activePlatform)
     {
         m_activePlatform->missionManager()->sendMissionPlan(plan.toJson());
@@ -891,7 +914,7 @@ void AutonomousVehicleProject::deleteItem(MissionItem *item)
 void AutonomousVehicleProject::setCurrent(const QModelIndex &index)
 {
     auto last_selected = m_currentSelected;
-    
+
     m_currentSelected = itemFromIndex(index);
     if(m_currentSelected)
     {
@@ -947,7 +970,7 @@ QModelIndex AutonomousVehicleProject::index(int row, int column, const QModelInd
 
 QModelIndex AutonomousVehicleProject::indexFromItem(MissionItem* item) const
 {
-    if(item) 
+    if(item)
     {
         if(item == m_root)
             return createIndex(0,0,item);
@@ -988,7 +1011,7 @@ int AutonomousVehicleProject::columnCount(const QModelIndex& parent) const
 QModelIndex AutonomousVehicleProject::parent(const QModelIndex& child) const
 {
     if(child.isValid() && itemFromIndex(child))
-    {        
+    {
         MissionItem* item = qobject_cast<MissionItem*>(itemFromIndex(child)->parent());
         if(item)
             return createIndex(item->row(),0,item);
@@ -1032,7 +1055,7 @@ Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
 
         if(qobject_cast<Point*>(item))
             return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled;
-        
+
         if(qobject_cast<Polygon*>(item))
             return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled;
 
@@ -1041,7 +1064,7 @@ Qt::ItemFlags AutonomousVehicleProject::flags(const QModelIndex& index) const
 
         return QAbstractItemModel::flags(index)|Qt::ItemIsDragEnabled|Qt::ItemIsDropEnabled;
     }
-    
+
     return Qt::ItemIsDropEnabled;
 }
 
@@ -1097,24 +1120,24 @@ QMimeData * AutonomousVehicleProject::mimeData(const QModelIndexList& indexes) c
         if(item)
             itemList.append(item);
     }
-    
+
     if(itemList.empty())
         return nullptr;
 
     QMimeData *mimeData = new QMimeData();
-    
+
     QJsonArray mimeArray;
-    
+
     for(MissionItem *item: itemList)
     {
         QJsonObject itemObject;
         item->write(itemObject);
         mimeArray.append(itemObject);
     }
-    
+
     mimeData->setData("application/json", QJsonDocument(mimeArray).toJson());
     mimeData->setData("text/plain", QJsonDocument(mimeArray).toJson());
-        
+
     return mimeData;
 }
 
@@ -1124,16 +1147,16 @@ bool AutonomousVehicleProject::canDropMimeData(const QMimeData* data, Qt::DropAc
     // qDebug() << "  parent valid:" << parent.isValid();
     // qDebug() << "  dropMimeData: " << row << ", " << column;
     // qDebug() << "  mime encoded: " << data->data("application/json");
-    
+
     QJsonDocument doc(QJsonDocument::fromJson(data->data("application/json")));
-    
+
     MissionItem * parentItem = itemFromIndex(parent);
     if(!parentItem)
     {
         parentItem = m_root;
         row = -1;
     }
-    
+
     // qDebug() << "  parent: " << parentItem->objectName();
 
     if(doc.array().empty())
@@ -1153,22 +1176,22 @@ bool AutonomousVehicleProject::dropMimeData(const QMimeData* data, Qt::DropActio
     // qDebug() << "parent valid:" << parent.isValid();
     qDebug() << "dropMimeData: " << row << ", " << column;
     qDebug() << "mime encoded: " << data->data("application/json");
-    
+
     QJsonDocument doc(QJsonDocument::fromJson(data->data("application/json")));
-    
+
     MissionItem * parentItem = itemFromIndex(parent);
     if(!parentItem)
     {
         parentItem = m_root;
         row = -1;
     }
-    
+
     // qDebug() << "parent: " << parentItem->objectName();
 
     parentItem->readChildren(doc.array(), row);
 
     return true;
-        
+
 }
 
 void AutonomousVehicleProject::updateMapScale(qreal scale)
@@ -1205,13 +1228,13 @@ QString AutonomousVehicleProject::generateUniqueLabel(std::string const &prefix)
     std::stringstream number;
     number << unique_label_counter;
     unique_label_counter++;
-    
+
     int padding = 4-number.str().length();
     for(int i = 0; i < padding; i++)
         ret << '0';
-    
+
     ret << number.str();
-    
+
     return QString(ret.str().c_str());
 }
 
@@ -1259,4 +1282,3 @@ AutonomousVehicleProject::RowInserter::~RowInserter()
 {
     m_project.endInsertRows();
 }
-

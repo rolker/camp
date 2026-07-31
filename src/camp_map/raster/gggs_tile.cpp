@@ -128,6 +128,34 @@ bool GggsTile::loadPixels()
   return true;
 }
 
+float GggsTile::sampleAt(double lon, double lat) const
+{
+  // [camp#180] ACQUIRE gate, pairing with loadPixels()'s RELEASE store: false
+  // until the worker has published BOTH data_ and the deferred NoData members
+  // (nodata_/has_nodata_), so neither is ever read while unset (Plan Review #1).
+  // A tile whose pixels were dropped (setBand()) also fails this gate.
+  if(!pixelsLoaded() || data_.empty())
+    return std::nanf("");
+
+  // North-up geotransform (geo[2] == geo[4] == 0): invert to a pixel index.
+  // geo[1] > 0 (lon/px), geo[5] < 0 (lat/px). A degenerate zero pixel size can't
+  // index — treat as a miss rather than divide by zero.
+  if(geo_transform_[1] == 0.0 || geo_transform_[5] == 0.0)
+    return std::nanf("");
+  const int col = int(std::floor((lon - geo_transform_[0]) / geo_transform_[1]));
+  const int row = int(std::floor((lat - geo_transform_[3]) / geo_transform_[5]));
+  if(col < 0 || col >= width_ || row < 0 || row >= height_)
+    return std::nanf("");
+
+  const float v = data_[static_cast<size_t>(row) * width_ + col];
+  // [camp#122] Same value filter as loadPixels()'s range loop: exclude non-finite
+  // and the float-compared NoData sentinel so a masked pixel reads as "no value"
+  // rather than a spurious elevation.
+  if(!std::isfinite(v) || (has_nodata_ && v == float(nodata_)))
+    return std::nanf("");
+  return v;
+}
+
 void GggsTile::setBand(int band)
 {
   // [camp#108] Switch which band loadPixels() reads. Out-of-range is a no-op so
@@ -174,10 +202,12 @@ QOpenGLTexture* GggsTile::texture()
     // rationale (Nearest avoids the NoData-sentinel halo the shader's exact-equality
     // discard would otherwise blend across). No upload-time setMinMagFilters() here.
     texture_->setWrapMode(QOpenGLTexture::ClampToEdge);
-    // Free the CPU copy once it's on the GPU — the texture persists for the
-    // tile's lifetime, so we never re-upload (releaseGL = teardown). Halves
-    // resident memory per tile. dataMin/dataMax were captured at load.
-    data_ = std::vector<float>();
+    // [camp#180] The CPU copy is intentionally RETAINED past the GPU upload (it
+    // was freed here pre-#180 to halve resident memory). sampleAt() indexes this
+    // resident buffer for the depth-at-cursor readout, so a point query stays a
+    // cheap in-memory lookup with no synchronous GDAL re-open on the GUI thread
+    // (Plan Review #4). The texture still persists for the tile's lifetime (we
+    // never re-upload); the trade-off is a painted tile now holds both copies.
   }
   return texture_.get();
 }

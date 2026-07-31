@@ -82,6 +82,17 @@ public:
   bool hasNoData() const { return has_nodata_; }
   double noData() const { return nodata_; }
 
+  /// [camp#180] Sample the loaded band at a geographic point — the value at
+  /// (@p lon, @p lat) degrees, or NaN if the point is outside the tile, the
+  /// sample is NoData / non-finite, or the pixels are not resident. A pure
+  /// in-memory index into the resident CPU buffer (no GDAL I/O), cheap enough to
+  /// call per cursor move on the GUI thread. Gated on the same pixelsLoaded()
+  /// ACQUIRE the paint path uses; that gate is set by loadPixels() AFTER the
+  /// deferred NoData members are populated, so this never reads nodata_/
+  /// has_nodata_ while unset. Safe against the load worker for the same
+  /// happens-before reason (see pixelsLoaded()).
+  float sampleAt(double lon, double lat) const;
+
   /// Min / max over valid (non-NoData, finite) samples. min_ > max_ if the tile
   /// has no valid samples. Used by the layer to auto-range the grayscale ramp.
   double dataMin() const { return data_min_; }
