@@ -841,6 +841,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#180] GggsTileLayer::getElevation() — the store depth-at-cursor query.
+  # Headless (GL-free): builds a layer + waitForLoad() (pure GDAL), then samples
+  # the resident tile buffers. Same link surface as test_gggs_rescan.
+  ament_add_gtest(test_gggs_elevation
+    test/test_gggs_elevation.cpp
+  )
+  target_include_directories(test_gggs_elevation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_gggs_elevation
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#121] Live tile cache (Part B): warm-load + patch-apply/dequantize
   # (SonarLiveTile, GDAL) and the downtime-gap reconcile + prune timestamp-gate
   # (the node-boundary catalog conversion + TileCatalogReconciler). Headless: no
