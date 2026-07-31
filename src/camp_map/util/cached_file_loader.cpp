@@ -120,16 +120,27 @@ void CachedFileLoader::downloadFinished(QNetworkReply* reply)
             // forever (blank tile, no refetch) for layers with no refresh
             // interval — exactly the field symptom #177 was filed for. Delete
             // the poisoned file and its .json sidecar, then re-issue the fetch
-            // against the original network URL. The retry is a network request,
-            // so a second rejection falls through to the non-local return below
-            // — no retry loop is possible.
+            // against the original network URL.
             QFileInfo poisoned(cache_path_, cache_local_path);
-            QFile::remove(poisoned.filePath());
-            QFile::remove(poisoned.filePath()+".json");
-            auto network_url = client->property("network_url").value<QString>();
-            reply->deleteLater();
-            load(network_url, cache_local_path, client);
-            return;
+            const QString poisoned_path = poisoned.filePath();
+            const bool removed = QFile::remove(poisoned_path);
+            QFile::remove(poisoned_path+".json");
+            // [#177] Only re-issue once the poisoned file is actually gone. If
+            // removal fails and the file remains, load() would re-select the
+            // file:// path (cpp:75), re-read it, reject it, and re-issue — an
+            // unbounded async loop via the QNAM finished signal. The retry is a
+            // network request only when removal succeeds; guard on that so a
+            // second rejection falls through to the non-local return below (no
+            // retry loop). If removal failed, drop the reply and leave the tile
+            // blank rather than spin.
+            if(removed || !QFileInfo::exists(poisoned_path))
+            {
+              auto network_url = client->property("network_url").value<QString>();
+              reply->deleteLater();
+              load(network_url, cache_local_path, client);
+              return;
+            }
+            qDebug() << "Failed to remove poisoned cache file, not re-issuing: " << poisoned_path;
           }
           reply->deleteLater();
           return;
