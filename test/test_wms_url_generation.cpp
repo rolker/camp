@@ -133,6 +133,31 @@ TEST(WmsUrlGeneration, TileMatrixFallsBackToNumericWhenIdEmpty)
   EXPECT_EQ(url, "https://example.org/3/2/5.png");
 }
 
+// [camp#178 review R1] The OSM stand-in above sets id == numeric index, so it
+// cannot distinguish "emit the declared id" from "emit the loop index". Give one
+// level an id whose numeric tail deliberately differs from its position and
+// assert the URL carries the id, not the index — proving id-over-index directly.
+TEST(WmsUrlGeneration, TileMatrixPrefersIdOverIndexWhenMismatched)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  layout.zoom_levels[3].id = "EPSG:3857:99";  // numeric tail 99 != index 3
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/EPSG:3857:99/2/5.png");
+  EXPECT_EQ(url.find("/3/"), std::string::npos) << "must not fall back to the bare index";
+}
+
+// [camp#178 review R1] A server-controlled id is percent-encoded before it is
+// spliced into the path, so a hostile <Identifier> cannot inject path or query
+// delimiters. ':' is preserved (legal path-segment char, load-bearing for the
+// EPSG:3857:<z> ids); '/' is encoded to %2F, neutralizing path traversal.
+TEST(WmsUrlGeneration, TileMatrixIdIsPercentEncoded)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  layout.zoom_levels[3].id = "EPSG:3857:3/x";
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/EPSG:3857:3%2Fx/2/5.png");
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
