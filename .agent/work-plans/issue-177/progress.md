@@ -230,3 +230,29 @@ Lifecycle: **Implementation** → **review-code** (Round 3 re-review the fix). H
 Approved pre-push review (Round 3). Per ADR-0018, complete a full local `build + test` on a properly-sourced environment, then push / open PR and hand off to **triage-reviews** in a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill triage-reviews
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 12:03 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #179 at `408d97b`
+**Sources**: 4 (Copilot R2 @ `408d97b`, Copilot R1 @ `bea5b55` [stale], Local Review (Pre-Push) R3 @ `70badef`, CI rollup @ `408d97b`)
+**Cross-source confirmations**: 0
+**CI**: all-pass (`build-and-test` success, `copilot-pull-request-reviewer` success)
+
+### Findings
+- [ ] (suggestion, Copilot R2 suppressed) `cached_file_loader.h` uses `QByteArray`/`QString` in the public API (signal at :26, `isAcceptableImageBody` at :52) without including `<QByteArray>`/`<QString>`, relying on transitive includes via `<QObject>`. Pre-existing repo pattern (`setCachePath`/`load` used `QString` includeless before this PR) and stable for the Qt5 series, but a 2-line IWYU fix. — `src/camp_map/util/cached_file_loader.h:4`
+- [ ] (suggestion, Copilot R2 suppressed) `validPngBytes()` test helper does not assert `buffer.open()` / `image.save(&buffer, "PNG")` succeeded; if the PNG writer plugin were unavailable, the helper returns empty bytes and downstream `EXPECT`s fail with indirect diagnostics. Add `EXPECT_TRUE` on both. — `test/test_cached_file_loader_validation.cpp:41`
+
+### False positives
+- None. Copilot R2 generated 0 posted comments (7/7 files reviewed); its "🟡 Not ready to approve" summary rests solely on the two suppressed low-confidence comments above, both evaluated on merits as valid low-severity suggestions.
+
+### Notes
+- Copilot R1's single comment (poisoned-cache self-heal, @ stale `bea5b55`) is **addressed**: fixed by `c925cbd` + busy-loop guard `77e28ad`, verified with a termination proof in Local Review R3 (approved, 0 findings).
+- ADR-0018 host-side verification completed before push: full camp build + 188 tests, 0 errors, 0 failures, 1 skipped.
+
+### Next step
+No must-fix findings — PR is merge-eligible. The two suggestions are trivial
+(4 lines total); operator decides fix-then-fast-re-confirm vs. merge as-is with
+suggestions declined.
