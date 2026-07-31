@@ -378,3 +378,34 @@ test_gggs_rescan 4/4 and test_gggs_render green (1 pre-existing skip).
 
 ### False positives
 - (Copilot R2, suppressed) "LOD-switch resetPixels() without releaseGL() when makeCurrent() fails leaves a stale texture that shadows a reload" — the failure mode cannot manifest: RasterGlRenderer::makeCurrent() failure permanently latches `gl_failed_` (raster_gl_renderer.cpp:149, deliberately never retried), after which renderImage() returns null for the layer's lifetime — the only code path that reads texture() (itemsIntersecting under renderImage's makeCurrent) can never run again, so the stale texture is unreachable, not displayable. Identical to the documented applyBand() contract (it also clears pixels after a failed makeCurrent and leaves textures alone; camp#108 comment block).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 20:40 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-103 at `ddc1d2a`
+**Mode**: pre-push
+**Depth**: Deep (reason: QtConcurrent worker concurrency + GL lifecycle mutation moved into tilesReady(); core render path)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 2 | **Ship**: recommended — field-verify flicker fix (f91c1e8+ddc1d2a); concurrency of the new tile-mutating release in tilesReady() confirmed GUI-thread-only + !isRunning()-gated by 2 disjoint-lens adversarial passes + lead; no must-fix
+
+### Findings
+- [ ] (suggestion) ADR-0013 "memory stays viewport-bounded / one viewport's worth" understates a rapid MULTI-level zoom/pan sweep — release fires only on a completed load, so several aborted-mid-load stale levels can stack (bounded by traversed levels, freed on next idle completed load). Transient/self-healing; document multi-level case, optional release-on-abort — `docs/decisions/0013-lod-level-selection-demand-driven-load.md` / `gggs_tile_layer.cpp:412`
+- [ ] (suggestion) Comment "stale levels coarse→fine UNDER the selected level" reads as backdrop-always-coarser; on zoom-out the resident stale level is FINER than the selected coarse level. Code correct (selected always on top); reword for both directions — `gggs_tile_layer.cpp:559` · `:629`
+- [ ] (suggestion) waitForLoad() re-kick omits paint()'s last_kick_* moved-since guard; a permanently-failing tile (loadPixels returns false without setting pixels_loaded_) makes hasUnloadedVisibleTiles perpetually true → redundant kick+join per call. Bounded per call, test-seam only, no wrong state — `gggs_tile_layer.cpp:466`
+- [ ] (suggestion) Encode the GUI-thread-only invariant the tilesReady() release safety rests on with a Q_ASSERT(thread()==QThread::currentThread()) — `gggs_tile_layer.cpp:412`
+
+### Notes
+- Priority 1 (concurrency, the operator's top verify): SAFE, cross-pass confirmed. tilesReady() (queued finished signal + direct waitForLoad() call after waitForFinished()) and loadTiles() both run GUI-thread-only; a worker restarts only from GUI-thread code, which cannot interleave the release loop. Stale queued finished after a new loadTiles() is caught by !isRunning(). No data race.
+- Priority 2 (memory): no permanent retention — release frees ALL non-selected tiles on the first idle completed load with the selected visible set present. Only transient stacking during a sustained multi-level sweep (Suggestion 1); bounded by available_levels_, self-healing, smaller than the pre-#103 eager whole-store load. Not ship-blocking.
+- Priority 3 (draw order): correct both directions. available_levels_ ascending (coarse→fine); zoom-in = stale coarse under selected fine; zoom-out = stale fine under selected coarse; selected always last/on-top. Verified vs renderer in-order compositing.
+- Priority 4 (waitForLoad semantics): no test regression; only effect is Suggestion 3's bounded redundant kick. Pre-existing -1 headless tests re-enter waitForLoad() at most once with all tiles loaded → identical behavior.
+- Priority 5 (range fold skips off-level during transition): acceptable. Backdrop colormapped with the selected range; data_min_/data_max_ not reset on switch so range widens only (ADR-0013 overview ⊆ fine). Transient/cosmetic.
+- Static analysis: git diff --check clean (camp pre-commit-enforced trailing-ws/EOF). cppcheck only the pre-existing Qt `slots` unknownMacro parse limitation (not a defect). ament_cpplint findings are pre-existing camp house style (copyright/functional-cast/short RASTER_*_H guards), unenforced by camp CI or pre-commit — dropped as noise per both prior rounds.
+- Governance: ADR-0013 updated in-commit (§Progressive refinement); resetPixels()+releaseGL() pairing invariant re-stated at the new tilesReady() call site with the same lazy-makeCurrent/have_context guard the removed paint() block used. plan.md synced to as-built. All consequences addressed.
+- Plan drift: none — diff confined to the three functions the plan names (paint level-switch, itemsIntersecting, tilesReady) + the two new tests.
+- Build/test: camp rebuilt clean; 201 tests, 0 failures, 1 pre-existing skip; new LevelSwitchKeepsPriorLevelUntilNewLoads + LevelSwitchBackdropRendersDuringTransition (GL-gated, runs on this host) pass.
+- Local Model Adversarial: off (--no-local, workspace#590 standing decision). Copilot Adversarial: off (default).
+- Round note: two prior ## Local Review (Pre-Push) entries exist on #103 — db8d2d7 (2026-07-24, original demand-driven/ADR-0011 loop) and e141449 (LOD/ADR-0013 loop, stamped Round 1). This continues the e141449 loop as the field-verify fix → Round 2.
