@@ -150,3 +150,100 @@ the fix a silent no-op, plus two small mechanical must-fixes.
 - Governance: ADR-0007 seam fix with no renderer API change; ADR-0010 overviews-first order + no-blank-gap preserved; ADR-0011 accurate. All consequences (3 callers, cached_clip_, ADR) addressed.
 - Plan drift: matches plan; positive deviation — clip derivation factored into shared raster/viewport_clip.h vs planned per-layer copies. No CMake change (test extended in already-registered test_gggs_render.cpp).
 - Local Model Adversarial skipped: Ollama not installed on this host. Copilot Adversarial off (default, --copilot not passed).
+
+## Issue Review
+**Status**: complete
+**When**: 2026-07-31 17:42 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Issue**: #103
+**Comment**: (best-effort post follows this entry; not recorded inline)
+**Scope verdict**: well-scoped
+
+### Context
+
+Re-review of issue #103 for its **LOD half only**. The visible-region half
+landed in PR#173 (merged 2026-07-24, implementing ADR-0011 viewport-clip render
+convention). The issue stays open for LOD selection + demand-driven loading, now
+unblocked by unh_marine_autonomy#188 (ADR-0011 producer-side overview pyramids,
+build_sidescan_overviews — validated: 1012 fine L13 tiles → 479 overview tiles to
+a single L0 apex).
+
+### Scope Assessment
+
+**Well-scoped?** Yes, with one clarification item.
+
+The LOD half has three sub-deliverables:
+1. **Level selection by view scale** — pick the GGGS level whose cell size best
+   matches on-screen pixel density, reading coarse tiles from the `overviews/`
+   sidecar (`<level>_<row>_<col>.tif`; ADR-0011 consumer contract in
+   unh_marine_autonomy). Same selection logic must apply to "natively multi-level
+   layers" (the roadmap names ADR-0010, but camp's ADR-0010 describes
+   SonarLiveCacheLayer eviction/overviews — not an ENC chart layer; this may mean
+   a future layer type or a different ADR number. **Clarify before implementation.**).
+2. **Demand-driven loading** — replace the eager whole-store pixel read (the
+   observed 3.6 GB open cost from camp#102's loader) with loading only the tiles
+   the viewport needs at the selected level, streaming finer tiles on zoom-in.
+3. **Memory bounding** — resident tiles bounded by viewport footprint, not survey
+   size.
+
+All three are naturally scoped to `GggsTileLayer` + its new `overviews/` sidecar
+scan; the visible-region clip from #173 (ADR-0011) is the natural trigger site for
+demand-driven loading. The scope is right-sized for a single PR.
+
+**Right repo?** Yes — camp UI project change.
+
+**Dependencies**:
+- unh_marine_autonomy#188 (ADR-0011 pyramid producer) — now complete; consumer
+  contract is pinned: `overviews/` flat dir, `<level>_<row>_<col>.tif` naming.
+- camp#173 (visible-region half) — merged; ADR-0011 viewport-clip convention is
+  in place.
+- camp#172 (evicted live tiles never reload) — the demand-driven load path here
+  is the fix shape for #172, per the roadmap; care needed to not foreclose it.
+- camp#171 (live cache adopts shared fold engine) — step 4 after this issue.
+
+### Principle Alignment
+
+| Principle | Status | Notes |
+|---|---|---|
+| Human control and transparency | Watch | Demand-driven streaming changes the loading experience visibly (tiles appear as user pans/zooms); a loading-state signal to the UI (status bar or layer status) is the user-facing handle. Thresholds for level selection may need QSettings knobs. |
+| Enforcement over documentation | OK | Not a process change. |
+| Capture decisions, not just implementations | Action needed | The LOD level-selection algorithm (pixels-per-metre → GGGS level mapping) is a design decision; record it as a camp ADR (new ADR-0013 or an addendum to ADR-0011). The choice of trigger site (viewport-clip path from ADR-0011) should also be noted. |
+| A change includes its consequences | Action needed | loadDirectory() and the async loadTiles() worker are refactored; existing tests that call renderImage() or inspect tiles_ after construction will need updating. Tests for level-selection math, overview sidecar scanning, and demand-driven streaming are new work. |
+| Only what's needed | Watch | The roadmap mentions #172 (evicted tile reload) as the "fix shape" — ensure the implementation enables but does not implement #172 machinery in this PR. Scope boundary: LOD selection + demand-driven loading only; eviction lifecycle (#171/#172) deferred. |
+| Improve incrementally | OK | Clean boundary: this issue adds LOD and demand-driven loading; #172 adds reload of evicted tiles; #171 adds the live-cache fold-engine unification. Each step leaves the system better. |
+| Test what breaks | Action needed | No automated test currently covers: level selection math, overview sidecar enumeration, or demand-driven tile streaming. The renderImage() headless tests cover the render path but not the load path. New tests needed targeting these paths. |
+| Workspace vs. project separation | OK | Camp-specific change; no workspace-repo impact. |
+
+### ADR Applicability
+
+| ADR | Triggered | Notes |
+|---|---|---|
+| camp ADR-0007 (RasterFieldSource seam) | Yes | items() must filter by selected LOD level; the level-selection hook is at the clip/items boundary established by ADR-0011. API change may be needed if items() gains a level parameter. |
+| camp ADR-0010 (bounded eviction + overview pyramid) | Watch | The overview pyramid structure for SonarLiveCacheLayer (fold-on-evict, overviews-first draw order) is the reference design; GggsTileLayer's approach should align or consciously diverge. |
+| camp ADR-0011 (viewport-clip render convention) | Yes | The demand-driven load path fits at the visible-region clip trigger in paint(); level selection feeds into items() before the render. |
+| workspace ADR-0001 (capture decisions) | Yes | Level-selection algorithm and the sidecar consumer contract need an ADR. |
+| workspace ADR-0002 (worktree isolation) | Yes — already satisfied | Worktree exists. |
+
+### Consequences
+
+- `loadDirectory()` refactor → update or extend tests in `test_gggs_render.cpp`
+  and `test_gggs_tile_layer.cpp`.
+- Overview sidecar `overviews/` scanning → new code path; test with a synthetic
+  store that has both fine and overview tiles.
+- Level-selection math → record algorithm as a camp ADR; must handle both the
+  `overviews/` sidecar case (GggsTileLayer coarse levels) and the "natively
+  multi-level" case once that layer type is clarified.
+- items() filtering by level → verify ADR-0010's overviews-first draw order is
+  preserved for SonarLiveCacheLayer (unchanged; #173 already preserved it — but
+  confirm the new GggsTileLayer items() does not accidentally break the
+  SonarLiveCacheLayer path).
+- #172 (on-demand reload) — the demand-driven load path here is the natural hook;
+  ensure interface doesn't foreclose it.
+
+### Actions
+- [ ] Clarify "ADR-0010 chart layer's ENC scale ladder" reference before implementing level-selection for natively multi-level layers — confirm which ADR and which layer type are meant, or whether a new ADR is needed.
+- [ ] Record the LOD level-selection algorithm (pixels-per-metre → GGGS level mapping, sidecar consumer contract) as a new camp ADR.
+- [ ] Add tests for: level-selection math, overview sidecar enumeration, and demand-driven load path (tile streaming at the viewport clip trigger).
+- [ ] Ensure the demand-driven loader enables #172 (evicted tile reload) without implementing it — keep the hook point clean and documented.
+- [ ] Add a loading-state / status-bar signal so the operator knows tiles are streaming (transparency requirement).
