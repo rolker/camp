@@ -242,7 +242,8 @@ demand-driven loading. The scope is right-sized for a single PR.
   ensure interface doesn't foreclose it.
 
 ### Actions
-- [ ] Clarify "ADR-0010 chart layer's ENC scale ladder" reference before implementing level-selection for natively multi-level layers — confirm which ADR and which layer type are meant, or whether a new ADR is needed.
+- [x] Clarify "ADR-0010 chart layer's ENC scale ladder" reference before implementing level-selection for natively multi-level layers — confirm which ADR and which layer type are meant, or whether a new ADR is needed.
+  - **RESOLVED (operator checkpoint, 2026-07-31):** the roadmap's "ADR-0010" = **unh_marine_autonomy ADR-0010** (world-model re-split; the chart layer keeps its native ENC scale ladder and needs no derived overviews), not camp ADR-0010. **Scope decision: INCLUDE the generic native multi-level wiring in this PR** — the level-selection machinery must serve both the overviews/ sidecar case (GggsTileLayer) and natively multi-level layers (chart scale ladder), even though no camp chart layer exists yet.
 - [ ] Record the LOD level-selection algorithm (pixels-per-metre → GGGS level mapping, sidecar consumer contract) as a new camp ADR.
 - [ ] Add tests for: level-selection math, overview sidecar enumeration, and demand-driven load path (tile streaming at the viewport clip trigger).
 - [ ] Ensure the demand-driven loader enables #172 (evicted tile reload) without implementing it — keep the hook point clean and documented.
