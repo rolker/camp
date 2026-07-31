@@ -140,7 +140,11 @@ void CachedTileLoader::dataLoaded(QByteArray &data, CachedFileClient* client)
 {
   auto address = client->property("address").value<TileAddress>();
   QPixmap pixmap;
-  pixmap.loadFromData(data, "png");
+  // [#177] No format hint — let Qt sniff. The loader's decode gate accepts any
+  // QImage-decodable body, so forcing "png" here would silently render a valid
+  // non-PNG image (that passed the gate and was cached) as blank: the same
+  // persistent-silent-blank failure class this issue exists to close.
+  pixmap.loadFromData(data);
   emit pixmapLoaded(pixmap, address);
 }
 
