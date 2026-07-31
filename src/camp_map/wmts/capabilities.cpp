@@ -4,6 +4,7 @@
 #include "util/cached_file_loader.h"
 #include <QDomDocument>
 #include <QRegularExpression>
+#include <QUrl>
 
 #include <QDebug>
 
@@ -36,7 +37,7 @@ void Capabilities::dataLoaded(QByteArray &data, CachedFileClient* client)
   {
     qDebug() << "expected top level to be Capabilities, got" << root.tagName();
     return;
-  
+
   }
   auto contents = root.firstChildElement("Contents");
   if(contents.isNull())
@@ -79,14 +80,23 @@ map_tiles::TileLayout Capabilities::getLayout(QString layer_id, QString tile_mat
             auto style = layer.default_style;
             if(style.isEmpty())
               style = layer.styles.front();
-            pending_static_string += parts[i]+style;
+            // [camp#178 review R2] style is a raw server-controlled value (the
+            // WMTS <Style><Identifier>); percent-encode it colon-aware before
+            // fusing into the static URL, exactly as the TileMatrix id is
+            // encoded in TileLayout::getUrl(). ':' is preserved (legal
+            // path-segment char); '/', '?', '#', whitespace, etc. are encoded so
+            // a hostile capabilities document cannot inject URL delimiters.
+            pending_static_string += parts[i]+QString::fromUtf8(QUrl::toPercentEncoding(style, ":"));
           }
           else if(key == "TileMatrixSet")
           {
             // \todo check that passed in tile_matrix_set exists.
             if(tile_matrix_set.isNull())
               tile_matrix_set = layer.tile_matrix_set_links.front();
-            pending_static_string += parts[i]+tile_matrix_set;
+            // [camp#178 review R2] tile_matrix_set is likewise server-controlled
+            // (from <TileMatrixSetLink>); encode it colon-aware. GeoServer GWC
+            // names its sets <gridset> (e.g. EPSG:3857), so ':' must survive.
+            pending_static_string += parts[i]+QString::fromUtf8(QUrl::toPercentEncoding(tile_matrix_set, ":"));
           }
           else
           {
