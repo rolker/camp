@@ -344,7 +344,21 @@ here: re-anchor unconditionally after re-indexing (pos is derived state of
 `scene_bounds_`).
 
 ### Findings
-- [ ] (low, Copilot) `rescan()` re-anchors only on first extent — re-run `setTransform`/`setPos` whenever `scene_bounds_` is non-null after `rebuildLevelIndex()` so a west/north extension or finest-level re-base keeps the item anchored at the true NW corner — `src/camp_map/raster/gggs_tile_layer.cpp:266-273`
+- [x] (low, Copilot) `rescan()` re-anchors only on first extent — re-run `setTransform`/`setPos` whenever `scene_bounds_` is non-null after `rebuildLevelIndex()` so a west/north extension or finest-level re-base keeps the item anchored at the true NW corner — `src/camp_map/raster/gggs_tile_layer.cpp:266-273`
 
 ### False positives
 - (none)
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 15:26 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**Branch**: feature/issue-103 at `f8aa63f`   <!-- PR #183 -->
+**Addressed**: Integrated Review of PR #183 at `21897c7` (1 low finding — actioned)
+**Commits**: `f8aa63f`
+
+Host-inline (operator-approved pattern): rescan() now re-anchors the item
+(setTransform/setPos) unconditionally whenever scene_bounds_ is non-null after
+rebuildLevelIndex() — pos is derived state of the bounds. camp rebuilt;
+test_gggs_rescan 4/4 and test_gggs_render green (1 pre-existing skip).
