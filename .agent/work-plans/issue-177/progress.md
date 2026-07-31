@@ -277,3 +277,31 @@ suggestions declined.
 ### Next step
 Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to a fresh-context sub-agent:
 `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 16:16 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-177 at `f1afdfa`
+**Mode**: pre-push
+**Depth**: Light (reason: Round-4 re-confirm of two trivial cleanup commits — a header include-list IWYU fix and a test-helper assertion wrap; no runtime-logic change, so full-depth is not warranted)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 4 | **Ship**: recommended — both R2 Integrated-Review suggestion fixes (`73e911d` explicit `<QByteArray>`/`<QString>` includes; `aadf745` `EXPECT_TRUE` on `buffer.open()`/`image.save()` in `validPngBytes()`) confirmed correct and purely additive; static analysis + one adversarial Lens-A pass both clean. Must-fix stays 0 (Round 3 was 0).
+
+### Findings
+- [ ] No issues found. LGTM.
+
+### Notes
+- Round-4 fast re-confirm scoped to the two new commits `73e911d` (IWYU includes) + `aadf745` (test-helper assertion) in the context of the full branch diff. The declined redundant-double-decode item (operator won't-fix 2026-07-31) was not re-raised, per instruction.
+- `73e911d`: verified the header's public API genuinely uses `QByteArray` (signal `dataLoaded` at :28, `isAcceptableImageBody` at :54) and `QString` (:54,:57,:58,:74) — previously resolved transitively via `<QObject>`. New includes are alphabetically ordered, include guard intact, forward-declared pointer types (`QApplication`/`QNetworkAccessManager`/`QNetworkReply`) correctly left un-included. No regression.
+- `aadf745`: `EXPECT_TRUE` (non-fatal) is the correct — and only compilable — choice inside the `QByteArray`-returning free helper `validPngBytes()`; `ASSERT_TRUE` expands to `return;` and would not compile there. Success path returns identical bytes; a missing PNG-writer plugin now surfaces a direct diagnostic instead of empty bytes failing indirectly downstream. Purely additive.
+- Static analysis: cppcheck clean on both files except the known Qt `slots`-macro (`Q_OBJECT`) config noise — repo-convention limitation, not actionable (same as Rounds 1–3).
+- Adversarial: 1 fresh-context Claude Lens-A pass (Light tier) — CLEAN, independently confirming the includes match used types and the assertion choice is correct. Local Adversarial off (`--no-local`, standing opt-out per workspace#590); Copilot off (default).
+- ADR-0018: full `colcon build`/`test` not completed in this worktree (lower-layer `marine_ais_msgs` prefix path unavailable — same limitation as Rounds 1–3). Both changes are additive and low-risk; the prior round's host-side ADR-0018 build ran 188 tests clean over the surrounding code. Run `./build.sh camp && ./test.sh camp` on a fully-sourced env before push.
+
+### Next step
+Approved pre-push review (Round 4) — 0 must-fix, 0 suggestions across all four review rounds' fixes. PR #179 is merge-eligible. Per ADR-0018, complete a full local `build + test` on a properly-sourced environment, then push / open PR and hand off to **triage-reviews** in a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill triage-reviews
