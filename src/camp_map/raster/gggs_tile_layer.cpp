@@ -2,6 +2,7 @@
 
 #include "gggs_tile.h"
 #include "gggs_tile_util.h"
+#include "lod_level_selector.h"
 #include "colormap_range_dialog.h"
 #include "viewport_clip.h"
 #include "../map_view/web_mercator.h"
@@ -51,6 +52,19 @@ QString displayName(const QString& directory)
   const QString leaf = dir.dirName();
   const QString parent = QFileInfo(dir.path()).dir().dirName();
   return (parent.isEmpty() || parent == ".") ? leaf : parent + '/' + leaf;
+}
+
+// [camp#103] A tile's extent in Web-Mercator scene units. geoToMap is monotonic
+// in both lon and lat, so the two opposite geographic corners bound the rect.
+// Pure math on immutable tile extents — safe from any thread (the worker uses
+// it for the demand-driven spatial filter).
+QRectF tileSceneRect(const camp::raster::GggsTile& tile)
+{
+  const QPointF lo = web_mercator::geoToMap(
+    QGeoCoordinate(tile.minLat(), tile.minLon()));
+  const QPointF hi = web_mercator::geoToMap(
+    QGeoCoordinate(tile.maxLat(), tile.maxLon()));
+  return QRectF(lo, hi).normalized();
 }
 
 }  // namespace
@@ -111,36 +125,67 @@ GggsTileLayer::~GggsTileLayer()
 
 void GggsTileLayer::loadDirectory(const QString& directory)
 {
-  QDir dir(directory);
-  const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
-                                          QDir::Files, QDir::Name);
-  bool first_extent = true;   // first geometrically-valid tile (scene_bounds_)
-  for(const QString& name : files)
+  // [camp#103 / ADR-0013] Scan the fine tiles AND the derived `overviews/`
+  // sidecar (uma ADR-0011: flat dir, same `<level>_<row>_<col>.tif` grammar).
+  // All tiles share tiles_; their filename-parsed level() distinguishes them.
+  const QDir fine_dir(directory);
+  const QDir overview_dir(directory + "/overviews");
+  for(const QDir& dir : {fine_dir, overview_dir})
   {
-    // [camp#112] Skip companion tiles (`_time`/`_source`): the `*.tif` glob also
-    // matches them, but only the base value tile is renderable.
-    if(!isValueTile(name))
+    if(!dir.exists())
       continue;
-    // [camp#102] Extent/metadata only — the GggsTile ctor no longer reads pixels.
-    // boundingRect()/sceneBounds() are valid immediately (fit-to-extent works at
-    // load time); the band reads (and therefore the data range) are deferred to
-    // the async loadTiles() worker, so data_min_/data_max_ accumulate
-    // incrementally in tilesReady() rather than here.
-    auto tile = std::make_unique<GggsTile>(dir.filePath(name));
-    if(!tile->valid())
-      continue;
+    const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
+                                            QDir::Files, QDir::Name);
+    for(const QString& name : files)
+    {
+      // [camp#112] Skip companion tiles (`_time`/`_source`): the `*.tif` glob
+      // also matches them, but only the base value tile is renderable.
+      if(!isValueTile(name))
+        continue;
+      // [camp#102] Extent/metadata only — the GggsTile ctor no longer reads
+      // pixels. boundingRect()/sceneBounds() are valid immediately
+      // (fit-to-extent works at load time); the band reads (and therefore the
+      // data range) are deferred to the async loadTiles() worker, so
+      // data_min_/data_max_ accumulate incrementally in tilesReady().
+      auto tile = std::make_unique<GggsTile>(dir.filePath(name));
+      if(!tile->valid())
+        continue;
+      tiles_.push_back(std::move(tile));
+    }
+  }
+  rebuildLevelIndex();
+}
 
-    // Tile extent in Web-Mercator scene units. geoToMap is monotonic in both
-    // lon and lat, so the two opposite geographic corners give the scene rect.
-    const QPointF lo = web_mercator::geoToMap(
-      QGeoCoordinate(tile->minLat(), tile->minLon()));
-    const QPointF hi = web_mercator::geoToMap(
-      QGeoCoordinate(tile->maxLat(), tile->maxLon()));
-    const QRectF tile_rect = QRectF(lo, hi).normalized();
+void GggsTileLayer::rebuildLevelIndex()
+{
+  // [camp#103] Deduplicated ascending level list + the layer extent.
+  //
+  // scene_bounds_ unions FINEST-level tile extents only, NOT all tiles: an
+  // overview tile is padded to its (coarse) GGGS grid cell, so the L0 apex
+  // spans a whole 8-degree grid — uniting it would balloon boundingRect /
+  // fit-to-extent far beyond the data footprint. The finest level present is
+  // the true footprint; every coarser level covers the same data padded with
+  // NoData, and the renderer clips coarse tiles to the bounding rect anyway.
+  available_levels_.clear();
+  for(const auto& tile : tiles_)
+  {
+    const int level = tile->level();
+    auto it = std::lower_bound(available_levels_.begin(), available_levels_.end(), level);
+    if(it == available_levels_.end() || *it != level)
+      available_levels_.insert(it, level);
+  }
+  scene_bounds_ = QRectF();
+  if(available_levels_.empty())
+    return;
+  const int finest = available_levels_.back();
+  bool first_extent = true;
+  for(const auto& tile : tiles_)
+  {
+    if(tile->level() != finest)
+      continue;
+    const QRectF tile_rect = tileSceneRect(*tile);
     scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
     first_extent = false;
-
-    tiles_.push_back(std::move(tile));
   }
 }
 
@@ -204,6 +249,7 @@ bool GggsTileLayer::rescan()
     future_watcher_.waitForFinished();
   }
 
+  const bool had_extent = !scene_bounds_.isNull();
   for(auto& tile : new_tiles)
   {
     // [camp#108] A freshly-constructed GggsTile defaults to band 1; inherit the
@@ -215,20 +261,17 @@ bool GggsTileLayer::rescan()
     // a no-op (GggsTile::setBand returns early on band == band_), so the common
     // band-1 case is unaffected.
     tile->setBand(band_);
-    const bool first_extent = tiles_.empty() && scene_bounds_.isNull();
-    const QPointF lo = web_mercator::geoToMap(
-      QGeoCoordinate(tile->minLat(), tile->minLon()));
-    const QPointF hi = web_mercator::geoToMap(
-      QGeoCoordinate(tile->maxLat(), tile->maxLon()));
-    const QRectF tile_rect = QRectF(lo, hi).normalized();
-    prepareGeometryChange();
-    scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
-    if(first_extent)
-    {
-      setTransform(QTransform::fromScale(1.0, -1.0));
-      setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
-    }
     tiles_.push_back(std::move(tile));
+  }
+  // [camp#103] Wholesale re-index: a rescan can add tiles at a new (finer)
+  // level, which both extends available_levels_ and re-bases scene_bounds_
+  // (finest-level union — see rebuildLevelIndex).
+  prepareGeometryChange();
+  rebuildLevelIndex();
+  if(!had_extent && !scene_bounds_.isNull())
+  {
+    setTransform(QTransform::fromScale(1.0, -1.0));
+    setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
   }
 
   if(load_started_)
@@ -265,10 +308,18 @@ void GggsTileLayer::loadTiles()
   abort_flag_mutex_.unlock();
 
   setStatus("(loading...)");
-  future_watcher_.setFuture(QtConcurrent::run(this, &GggsTileLayer::loadTilesWorker));
+  // [camp#103] Snapshot the demand-driven filter into value copies the worker
+  // owns — paint() reassigns the live members every frame while the worker runs,
+  // so member reads from the worker thread would race. Record the kick's filter
+  // so paint()'s idle re-kick fires only when selection/viewport actually moved
+  // (a tile that permanently fails to load must not re-kick every frame).
+  last_kick_level_ = selected_level_;
+  last_kick_viewport_ = load_viewport_;
+  future_watcher_.setFuture(QtConcurrent::run(
+    this, &GggsTileLayer::loadTilesWorker, selected_level_, load_viewport_));
 }
 
-void GggsTileLayer::loadTilesWorker()
+void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
 {
   // [camp#102] Off-thread: GDAL RasterIO only — NEVER touch GL here (texture()/
   // allocateStorage stay on the paint path). The abort check is between tiles
@@ -279,6 +330,13 @@ void GggsTileLayer::loadTilesWorker()
   // not the tilesReady() join — is what guarantees the paint thread never reads a
   // tile mid-write. (tilesReady() still runs post-join to fold the range +
   // repaint, but a paint() that races an in-flight worker is already safe.)
+  //
+  // [camp#103 / ADR-0013] Demand-driven: only tiles at the selected level that
+  // intersect the load viewport are read — this is what turns the 3.6 GB eager
+  // whole-store open into a viewport-bounded load. @p level == -1 (no selection:
+  // headless tests, pre-first-paint) disables the level filter and a null
+  // @p viewport disables the spatial filter, preserving the pre-LOD
+  // load-everything behavior exactly.
   for(auto& tile : tiles_)
   {
     {
@@ -286,9 +344,40 @@ void GggsTileLayer::loadTilesWorker()
       if(abort_flag_)
         return;
     }
-    if(!tile->pixelsLoaded())
-      tile->loadPixels();
+    if(tile->pixelsLoaded())
+      continue;
+    if(level != -1 && tile->level() != level)
+      continue;
+    if(!viewport.isNull() && !tileSceneRect(*tile).intersects(viewport))
+      continue;
+    tile->loadPixels();
   }
+}
+
+bool GggsTileLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) const
+{
+  // [camp#103] The pan/zoom re-kick predicate (see header). GUI thread.
+  for(const auto& tile : tiles_)
+  {
+    if(tile->pixelsLoaded())
+      continue;
+    if(selected_level_ != -1 && tile->level() != selected_level_)
+      continue;
+    if(!viewport_scene.isNull() && !tileSceneRect(*tile).intersects(viewport_scene))
+      continue;
+    return true;
+  }
+  return false;
+}
+
+int GggsTileLayer::pixelsLoadedCount(int level) const
+{
+  // [camp#103] Test-only seam (see header).
+  int count = 0;
+  for(const auto& tile : tiles_)
+    if(tile->level() == level && tile->pixelsLoaded())
+      ++count;
+  return count;
 }
 
 void GggsTileLayer::tilesReady()
@@ -304,6 +393,12 @@ void GggsTileLayer::tilesReady()
     // (applyBand() keeps it loaded rather than blanking it); its stale prior-band
     // min/max must not pollute the current band's auto-range.
     if(tile->band() != band_)
+      continue;
+    // [camp#103] Off-level tiles must not pollute the auto-range either (-1 =
+    // no selection = fold everything, the headless default). Note the fold only
+    // ever WIDENS the range across level switches — acceptable because the MEAN
+    // fold guarantees overview values ⊆ the fine range (ADR-0013).
+    if(selected_level_ != -1 && tile->level() != selected_level_)
       continue;
     if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
       continue;
@@ -400,15 +495,13 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
     // true the data_/texture() reads see the worker's completed writes — no race.
     if(!tile->pixelsLoaded())
       continue;
-    if(!clip_scene.isNull())
-    {
-      const QPointF lo = web_mercator::geoToMap(
-        QGeoCoordinate(tile->minLat(), tile->minLon()));
-      const QPointF hi = web_mercator::geoToMap(
-        QGeoCoordinate(tile->maxLat(), tile->maxLon()));
-      if(!QRectF(lo, hi).normalized().intersects(clip_scene))
-        continue;
-    }
+    // [camp#103 / ADR-0013] Off-level tiles never reach the renderer, even if
+    // they still hold loaded pixels from a prior level (cheapest test first;
+    // -1 = no selection = no level filter, the headless default).
+    if(selected_level_ != -1 && tile->level() != selected_level_)
+      continue;
+    if(!clip_scene.isNull() && !tileSceneRect(*tile).intersects(clip_scene))
+      continue;
     QOpenGLTexture* texture = tile->texture();
     if(!texture)
       continue;
@@ -458,16 +551,78 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   if(tiles_.empty())
     return;
 
-  // [camp#102] Lazily kick the async pixel load on the first paint — QGraphicsView
-  // only paints visible items, so this defers band reads to layers the operator
-  // turns on (default-off tile-sets never load). Kick exactly once; tilesReady()
-  // folds the range + repaints when the worker finishes. Until then the range is
-  // still crossed and there is nothing to draw, so fall through and return.
+  // [camp#103 / ADR-0011] Derive the viewport clip FIRST: the LOD selection and
+  // the demand-driven load filter both come from it, so even the very first
+  // lazy kick below already loads only the visible tiles at the right level.
+  const ViewportClip clip =
+    deriveViewportClip(painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
+
+  // [camp#103 / ADR-0013] Level-by-view-scale. clip.scene is Web-Mercator, whose
+  // metres are inflated by ~sec(latitude) vs true ground metres; fromCellSize
+  // expects ground metres, so convert at the viewport centre (metersPerUnit =
+  // cos(lat)) — at 43°N the difference is ~1.37×, about half a level.
+  bool level_changed = false;
+  if(!available_levels_.empty() && clip.size.width() > 0)
+  {
+    const double mercator_mpp = clip.scene.width() / double(clip.size.width());
+    const double ground_mpp =
+      mercator_mpp * web_mercator::metersPerUnit(clip.scene.center());
+    const int target = selectLodLevel(ground_mpp, available_levels_);
+    level_changed = (target != selected_level_);
+    if(level_changed)
+    {
+      // Abort + join any in-flight load BEFORE mutating tiles the worker reads
+      // (same contract as applyBand()/rescan(); whole-tile granularity).
+      if(future_watcher_.isRunning())
+      {
+        abort_flag_mutex_.lock();
+        abort_flag_ = true;
+        abort_flag_mutex_.unlock();
+        future_watcher_.waitForFinished();
+      }
+      selected_level_ = target;
+      // Release the wrong-level tiles' CPU buffers AND GL textures together —
+      // the resetPixels()/releaseGL() pairing invariant (gggs_tile.h): a
+      // CPU-only clear would leave a stale texture shadowing any re-load. A
+      // not-yet-created context means no textures exist — skip the GL half.
+      const bool have_context = renderer_.hasContext() && renderer_.makeCurrent();
+      for(auto& tile : tiles_)
+      {
+        if(tile->level() == selected_level_ || !tile->pixelsLoaded())
+          continue;
+        if(have_context)
+          tile->releaseGL();
+        tile->resetPixels();
+      }
+      if(have_context)
+        renderer_.doneCurrent();
+      cached_image_ = QImage();
+    }
+  }
+
+  // Snapshot the load viewport BEFORE any kick so the worker's filter can never
+  // read stale bounds (review must-fix), then kick when needed:
+  //  - first paint: the one-time lazy kick (now already level+viewport filtered);
+  //  - level change: reload at the new level immediately (abort+join above);
+  //  - idle + a pan/zoom exposed unloaded visible tiles at the selected level
+  //    AND the filter actually moved since the last kick (review must-fix: a
+  //    pure pan must re-kick or panned-in regions stay blank forever; the
+  //    moved-since-last-kick guard keeps a permanently-failing tile from
+  //    re-kicking every frame, and kicking only when idle avoids the
+  //    abort+join stall a pan storm would otherwise pay per frame).
+  load_viewport_ = clip.scene;
   if(!load_started_)
   {
     load_started_ = true;
     loadTiles();
   }
+  else if(level_changed)
+    loadTiles();
+  else if(!future_watcher_.isRunning() &&
+          (selected_level_ != last_kick_level_ ||
+           load_viewport_ != last_kick_viewport_) &&
+          hasUnloadedVisibleTiles(clip.scene))
+    loadTiles();
 
   if(data_min_ > data_max_)   // no tile's pixels/range folded yet
     return;
@@ -476,9 +631,6 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   // sized to its on-screen pixels — a zoomed-in view of a store far larger than
   // kMaxImageEdge stays crisp. Re-render when the size (zoom) OR the clip (pan)
   // changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
-  const ViewportClip clip =
-    deriveViewportClip(painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
-
   if(cached_image_.isNull() || cached_size_ != clip.size ||
      cached_clip_ != clip.scene)
   {
