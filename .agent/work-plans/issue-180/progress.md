@@ -121,3 +121,61 @@ finest available tile regardless of rendered LOD, which requires no dependency o
 Non-blocking: `gggs_tile_layer.h` will need a `<QGeoCoordinate>` include for the new `getElevation(const QGeoCoordinate&)` signature (trivial implementation detail).
 
 Strengths worth noting: file targeting is accurate (all 8 files verified to exist with the described members; integration point confirmed exact at `projectview.cpp:212`). The dynamic `topLevelLayers()->childMapItems()` walk (no stored pointer list) elegantly resolves the deregister/dangling-pointer lifecycle concern the Issue Review flagged, addressing its Actions 1–2. The separate `getStoreElevation()` path plus the distinct "Elev: (ellipsoid)" label is a defensible interim reading of ADR-0003 §2 that keeps ellipsoidal height and chart-datum depth semantically distinct until the datum service (#288).
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 18:45 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-180
+**Commits**:
+- `f5a3d07` plan(#180): fold in all four Plan Review findings (plan sync)
+- `b495036` feat(#180): depth-at-cursor readout for GGGS store layers
+- `ff279c8` test(#180): cover sampleAt(), tileLevel(), and getElevation()
+
+**Build**: `./ui_ws/build.sh camp` (this worktree had no lower layers built,
+so the stack was bootstrapped bottom-up first: `colcon build` in `underlay_ws`
+→ `core_ws`, then `colcon build --packages-up-to camp` in `ui_ws`). camp built
+clean (warnings only).
+
+**Tests**: `./ui_ws/test.sh camp` → **194 tests, 0 errors, 0 failures, 12
+skipped** (the 12 skips are the offscreen-GL render tests, no GL in-container —
+pre-existing). New tests all ran GL-free and passed:
+- `GggsTileTest.SampleAtResidentBuffer` — NaN before `loadPixels()` (the
+  finding-#1 gate), then valid/NoData/out-of-extent after load.
+- `GggsTileUtilTest.TileLevelParse` — `<level>_<row>_<col>` parse + rejections.
+- `GggsElevationTest.{FinestCoveringTileWins,OutOfExtentIsNaN,AllNoDataCoveringTileIsNaN}`.
+
+### Plan Review findings — all four folded in and implemented
+1. **[must-fix]** NoData-on-unloaded-tile: `GggsTile::sampleAt()` early-returns
+   NaN unless `pixelsLoaded()` (acquire). `loadPixels()` populates
+   `nodata_`/`has_nodata_` *before* its release store, so a true gate guarantees
+   they are set — the members are never read unset. Pinned by
+   `SampleAtResidentBuffer` (asserts NaN pre-load). `gggs_tile.cpp`.
+2. **[suggestion]** Tests beyond `sampleAt()`: added `tileLevel()` parse test and
+   the headless `getElevation()` suite (extent filter, descending-level sort,
+   all-NoData). `getStoreElevation()`'s enabled walk is a manual protocol (below).
+3. **[suggestion]** Enabled-layer state: `getStoreElevation()` skips
+   `!isVisible()` stores (Layers-tab checkbox ↔ `MapItem::isVisible()`), per
+   ADR-0003 §2. Decision recorded in plan: a hidden store does not report.
+4. **[suggestion]** No per-move GDAL open: `texture()` no longer frees `data_`;
+   `sampleAt()` indexes the resident buffer — a cheap in-memory lookup. Trade-off
+   (a painted tile keeps CPU+GPU copies) noted in the plan Consequences table.
+
+### Manual verification protocol (getStoreElevation enabled-walk — finding #2/#3)
+Constructing a full `AutonomousVehicleProject` in a unit test is disproportionate
+for the thin `dynamic_cast` + `isVisible()` filter, so verify in the app:
+1. Open a GGGS bathymetry store (Stores/Catalog tab) so a `GggsTileLayer` appears
+   in the Layers tab. Hover over it → status bar shows `Elev: <value> (ellipsoid)`.
+2. Hover off the store's extent → the `Elev:` label disappears (NaN).
+3. Uncheck the store in the Layers tab (isVisible=false) → hovering over it shows
+   NO `Elev:` label (finding #3).
+4. With a depth chart also loaded and overlapping, both `Elev:` and `Depth:`
+   appear together (two-label design; store queried first for precedence).
+
+### Follow-ups / notes
+- Resident-memory trade-off (finding #4): a painted tile now holds both a CPU
+  buffer and its GL texture. Acceptable at current store scale; revisit if memory
+  pressure is observed (noted in plan Consequences).
+- The finest-tile-regardless-of-LOD query is the interim inspection>display choice
+  pending the LOD work in camp#103.
