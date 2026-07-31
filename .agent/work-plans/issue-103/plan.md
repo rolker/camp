@@ -88,7 +88,10 @@ After scanning fine tiles from `directory_/`, also scan
 `directory_ + "/overviews/"` for tiles using the same `isValueTile()` filter.
 All tiles (fine + overview) go into `tiles_`; their `level_` distinguishes them.
 Build `available_levels_` as the deduplicated sorted level list across all tiles.
-`scene_bounds_` unions ALL tile extents (for boundingRect / fit-to-extent) as before.
+`scene_bounds_` unions the FINEST-level tile extents only (as-built; ADR-0013
+§Extent semantics): overview tiles are padded to their coarse GGGS grid cell,
+so uniting them would balloon boundingRect / fit-to-extent far beyond the data
+footprint.
 
 **`paint()` changes:**
 
