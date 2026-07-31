@@ -1,4 +1,4 @@
-# Plan: Visible-region render for GggsTileLayer (issue #103 — visible-region half)
+# Plan: LOD level-selection + demand-driven loading for GggsTileLayer (#103 — LOD half)
 
 ## Issue
 
@@ -6,175 +6,201 @@ https://github.com/rolker/camp/issues/103
 
 ## Context
 
-`GggsTileLayer`, `RasterLayer`, and `SonarLiveCacheLayer` all share the same
-`paint()` pattern: compute the on-screen pixel size of the **whole layer extent**
-(`mapRect(boundingRect())`), clamp to 4096 px, render all tiles into a single
-FBO of that size, and draw the result over `boundingRect()`.  At high zoom this
-is catastrophically wrong: the visible viewport covers a small fraction of the
-total extent, so each visible pixel is backed by only a fraction of a pixel in
-the 4096-px image → blurry.  Confirmed field-observed (Roland, 2026-07-23).
+The visible-region half landed in PR#173 (camp ADR-0011). The issue stays open for
+the LOD half, now unblocked by unh_marine_autonomy#188 (`build_sidescan_overviews`,
+ADR-0011 producer: 1012 fine L13 tiles → 479 overview tiles to a single L0 apex;
+flat `overviews/<level>_<row>_<col>.tif` consumer contract).
 
-The fix is to size the FBO to the **viewport** (visible portion of the item),
-pass that clip rect as `scene_bounds` to `renderToImage()`, and draw the result
-over just the exposed portion.  The seam (`RasterFieldSource` / `RasterGlRenderer`,
-camp ADR-0007) already supports this — `renderToImage()` takes a `scene_bounds`
-QRectF that drives the MVP; we just need to pass the clip rect instead of the
-full extent.  No change to `RasterGlRenderer`'s API is required.
+**Two problems this plan closes:**
 
-The LOD/pyramid half of #103 is explicitly deferred — it depends on
-unh_marine_autonomy#188 and a shared pyramid library.  The PR will be
-"Part of #103", not "Closes #103".
+1. **Eager full-store load** — `loadTilesWorker()` reads every tile's pixels at
+   construction (3.6 GB observed open cost on the sidescan store). The fix: demand-driven
+   — only load pixels for tiles at the selected LOD level that intersect the current
+   viewport.
+
+2. **No level selection** — at fit-zoom the renderer draws all fine L13 tiles (too many
+   / too small). The fix: pick the GGGS level whose cell size best matches the
+   viewport's metres-per-pixel, reading coarse tiles from the `overviews/` sidecar.
+
+The scope also includes generic native multi-level wiring (operator checkpoint,
+2026-07-31): the level-selection function must serve both (a) the `overviews/` sidecar
+case and (b) natively multi-level layers (chart ENC scale ladder), even though no camp
+chart layer exists yet.
 
 ## Approach
 
-### Coordinate-system note
+### 1. Parse tile level from filename — `gggs_tile_util.h`
 
-`scene_bounds_` in each layer is a QRectF in Web-Mercator metres where Qt
-convention applies (top() < bottom()). Because the scene y-axis increases
-northward, top() = southern edge (min y) and bottom() = northern edge (max y).
-The item transform `fromScale(1, -1)` makes item-local y increase southward
-(y=0 at the north edge).  The conversion from item-local `QRectF clip_local`
-to scene `QRectF clip_scene` is:
+Add `parseTileLevel(const QString& filename) → int` using the existing anchored regex
+but with a capture group for the first digit sequence. Returns -1 on mismatch. Pure
+function, unit-testable, no new dependencies.
+
+### 2. Store level in GggsTile — `gggs_tile.h / .cpp`
+
+Add `int level_ = -1` set in the ctor from `parseTileLevel(QFileInfo(path).fileName())`.
+Expose `level()` accessor. Add `resetPixels()` (clears `data_`, crosses the range
+sentinel, stores `pixels_loaded_ = false` with RELEASE) to release CPU memory when
+switching levels — mirrors `setBand()`'s existing clear path.
+
+### 3. Level-selection pure function — new `lod_level_selector.h`
+
+```cpp
+/// Return the finest element of @p available_levels that is ≤ the GGGS level
+/// matching @p metres_per_pixel (fromCellSize). Falls back to finest if all
+/// available levels are finer than ideal, or to coarsest if all are coarser.
+int selectLodLevel(double metres_per_pixel, const std::vector<int>& available_levels);
+```
+
+Uses `gggs::Level::fromCellSize()` (already in `marine_autonomy` which camp already
+links). No Qt, no globals — fully testable in `test_gggs_tile.cpp`. This is the
+generic multi-level wiring: a future chart layer calls the same function with its ENC
+scale-ladder levels.
+
+### 4. GggsTileLayer: multi-level tile set — `gggs_tile_layer.h / .cpp`
+
+**State changes:**
+
+- `selected_level_ = -1` (int, GUI-thread only) — the currently active LOD.
+- `available_levels_` (std::vector<int>, populated in `loadDirectory()`) — sorted
+  ascending list of levels present in this layer.
+- `load_viewport_` (QRectF, set before kicking each worker, read by the worker) —
+  snapshot of `clip.scene` so the off-thread worker can filter tiles spatially.
+
+**`loadDirectory()` changes:**
+
+After scanning fine tiles from `directory_/`, also scan
+`directory_ + "/overviews/"` for tiles using the same `isValueTile()` filter.
+All tiles (fine + overview) go into `tiles_`; their `level_` distinguishes them.
+Build `available_levels_` as the deduplicated sorted level list across all tiles.
+`scene_bounds_` unions ALL tile extents (for boundingRect / fit-to-extent) as before.
+
+**`paint()` changes:**
+
+After deriving `clip` via `deriveViewportClip()`:
 
 ```
-clip_scene.setLeft(scene_bounds_.left() + clip_local.left());
-clip_scene.setRight(scene_bounds_.left() + clip_local.right());
-clip_scene.setBottom(scene_bounds_.bottom() - clip_local.top());   // north
-clip_scene.setTop   (scene_bounds_.bottom() - clip_local.bottom());// south
+double metres_per_pixel = clip.scene.width() / clip.size.width();
+int target = selectLodLevel(metres_per_pixel, available_levels_);
+if (target != selected_level_) {
+  selected_level_ = target;
+  // release CPU buffers + GPU textures for tiles at the wrong level
+  // (under renderer_.makeCurrent() for GL release)
+  for (auto& tile : tiles_)
+    if (tile->level() != selected_level_ && tile->pixelsLoaded())
+      tile->resetPixels();     // CPU; GL release below
+  // GL texture release in one makeCurrent block
+  ...
+  cached_image_ = QImage();
+  if (load_started_) loadTiles();   // re-kick at new level
+}
+load_viewport_ = clip.scene;  // snapshot before worker reads it
 ```
 
-### Step-by-step
+**`loadTilesWorker()` changes:**
 
-1. **`GggsTileLayer::paint()`** — compute exposed clip rect and use it:
-   - `clip_local = painter->clipBoundingRect().intersected(boundingRect())`;
-     fall back to `boundingRect()` if empty (defensive).  NOT
-     `option->exposedRect`: that defaults to `boundingRect()` unless
-     `QGraphicsItem::ItemUsesExtendedStyleOption` is set (set nowhere in camp),
-     which would make the whole fix a silent no-op.
-     `painter->clipBoundingRect()` reflects the view's actual exposed region
-     with no flag dependency (plan-review must-fix 1).
-   - Convert `clip_local` → `clip_scene` (scene Web-Mercator metres) using the
-     formula above.
-   - FBO size: `mapRect(clip_local)` instead of `mapRect(boundingRect())`; clamp
-     to `kMaxImageEdge` (unchanged — the clamp now applies to the viewport, not
-     the whole extent, so it is rarely hit).
-   - Cache key: `size != cached_size_ || clip_scene != cached_clip_` — add
-     `QRectF cached_clip_` member.  **Behavior change (accepted):** a pan now
-     changes `clip_scene` every frame, so pan re-renders instead of reusing the
-     cached image via the world transform as today.  Cheap for a viewport-sized
-     FBO and required for correctness; the inherited "pan reuses the cached
-     image" comment is now stale and must be updated in the same edit
-     (plan-review suggestion 2).
-   - Render: `renderImage(size, clip_scene)` (new overload).
-   - Draw: `painter->drawImage(clip_local, cached_image_)` (was `boundingRect()`).
+Filter predicate: `tile->level() == selected_level_` AND tile extent intersects
+`load_viewport_`. Only these tiles call `loadPixels()`. Workers abort and re-kick
+on level change (existing abort+join mechanism, no change).
 
-2. **`GggsTileLayer::renderImage(size, clip_bounds)`** — clip-aware overload:
-   - Filter tiles to those whose scene-space extent (pre-computed via
-     `geoToMap(minLat, minLon)` / `geoToMap(maxLat, maxLon)`) intersects
-     `clip_bounds`.  Build the `QList<RasterFieldItem>` from the filtered set only.
-   - Call `renderer_.renderToImage(draw, clip_bounds, ...)` (pass `clip_bounds` as
-     `scene_bounds`, not `scene_bounds_`).
-   - Keep the existing public `renderImage(const QSize& size)` (used by headless
-     tests) as a delegate to `renderImage(size, scene_bounds_)`.
-   - The clip overload is **public**, mirroring the existing public
-     `renderImage(size)` — the headless clip-filter test calls it directly
-     (plan-review must-fix 3).
+**`itemsIntersecting()` changes:**
 
-3. **`GggsTileLayer`** — add member: `QRectF cached_clip_;` (after `cached_size_`).
-   Invalidate `cached_image_` when `cached_clip_` changes (mirror the size check).
+Add `tile->level() != selected_level_` → skip (before the spatial intersection
+test, cheapest path). This stops off-level tiles from reaching the renderer even
+if they still carry loaded pixels from a prior level.
 
-4. **`RasterLayer::paint()`** — same clip derivation, FBO sizing, cache key,
-   drawImage.  No tile filtering (single-texture layer); `renderImage()` can
-   accept the clip bounds and pass them straight to `renderToImage()`.
-   Add `QRectF cached_clip_` member.
+**`tilesReady()` changes:**
 
-5. **`SonarLiveCacheLayer::paint()` + `renderImage()`** — same pattern; filter
-   live-cache Entries by their scene-space extents intersecting `clip_scene`.
-   Add `QRectF cached_clip_` member.  **Ordering constraint:** `items()` appends
-   overview tiles first, then fine tiles (the ADR-0010 LOD fallback,
-   `sonar_live_cache_layer.cpp:855-863`).  The clip filter must filter **both**
-   pools while preserving that overviews-first order, so a clipped region whose
-   fine tiles are evicted still draws its overview fallback instead of a blank
-   gap (plan-review suggestion 3).
+Skip range-folding for tiles whose `band() != band_` (existing) OR whose
+`level() != selected_level_` (new) — off-level tiles must not pollute the
+auto-range.
 
-6. **New camp ADR-0011** — document the viewport-clip calling convention at the
-   RasterGlRenderer seam: callers pass the visible sub-rect of `scene_bounds_`
-   as the `scene_bounds` argument to `renderToImage()`, sized to the viewport,
-   so the FBO covers only what the user sees.  Cross-references ADR-0007.
+### 5. Camp ADR-0013 — `docs/decisions/0013-lod-level-selection-demand-driven-load.md`
 
-7. **Tests** — extend the already-registered `test/test_gggs_render.cpp`
-   (its synthetic-store + `renderImage()` seam matches exactly; avoids a new
-   `ament_add_gtest` CMake block — plan-review must-fix 2):
-   - Creates a two-tile GGGS store where tiles A and B are geographically adjacent.
-   - Calls `renderImage(size, clip_A)` — only tile A should contribute pixels.
-   - Asserts tile B's region is transparent/absent in the result.
-   - **Resolution assertion** (plan-review suggestion 1): render the same clip
-     at viewport-sized FBO and assert the per-pixel density is that of the clip,
-     not the full extent (e.g. a 1-px feature in tile A spans ≥ the expected
-     pixel count when clipped vs. blurred full-extent render).
-   Keep existing tests passing; `renderImage(size)` (full-extent) is unchanged.
-   **Caveat (plan-review suggestion 1):** the headless test exercises the
-   clip-filter seam, not `paint()`'s `clipBoundingRect()` derivation — the part
-   that closes the field bug.  That derivation gets (a) the
-   `test_gggs_render.cpp` `/tmp/*.png` visual-inspection extension and (b) a
-   manual GUI verification note in the PR (open a large store, zoom in, confirm
-   crisp render).
+Record: the level-selection algorithm (`gggs::Level::fromCellSize` → closest
+available coarser level); the `overviews/` sidecar consumer contract (ADR-0011 in
+unh_marine_autonomy); the demand-driven load pattern (paint → snap viewport →
+worker loads only intersecting tiles at selected level); the #172 hook shape
+(GggsTileLayer's demand-driven pattern is the template for SonarLiveCacheLayer
+evicted-tile reload, which this PR deliberately enables but does not implement).
+
+### 6. Tests
+
+Extend `test_gggs_tile.cpp` (already registered, no CMake change):
+
+- `ParseTileLevel_ValidNames`: `parseTileLevel("13_42_7.tif") == 13`.
+- `ParseTileLevel_Rejects`: companion tiles, malformed names → -1.
+- `SelectLodLevel_PicksCoarsestAvailable`: given levels {0, 7, 13} and a large
+  metres_per_pixel (fit-zoom), returns 0.
+- `SelectLodLevel_PicksFinestWhenZoomedIn`: metres_per_pixel < L13 cell size →
+  returns 13.
+
+Extend `test_gggs_render.cpp` (already registered):
+
+- `OverviewSidecarLoadsAtCoarseLevel`: synthetic two-level store (`dir/13_r_c.tif`
+  fine + `dir/overviews/0_0_0.tif` coarse); construct `GggsTileLayer`; assert
+  `available_levels_` contains both {0, 13}; fit-zoom selects level 0.
+- `DemandDrivenLoadsOnlySelectedLevel`: same synthetic store; force
+  `selected_level_ = 13` (via a test-seam method or by constructing with a
+  fine-zoom viewport size); `waitForLoad()`; assert the L0 overview tile did NOT
+  load pixels (test seam: expose `pixelsLoadedCount(int level) → int`).
+
+Keep all existing clip, resolution, and render tests passing (no change to their
+paths).
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/gggs_tile_layer.h` | Add `QRectF cached_clip_`; add `QImage renderImage(const QSize&, const QRectF&)` **public** overload |
-| `src/camp_map/raster/gggs_tile_layer.cpp` | Update `paint()` for clip-derived FBO (via `painter->clipBoundingRect()`); implement clip-filtered `renderImage(size, clip)`; update stale pan-cache comment |
-| `src/camp_map/raster/raster_layer.h` | Add `QRectF cached_clip_` |
-| `src/camp_map/raster/raster_layer.cpp` | Update `paint()` for clip-derived FBO; update `renderImage()` to accept optional clip |
-| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.h` | Add `QRectF cached_clip_`; update `renderImage()` signature |
-| `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp` | Update `paint()` for clip-derived FBO; filter both tile pools by clip, preserving overviews-first order |
-| `docs/decisions/0011-viewport-clip-render-convention.md` | New camp ADR-0011 |
-| `test/test_gggs_render.cpp` | Extend with clip-filter + resolution tests (already registered in CMake — no CMakeLists change needed) |
+| `src/camp_map/raster/gggs_tile_util.h` | Add `parseTileLevel()` |
+| `src/camp_map/raster/gggs_tile.h` | Add `level_`, `level()`, `resetPixels()` |
+| `src/camp_map/raster/gggs_tile.cpp` | Implement `level_` init, `resetPixels()` |
+| `src/camp_map/raster/lod_level_selector.h` | New — `selectLodLevel()` pure function |
+| `src/camp_map/raster/gggs_tile_layer.h` | Add `selected_level_`, `available_levels_`, `load_viewport_`; add `pixelsLoadedCount(int)` test seam |
+| `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()` scans `overviews/`; `paint()` level selection + level-switch release; `loadTilesWorker()` demand-driven filter; `itemsIntersecting()` level filter; `tilesReady()` range-fold guard |
+| `docs/decisions/0013-lod-level-selection-demand-driven-load.md` | New camp ADR-0013 |
+| `test/test_gggs_tile.cpp` | Level-parse + `selectLodLevel()` tests |
+| `test/test_gggs_render.cpp` | Overview sidecar + demand-driven load tests |
 
 ## Principles Self-Check
 
 | Principle | Consideration |
 |---|---|
-| Human control and transparency | Renders exactly what the operator sees; crisp vs. blurry is immediately visible |
-| Only what's needed | No texture-cache eviction, no LOD machinery — just clip the FBO and filter items; those are the deferred LOD half |
-| A change includes its consequences | All three seam callers updated in one PR; ADR-0011 captures the convention; existing tests preserved |
-| Improve incrementally | Visible-region render alone closes the confirmed blur regression; good boundary |
-| Test what breaks | New headless test verifying tile filtering by clip rect |
-| Capture decisions, not just implementations | ADR-0011 records the viewport-clip calling convention at the seam |
+| Human control and transparency | Status text set to "(loading…)" during demand-driven load (existing mechanism); level selection is automatic but traceable — ADR-0013 documents the math |
+| Only what's needed | No eviction loop, no watchlist, no #172 reload for SonarLiveCacheLayer — only the GggsTileLayer demand-driven path |
+| A change includes its consequences | `tilesReady()` + `itemsIntersecting()` both updated; all callers of `loadTilesWorker()` guard with existing abort+join; tests extended |
+| Improve incrementally | Closes the 3.6 GB open cost + fit-zoom blank; eviction and #172 reload remain clean follow-ups |
+| Test what breaks | Level parse, LOD selection math, overview sidecar enumeration, and demand-driven guard are all new test cases |
+| Capture decisions | ADR-0013 captures level-selection algorithm and #172 hook shape |
 
 ## ADR Compliance
 
 | ADR | Triggered | How addressed |
 |---|---|---|
-| camp ADR-0007 (RasterFieldSource seam) | Yes | Fix at the seam: change what `scene_bounds` we pass to `renderToImage()`, no API change to the renderer itself |
-| camp ADR-0010 (bounded eviction / overview pyramid) | Noted | No eviction machinery added; the clip filtering does not interfere with `SonarLiveCacheLayer`'s eviction logic (entries not in the clip are simply not rendered, not evicted) |
-| workspace ADR-0001 (capture decisions) | Yes | New camp ADR-0011 records the viewport-clip convention |
-| workspace ADR-0002 (worktree isolation) | Yes | Working in the existing issue-103 worktree |
+| camp ADR-0007 (RasterFieldSource seam) | Yes | `itemsIntersecting()` adds a level filter; no renderer API change |
+| camp ADR-0010 (SonarLiveCacheLayer eviction pyramid) | No new impact | GggsTileLayer pattern is independent; SonarLiveCacheLayer unchanged in this PR |
+| camp ADR-0011 (viewport-clip convention) | Yes | `paint()` level selection plugs into the ADR-0011 clip derivation; demand-driven worker snapshots the clip |
+| workspace ADR-0001 (capture decisions) | Yes | New ADR-0013 |
+| workspace ADR-0002 (worktree isolation) | Satisfied | camp worktree feature/issue-103 already exists |
 
 ## Consequences
 
-| If we change... | Also update... | Included in plan? |
+| If we change… | Also update… | In plan? |
 |---|---|---|
-| `renderToImage()` calling convention (what we pass as `scene_bounds`) | All three layer `renderImage()` / `paint()` call sites | Yes — all three in this PR |
-| Cache key for each layer | `cached_clip_` member added to each | Yes |
-| camp ADR-0007 calling convention | New camp ADR-0011 cross-reference addendum | Yes |
-| `GggsTileLayer::renderImage(size)` public API | Tests that call it headlessly | Preserved — public overload delegates to clip variant with full `scene_bounds_` |
-| camp#172 (on-demand reload of evicted tiles) | This PR's visible-region paint loop is the natural trigger site for camp#172's reload | Not in scope — design leaves the paint loop open for camp#172 to add a reload call |
+| `loadTilesWorker()` filters by level | `tilesReady()` range-fold guard must also filter | Yes |
+| `itemsIntersecting()` filters by level | Existing clip tests: they pre-load with `waitForLoad()` (sets `selected_level_`) — verify they still pass | Yes — noted in test section |
+| `loadDirectory()` scans `overviews/` | `rescan()` optionally re-scans overviews/ too (follow-up, not in this PR) | No — follow-up |
+| `resetPixels()` added to GggsTile | `setBand()` can delegate the clear to it | Yes — `resetPixels()` is the shared clear body |
+| `#172` hook shape | ADR-0013 documents the hook cleanly | Yes — ADR-0013 §Consequences |
 
 ## Open Questions
 
-- [x] ~~`option->exposedRect` vs `painter->clipBoundingRect()`~~ — RESOLVED by
-  plan review (must-fix 1): `option->exposedRect` defaults to `boundingRect()`
-  without `ItemUsesExtendedStyleOption` (set nowhere in camp), and with
-  `clip_local == boundingRect()` the `mapRect(clip_local)` FBO sizing reproduces
-  today's buggy full-extent sizing — the original "likely no" reasoning was
-  wrong.  The plan now derives the viewport via
-  `painter->clipBoundingRect().intersected(boundingRect())` (no flag
-  dependency).
+- [ ] Should `rescan()` also scan `overviews/` for newly-landed coarse tiles? The initial
+  `loadDirectory()` scan picks up overviews that exist at open time; tiles that arrive
+  after open require a rescan. Accepted for this PR: `rescan()` covers fine tiles only
+  (the `overviews/` sidecar is built by `build_sidescan_overviews` at processing time,
+  not live-updated). Follow-up if needed.
 
 ## Estimated Scope
 
-Single PR ("Part of #103"). Touches three `.cpp`/`.h` pairs plus one new ADR and
-one new test file. ~200–300 lines of implementation change.
+Single PR ("Closes #103"). ~250–350 lines across 9 files; no CMake change (tests
+extended in already-registered files).
