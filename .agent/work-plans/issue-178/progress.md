@@ -279,3 +279,11 @@ operator-deferred follow-up.
 
 ### Findings
 - [ ] (suggestion) Sibling server-controlled values (layer `id` / `Style` / `TileMatrixSet`) fused into `url_static_parts` un-encoded — residual injection surface that pre-dates this PR; operator-deferred, closeable as a separate one-line-each encode at their insertion points — `src/camp_map/wmts/capabilities.cpp:82,89`
+
+**Operator decision (2026-07-31, run-issue publish checkpoint R2)**: close the
+remaining suggestion in this PR — percent-encode the sibling server-controlled
+values (layer `id`, `Style`, `TileMatrixSet`) at their insertion points in
+`wmts::Capabilities::getLayout()` (`capabilities.cpp:82,89`), colon-aware like
+the TileMatrix fix (`QUrl::toPercentEncoding(value, ":")`). The earlier "do not
+expand beyond getUrl()" bound is lifted for exactly this change. Add a test if
+cheap; then a fast re-confirm round precedes the publish.
