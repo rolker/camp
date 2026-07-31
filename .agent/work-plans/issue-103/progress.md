@@ -248,3 +248,15 @@ demand-driven loading. The scope is right-sized for a single PR.
 - [ ] Add tests for: level-selection math, overview sidecar enumeration, and demand-driven load path (tile streaming at the viewport clip trigger).
 - [ ] Ensure the demand-driven loader enables #172 (evicted tile reload) without implementing it — keep the hook point clean and documented.
 - [ ] Add a loading-state / status-bar signal so the operator knows tiles are streaming (transparency requirement).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-31 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-103/plan.md` at `601b21d`
+**Branch**: feature/issue-103 at `601b21d`
+**Phases**: single
+
+### Open questions
+- [ ] Should `rescan()` also scan `overviews/` for newly-landed coarse tiles? Accepted for this PR: `rescan()` covers fine tiles only (overviews/ built at processing time, not live-updated). Follow-up if needed.
