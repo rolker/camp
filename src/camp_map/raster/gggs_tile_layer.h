@@ -149,6 +149,39 @@ public:
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
   void waitForLoad();
 
+  /// [camp#103 / ADR-0013] The currently selected LOD level, or -1 when no
+  /// selection has been made (headless / never painted): -1 means NO level
+  /// filter anywhere — worker, items, range fold — so the pre-LOD behavior
+  /// (load and render everything) is preserved bit-for-bit for the existing
+  /// headless tests. paint() drives this from the viewport scale.
+  int selectedLevel() const { return selected_level_; }
+
+  /// [camp#103] Deduplicated ascending list of GGGS levels present across the
+  /// tile-set (fine dir + `overviews/` sidecar). Exposed for tests.
+  const std::vector<int>& availableLevels() const { return available_levels_; }
+
+  /// [camp#103] Test-only: force the LOD selection + load viewport that paint()
+  /// would normally derive from the view, so a headless test can exercise the
+  /// demand-driven filter without a QGraphicsView. A null @p viewport_scene
+  /// means no spatial filter.
+  void setLodForTest(int level, const QRectF& viewport_scene)
+  {
+    selected_level_ = level;
+    load_viewport_ = viewport_scene;
+  }
+
+  /// [camp#103] Test-only: number of tiles at @p level whose pixels are loaded.
+  int pixelsLoadedCount(int level) const;
+
+  /// [camp#103] True if any tile at the selected level intersects
+  /// @p viewport_scene (Web-Mercator scene rect) with its pixels not yet
+  /// loaded — the pan/zoom re-kick condition for the demand-driven loader
+  /// (a pure pan must re-kick or panned-in regions stay blank forever). With
+  /// no selection (selected_level_ == -1) the level filter is off; a null
+  /// viewport means everything is "visible". Public as the paint() helper and
+  /// the unit-test seam for the re-kick predicate.
+  bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
+
   /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds
   /// extent-only entries for any tile not already held and re-kicks the async
   /// pixel load if the layer is already loaded. A half-written tile that fails to
@@ -195,6 +228,12 @@ private:
   /// load, and repaints. No-op if @p band is out of range or unchanged.
   void applyBand(int band);
   void loadDirectory(const QString& directory);
+  /// [camp#103] Recompute available_levels_ (dedup ascending) and scene_bounds_
+  /// (union of FINEST-level tile extents only — overview tiles are padded to
+  /// their coarse GGGS grid cell, so uniting them would balloon the extent far
+  /// beyond the data footprint) from tiles_. Called after any tiles_ mutation
+  /// (loadDirectory, rescan).
+  void rebuildLevelIndex();
   /// [camp#103] items() body with an optional scene-space clip: a non-null
   /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
   /// tested BEFORE the lazy texture upload so offscreen tiles cost nothing.
@@ -202,7 +241,14 @@ private:
   QList<RasterFieldItem> itemsIntersecting(const QRectF& clip_scene);
   /// [camp#102] Worker body (runs off-thread): loadPixels() each not-yet-loaded
   /// tile, honoring abort_flag_ between tiles. GDAL only — never touches GL.
-  void loadTilesWorker();
+  /// [camp#103] The demand-driven filter travels as VALUE COPIES snapshotted at
+  /// kick time (loadTiles()), never as reads of the live members — paint()
+  /// reassigns selected_level_/load_viewport_ every frame while a worker may be
+  /// running, and QRectF/int member reads from the worker thread would race.
+  /// @p level == -1 disables the level filter; a null @p viewport disables the
+  /// spatial filter (both together = the pre-LOD "load everything" behavior the
+  /// headless tests rely on).
+  void loadTilesWorker(int level, QRectF viewport);
 
   // [camp#134] Latitude tessellation moved into RasterGlRenderer (the shared warp).
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
@@ -220,7 +266,19 @@ private:
   int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   bool smooth_interpolation_ = false;   // [camp#132] blit hint only (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
-  QRectF scene_bounds_;        // union of tile extents in Web-Mercator scene units
+  QRectF scene_bounds_;        // union of FINEST-level tile extents (see loadDirectory)
+
+  // [camp#103 / ADR-0013] LOD selection state (GUI thread only — the worker gets
+  // value copies at kick time, see loadTilesWorker). selected_level_ == -1 =
+  // no selection = no filtering anywhere (headless default). last_kick_* record
+  // the filter of the most recent kick so an idle re-kick fires only when the
+  // selection or viewport actually moved — not every frame while a failed tile
+  // sits permanently unloaded (which would repaint-loop forever).
+  int selected_level_ = -1;
+  std::vector<int> available_levels_;   // dedup ascending, fine + overviews
+  QRectF load_viewport_;                // scene-space filter for the next kick
+  int last_kick_level_ = -1;
+  QRectF last_kick_viewport_;
   double data_min_ = 1.0;      // auto-range over all tiles (crossed => no data)
   double data_max_ = 0.0;
 

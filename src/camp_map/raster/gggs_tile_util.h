@@ -32,19 +32,28 @@ inline bool isValueTile(const QString& filename)
   return re.match(filename).hasMatch();
 }
 
-/// [camp#180] Parse the LEVEL (the first digit group) from a value-tile basename
-/// `<level>_<row>_<col>.tif`. Returns -1 if @p filename is not a value tile.
-/// GggsTileLayer::getElevation() uses it to query the finest (highest-level)
-/// covering tile first, independent of the rendered LOD. Match the basename only
-/// (as QDir::entryList / QFileInfo::fileName return), never a full path — a path
-/// separator makes isValueTile() (and so this) return no match.
+/// [camp#180 / camp#103 / ADR-0013] Parse the LEVEL (the first digit group)
+/// from a value-tile basename `<level>_<row>_<col>.tif[f]`, or -1 if
+/// @p filename is not a value tile. One anchored grammar shared with
+/// isValueTile() (the level captured), so the two agree on what matches; a
+/// digit string too long for int additionally parses to -1 (no GGGS producer
+/// emits one — levels are 0–20 — and 0 would be a plausible-looking level).
+/// Consumers: GggsTileLayer's LOD selection + `overviews/` sidecar scan
+/// (camp#103 — a fine `dir/13_r_c.tif` and a sidecar `dir/overviews/7_r_c.tif`
+/// parse identically by design) and getElevation()'s finest-tile-first query
+/// (camp#180). Match the basename only (as QDir::entryList /
+/// QFileInfo::fileName return), never a full path.
 inline int tileLevel(const QString& filename)
 {
-  if(!isValueTile(filename))
+  static const QRegularExpression re(
+    QRegularExpression::anchoredPattern(QStringLiteral("(\\d+)_\\d+_\\d+\\.tiff?")),
+    QRegularExpression::CaseInsensitiveOption);
+  const QRegularExpressionMatch match = re.match(filename);
+  if(!match.hasMatch())
     return -1;
-  // isValueTile() guarantees the leading group is all digits, so section() +
-  // toInt() is unambiguous (the tail is stripped at the first '_').
-  return filename.section('_', 0, 0).toInt();
+  bool ok = false;
+  const int level = match.captured(1).toInt(&ok);
+  return ok ? level : -1;
 }
 
 }  // namespace raster

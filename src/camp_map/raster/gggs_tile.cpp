@@ -1,5 +1,4 @@
 #include "gggs_tile.h"
-
 #include "gggs_tile_util.h"
 
 #include <gdal_priv.h>
@@ -17,13 +16,14 @@ namespace raster
 {
 
 GggsTile::GggsTile(const QString& path):
-  path_(path)
+  path_(path),
+  // [camp#103/#180] Level parsed ONCE from the filename
+  // (`<level>_<row>_<col>.tif`) — a store's fine tiles and its overviews/
+  // sidecar (uma ADR-0011) differ only by this, and getElevation() reads the
+  // cached value per cursor move. Independent of the GDAL open below, so it
+  // is set even for a tile that fails to open (-1 only on a non-value name).
+  level_(tileLevel(QFileInfo(path).fileName()))
 {
-  // [camp#180] Parse the LOD level once from the basename (immutable for the
-  // tile's lifetime) so getElevation() need not re-run the regex per cursor move.
-  // Independent of the GDAL open below, so it is set even for an invalid tile.
-  level_ = tileLevel(QFileInfo(path).fileName());
-
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
 
@@ -179,17 +179,23 @@ void GggsTile::setBand(int band)
   if(band < 1 || band > band_count_ || band == band_)
     return;
   band_ = band;
+  // [camp#103] The clear body is shared with the LOD level-switch path.
+  resetPixels();
+}
 
-  // Drop the loaded pixels + range so the next loadPixels() re-reads the new
-  // band from scratch (the band's NoData is re-queried there, not here, since
-  // this path does not open the dataset).
+void GggsTile::resetPixels()
+{
+  // Drop the loaded pixels + range so the next loadPixels() re-reads from
+  // scratch (NoData is re-queried there, not here, since this path does not
+  // open the dataset). See the header INVARIANT: callers pair this with
+  // releaseGL() so a post-upload tile can't keep serving its stale texture.
   data_ = std::vector<float>();
   data_min_ = 1.0;   // crossed sentinel => no valid samples (range unknown)
   data_max_ = 0.0;
   // Release ordering kept for symmetry with the true-store in loadPixels(); the
   // actual cross-thread sync on this path is the worker abort+join the caller
-  // (applyBand/rescan) performs before setBand(), so no paint thread observes this
-  // store mid-flight. relaxed would be equally correct here.
+  // (applyBand/rescan/LOD switch) performs first, so no paint thread observes
+  // this store mid-flight. relaxed would be equally correct here.
   pixels_loaded_.store(false, std::memory_order_release);
 }
 
