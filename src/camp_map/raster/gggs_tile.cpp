@@ -1,7 +1,10 @@
 #include "gggs_tile.h"
 
+#include "gggs_tile_util.h"
+
 #include <gdal_priv.h>
 
+#include <QFileInfo>
 #include <QOpenGLTexture>
 #include <algorithm>
 #include <cmath>
@@ -16,6 +19,11 @@ namespace raster
 GggsTile::GggsTile(const QString& path):
   path_(path)
 {
+  // [camp#180] Parse the LOD level once from the basename (immutable for the
+  // tile's lifetime) so getElevation() need not re-run the regex per cursor move.
+  // Independent of the GDAL open below, so it is set even for an invalid tile.
+  level_ = tileLevel(QFileInfo(path).fileName());
+
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
 

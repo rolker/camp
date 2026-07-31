@@ -73,6 +73,13 @@ public:
   int width() const { return width_; }
   int height() const { return height_; }
 
+  /// [camp#180] The tile's LOD level, parsed once from the `<level>_<row>_<col>`
+  /// basename in the constructor (via camp::raster::tileLevel); -1 if the path is
+  /// not a value-tile name. Immutable for the tile's lifetime, so
+  /// GggsTileLayer::getElevation() reads this cached value per cursor move instead
+  /// of re-running the QFileInfo + QRegularExpression parse.
+  int level() const { return level_; }
+
   /// Geographic extent in degrees, pixel-edge aligned (north-up: row 0 = maxLat).
   double minLon() const { return min_lon_; }
   double maxLon() const { return max_lon_; }
@@ -111,6 +118,7 @@ private:
   int height_ = 0;
   int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
   int band_ = 1;         // [camp#108] selected 1-indexed band loadPixels() reads
+  int level_ = -1;       // [camp#180] LOD level parsed once from the basename
   double geo_transform_[6] = {0.0};
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;

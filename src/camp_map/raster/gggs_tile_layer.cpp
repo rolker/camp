@@ -358,6 +358,8 @@ float GggsTileLayer::getElevation(const QGeoCoordinate& location) const
   // [camp#180] Depth-at-cursor query. Collect the tiles whose geographic extent
   // contains the point, pair each with its tile level, then sample finest-first
   // so the highest-resolution covering tile wins regardless of the rendered LOD.
+  // GggsTile::level() is the cached, parse-once level (no per-move QFileInfo +
+  // QRegularExpression) — keeping this hot GUI-thread path a plain extent test.
   const double lat = location.latitude();
   const double lon = location.longitude();
 
@@ -367,8 +369,7 @@ float GggsTileLayer::getElevation(const QGeoCoordinate& location) const
     if(lat < tile->minLat() || lat > tile->maxLat() ||
        lon < tile->minLon() || lon > tile->maxLon())
       continue;
-    covering.emplace_back(tileLevel(QFileInfo(tile->path()).fileName()),
-                          tile.get());
+    covering.emplace_back(tile->level(), tile.get());
   }
 
   // Descending level: the finest (highest-level) covering tile is queried first
