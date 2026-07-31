@@ -220,8 +220,11 @@ QOpenGLTexture* GggsTile::texture()
     // was freed here pre-#180 to halve resident memory). sampleAt() indexes this
     // resident buffer for the depth-at-cursor readout, so a point query stays a
     // cheap in-memory lookup with no synchronous GDAL re-open on the GUI thread
-    // (Plan Review #4). The texture still persists for the tile's lifetime (we
-    // never re-upload); the trade-off is a painted tile now holds both copies.
+    // (Plan Review #4). Note the CPU buffer is actually held by EVERY loaded tile
+    // (it is filled in loadPixels() and never freed), not just painted ones — so
+    // the resident-memory footprint scales with the number of LOADED tiles. A
+    // painted tile additionally holds the GL texture created here (kept for the
+    // tile's lifetime; we never re-upload), so it alone carries both copies.
   }
   return texture_.get();
 }
