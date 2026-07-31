@@ -42,3 +42,15 @@ issue: 178
 ### Actions
 - [ ] Verify fallback: when `zoom_levels[address.zoomLevel()].id` is empty, `getUrl()` should still emit the numeric index so bare-numeric servers keep working.
 - [ ] Add a unit test for `TileLayout::getUrl()` covering both a bare-numeric and a `<gridset>:<z>` TileMatrix identifier, so this class of regression is caught locally.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-31 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-178/plan.md` at `d2d15a6`
+**Branch**: feature/issue-178 at `d2d15a6`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
