@@ -156,3 +156,28 @@ decision.
 Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 15:26 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-177 at `d6284d7`
+**Mode**: pre-push
+**Depth**: Standard (reason: change to shared singleton `CachedFileLoader` used by all tile sources + WMTS capabilities — cross-source regression risk; no security/cross-repo signal for Deep)
+**Must-fix**: 1 | **Suggestions**: 0
+**Round**: 2 | **Ship**: continue — one genuine correctness must-fix newly introduced by the self-heal code (unbounded loop if `QFile::remove` fails, plus a false "no retry loop is possible" comment); mechanical one-line guard, warrants fix + a fast re-confirm. Round 1 had 0 must-fix, so this is a new edge in the self-heal code, not a rising trend.
+
+### Findings
+- [ ] (must-fix) Self-heal can busy-loop if `QFile::remove()` fails: the re-issued `load()` re-selects the `file://` path while the poisoned file still exists (cpp:75), re-reading it → decode-reject → `isLocalFile()` → remove-fails-again → re-issue, an unbounded async loop via the QNAM `finished` signal. The "no retry loop is possible" comment holds only when removal succeeds. Guard the network re-issue on successful removal (or `!poisoned.exists()`); else fall through to `deleteLater(); return;`. — `src/camp_map/util/cached_file_loader.cpp:126`
+
+### Notes
+- Round-2 re-review focused on the two new commits `c925cbd` (self-heal) + `6be1f4d` (format-hint drop), in the context of the full branch diff. The declined redundant-double-decode item (operator won't-fix 2026-07-31) was not re-raised, per instruction.
+- Static analysis: cppcheck clean except the known Qt `slots`-macro config limitation (unknownMacro) — repo-convention noise, not actionable (same as Round 1).
+- Adversarial: 2 disjoint-lens Claude passes. Lens A (logic) surfaced the loop-on-remove-failure must-fix (independently lead-confirmed). Lens B (systemic) raised an "over-broad deletion / #99 regression" must-fix that the lead **rejected** on evaluation: self-heal fires only on `NoError` + a decode-failing local read; valid tiles decode and are untouched, deleted entries were already unrenderable (same Qt plugins as the consumer), and network errors bypass the gate via the `#99` else-branch — no user-visible regression. Lens A's empty-`network_url` and path-symmetry suggestions are unreachable for image-expecting clients (the only ones reaching self-heal) and were dropped. Local Adversarial off (`--no-local`, standing opt-out per workspace#590).
+- Governance: WMTS capabilities (`expects_image=false`) fully bypasses the gate+self-heal block (verified); `#99` network-error degradation path unchanged. Consequences map satisfied.
+- ADR-0018: full `colcon build`/`test` not completed in this worktree (multi-layer prefix path unavailable — same limitation as Round 1). Run `./build.sh camp && ./test.sh camp` on a fully-sourced env before push.
+
+### Next step
+Changes-requested. Host (`/run-issue`) dispatches **address-findings** to work the single must-fix (guard the self-heal re-issue against `QFile::remove` failure + correct the comment), then re-dispatches **review-code** for Round 3. Diff is not pushed until a pre-push review returns **approved**.
