@@ -154,3 +154,12 @@ plan file-for-file. Two independent adversarial passes agree: no must-fix.
 ### Findings
 - [ ] (suggestion) Server-controlled TileMatrix `id` (raw WMTS `<Identifier>`) concatenated into URL without percent-encoding — widens injection surface; low severity, Qt-mitigated, consistent with existing `id`/`Style`/`TileMatrixSet` insertion — `src/camp_map/map_tiles/tile_layout.cpp:42`
 - [ ] (suggestion) New tests use the OSM stand-in (id==index) and don't exercise the real WMTS parse path where id≠index; a mismatched-id case would assert id-over-index more directly — `test/test_wms_url_generation.cpp:106`
+
+**Operator decision (2026-07-31, run-issue publish checkpoint)**: fix BOTH
+suggestions before publishing. Suggestion 1: percent-encode the
+server-controlled WMTS substitution values in `getUrl()` — the TileMatrix id
+and its sibling insertions (layer id / Style / TileMatrixSet) for consistency,
+since the finding notes the same pattern on all of them; do not expand beyond
+`getUrl()`. Suggestion 2: add a mismatched-id test case (id ≠ zoom index) that
+asserts id-over-index directly. Then a fast re-confirm review round precedes
+the publish.
