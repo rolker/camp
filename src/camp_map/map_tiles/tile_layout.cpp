@@ -1,6 +1,9 @@
 #include "tile_layout.h"
 #include "tile_address.h"
 
+#include <QString>
+#include <QUrl>
+
 #include <iomanip>
 #include <sstream>
 
@@ -32,8 +35,24 @@ std::string TileLayout::getUrl(const TileAddress& address) const
     if(i < url_variable_keys.size())
     {
       auto key = url_variable_keys[i];
+      // [camp#178] GeoServer GWC names its tile matrices <gridset>:<z> (e.g.
+      // EPSG:3857:1), so emit the declared zoom-level identifier parsed from
+      // the WMTS capabilities. Fall back to the bare numeric index when no id
+      // was populated (bare-numeric servers), so those keep working.
       if(key == "TileMatrix")
-        url += std::to_string(address.zoomLevel());
+      {
+        const std::string& id = zoom_levels[address.zoomLevel()].id;
+        const std::string value = id.empty() ? std::to_string(address.zoomLevel()) : id;
+        // [camp#178 review R1] The id is a raw server-controlled string (the
+        // WMTS <ows:Identifier>), so percent-encode it before splicing into the
+        // URL path — a hostile capabilities document must not be able to inject
+        // path/query/fragment delimiters. ':' is a legal path-segment character
+        // and load-bearing for GeoServer GWC ids (EPSG:3857:<z>), so it is
+        // excluded from encoding; the bare-numeric fallback is digits-only and
+        // passes through unchanged. TileRow/TileCol below are locally-computed
+        // integers, not server data, so they need no encoding.
+        url += QUrl::toPercentEncoding(QString::fromStdString(value), ":").toStdString();
+      }
       if(key == "TileRow")
         url += std::to_string(address.index().y());
       if(key == "TileCol")
