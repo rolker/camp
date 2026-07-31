@@ -416,3 +416,23 @@ transform is byte-identical to the already-tested `TileMatrixIdIsPercentEncoded`
   the only residual is the consciously-deferred getLayout test. Next: host build/test
   (`./ui_ws/build.sh camp && ./ui_ws/test.sh camp`), then publish. The container cannot run
   the multi-layer camp ROS build (lower layers have no `install/` targets).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 14:48 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #182 at `734e83a`
+**Sources**: 3 (Copilot R1 @ `734e83a` [0 comments, 0 suppressed, 5/5 files], Local Review (Pre-Push) R3 @ `f1ccbd5` [approved], CI rollup @ `734e83a`)
+**Cross-source confirmations**: 0
+**CI**: all-pass (`build-and-test` pass 10m3s, `copilot-pull-request-reviewer` success)
+
+### Findings
+- [ ] No open findings. Copilot generated no comments (posted or suppressed). Host-side ADR-0018 verification: full camp build + 193 tests, 0 errors, 0 failures, 1 skipped. The only residual note is R3's accepted test-deferral (no `getLayout()`-level test possible without a public parse entry point; revisit if one is added).
+
+### False positives
+- None.
+
+### Next step
+PR is merge-ready. Merge via `merge_pr.sh --issue 178 --repo-slug camp` after
+the operator confirms at the merge checkpoint.
