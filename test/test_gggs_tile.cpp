@@ -23,10 +23,12 @@
 
 #include "raster/gggs_tile.h"
 #include "raster/gggs_tile_util.h"
+#include "raster/lod_level_selector.h"
 #include "map_view/web_mercator.h"
 
 using camp::raster::GggsTile;
 using camp::raster::isValueTile;
+using camp::raster::parseTileLevel;
 
 namespace
 {
@@ -444,6 +446,65 @@ TEST(GggsTileUtilTest, IsValueTileNameGrammar)
   // Extension match is case-insensitive (the glob admits upper/mixed case).
   EXPECT_TRUE(isValueTile("13_0_0.TIF"));
   EXPECT_TRUE(isValueTile("13_0_0.Tiff"));
+}
+
+// [camp#103 / ADR-0013] Level parse shares isValueTile's anchored grammar with
+// the level captured — the two must agree on what parses.
+TEST(GggsTileUtilTest, ParseTileLevelValidNames)
+{
+  EXPECT_EQ(parseTileLevel("13_42_7.tif"), 13);
+  EXPECT_EQ(parseTileLevel("0_0_0.tif"), 0);
+  EXPECT_EQ(parseTileLevel("7_10_20.tiff"), 7);
+  EXPECT_EQ(parseTileLevel("13_0_0.TIF"), 13);   // case-insensitive like the glob
+}
+
+TEST(GggsTileUtilTest, ParseTileLevelRejectsNonValueNames)
+{
+  // Everything isValueTile rejects parses to -1 — companions, malformed,
+  // wrong extension, anchored-junk.
+  EXPECT_EQ(parseTileLevel("13_10_20_time.tif"), -1);
+  EXPECT_EQ(parseTileLevel("13_10_20_source.tif"), -1);
+  EXPECT_EQ(parseTileLevel("13_0.tif"), -1);
+  EXPECT_EQ(parseTileLevel("a_0_0.tif"), -1);
+  EXPECT_EQ(parseTileLevel("13_0_0.png"), -1);
+  EXPECT_EQ(parseTileLevel("x13_0_0.tif"), -1);
+}
+
+// [camp#103 / ADR-0013] Display-LOD selection: the finest available level that
+// is coarser-or-equal to the fromCellSize ideal; closest finer level when
+// nothing coarser exists; -1 on an empty ladder. GGGS cell sizes: L0 ≈ 928 m,
+// halving per level (L7 ≈ 7.25 m, L13 ≈ 0.113 m).
+TEST(GggsTileUtilTest, SelectLodLevelPicksCoarsestAvailableAtFitZoom)
+{
+  // Fit-zoom: ~1000 ground metres per pixel — even L0's 928 m cells fit, so
+  // the apex is the pick.
+  EXPECT_EQ(camp::raster::selectLodLevel(1000.0, {0, 7, 13}), 0);
+}
+
+TEST(GggsTileUtilTest, SelectLodLevelPicksFinestWhenZoomedIn)
+{
+  // 5 cm/px is finer than L13's ~11 cm cells; the finest available wins.
+  EXPECT_EQ(camp::raster::selectLodLevel(0.05, {0, 7, 13}), 13);
+}
+
+TEST(GggsTileUtilTest, SelectLodLevelSparseLadderPrefersCoarser)
+{
+  // 1 m/px → ideal ≈ L10 (0.9 m cells). On the sparse ladder {0, 7, 13} the
+  // finest coarser-or-equal level is 7 — degrade toward fewer tiles, never
+  // load finer data than the screen can show.
+  EXPECT_EQ(camp::raster::selectLodLevel(1.0, {0, 7, 13}), 7);
+}
+
+TEST(GggsTileUtilTest, SelectLodLevelAllFinerFallsBackToCoarsest)
+{
+  // 1000 m/px wants ~L0, but only fine levels exist: the coarsest available
+  // (12) is the closest match.
+  EXPECT_EQ(camp::raster::selectLodLevel(1000.0, {12, 13}), 12);
+}
+
+TEST(GggsTileUtilTest, SelectLodLevelEmptyLadderIsNoSelection)
+{
+  EXPECT_EQ(camp::raster::selectLodLevel(1.0, {}), -1);
 }
 
 int main(int argc, char** argv)

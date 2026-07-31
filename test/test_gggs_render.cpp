@@ -18,6 +18,8 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QDir>
+#include <QGeoCoordinate>
 #include <QGraphicsView>
 #include <QImage>
 #include <QOffscreenSurface>
@@ -27,6 +29,7 @@
 
 #include "map/map.h"
 #include "map/layer_list.h"
+#include "map_view/web_mercator.h"
 #include "raster/gggs_tile_layer.h"
 
 namespace
@@ -547,6 +550,115 @@ TEST(GggsRenderTest, ViewAttachedPaintRendersAtViewResolution)
   EXPECT_LT(double(mid) / sampled, 0.15)
     << "mid-tone fraction " << double(mid) / sampled
     << " — paint() rendered blurred; viewport derivation regressed";
+}
+
+// [camp#103 / ADR-0013] Overview-sidecar enumeration: a store with fine L13
+// tiles plus a `overviews/` sidecar (uma ADR-0011) exposes both levels, and the
+// layer extent tracks the FINE footprint (an overview tile is padded to its
+// coarse GGGS grid cell — uniting it would balloon fit-to-extent).
+TEST(GggsRenderTest, OverviewSidecarLoadsBothLevels)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(QDir(dir.path()).mkdir("overviews"));
+
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double coarse_geo[6] = {-72.00, 0.1, 0.0, 44.00, 0.0, -0.1};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples,
+                         "overviews/0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->availableLevels(), (std::vector<int>{0, 13}));
+
+  // Extent = the fine footprint, not the coarse padded cell: the fine tile spans
+  // 0.002° of longitude; the overview spans 2°. A fine-based extent is ~1000×
+  // narrower, so a generous factor-10 bound discriminates unambiguously.
+  const double fine_width_m = web_mercator::geoToMap(QGeoCoordinate(43.0, -71.398)).x() -
+                              web_mercator::geoToMap(QGeoCoordinate(43.0, -71.40)).x();
+  EXPECT_LT(layer->sceneBounds().width(), fine_width_m * 10.0);
+}
+
+// [camp#103] The demand-driven filter: with a forced LOD selection only tiles at
+// that level load; with NO selection (the headless default — selected_level_
+// == -1, null viewport) EVERYTHING loads, which is the regression guard that
+// keeps all the pre-existing waitForLoad()+renderImage() tests meaningful.
+TEST(GggsRenderTest, DemandDrivenLoadsOnlySelectedLevel)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(QDir(dir.path()).mkdir("overviews"));
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double coarse_geo[6] = {-72.00, 0.1, 0.0, 44.00, 0.0, -0.1};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples,
+                         "overviews/0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setLodForTest(13, QRectF());   // level filter only, no spatial filter
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 0) <<
+    "overview tile loaded despite level filter — demand-driven filter broken";
+}
+
+TEST(GggsRenderTest, HeadlessDefaultsLoadEverything)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(QDir(dir.path()).mkdir("overviews"));
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double coarse_geo[6] = {-72.00, 0.1, 0.0, 44.00, 0.0, -0.1};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples,
+                         "overviews/0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->selectedLevel(), -1);   // no paint() ⇒ no selection
+  layer->waitForLoad();                    // -1 ⇒ no filter ⇒ everything loads
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
+}
+
+// [camp#103] The pan re-kick predicate: unloaded tiles intersecting the
+// viewport at the selected level ⇒ re-kick; all loaded (or nothing visible
+// unloaded) ⇒ idle. This is the unit seam for the paint() must-fix (a pure pan
+// previously never re-kicked the loader → permanently blank panned-in regions).
+TEST(GggsRenderTest, UnloadedVisibleTilesTriggerRekick)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  const double fine_geo[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setLodForTest(13, QRectF());
+
+  // Viewport over the tile, pixels not yet loaded ⇒ re-kick needed.
+  const QRectF over_tile = layer->sceneBounds();
+  EXPECT_TRUE(layer->hasUnloadedVisibleTiles(over_tile));
+  // Viewport far from the tile ⇒ nothing visible is unloaded ⇒ idle.
+  const QRectF far_away = over_tile.translated(over_tile.width() * 100.0, 0.0);
+  EXPECT_FALSE(layer->hasUnloadedVisibleTiles(far_away));
+  // After the load completes, even the over-tile viewport is idle.
+  layer->waitForLoad();
+  EXPECT_FALSE(layer->hasUnloadedVisibleTiles(over_tile));
 }
 
 int main(int argc, char** argv)
