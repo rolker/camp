@@ -211,6 +211,7 @@ paths — guaranteed by the -1/no-viewport no-filter defaults).
 | `docs/decisions/0013-lod-level-selection-demand-driven-load.md` | New camp ADR-0013 |
 | `test/test_gggs_tile.cpp` | Level-parse + `selectLodLevel()` tests |
 | `test/test_gggs_render.cpp` | Overview sidecar + demand-driven load tests |
+| `CMakeLists.txt` | `camp_map` links `marine_autonomy::marine_autonomy` PUBLIC (the selector calls `gggs::Level`; previously only `camp_map_ros` had it) |
 
 ## Principles Self-Check
 
@@ -253,5 +254,8 @@ paths — guaranteed by the -1/no-viewport no-filter defaults).
 
 ## Estimated Scope
 
-Single PR ("Closes #103"). ~250–350 lines across 9 files; no CMake change (tests
-extended in already-registered files).
+Single PR ("Closes #103"). ~250–350 lines across 10 files. One CMake change
+(as-built correction): `camp_map` gains the `marine_autonomy::marine_autonomy`
+PUBLIC link — the selector calls `gggs::Level::fromCellSize` and only
+`camp_map_ros` carried that dependency before. Tests extend already-registered
+files.
