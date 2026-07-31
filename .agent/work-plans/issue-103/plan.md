@@ -40,21 +40,37 @@ function, unit-testable, no new dependencies.
 Add `int level_ = -1` set in the ctor from `parseTileLevel(QFileInfo(path).fileName())`.
 Expose `level()` accessor. Add `resetPixels()` (clears `data_`, crosses the range
 sentinel, stores `pixels_loaded_ = false` with RELEASE) to release CPU memory when
-switching levels — mirrors `setBand()`'s existing clear path.
+switching levels — mirrors `setBand()`'s existing clear path. **Invariant (review
+suggestion): every `resetPixels()` call site must pair it with `releaseGL()` for
+the same tile** — after a `texture()` upload `data_` is already freed while
+`pixels_loaded_` stays true and `texture_` is non-null, so a CPU-only clear leaves
+a stale texture that shadows the re-loaded pixels and leaks the new `data_`.
+Documented on the `resetPixels()` declaration.
 
 ### 3. Level-selection pure function — new `lod_level_selector.h`
 
 ```cpp
 /// Return the finest element of @p available_levels that is ≤ the GGGS level
-/// matching @p metres_per_pixel (fromCellSize). Falls back to finest if all
-/// available levels are finer than ideal, or to coarsest if all are coarser.
-int selectLodLevel(double metres_per_pixel, const std::vector<int>& available_levels);
+/// matching @p ground_metres_per_pixel (fromCellSize). Falls back to finest if
+/// all available levels are finer than ideal, or to coarsest if all are coarser.
+inline int selectLodLevel(
+  double ground_metres_per_pixel, const std::vector<int>& available_levels);
 ```
 
-Uses `gggs::Level::fromCellSize()` (already in `marine_autonomy` which camp already
-links). No Qt, no globals — fully testable in `test_gggs_tile.cpp`. This is the
-generic multi-level wiring: a future chart layer calls the same function with its ENC
-scale-ladder levels.
+Uses `gggs::Level::fromCellSize()` (include `<marine_autonomy/gggs.h>`; camp already
+links marine_autonomy). Note `fromCellSize()` returns a `gggs::Level` *object* —
+the int comes from `.level()`. The function is **`inline`** (header-only, included
+by both `gggs_tile_layer.cpp` and the test TU — the `gggs_tile_util.h` pattern;
+without `inline` it is an ODR multiple-definition link error). No Qt, no globals —
+fully testable in `test_gggs_tile.cpp`. This is the generic multi-level wiring: a
+future chart layer calls the same function with its ENC scale-ladder levels.
+
+**Input basis (review finding):** the caller must pass **true ground metres per
+pixel**, not raw Web-Mercator scene metres — Mercator inflates by ~sec(latitude)
+(≈1.37 at Massabesic 43°N, biasing selection up to ~half a level coarser). The
+`paint()` caller converts: `mercator_m_per_px * cos(lat_at_viewport_centre)`,
+with the latitude recovered from the viewport-centre scene y (inverse Mercator).
+ADR-0013 records this basis.
 
 ### 4. GggsTileLayer: multi-level tile set — `gggs_tile_layer.h / .cpp`
 
@@ -79,40 +95,66 @@ Build `available_levels_` as the deduplicated sorted level list across all tiles
 After deriving `clip` via `deriveViewportClip()`:
 
 ```
-double metres_per_pixel = clip.scene.width() / clip.size.width();
+// Ground metres per pixel: Mercator scene metres × cos(lat at viewport centre)
+double lat = inverseMercatorLat(clip.scene.center().y());
+double metres_per_pixel = (clip.scene.width() / clip.size.width()) * cos(lat);
 int target = selectLodLevel(metres_per_pixel, available_levels_);
-if (target != selected_level_) {
+bool level_changed = (target != selected_level_);
+if (level_changed) {
   selected_level_ = target;
-  // release CPU buffers + GPU textures for tiles at the wrong level
-  // (under renderer_.makeCurrent() for GL release)
+  // Release CPU buffers + GPU textures for tiles at the wrong level, in one
+  // renderer_.makeCurrent() block. INVARIANT: resetPixels() and releaseGL()
+  // are always paired per tile — after texture() upload, data_ is freed but
+  // pixels_loaded_ is true and texture_ non-null; clearing only the CPU side
+  // leaves a stale texture that would shadow any re-load.
   for (auto& tile : tiles_)
     if (tile->level() != selected_level_ && tile->pixelsLoaded())
-      tile->resetPixels();     // CPU; GL release below
-  // GL texture release in one makeCurrent block
-  ...
+      { tile->resetPixels(); /* + releaseGL in the makeCurrent block */ }
   cached_image_ = QImage();
-  if (load_started_) loadTiles();   // re-kick at new level
 }
-load_viewport_ = clip.scene;  // snapshot before worker reads it
+// Snapshot the viewport BEFORE any kick so the worker never reads stale bounds
+// (review must-fix: the original draft assigned after loadTiles()).
+load_viewport_ = clip.scene;
+// Re-kick on level change OR when a pan/zoom exposes intersecting tiles at the
+// selected level that have no pixels yet (review must-fix: pure pan previously
+// never re-kicked → permanently blank panned-in regions). The unloaded-visible
+// check is a cheap O(tiles) scan and doubles as the debounce: no unloaded
+// visible tiles → no kick → no abort+join churn during pan storms.
+if (load_started_ && (level_changed || hasUnloadedVisibleTiles(clip.scene)))
+  loadTiles();
 ```
+
+`hasUnloadedVisibleTiles(viewport)`: any `tile` with `level() == selected_level_`
+∧ extent intersects `viewport` ∧ `!pixelsLoaded()`.
 
 **`loadTilesWorker()` changes:**
 
 Filter predicate: `tile->level() == selected_level_` AND tile extent intersects
-`load_viewport_`. Only these tiles call `loadPixels()`. Workers abort and re-kick
-on level change (existing abort+join mechanism, no change).
+`load_viewport_` — **with headless defaults (review must-fix):**
+`selected_level_ == -1` means "no level filter" and a null/invalid
+`load_viewport_` means "no spatial filter". Both fields are only set by
+`paint()`; the ~6 existing headless tests (`test_gggs_render.cpp`,
+`test_gggs_band_select.cpp`) drive `waitForLoad()` + `renderImage()` without
+ever calling `paint()` — `waitForLoad()` does NOT set `selected_level_` (the
+original draft claimed it did; that was wrong). With the no-filter defaults the
+headless path loads everything, exactly as today, and every existing test passes
+unchanged. Workers abort and re-kick via the existing abort+join mechanism.
 
 **`itemsIntersecting()` changes:**
 
-Add `tile->level() != selected_level_` → skip (before the spatial intersection
-test, cheapest path). This stops off-level tiles from reaching the renderer even
-if they still carry loaded pixels from a prior level.
+Add `selected_level_ != -1 && tile->level() != selected_level_` → skip (before
+the spatial intersection test, cheapest path). This stops off-level tiles from
+reaching the renderer even if they still carry loaded pixels from a prior level;
+the `-1` guard keeps the headless/no-selection path unfiltered.
 
 **`tilesReady()` changes:**
 
 Skip range-folding for tiles whose `band() != band_` (existing) OR whose
-`level() != selected_level_` (new) — off-level tiles must not pollute the
-auto-range.
+`level() != selected_level_` when `selected_level_ != -1` (new) — off-level
+tiles must not pollute the auto-range. Note (review suggestion): a level
+*switch* does not reset `data_min_/data_max_`; the incremental fold only widens
+the auto-range across levels. Usually benign (overview values ⊆ fine range by
+MEAN-fold construction) — documented in ADR-0013 rather than reset-on-switch.
 
 ### 5. Camp ADR-0013 — `docs/decisions/0013-lod-level-selection-demand-driven-load.md`
 
@@ -143,9 +185,18 @@ Extend `test_gggs_render.cpp` (already registered):
   `selected_level_ = 13` (via a test-seam method or by constructing with a
   fine-zoom viewport size); `waitForLoad()`; assert the L0 overview tile did NOT
   load pixels (test seam: expose `pixelsLoadedCount(int level) → int`).
+- `HeadlessDefaultsLoadEverything` (review must-fix guard): synthetic two-level
+  store, NO `paint()` and no test-seam level — `waitForLoad()` then assert tiles
+  at BOTH levels loaded pixels (`selected_level_ == -1` ⇒ no filter). This is
+  the regression test for the headless no-filter defaults that keep the ~6
+  existing tests meaningful.
+- `UnloadedVisibleTilesTriggerRekick` (via test seam on
+  `hasUnloadedVisibleTiles()`): with level selected and one visible tile's
+  pixels reset, the predicate is true; with all visible tiles loaded, false —
+  the pan re-kick condition in one unit test.
 
 Keep all existing clip, resolution, and render tests passing (no change to their
-paths).
+paths — guaranteed by the -1/no-viewport no-filter defaults).
 
 ## Files to Change
 
@@ -156,7 +207,7 @@ paths).
 | `src/camp_map/raster/gggs_tile.cpp` | Implement `level_` init, `resetPixels()` |
 | `src/camp_map/raster/lod_level_selector.h` | New — `selectLodLevel()` pure function |
 | `src/camp_map/raster/gggs_tile_layer.h` | Add `selected_level_`, `available_levels_`, `load_viewport_`; add `pixelsLoadedCount(int)` test seam |
-| `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()` scans `overviews/`; `paint()` level selection + level-switch release; `loadTilesWorker()` demand-driven filter; `itemsIntersecting()` level filter; `tilesReady()` range-fold guard |
+| `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()` scans `overviews/`; `paint()` ground-metres level selection + level-switch release + viewport-delta re-kick (`hasUnloadedVisibleTiles()`); `loadTilesWorker()` demand-driven filter with -1/no-viewport headless defaults; `itemsIntersecting()` level filter; `tilesReady()` range-fold guard |
 | `docs/decisions/0013-lod-level-selection-demand-driven-load.md` | New camp ADR-0013 |
 | `test/test_gggs_tile.cpp` | Level-parse + `selectLodLevel()` tests |
 | `test/test_gggs_render.cpp` | Overview sidecar + demand-driven load tests |
@@ -187,7 +238,7 @@ paths).
 | If we change… | Also update… | In plan? |
 |---|---|---|
 | `loadTilesWorker()` filters by level | `tilesReady()` range-fold guard must also filter | Yes |
-| `itemsIntersecting()` filters by level | Existing clip tests: they pre-load with `waitForLoad()` (sets `selected_level_`) — verify they still pass | Yes — noted in test section |
+| `itemsIntersecting()` filters by level | Existing headless tests never call `paint()`, so `selected_level_` stays -1 — the -1 no-filter default keeps them passing unchanged (verify) | Yes — headless defaults in §4 |
 | `loadDirectory()` scans `overviews/` | `rescan()` optionally re-scans overviews/ too (follow-up, not in this PR) | No — follow-up |
 | `resetPixels()` added to GggsTile | `setBand()` can delegate the clear to it | Yes — `resetPixels()` is the shared clear body |
 | `#172` hook shape | ADR-0013 documents the hook cleanly | Yes — ADR-0013 §Consequences |
