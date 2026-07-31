@@ -32,6 +32,25 @@ inline bool isValueTile(const QString& filename)
   return re.match(filename).hasMatch();
 }
 
+/// [camp#103 / ADR-0013] The GGGS level encoded in a value-tile filename
+/// (`<level>_<row>_<col>.tif[f]`), or -1 if @p filename is not a value tile.
+/// Same anchored grammar as isValueTile() with the level captured, so the two
+/// can never disagree on what parses. Match @p filename only, never a path —
+/// a fine tile (`dir/13_r_c.tif`) and an overview sidecar tile
+/// (`dir/overviews/7_r_c.tif`, uma ADR-0011) parse identically by design.
+inline int parseTileLevel(const QString& filename)
+{
+  static const QRegularExpression re(
+    QRegularExpression::anchoredPattern(QStringLiteral("(\\d+)_\\d+_\\d+\\.tiff?")),
+    QRegularExpression::CaseInsensitiveOption);
+  const QRegularExpressionMatch match = re.match(filename);
+  if(!match.hasMatch())
+    return -1;
+  bool ok = false;
+  const int level = match.captured(1).toInt(&ok);
+  return ok ? level : -1;
+}
+
 }  // namespace raster
 }  // namespace camp
 

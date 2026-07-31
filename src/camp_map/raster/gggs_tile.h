@@ -55,6 +55,21 @@ public:
   /// owns the GL context). No-op if @p band is out of [1, bandCount()].
   void setBand(int band);
 
+  /// [camp#103 / ADR-0013] The GGGS level parsed from the tile filename
+  /// (`<level>_<row>_<col>.tif`), or -1 if the name doesn't carry one. Fine
+  /// tiles and `overviews/` sidecar tiles are distinguished only by this.
+  int level() const { return level_; }
+
+  /// [camp#103] Drop the loaded CPU pixels + range and mark the tile not-loaded,
+  /// so a later loadPixels() re-reads from scratch — the CPU half of releasing a
+  /// tile when the LOD switches away from its level. Does NOT touch the GL
+  /// texture. INVARIANT: every call site must pair this with releaseGL() under a
+  /// current context — after a texture() upload, data_ is already freed while
+  /// texture_ is non-null, so a CPU-only clear leaves a stale texture that
+  /// shadows any re-loaded pixels (texture() returns the old texture and never
+  /// consumes the new data_).
+  void resetPixels();
+
   /// True once `loadPixels()` has read the band into CPU memory (or freed it into
   /// the GL texture). dataMin/dataMax and texture() are only meaningful once true.
   ///
@@ -100,6 +115,7 @@ private:
   int height_ = 0;
   int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
   int band_ = 1;         // [camp#108] selected 1-indexed band loadPixels() reads
+  int level_ = -1;       // [camp#103] GGGS level from the filename (-1 unknown)
   double geo_transform_[6] = {0.0};
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;
