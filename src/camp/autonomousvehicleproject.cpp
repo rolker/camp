@@ -379,6 +379,13 @@ float AutonomousVehicleProject::getDepth(QGeoCoordinate const &location) const
     // [#59 ADR-0003] Walk the depth-provider list in load order; the first
     // provider with a valid (non-NaN) sounding at this location wins (order
     // resolves overlap between charts). NaN if no provider covers the point.
+    //
+    // [camp#180] Note this filters on depthValid() only — chart membership is
+    // driven by add/remove, NOT the Layers-tab checkbox — so an unchecked chart
+    // still reports Depth: here. getStoreElevation() (the sibling GGGS-store path)
+    // deliberately DIVERGES: it honors isVisible() per ADR-0003 §2's enabled-layer
+    // contract. Aligning getDepth to also skip hidden providers is a follow-up on
+    // this path (it would change existing chart behavior, so out of scope for #180).
     for(auto* depth : m_depthRasters)
     {
         if(!depth->depthValid())
