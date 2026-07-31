@@ -202,3 +202,31 @@ Changes-requested. Host (`/run-issue`) dispatches **address-findings** to work t
 Lifecycle: **Implementation** → **review-code** (Round 3 re-review the fix). Hand off to a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 15:39 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-177 at `70badef`
+**Mode**: pre-push
+**Depth**: Standard (reason: change to shared singleton `CachedFileLoader` used by all tile sources + WMTS capabilities — cross-source regression risk; no security/cross-repo signal for Deep)
+**Must-fix**: 0 | **Suggestions**: 0
+**Round**: 3 | **Ship**: recommended — the single Round-2 must-fix (self-heal busy-loop on `QFile::remove` failure) is resolved correctly and completely by `77e28ad`; both disjoint-lens adversarial passes failed to break it, cppcheck clean, no new findings. Must-fix count fell 1→0.
+
+### Findings
+- [ ] No issues found. LGTM.
+
+### Notes
+- Round-3 fast re-confirm scoped to the fix commit `77e28ad` (guard self-heal re-issue on successful cache-file removal) in the context of the full branch diff. The declined redundant-double-decode item (operator won't-fix 2026-07-31) was not re-raised, per instruction.
+- Fix verification: re-issue is gated at `cached_file_loader.cpp:136` on `removed || !QFileInfo::exists(poisoned_path)`; on removal failure the reply is dropped (`:145` deleteLater/return), leaving the tile blank rather than spinning. Loop termination proven: the guarded re-issue runs only after the file is gone, so `load()` (`:75`) keeps the network URL; a second poisoned body then arrives on a non-local URL (`isLocalFile()` false at `:116`) and drops without recursing — at most one retry per poisoned file. `QFileInfo::exists` is the static, post-`remove()` overload. No double-delete (three mutually exclusive `deleteLater` sites at `:139`, `:145`, `:189`). Corrected "no retry loop is possible" comment is now accurate.
+- Static analysis: cppcheck clean on `cached_file_loader.cpp` (only the known Qt `slots`-macro `unknownMacro` config noise, filtered — same as Rounds 1–2).
+- Adversarial: 2 disjoint-lens Claude passes, both fresh-context. Lens A (logic) and Lens B (systemic/safety) each independently traced the QNAM `finished`→`downloadFinished` async flow and could not break the guard — both returned clean. Lens B's two observations were non-actionable and correctly out of scope: (a) pre-existing `CachedFileClient` lifetime — parented, never per-load deleted; the self-heal reuses the same client and adds no new leak; (b) the `isAcceptableImageBody` Content-Type fast-reject is advisory only, the `QImage` decode (`:54`) being the real authority. Local Adversarial off (`--no-local`, standing opt-out per workspace#590).
+- Governance: WMTS capabilities (`expects_image=false`) still fully bypasses the gate+self-heal block; `#99` network-error graceful-degradation `else` branch (`:182-188`) untouched; cross-source isolation intact (only `CachedTileLoader` is image-expecting). Consequences map satisfied; no new ADR triggers.
+- ADR-0018: full `colcon build`/`test` not completed in this worktree (multi-layer prefix path unavailable — same limitation as Rounds 1–2). Run `./build.sh camp && ./test.sh camp` on a fully-sourced env before push.
+
+### Next step
+Approved pre-push review (Round 3). Per ADR-0018, complete a full local `build + test` on a properly-sourced environment, then push / open PR and hand off to **triage-reviews** in a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill triage-reviews
