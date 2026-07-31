@@ -32,8 +32,15 @@ std::string TileLayout::getUrl(const TileAddress& address) const
     if(i < url_variable_keys.size())
     {
       auto key = url_variable_keys[i];
+      // [camp#178] GeoServer GWC names its tile matrices <gridset>:<z> (e.g.
+      // EPSG:3857:1), so emit the declared zoom-level identifier parsed from
+      // the WMTS capabilities. Fall back to the bare numeric index when no id
+      // was populated (bare-numeric servers), so those keep working.
       if(key == "TileMatrix")
-        url += std::to_string(address.zoomLevel());
+      {
+        const std::string& id = zoom_levels[address.zoomLevel()].id;
+        url += id.empty() ? std::to_string(address.zoomLevel()) : id;
+      }
       if(key == "TileRow")
         url += std::to_string(address.index().y());
       if(key == "TileCol")
