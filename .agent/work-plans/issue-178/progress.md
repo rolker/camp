@@ -278,7 +278,7 @@ un-encoded concatenation pre-dates this PR (not a regression) and remains a trac
 operator-deferred follow-up.
 
 ### Findings
-- [ ] (suggestion) Sibling server-controlled values (layer `id` / `Style` / `TileMatrixSet`) fused into `url_static_parts` un-encoded — residual injection surface that pre-dates this PR; operator-deferred, closeable as a separate one-line-each encode at their insertion points — `src/camp_map/wmts/capabilities.cpp:82,89`
+- [x] (suggestion) Sibling server-controlled values (layer `id` / `Style` / `TileMatrixSet`) fused into `url_static_parts` un-encoded — residual injection surface that pre-dates this PR; operator-deferred, closeable as a separate one-line-each encode at their insertion points — `src/camp_map/wmts/capabilities.cpp:82,89`
 
 **Operator decision (2026-07-31, run-issue publish checkpoint R2)**: close the
 remaining suggestion in this PR — percent-encode the sibling server-controlled
@@ -287,3 +287,82 @@ values (layer `id`, `Style`, `TileMatrixSet`) at their insertion points in
 the TileMatrix fix (`QUrl::toPercentEncoding(value, ":")`). The earlier "do not
 expand beyond getUrl()" bound is lifted for exactly this change. Add a test if
 cheap; then a fast re-confirm round precedes the publish.
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 18:20 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-178 at `f1ccbd5`
+**Addressed**: `## Local Review (Pre-Push)` (2026-07-31 18:08 +00:00, branch `feature/issue-178` at `cc6f028`), per its R2 operator decision on the one remaining suggestion.
+**Commits**:
+- `f1ccbd5` fix(wmts): percent-encode server-controlled Style/TileMatrixSet in getLayout (#178)
+
+### Actions
+- [x] (suggestion) Percent-encode the sibling server-controlled values at their insertion points in `getLayout()`, colon-aware — `src/camp_map/wmts/capabilities.cpp:89,99`
+
+### What changed
+- **Fix** — `src/camp_map/wmts/capabilities.cpp`: the two server-controlled
+  substitutions in `getLayout()` now emit
+  `QString::fromUtf8(QUrl::toPercentEncoding(value, ":"))` instead of the raw
+  value, matching the colon-aware encoding already applied to the TileMatrix
+  `id` in `TileLayout::getUrl()`:
+  - `Style` (the WMTS `<Style><Identifier>` / `default_style`) — was
+    `parts[i]+style` (line 82), now encoded (now line 89).
+  - `TileMatrixSet` (the `<TileMatrixSetLink>` identifier) — was
+    `parts[i]+tile_matrix_set` (line 89), now encoded (now line 99).
+  `':'` is excluded from encoding because it is a legal path-segment character
+  and load-bearing for GeoServer GWC identifiers (`EPSG:3857`); `/`, `?`, `#`,
+  whitespace, etc. are now encoded, so a hostile capabilities document can no
+  longer inject URL delimiters at these seams. Added `#include <QUrl>`.
+- **Backward-compat** — encoding is byte-transparent for legitimate values:
+  simple style names (`default`) and `EPSG:3857`-style set ids pass through
+  unchanged (`:` preserved, no reserved chars). Verified with a standalone Qt5
+  snippet: `def/ault?x` → `def%2Fault%3Fx`, `EPSG:3857` → `EPSG:3857`.
+
+### Scope — "layer id" in the finding
+The finding text names three values (layer `id` / `Style` / `TileMatrixSet`) but
+cites two line refs (`capabilities.cpp:82,89`). On inspection there are exactly
+**two** encodable substitution seams in `getLayout()` — `Style` (82) and
+`TileMatrixSet` (89) — and both are now encoded. The **layer `id`** is *not* a
+discrete substitution point: `layer.id` (line 69) is only used to *select* which
+layer matches; the layer identifier itself is already baked into the
+server-provided `resource_url_template` string (`layer.cpp:44`), so it reaches
+`getLayout()` fused with the URL template's literal text. Encoding it would mean
+percent-encoding the whole template — corrupting its `?`/`&`/`=`/`/` delimiters —
+so there is no colon-aware seam for it here. The operator's two cited line
+numbers (82, 89) are exactly the two seams that were actionable, and both are
+addressed.
+
+### Test deferral (operator's "add a test if cheap")
+A `getLayout()`-level unit test is **not cheap** and is deferred:
+`Capabilities` populates its private `layers_` / `tile_matrix_sets_` only through
+the private `dataLoaded(QByteArray&, CachedFileClient*)` slot from network data —
+there is no public parse-from-XML entry point to seed state for a focused test,
+and the existing suite (`test/test_wms_url_generation.cpp`) exercises
+`TileLayout::getUrl()` only, never `Capabilities` parsing. The standalone g++
+harness the prior phases used compiles `tile_layout/tile_address/osm/wms/
+web_mercator` but not `capabilities.cpp` (which pulls in QtXml, moc/QObject, and
+`CachedFileClient`), so a new getLayout test could be neither compiled nor run
+in this container. The encoding transform itself is identical to the already
+tested TileMatrix-id path (`TileMatrixIdIsPercentEncoded`) and was verified
+transparent via the standalone snippet above.
+
+### Verification
+- Multi-layer camp ROS build/test remains **unavailable in this container**
+  (lower layers have no `install/` targets), so `./ui_ws/build.sh camp` cannot
+  resolve camp's ROS deps. The host runs the full `build.sh camp && test.sh camp`
+  before push.
+- The one new API call (`QUrl::toPercentEncoding(QString, ":")` returning a
+  `QByteArray`, wrapped in `QString::fromUtf8`) was compile-checked and run as a
+  standalone Qt5 snippet (`g++ -std=c++17 -fPIC … -lQt5Core`): compiles and
+  produces the expected colon-preserving, delimiter-encoding output.
+- pre-commit hooks passed on the fix commit.
+
+### Notes for next phase
+- No push / PR / GitHub actions performed (per handoff contract).
+- Next: `review-code` (re-review) on the pre-push diff to confirm the R2 finding
+  is genuinely resolved (encoding present at both seams, `:` preserved,
+  backward-compat intact), then the host build/test. The re-reviewer should note
+  the test was consciously deferred (no cheap getLayout seam) and the "layer id"
+  scope call above.
