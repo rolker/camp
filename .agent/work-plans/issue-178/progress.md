@@ -133,3 +133,24 @@ this a genuine second opinion), so no author-self-review annotation applied.
 ### Notes for next phase
 - No push / PR / GitHub actions performed (per handoff contract).
 - Suggested next step: `review-code` on the pre-push diff, then the host build/test.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 17:41 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-178 at `b0e2f2d`
+**Mode**: pre-push
+**Depth**: Standard (reason: small diff, promoted from Light — networked URL path + backward-compat invariant + work plan present)
+**Must-fix**: 0 | **Suggestions**: 2
+**Round**: 1 | **Ship**: recommended — no must-fix findings; fix is correct, minimal, and counterfactual-verified, backward-compat invariant holds
+
+Specialists: Static Analysis (cppcheck; cpplint unavailable), Governance, Plan Drift,
+Claude Adversarial ×2 (Lens A logic + Lens B systemic). Local Adversarial off
+(--no-local, workspace#590). Copilot off (default). No plan drift; diff matches
+plan file-for-file. Two independent adversarial passes agree: no must-fix.
+
+### Findings
+- [ ] (suggestion) Server-controlled TileMatrix `id` (raw WMTS `<Identifier>`) concatenated into URL without percent-encoding — widens injection surface; low severity, Qt-mitigated, consistent with existing `id`/`Style`/`TileMatrixSet` insertion — `src/camp_map/map_tiles/tile_layout.cpp:42`
+- [ ] (suggestion) New tests use the OSM stand-in (id==index) and don't exercise the real WMTS parse path where id≠index; a mismatched-id case would assert id-over-index more directly — `test/test_wms_url_generation.cpp:106`
