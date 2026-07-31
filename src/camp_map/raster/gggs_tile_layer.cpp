@@ -249,7 +249,6 @@ bool GggsTileLayer::rescan()
     future_watcher_.waitForFinished();
   }
 
-  const bool had_extent = !scene_bounds_.isNull();
   for(auto& tile : new_tiles)
   {
     // [camp#108] A freshly-constructed GggsTile defaults to band 1; inherit the
@@ -265,10 +264,14 @@ bool GggsTileLayer::rescan()
   }
   // [camp#103] Wholesale re-index: a rescan can add tiles at a new (finer)
   // level, which both extends available_levels_ and re-bases scene_bounds_
-  // (finest-level union — see rebuildLevelIndex).
+  // (finest-level union — see rebuildLevelIndex). The item pos is DERIVED
+  // state of scene_bounds_, so re-anchor unconditionally: a west/north
+  // extension (or a finest-level re-base) moves the NW corner, and keeping
+  // the old pos would leave the added footprint outside boundingRect() —
+  // clipped and unpaintable (Copilot review, PR #183).
   prepareGeometryChange();
   rebuildLevelIndex();
-  if(!had_extent && !scene_bounds_.isNull())
+  if(!scene_bounds_.isNull())
   {
     setTransform(QTransform::fromScale(1.0, -1.0));
     setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));
