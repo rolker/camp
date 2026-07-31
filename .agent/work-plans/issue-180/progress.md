@@ -89,3 +89,16 @@ finest available tile regardless of rendered LOD, which requires no dependency o
 - [ ] Confirm deregister-on-close is handled in both the Layers-tab Remove path and any app-shutdown teardown.
 - [ ] Consider an ADR addendum or PR-description note on the precedence decision and the "finest tile regardless of LOD" query strategy, to satisfy "Capture decisions."
 - [ ] Identify an automated test or a manual test protocol for the readout (unit test on `getDepth()` with a mock GGGS tile, or a test note in the PR).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-07-31 10:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-180/plan.md` at `4b4af74`
+**Branch**: feature/issue-180 at `4b4af74`
+**Phases**: single
+
+### Open questions
+- [ ] `sampleAt()` opens the GDAL file per call; on network-mounted stores this may lag. Add a debounce or cursor-stop trigger now, or treat as follow-on if latency is observed?
+- [ ] When both a GGGS store and a chart raster cover the cursor, the plan shows both labels ("Elev: X (ellipsoid)" and "Depth: Y"). Preferred UX: show both, or suppress chart depth when a store value is present?
