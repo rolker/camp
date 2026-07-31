@@ -85,7 +85,12 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   // thread when the async pixel load finishes.
   connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
           &GggsTileLayer::tilesReady);
-  loadDirectory(directory);
+  // [camp#103] Scan via the CANONICALIZED directory_ (not the raw parameter):
+  // rescan()'s known-path dedup compares against these initial tile paths, so
+  // both scans must build paths from the same directory string — a raw
+  // relative/trailing-slash form here would make every rescan re-add every
+  // tile as a duplicate.
+  loadDirectory(directory_);
   if(!tiles_.empty())
   {
     // Match the camp_map raster convention (RasterLayer / MapTiles / grids): a
