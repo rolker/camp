@@ -121,7 +121,7 @@ Approved pre-push review. Address the two suggestions (optional) or track them, 
 ### Findings
 - [x] (must-fix, Copilot) Existing poisoned cache entries never self-heal: `load()` prefers the on-disk `file://` copy, so a pre-fix `<z>/<x>/<y>.png` holding a `ServiceExceptionReport` is re-read, rejected by the new gate, and returned from without deleting — the tile stays blank forever (no refetch) for non-refreshing layers until LRU eviction (#98). Field caches are already poisoned; that is what #177 was filed for. Fix: in the rejection branch, when `reply->request().url().isLocalFile()`, delete the cache file and its `.json` sidecar, then re-issue the fetch against the original network URL (stash it as a client property in `load()` alongside `cache_local_path`). No retry loop is possible — the retry is a non-local request, and a second rejection returns without re-entering. — `src/camp_map/util/cached_file_loader.cpp:108`
 - [x] (suggestion, Local Review) Format-authority asymmetry: the gate accepts any `QImage`-decodable body, but the consumer forces `pixmap.loadFromData(data, "png")`, so a valid non-PNG image would pass the gate, be cached, and render blank permanently — the same persistent-silent-blank failure class this PR exists to close. Not reachable today (WMS forces `FORMAT=image/png`; XYZ sources are PNG). One-line fix: drop the `"png"` format hint and let Qt sniff. — `src/camp_map/map_tiles/cached_tile_loader.cpp:143`
-- [ ] (suggestion, Local Review) Redundant full-image decode per disk-cache hit (gate `QImage` decode + consumer `QPixmap` decode on every `file://` re-read). Negligible per 256 px tile; optional. — `src/camp_map/util/cached_file_loader.cpp:108`
+- [x] (suggestion, Local Review) Redundant full-image decode per disk-cache hit (gate `QImage` decode + consumer `QPixmap` decode on every `file://` re-read). Negligible per 256 px tile; optional. — `src/camp_map/util/cached_file_loader.cpp:108` (deferred: declined as won't-fix by operator decision 2026-07-31 — negligible per-tile cost)
 
 ### False positives
 - None. The single Copilot comment is valid and is the highest-severity finding of this round.
@@ -133,3 +133,26 @@ Hand off to `address-findings` for the must-fix (self-healing of poisoned cache 
 self-heal) and finding 2 (format-hint drop); finding 3 (redundant double decode)
 is declined as won't-fix — do not implement it, note it as closed by operator
 decision.
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 15:13 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-177 at `6be1f4d`
+**Addressed**: `## Integrated Review` (2026-07-28 15:47 -04:00, PR #179 @ `bea5b55`)
+**Commits**: `c925cbd` (finding 1), `6be1f4d` (finding 2)
+
+### Actions
+- [x] (must-fix, Copilot) Self-heal poisoned cache entries — on a local-file rejection in `downloadFinished`, delete the poisoned cache file and its `.json` sidecar and re-issue the fetch against the original network URL (now stashed as a `network_url` client property in `load()`). The retry is a network request, so a second rejection falls through to the non-local return — no retry loop. — `src/camp_map/util/cached_file_loader.cpp:84,116` (`c925cbd`)
+- [x] (suggestion, Local Review) Format-authority asymmetry — dropped the `"png"` format hint in the tile consumer so Qt sniffs the format; a valid non-PNG image that passed the loader's decode gate no longer renders blank. — `src/camp_map/map_tiles/cached_tile_loader.cpp:143` (`6be1f4d`)
+- [x] (suggestion, Local Review) Redundant full-image decode per disk-cache hit — `src/camp_map/util/cached_file_loader.cpp:108` (deferred: declined as won't-fix by operator decision 2026-07-31 — negligible per-256px-tile cost)
+
+### Checks
+- Both changed translation units syntax-check clean (`g++ -fsyntax-only -std=c++17` with Qt5 Core/Gui/Network/Widgets includes). The self-heal branch reuses `QFile`/`QFileInfo`/`load()` patterns already present in the same function; `isAcceptableImageBody` (the unit-tested gate) is unchanged, so the existing `test_cached_file_loader_validation` suite still applies. No new unit test added: the self-heal logic lives in `downloadFinished` (network + `QApplication` + file I/O), not cheaply unit-testable without a network mock — consistent with the established unit-only test scope, and finding 1 did not request a test.
+- Full-workspace `colcon build`/`test` did not complete in this shell (multi-layer build times out; lower-layer prefix path unavailable — same limitation the Local Review recorded). Per ADR-0018, run `./build.sh camp && ./test.sh camp` on a properly-sourced environment before push.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code
