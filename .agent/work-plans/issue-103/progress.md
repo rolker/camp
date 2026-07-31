@@ -362,3 +362,19 @@ Host-inline (operator-approved pattern): rescan() now re-anchors the item
 (setTransform/setPos) unconditionally whenever scene_bounds_ is non-null after
 rebuildLevelIndex() — pos is derived state of the bounds. camp rebuilt;
 test_gggs_rescan 4/4 and test_gggs_render green (1 pre-existing skip).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 15:37 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #183 at `ae981a6`
+**Sources**: 2 (Copilot R2 @ `ae981a6` — 0 new comments, 1 suppressed; CI rollup)
+**Cross-source confirmations**: 0
+**CI**: build-and-test pending on `ae981a6` at triage time; green on prior head
+
+### Findings
+(none open)
+
+### False positives
+- (Copilot R2, suppressed) "LOD-switch resetPixels() without releaseGL() when makeCurrent() fails leaves a stale texture that shadows a reload" — the failure mode cannot manifest: RasterGlRenderer::makeCurrent() failure permanently latches `gl_failed_` (raster_gl_renderer.cpp:149, deliberately never retried), after which renderImage() returns null for the layer's lifetime — the only code path that reads texture() (itemsIntersecting under renderImage's makeCurrent) can never run again, so the stale texture is unreachable, not displayable. Identical to the documented applyBand() contract (it also clears pixels after a failed makeCurrent and leaves textures alone; camp#108 comment block).
