@@ -105,15 +105,15 @@ int target = selectLodLevel(metres_per_pixel, available_levels_);
 bool level_changed = (target != selected_level_);
 if (level_changed) {
   selected_level_ = target;
-  // Release CPU buffers + GPU textures for tiles at the wrong level, in one
-  // renderer_.makeCurrent() block. INVARIANT: resetPixels() and releaseGL()
-  // are always paired per tile — after texture() upload, data_ is freed but
-  // pixels_loaded_ is true and texture_ non-null; clearing only the CPU side
-  // leaves a stale texture that would shadow any re-load.
-  for (auto& tile : tiles_)
-    if (tile->level() != selected_level_ && tile->pixelsLoaded())
-      { tile->resetPixels(); /* + releaseGL in the makeCurrent block */ }
   cached_image_ = QImage();
+  // As-built (field-verified fix, 2026-07-31): NO eager release here. The
+  // outgoing level's tiles stay resident and draw as the backdrop — see
+  // itemsIntersecting (stale levels coarse→fine UNDER the selected level) —
+  // until the new level's visible set loads; tilesReady() then releases them
+  // (resetPixels()+releaseGL() paired, the gggs_tile.h invariant). The
+  // original eager release blanked the layer for the whole load — visible
+  // zoom flicker in the real-store field verify (ADR-0013 §Progressive
+  // refinement).
 }
 // Snapshot the viewport BEFORE any kick so the worker never reads stale bounds
 // (review must-fix: the original draft assigned after loadTiles()).

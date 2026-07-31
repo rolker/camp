@@ -50,15 +50,31 @@ intersecting the snapshot viewport.
 Re-kick conditions (each a reviewed must-fix):
 
 - **First paint** — the one-time lazy kick, already filtered.
-- **Level change** — abort+join, release off-level tiles (CPU `resetPixels()`
-  **paired with** GL `releaseGL()` — a CPU-only clear leaves a stale texture
-  shadowing any re-load), re-kick.
+- **Level change** — select the new level and re-kick (the kick's own
+  abort+join replaces any in-flight load).
 - **Pan/zoom exposure** — when idle and the filter has moved since the last
   kick and `hasUnloadedVisibleTiles(viewport)` is true. A pure pan therefore
   re-kicks (previously panned-in regions stayed blank forever); the
   moved-since-last-kick guard keeps a permanently failing tile from re-kicking
   every frame, and kicking only when idle avoids per-frame abort+join stalls
   during pan storms.
+
+### Progressive refinement across a level switch (field-verified fix)
+
+A level change does **not** release the outgoing level's tiles. They stay
+resident and `itemsIntersecting()` draws them as the backdrop — stale levels
+first, coarse→fine, with the selected level last (on top) — so the view stays
+populated while the new level streams in, each arriving tile covering its
+backdrop. The initial eager-release design blanked the layer for the whole
+load on every zoom across a level boundary (very visible flicker in the
+2026-07-31 field verify against the real store).
+
+`tilesReady()` releases the stale levels (CPU `resetPixels()` **paired with**
+GL `releaseGL()` — a CPU-only clear leaves a stale texture shadowing any
+re-load) once the selected level's visible set has fully loaded and no worker
+is running, so steady-state renders — and holds resident — only the selected
+level. Transient cost: up to one viewport's worth of outgoing-level tiles stays
+resident for the duration of the incoming load; memory stays viewport-bounded.
 
 **Headless / no-selection defaults**: `selected_level_ == -1` disables the
 level filter everywhere (worker, `itemsIntersecting()`, the range fold) and a
