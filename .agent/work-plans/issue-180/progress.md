@@ -193,7 +193,52 @@ for the thin `dynamic_cast` + `isVisible()` filter, so verify in the app:
 **Round**: 1 | **Ship**: recommended — no must-fix; all four folded Plan-Review findings honored; container tests 194/0/12 (12 pre-existing GL skips). Two independent adversarial passes confirmed the acquire/release + GUI-thread-only tiles_ mutation is race-free.
 
 ### Findings
-- [ ] (suggestion) getElevation re-parses tileLevel (QFileInfo + QRegularExpression) and allocates + stable_sorts a vector on every cursor move — cache the immutable level on GggsTile / track max-level covering tile in one pass — `src/camp_map/raster/gggs_tile_layer.cpp:356`
-- [ ] (suggestion) Retained data_ is held for every LOADED tile, not just painted ones; the code comment ("a painted tile now holds both copies") understates scope — tweak comment + note footprint scales with loaded tiles — `src/camp_map/raster/gggs_tile.cpp:205`
-- [ ] (suggestion) Enabled-layer semantics diverge: getStoreElevation honors isVisible() (ADR-0003 §2) but sibling getDepth filters only on depthValid() (membership driven by add/remove, not visibility) — unchecking a chart still shows Depth:; consistency follow-up belongs on getDepth — `src/camp/autonomousvehicleproject.cpp:382`
-- [ ] (suggestion) sampleAt inverts only the diagonal geotransform terms (north-up assumption; ignores geo[2]/geo[4] shear) — consistent with the north-up-by-construction subsystem; optional one-line guard — `src/camp_map/raster/gggs_tile.cpp:145`
+- [x] (suggestion) getElevation re-parses tileLevel (QFileInfo + QRegularExpression) and allocates + stable_sorts a vector on every cursor move — cache the immutable level on GggsTile / track max-level covering tile in one pass — `src/camp_map/raster/gggs_tile_layer.cpp:356`
+- [x] (suggestion) Retained data_ is held for every LOADED tile, not just painted ones; the code comment ("a painted tile now holds both copies") understates scope — tweak comment + note footprint scales with loaded tiles — `src/camp_map/raster/gggs_tile.cpp:205`
+- [x] (suggestion) Enabled-layer semantics diverge: getStoreElevation honors isVisible() (ADR-0003 §2) but sibling getDepth filters only on depthValid() (membership driven by add/remove, not visibility) — unchecking a chart still shows Depth:; consistency follow-up belongs on getDepth — `src/camp/autonomousvehicleproject.cpp:382`
+- [x] (suggestion) sampleAt inverts only the diagonal geotransform terms (north-up assumption; ignores geo[2]/geo[4] shear) — consistent with the north-up-by-construction subsystem; optional one-line guard — `src/camp_map/raster/gggs_tile.cpp:145`
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 19:16 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-180 at `4da941d`
+**Addressed**: `## Local Review (Pre-Push)` (When 2026-07-31 18:56 +0000, branch feature/issue-180 at `abff516`) — all 4 unchecked suggestions, none deferred
+**Commits**: `cda1ebb`, `d095e94`, `d38258a`, `4da941d`
+
+**Build**: `./ui_ws/build.sh camp` — camp built clean (warnings only). This
+worktree had no lower layers built, so the stack was bootstrapped bottom-up
+first: `colcon build` in `underlay_ws` (22 pkgs) → `core_ws` (38 pkgs), then
+`build.sh camp`.
+
+**Tests**: `./ui_ws/test.sh camp` → **194 tests, 0 errors, 0 failures, 12
+skipped** (the 12 skips are the pre-existing offscreen-GL render tests — no GL
+in-container; unchanged from the Implementation baseline). The headless
+`GggsElevation`/`GggsTile` suites that exercise the touched code all passed.
+
+### Actions
+- [x] Cache GGGS tile LOD level; getElevation() drops the per-cursor-move
+  QFileInfo + QRegularExpression parse — `src/camp_map/raster/gggs_tile_layer.cpp:356`
+  (`cda1ebb`). Level parsed once in the GggsTile ctor, exposed via `level()`;
+  the descending-level sort and finest-tile-wins fallback are unchanged, so
+  `GggsElevationTest.FinestCoveringTileWins` still holds.
+- [x] Correct the CPU-buffer retention comment in `texture()` — the resident
+  `data_` is held by every LOADED tile (footprint scales with loaded tiles),
+  not just painted ones; only the GL texture is painted-tile-only —
+  `src/camp_map/raster/gggs_tile.cpp:205` (`d38258a`). Comment-only.
+- [x] Document the getDepth vs getStoreElevation visibility divergence at
+  `getDepth` (chart membership on `depthValid()`, not `isVisible()`); aligning
+  the two is an out-of-scope follow-up on the chart path —
+  `src/camp/autonomousvehicleproject.cpp:382` (`4da941d`). Comment-only; runtime
+  behavior of the chart depth path intentionally unchanged for #180.
+- [x] Guard `sampleAt()` against sheared geotransforms (geo[2]/geo[4] != 0) —
+  return NaN rather than a mis-indexed sample; the diagonal-only inversion holds
+  for all north-up GGGS tiles by construction — `src/camp_map/raster/gggs_tile.cpp:145`
+  (`d095e94`).
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to
+a fresh-context sub-agent:
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 180 --skill review-code
