@@ -95,6 +95,69 @@ TEST(WmsUrlGeneration, GridMatchesOsmLayout)
   }
 }
 
+// [camp#178] The {TileMatrix} substitution must emit the zoom level's declared
+// identifier, not the bare loop index. GeoServer GWC (BlueTopo, nowCOAST) names
+// its tile matrices <gridset>:<z> and rejects a bare numeric with HTTP 400. The
+// OSM layout is a faithful stand-in: it carries the same {TileMatrix} template
+// and, like every bare-numeric server, sets each id to the numeric string.
+
+// Bare-numeric servers (OSM/XYZ) declare id = "<z>", so the URL keeps the plain
+// zoom index and stays byte-for-byte compatible after the fix.
+TEST(WmsUrlGeneration, TileMatrixUsesBareNumericIdForOsm)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/3/2/5.png");
+}
+
+// GeoServer GWC declares id = "EPSG:3857:<z>"; the URL must carry that exact
+// gridset-prefixed identifier so the tile matrix is recognized (the bug: the
+// bare "3" produced "Unknown TILEMATRIX" / HTTP 400).
+TEST(WmsUrlGeneration, TileMatrixUsesGridsetPrefixedId)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  for(std::size_t z = 0; z < layout.zoom_levels.size(); ++z)
+    layout.zoom_levels[z].id = "EPSG:3857:" + std::to_string(z);
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/EPSG:3857:3/2/5.png");
+}
+
+// An empty id (no <ows:Identifier> parsed) falls back to the bare numeric index
+// so a capabilities document without explicit ids still yields usable URLs.
+TEST(WmsUrlGeneration, TileMatrixFallsBackToNumericWhenIdEmpty)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  for(auto& level : layout.zoom_levels)
+    level.id.clear();
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/3/2/5.png");
+}
+
+// [camp#178 review R1] The OSM stand-in above sets id == numeric index, so it
+// cannot distinguish "emit the declared id" from "emit the loop index". Give one
+// level an id whose numeric tail deliberately differs from its position and
+// assert the URL carries the id, not the index — proving id-over-index directly.
+TEST(WmsUrlGeneration, TileMatrixPrefersIdOverIndexWhenMismatched)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  layout.zoom_levels[3].id = "EPSG:3857:99";  // numeric tail 99 != index 3
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/EPSG:3857:99/2/5.png");
+  EXPECT_EQ(url.find("/3/"), std::string::npos) << "must not fall back to the bare index";
+}
+
+// [camp#178 review R1] A server-controlled id is percent-encoded before it is
+// spliced into the path, so a hostile <Identifier> cannot inject path or query
+// delimiters. ':' is preserved (legal path-segment char, load-bearing for the
+// EPSG:3857:<z> ids); '/' is encoded to %2F, neutralizing path traversal.
+TEST(WmsUrlGeneration, TileMatrixIdIsPercentEncoded)
+{
+  TileLayout layout = camp::osm::generateTileLayout("https://example.org/");
+  layout.zoom_levels[3].id = "EPSG:3857:3/x";
+  const std::string url = layout.getUrl(TileAddress(&layout, 3, QPoint(2, 5), 0));
+  EXPECT_EQ(url, "https://example.org/EPSG:3857:3%2Fx/2/5.png");
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
