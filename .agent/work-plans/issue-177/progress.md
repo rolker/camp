@@ -242,8 +242,8 @@ Approved pre-push review (Round 3). Per ADR-0018, complete a full local `build +
 **CI**: all-pass (`build-and-test` success, `copilot-pull-request-reviewer` success)
 
 ### Findings
-- [ ] (suggestion, Copilot R2 suppressed) `cached_file_loader.h` uses `QByteArray`/`QString` in the public API (signal at :26, `isAcceptableImageBody` at :52) without including `<QByteArray>`/`<QString>`, relying on transitive includes via `<QObject>`. Pre-existing repo pattern (`setCachePath`/`load` used `QString` includeless before this PR) and stable for the Qt5 series, but a 2-line IWYU fix. — `src/camp_map/util/cached_file_loader.h:4`
-- [ ] (suggestion, Copilot R2 suppressed) `validPngBytes()` test helper does not assert `buffer.open()` / `image.save(&buffer, "PNG")` succeeded; if the PNG writer plugin were unavailable, the helper returns empty bytes and downstream `EXPECT`s fail with indirect diagnostics. Add `EXPECT_TRUE` on both. — `test/test_cached_file_loader_validation.cpp:41`
+- [x] (suggestion, Copilot R2 suppressed) `cached_file_loader.h` uses `QByteArray`/`QString` in the public API (signal at :26, `isAcceptableImageBody` at :52) without including `<QByteArray>`/`<QString>`, relying on transitive includes via `<QObject>`. Pre-existing repo pattern (`setCachePath`/`load` used `QString` includeless before this PR) and stable for the Qt5 series, but a 2-line IWYU fix. — `src/camp_map/util/cached_file_loader.h:4`
+- [x] (suggestion, Copilot R2 suppressed) `validPngBytes()` test helper does not assert `buffer.open()` / `image.save(&buffer, "PNG")` succeeded; if the PNG writer plugin were unavailable, the helper returns empty bytes and downstream `EXPECT`s fail with indirect diagnostics. Add `EXPECT_TRUE` on both. — `test/test_cached_file_loader_validation.cpp:41`
 
 ### False positives
 - None. Copilot R2 generated 0 posted comments (7/7 files reviewed); its "🟡 Not ready to approve" summary rests solely on the two suppressed low-confidence comments above, both evaluated on merits as valid low-severity suggestions.
@@ -256,3 +256,24 @@ Approved pre-push review (Round 3). Per ADR-0018, complete a full local `build +
 No must-fix findings — PR is merge-eligible. The two suggestions are trivial
 (4 lines total); operator decides fix-then-fast-re-confirm vs. merge as-is with
 suggestions declined.
+
+## Implementation
+**Status**: complete
+**When**: 2026-07-31 16:12 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-177 at `aadf745`
+**Addressed**: Integrated Review (2026-07-31 12:03 -04:00, PR #179 @ `408d97b`) — both open suggestions
+**Commits**: `73e911d`, `aadf745`
+
+### Actions
+- [x] IWYU: add explicit `<QByteArray>`/`<QString>` includes so the public API no longer relies on transitive `<QObject>` — `src/camp_map/util/cached_file_loader.h:4` (commit `73e911d`)
+- [x] Test robustness: wrap `buffer.open()` and `image.save(&buffer, "PNG")` in `EXPECT_TRUE` in the `validPngBytes()` helper so a missing PNG writer plugin fails with a direct diagnostic — `test/test_cached_file_loader_validation.cpp:41` (commit `aadf745`)
+
+### Checks
+- pre-commit hooks passed on both fix commits.
+- Standalone `g++ -fsyntax-only -fPIC` compile check of the changed header and test against Qt5 — both clean. Full `colcon build` of `camp` not reproducible in this worktree (layered build-dep `marine_ais_msgs` is not present in any workspace install tree); the two changes are additive and low-risk, and the prior round's host-side ADR-0018 build (188 tests) covered the surrounding code.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand off to a fresh-context sub-agent:
+`.agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill review-code`
