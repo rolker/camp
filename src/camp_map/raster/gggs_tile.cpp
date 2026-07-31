@@ -150,6 +150,12 @@ float GggsTile::sampleAt(double lon, double lat) const
   // index — treat as a miss rather than divide by zero.
   if(geo_transform_[1] == 0.0 || geo_transform_[5] == 0.0)
     return std::nanf("");
+  // [camp#180] The diagonal-only inversion below assumes no rotation/shear
+  // (geo[2] == geo[4] == 0), which holds for every GGGS tile (north-up WGS84 by
+  // construction — see the ctor's extent math). Guard the assumption rather than
+  // silently return a mis-indexed sample if a sheared tile ever slips through.
+  if(geo_transform_[2] != 0.0 || geo_transform_[4] != 0.0)
+    return std::nanf("");
   const int col = int(std::floor((lon - geo_transform_[0]) / geo_transform_[1]));
   const int row = int(std::floor((lat - geo_transform_[3]) / geo_transform_[5]));
   if(col < 0 || col >= width_ || row < 0 || row >= height_)
