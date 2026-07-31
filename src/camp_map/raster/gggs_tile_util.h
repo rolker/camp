@@ -32,15 +32,18 @@ inline bool isValueTile(const QString& filename)
   return re.match(filename).hasMatch();
 }
 
-/// [camp#103 / ADR-0013] The GGGS level encoded in a value-tile filename
-/// (`<level>_<row>_<col>.tif[f]`), or -1 if @p filename is not a value tile.
-/// Same anchored grammar as isValueTile() with the level captured, so the two
-/// agree on what matches (a digit string too long for int additionally parses
-/// to -1 here — no GGGS producer emits one; levels are 0–20). Match
-/// @p filename only, never a path —
-/// a fine tile (`dir/13_r_c.tif`) and an overview sidecar tile
-/// (`dir/overviews/7_r_c.tif`, uma ADR-0011) parse identically by design.
-inline int parseTileLevel(const QString& filename)
+/// [camp#180 / camp#103 / ADR-0013] Parse the LEVEL (the first digit group)
+/// from a value-tile basename `<level>_<row>_<col>.tif[f]`, or -1 if
+/// @p filename is not a value tile. One anchored grammar shared with
+/// isValueTile() (the level captured), so the two agree on what matches; a
+/// digit string too long for int additionally parses to -1 (no GGGS producer
+/// emits one — levels are 0–20 — and 0 would be a plausible-looking level).
+/// Consumers: GggsTileLayer's LOD selection + `overviews/` sidecar scan
+/// (camp#103 — a fine `dir/13_r_c.tif` and a sidecar `dir/overviews/7_r_c.tif`
+/// parse identically by design) and getElevation()'s finest-tile-first query
+/// (camp#180). Match the basename only (as QDir::entryList /
+/// QFileInfo::fileName return), never a full path.
+inline int tileLevel(const QString& filename)
 {
   static const QRegularExpression re(
     QRegularExpression::anchoredPattern(QStringLiteral("(\\d+)_\\d+_\\d+\\.tiff?")),

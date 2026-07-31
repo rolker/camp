@@ -209,6 +209,15 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
     QGeoCoordinate llMouse = web_mercator::mapToGeo(transformedMouse);
     posText += " WGS84: " + llMouse.toString(QGeoCoordinate::Degrees) + " (" + llMouse.toString(QGeoCoordinate::DegreesMinutesWithHemisphere) + ")";
 
+    // [camp#180] GGGS store layers report ellipsoidal up-positive elevation, not
+    // chart-datum depth. Query stores first (they take precedence) and label the
+    // value distinctly so the operator can tell the two datums apart until the
+    // datum service (#288). Both labels can appear when a store and a depth chart
+    // overlap the cursor.
+    const float elevation = m_project->getStoreElevation(llMouse);
+    if(!std::isnan(elevation))
+        posText += " Elev: " + QString::number(elevation) + " (ellipsoid)";
+
     const float depth = m_project->getDepth(llMouse);
     if(!std::isnan(depth))
         posText += " Depth: " +QString::number(depth);
@@ -359,11 +368,11 @@ void ProjectView::contextMenuEvent(QContextMenuEvent* event)
         menu.addSeparator();
         menu.addAction("(Below moves camera)");
         menu.addSeparator();
-        
-        
+
+
         QAction *lookAtAction = menu.addAction("Look Here");
         connect(lookAtAction, &QAction::triggered, this, &ProjectView::sendLookAt);
-        
+
         QAction *lookAtASVAction = menu.addAction("Look at ASV");
         connect(lookAtASVAction, &QAction::triggered, this, &ProjectView::sendLookAtASV);
 

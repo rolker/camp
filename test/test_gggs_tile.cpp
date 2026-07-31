@@ -28,7 +28,6 @@
 
 using camp::raster::GggsTile;
 using camp::raster::isValueTile;
-using camp::raster::parseTileLevel;
 
 namespace
 {
@@ -448,28 +447,6 @@ TEST(GggsTileUtilTest, IsValueTileNameGrammar)
   EXPECT_TRUE(isValueTile("13_0_0.Tiff"));
 }
 
-// [camp#103 / ADR-0013] Level parse shares isValueTile's anchored grammar with
-// the level captured — the two must agree on what parses.
-TEST(GggsTileUtilTest, ParseTileLevelValidNames)
-{
-  EXPECT_EQ(parseTileLevel("13_42_7.tif"), 13);
-  EXPECT_EQ(parseTileLevel("0_0_0.tif"), 0);
-  EXPECT_EQ(parseTileLevel("7_10_20.tiff"), 7);
-  EXPECT_EQ(parseTileLevel("13_0_0.TIF"), 13);   // case-insensitive like the glob
-}
-
-TEST(GggsTileUtilTest, ParseTileLevelRejectsNonValueNames)
-{
-  // Everything isValueTile rejects parses to -1 — companions, malformed,
-  // wrong extension, anchored-junk.
-  EXPECT_EQ(parseTileLevel("13_10_20_time.tif"), -1);
-  EXPECT_EQ(parseTileLevel("13_10_20_source.tif"), -1);
-  EXPECT_EQ(parseTileLevel("13_0.tif"), -1);
-  EXPECT_EQ(parseTileLevel("a_0_0.tif"), -1);
-  EXPECT_EQ(parseTileLevel("13_0_0.png"), -1);
-  EXPECT_EQ(parseTileLevel("x13_0_0.tif"), -1);
-}
-
 // [camp#103 / ADR-0013] Display-LOD selection: the finest available level that
 // is coarser-or-equal to the fromCellSize ideal; closest finer level when
 // nothing coarser exists; -1 on an empty ladder. GGGS cell sizes: L0 ≈ 928 m,
@@ -505,6 +482,66 @@ TEST(GggsTileUtilTest, SelectLodLevelAllFinerFallsBackToCoarsest)
 TEST(GggsTileUtilTest, SelectLodLevelEmptyLadderIsNoSelection)
 {
   EXPECT_EQ(camp::raster::selectLodLevel(1.0, {}), -1);
+}
+
+// [camp#180] sampleAt() indexes the RESIDENT CPU buffer at a geographic point.
+// Before loadPixels() the pixels (and the deferred NoData members) are not
+// published, so the pixelsLoaded() acquire gate must make sampleAt() return NaN —
+// this is the must-fix guard that a query never reads nodata_/has_nodata_ while
+// unset (Plan Review #1). After loadPixels() a valid pixel returns its value, a
+// NoData pixel and an out-of-extent point return NaN.
+TEST(GggsTileTest, SampleAtResidentBuffer)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 2, h = 2;
+  // North-up: x0=-71.4, dlon=+0.001; y0=43.0 (north edge), dlat=-0.001. Row 0 is
+  // the north row (lat near 43.0).
+  const double geo[6] = {-71.4, 0.001, 0.0, 43.0, 0.0, -0.001};
+  // Row-major: (r0,c0)=10, (r0,c1)=NoData, (r1,c0)=30, (r1,c1)=40.
+  std::vector<float> samples = {10.0f, 9999.0f, 30.0f, 40.0f};
+  const QString path = writeFloatTile(dir, "13_7_7.tif", w, h, geo, 9999.0, samples);
+  ASSERT_FALSE(path.isEmpty());
+
+  GggsTile tile(path);
+  ASSERT_TRUE(tile.valid());
+
+  // Must-fix: before pixels load, the NoData members are unset — sampleAt() must
+  // NOT read them; the pixelsLoaded() gate makes it return NaN.
+  EXPECT_FALSE(tile.pixelsLoaded());
+  EXPECT_TRUE(std::isnan(tile.sampleAt(-71.3995, 42.9995)));
+
+  ASSERT_TRUE(tile.loadPixels());
+
+  // In-bounds valid pixels: (col 0,row 0) = 10, (col 1,row 1) = 40.
+  EXPECT_FLOAT_EQ(tile.sampleAt(-71.3995, 42.9995), 10.0f);  // pixel (0,0)
+  EXPECT_FLOAT_EQ(tile.sampleAt(-71.3985, 42.9985), 40.0f);  // pixel (1,1)
+
+  // A NoData pixel (col 1,row 0) reads as no value.
+  EXPECT_TRUE(std::isnan(tile.sampleAt(-71.3985, 42.9995)));
+
+  // Out of extent (east of maxLon and north of maxLat) -> NaN.
+  EXPECT_TRUE(std::isnan(tile.sampleAt(-71.0, 42.9995)));
+  EXPECT_TRUE(std::isnan(tile.sampleAt(-71.3995, 44.0)));
+}
+
+// [camp#180] tileLevel() parses the leading LEVEL group from a value-tile
+// basename and rejects non-value names (companions, malformed, wrong extension).
+// getElevation() relies on it to query the finest (highest-level) tile first.
+TEST(GggsTileUtilTest, TileLevelParse)
+{
+  EXPECT_EQ(camp::raster::tileLevel("0_0_0.tif"), 0);
+  EXPECT_EQ(camp::raster::tileLevel("13_10_20.tif"), 13);
+  EXPECT_EQ(camp::raster::tileLevel("7_1_2.tiff"), 7);
+  EXPECT_EQ(camp::raster::tileLevel("13_10_20.TIF"), 13);   // case-insensitive ext
+
+  // Not value tiles -> -1 (companions, too few groups, wrong extension, junk).
+  EXPECT_EQ(camp::raster::tileLevel("13_10_20_time.tif"), -1);
+  EXPECT_EQ(camp::raster::tileLevel("13_10_20_source.tif"), -1);
+  EXPECT_EQ(camp::raster::tileLevel("13_0.tif"), -1);
+  EXPECT_EQ(camp::raster::tileLevel("a_0_0.tif"), -1);
+  EXPECT_EQ(camp::raster::tileLevel("13_0_0.png"), -1);
+  EXPECT_EQ(camp::raster::tileLevel("x13_0_0.tif"), -1);
 }
 
 int main(int argc, char** argv)

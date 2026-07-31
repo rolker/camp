@@ -31,13 +31,13 @@ chart layer exists yet.
 
 ### 1. Parse tile level from filename — `gggs_tile_util.h`
 
-Add `parseTileLevel(const QString& filename) → int` using the existing anchored regex
+Add `tileLevel(const QString& filename) → int` (name unified with camp#180's identical helper at the jazzy merge) using the existing anchored regex
 but with a capture group for the first digit sequence. Returns -1 on mismatch. Pure
 function, unit-testable, no new dependencies.
 
 ### 2. Store level in GggsTile — `gggs_tile.h / .cpp`
 
-Add `int level_ = -1` set in the ctor from `parseTileLevel(QFileInfo(path).fileName())`.
+Add `int level_ = -1` set in the ctor from `tileLevel(QFileInfo(path).fileName())` (shared with camp#180's getElevation caching).
 Expose `level()` accessor. Add `resetPixels()` (clears `data_`, crosses the range
 sentinel, stores `pixels_loaded_ = false` with RELEASE) to release CPU memory when
 switching levels — mirrors `setBand()`'s existing clear path. **Invariant (review
@@ -172,7 +172,7 @@ evicted-tile reload, which this PR deliberately enables but does not implement).
 
 Extend `test_gggs_tile.cpp` (already registered, no CMake change):
 
-- `ParseTileLevel_ValidNames`: `parseTileLevel("13_42_7.tif") == 13`.
+- Level-parse coverage: unified into camp#180's `TileLevelParse` at the jazzy merge (valid names + all reject cases).
 - `ParseTileLevel_Rejects`: companion tiles, malformed names → -1.
 - `SelectLodLevel_PicksCoarsestAvailable`: given levels {0, 7, 13} and a large
   metres_per_pixel (fit-zoom), returns 0.
@@ -205,7 +205,7 @@ paths — guaranteed by the -1/no-viewport no-filter defaults).
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/gggs_tile_util.h` | Add `parseTileLevel()` |
+| `src/camp_map/raster/gggs_tile_util.h` | Add `tileLevel()` (unified w/ camp#180) |
 | `src/camp_map/raster/gggs_tile.h` | Add `level_`, `level()`, `resetPixels()` |
 | `src/camp_map/raster/gggs_tile.cpp` | Implement `level_` init, `resetPixels()` |
 | `src/camp_map/raster/lod_level_selector.h` | New — `selectLodLevel()` pure function |

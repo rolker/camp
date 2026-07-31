@@ -76,13 +76,23 @@ public:
     // data. hasDepth() gates depth-aware planning. See ADR-0002.
     float getDepth(QGeoCoordinate const &location) const;
     bool hasDepth() const;
+
+    // [camp#180] Ellipsoidal up-positive elevation at a geographic point from the
+    // open GGGS store layers (Stores tab), or NaN where none covers the point.
+    // Walks the Map's top-level layers dynamically each call (so layer add/remove
+    // needs no bookkeeping and can't dangle) and consults only ENABLED
+    // (Layers-tab-checked / isVisible()) stores, mirroring ADR-0003 §2's
+    // enabled-layer contract for getDepth. Kept separate from getDepth() because
+    // store values are ellipsoidal heights, not chart-datum depths — distinct
+    // labels until the datum service (#288).
+    float getStoreElevation(QGeoCoordinate const &location) const;
     MissionItem *potentialParentItemFor(std::string const &childType);
 
     Waypoint *addWaypoint(QGeoCoordinate position);
 
     SurveyPattern * createSurveyPattern(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyPattern * addSurveyPattern(QGeoCoordinate position);
-    
+
     SurveyArea * createSurveyArea(MissionItem* parent=nullptr, int row=-1, QString label = "");
     SurveyArea * addSurveyArea(QGeoCoordinate position);
 
@@ -96,13 +106,13 @@ public:
     TrackLine * addTrackLine(QGeoCoordinate position);
 
     Behavior * createBehavior();
-    
+
     Group * createGroup(MissionItem* parent=nullptr, int row=-1, QString label = "");
     Group * addGroup();
 
     Orbit * createOrbit(MissionItem* parent=nullptr, int row=-1, QString label = "");
     Orbit * addOrbit();
-    
+
     MissionItem *itemFromIndex(QModelIndex const &index) const;
 
     Qt::ItemFlags flags(const QModelIndex & index) const override;
@@ -110,7 +120,7 @@ public:
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     int rowCount(const QModelIndex & parent) const override;
     int columnCount(const QModelIndex & parent) const override;
-    
+
     QModelIndex index(int row, int column, const QModelIndex & parent) const override;
     QModelIndex parent(const QModelIndex & child) const override;
     QModelIndex indexFromItem(MissionItem * item) const;
@@ -120,11 +130,11 @@ public:
     // DisplayRole) but emits no model signal, so the view never refreshes —
     // the rename silently has no visible effect. Route renames through here.
     void renameItem(MissionItem * item, const QString & label);
-    
+
     Qt::DropActions supportedDropActions() const override;
-    
+
     bool removeRows(int row, int count, const QModelIndex & parent) override;
-    
+
     QStringList mimeTypes() const override;
     QMimeData * mimeData(const QModelIndexList & indexes) const override;
     bool canDropMimeData(const QMimeData * data, Qt::DropAction action, int row, int column, const QModelIndex & parent) const override;
@@ -133,20 +143,20 @@ public:
     QString const &filename() const;
     void save(QString const &fname = QString());
     void open(QString const &fname);
-    
+
     void openGeometry(QString const &fname, QString label = "");
-    
+
     void import(QString const &fname);
 
     bool importGeoJson(QString const &fname);
 
     void setCurrent(const QModelIndex &index);
     MissionItem *currentSelected() const;
-    
+
     QSvgRenderer * symbols() const;
-    
+
     qreal mapScale() const;
-    
+
     Platform* activePlatform() const;
 
     QJsonDocument generateMissionPlan(QModelIndex const &index);
@@ -174,7 +184,7 @@ public slots:
     void appendMission(QModelIndex const &index);
     void prependMission(QModelIndex const &index);
     void updateMission(QModelIndex const &index);
-    
+
     void deleteItems(QModelIndexList const &indices);
     void deleteItem(QModelIndex const &index);
     void deleteItem(MissionItem *item);
@@ -209,7 +219,7 @@ private:
     MissionItem * m_currentSelected;
 
     Platform* m_activePlatform = nullptr;
-    
+
     QSvgRenderer* m_symbols;
 
     bool m_contextMode = false;
@@ -232,26 +242,26 @@ private:
     void onChartLayerRemoved(const QModelIndex& parent, int first, int last);
     QString generateUniqueLabel(std::string const &prefix);
 
-    
+
 public:
-    
+
     class RowInserter
     {
     public:
         RowInserter(AutonomousVehicleProject &project, MissionItem *parent, int row=-1);
-        
+
         ~RowInserter();
     private:
         AutonomousVehicleProject &m_project;
     };
 
-private:    
+private:
     friend class RowInserter;
-    
+
     qreal m_map_scale;
-    
+
     // Counter to generate unique labels. Should probably be static, but if only once instance of AutonomousVehicleProject, then doesn't matter.
-    int unique_label_counter; 
+    int unique_label_counter;
 };
 
 #endif // AUTONOMOUSVEHICLEPROJECT_H

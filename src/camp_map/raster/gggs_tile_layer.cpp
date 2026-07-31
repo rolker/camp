@@ -23,7 +23,9 @@
 #include <QUrl>
 #include <QtConcurrent>
 
+#include <algorithm>
 #include <cmath>
+#include <utility>
 #include <vector>
 
 namespace camp
@@ -493,6 +495,40 @@ QRectF GggsTileLayer::boundingRect() const
   // own space spans (0,0)..(width,height) in Web-Mercator metres. paint() and
   // drawImage() work here (small magnitudes) to keep QPainter precise.
   return QRectF(QPointF(0.0, 0.0), scene_bounds_.size());
+}
+
+float GggsTileLayer::getElevation(const QGeoCoordinate& location) const
+{
+  // [camp#180] Depth-at-cursor query. Collect the tiles whose geographic extent
+  // contains the point, pair each with its tile level, then sample finest-first
+  // so the highest-resolution covering tile wins regardless of the rendered LOD.
+  // GggsTile::level() is the cached, parse-once level (no per-move QFileInfo +
+  // QRegularExpression) — keeping this hot GUI-thread path a plain extent test.
+  const double lat = location.latitude();
+  const double lon = location.longitude();
+
+  std::vector<std::pair<int, const GggsTile*>> covering;
+  for(const auto& tile : tiles_)
+  {
+    if(lat < tile->minLat() || lat > tile->maxLat() ||
+       lon < tile->minLon() || lon > tile->maxLon())
+      continue;
+    covering.emplace_back(tile->level(), tile.get());
+  }
+
+  // Descending level: the finest (highest-level) covering tile is queried first
+  // (inspection > display — camp#103 follow-on). Ties keep their relative order.
+  std::stable_sort(covering.begin(), covering.end(),
+                   [](const auto& a, const auto& b) { return a.first > b.first; });
+
+  for(const auto& [level, tile] : covering)
+  {
+    (void)level;
+    const float value = tile->sampleAt(lon, lat);
+    if(!std::isnan(value))
+      return value;
+  }
+  return std::nanf("");
 }
 
 QStringList GggsTileLayer::bands() const

@@ -55,9 +55,12 @@ public:
   /// owns the GL context). No-op if @p band is out of [1, bandCount()].
   void setBand(int band);
 
-  /// [camp#103 / ADR-0013] The GGGS level parsed from the tile filename
-  /// (`<level>_<row>_<col>.tif`), or -1 if the name doesn't carry one. Fine
-  /// tiles and `overviews/` sidecar tiles are distinguished only by this.
+  /// [camp#103 / ADR-0013 + camp#180] The GGGS level parsed once from the tile
+  /// filename (`<level>_<row>_<col>.tif`, via camp::raster::tileLevel) in the
+  /// constructor; -1 if the name doesn't carry one. Immutable for the tile's
+  /// lifetime. Fine tiles and `overviews/` sidecar tiles are distinguished
+  /// only by this (camp#103 LOD selection), and getElevation() reads the
+  /// cached value per cursor move instead of re-running the parse (camp#180).
   int level() const { return level_; }
 
   /// [camp#103] Drop the loaded CPU pixels + range and mark the tile not-loaded,
@@ -97,6 +100,17 @@ public:
   bool hasNoData() const { return has_nodata_; }
   double noData() const { return nodata_; }
 
+  /// [camp#180] Sample the loaded band at a geographic point — the value at
+  /// (@p lon, @p lat) degrees, or NaN if the point is outside the tile, the
+  /// sample is NoData / non-finite, or the pixels are not resident. A pure
+  /// in-memory index into the resident CPU buffer (no GDAL I/O), cheap enough to
+  /// call per cursor move on the GUI thread. Gated on the same pixelsLoaded()
+  /// ACQUIRE the paint path uses; that gate is set by loadPixels() AFTER the
+  /// deferred NoData members are populated, so this never reads nodata_/
+  /// has_nodata_ while unset. Safe against the load worker for the same
+  /// happens-before reason (see pixelsLoaded()).
+  float sampleAt(double lon, double lat) const;
+
   /// Min / max over valid (non-NoData, finite) samples. min_ > max_ if the tile
   /// has no valid samples. Used by the layer to auto-range the grayscale ramp.
   double dataMin() const { return data_min_; }
@@ -115,7 +129,7 @@ private:
   int height_ = 0;
   int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
   int band_ = 1;         // [camp#108] selected 1-indexed band loadPixels() reads
-  int level_ = -1;       // [camp#103] GGGS level from the filename (-1 unknown)
+  int level_ = -1;       // [camp#103/#180] level from the filename (-1 unknown)
   double geo_transform_[6] = {0.0};
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;
