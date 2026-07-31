@@ -305,3 +305,23 @@ Lifecycle: **Implementation** → **review-code** (re-review the fixes). Hand of
 Approved pre-push review (Round 4) — 0 must-fix, 0 suggestions across all four review rounds' fixes. PR #179 is merge-eligible. Per ADR-0018, complete a full local `build + test` on a properly-sourced environment, then push / open PR and hand off to **triage-reviews** in a fresh-context sub-agent:
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 177 --skill triage-reviews
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-07-31 12:32 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #179 at `fdbdab0`
+**Sources**: 3 (Copilot R3 @ `fdbdab0` [APPROVED, 0 comments, 0 suppressed], Local Review (Pre-Push) R4 @ `f1afdfa` [approved], CI rollup @ `fdbdab0`)
+**Cross-source confirmations**: 0
+**CI**: all-pass (`build-and-test` pass 10m18s, `copilot-pull-request-reviewer` success)
+
+### Findings
+- [ ] No open findings. Copilot R3 approved ("validation is correctly scoped to image-expecting clients, includes a safe self-heal path for already-poisoned caches, backed by targeted unit tests"). Host-side ADR-0018 verification at this head: full camp build + 188 tests, 0 errors, 0 failures, 1 skipped.
+
+### False positives
+- None.
+
+### Next step
+PR is merge-ready. Merge via `merge_pr.sh --issue 177` after the operator
+confirms at the merge checkpoint.
