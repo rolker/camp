@@ -179,3 +179,21 @@ for the thin `dynamic_cast` + `isVisible()` filter, so verify in the app:
   pressure is observed (noted in plan Consequences).
 - The finest-tile-regardless-of-LOD query is the interim inspection>display choice
   pending the LOD work in camp#103.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-07-31 18:56 +0000
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-180 at `abff516`
+**Mode**: pre-push
+**Depth**: Standard (reason: ~350 LOC new logic across the camp ↔ camp_map boundary; new cross-layer provider path + camp#102 threading contract)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 1 | **Ship**: recommended — no must-fix; all four folded Plan-Review findings honored; container tests 194/0/12 (12 pre-existing GL skips). Two independent adversarial passes confirmed the acquire/release + GUI-thread-only tiles_ mutation is race-free.
+
+### Findings
+- [ ] (suggestion) getElevation re-parses tileLevel (QFileInfo + QRegularExpression) and allocates + stable_sorts a vector on every cursor move — cache the immutable level on GggsTile / track max-level covering tile in one pass — `src/camp_map/raster/gggs_tile_layer.cpp:356`
+- [ ] (suggestion) Retained data_ is held for every LOADED tile, not just painted ones; the code comment ("a painted tile now holds both copies") understates scope — tweak comment + note footprint scales with loaded tiles — `src/camp_map/raster/gggs_tile.cpp:205`
+- [ ] (suggestion) Enabled-layer semantics diverge: getStoreElevation honors isVisible() (ADR-0003 §2) but sibling getDepth filters only on depthValid() (membership driven by add/remove, not visibility) — unchecking a chart still shows Depth:; consistency follow-up belongs on getDepth — `src/camp/autonomousvehicleproject.cpp:382`
+- [ ] (suggestion) sampleAt inverts only the diagonal geotransform terms (north-up assumption; ignores geo[2]/geo[4] shear) — consistent with the north-up-by-construction subsystem; optional one-line guard — `src/camp_map/raster/gggs_tile.cpp:145`
