@@ -305,6 +305,12 @@ target_link_libraries(camp_map
         # public headers. Link PUBLIC so the include dir + symbols propagate to every
         # consumer of those headers (camp_map_ros, the camp executable, the tests).
         marine_colormap::marine_colormap
+        # [camp#103 / ADR-0013] The LOD level selector (lod_level_selector.h,
+        # included by gggs_tile_layer.cpp and the tests) calls
+        # gggs::Level::fromCellSize from marine_autonomy. PUBLIC so the include
+        # dir propagates to every consumer of camp_map headers (the tests
+        # include the selector directly).
+        marine_autonomy::marine_autonomy
     PRIVATE
         # [camp#142 PR2] The interactive colorbar dialog (colormap_range_dialog.cpp)
         # is the only user of the widget, and only in the .cpp — the public header
