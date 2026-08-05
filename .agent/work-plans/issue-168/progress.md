@@ -36,3 +36,22 @@ issue: 168
 - Root cause and fix are correct and idiomatic. Verified against source: `Layer::removeFromMap()` (map/layer.cpp:54-71) reparents to null, removes from scene, and `deleteLater()`s — so `QObject::destroyed` reliably fires on removal AND shutdown, unlike `onRemovedFromMap()` (skipped on quit). The layer's Qt parent is the `LayerList`, not the manager, so lifetimes are independent and there is no double-free. The 3-arg `connect(layer, &QObject::destroyed, this, lambda)` correctly uses the manager as receiver context, so a manager destroyed first auto-disconnects — shutdown-order safe. All cited ADRs exist (0001, 0002, 0003, 0006).
 - `review-issue` was not run for #168 (no review-issue comment / no `## Issue Review` entry) — noted, not penalized (optional step).
 - **Independence**: this is a fresh-context, independent review (host-dispatched sub-agent, Opus) of a Sonnet-authored plan. The skill's self-review heuristic (match on `**By**` agent-name prefix) would false-positive here because all Claude Code agents share the `Claude Code Agent` identity string; the differing model line is the true independence signal. No self-review annotation applied.
+
+## Plan Authored (bundle extension)
+**Status**: complete
+**When**: 2026-08-05 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-168/plan.md` at `0f81a67`
+**Branch**: feature/issue-168 at `0f81a67`
+**Phases**: single (three atomic commits on one PR)
+
+### Summary of changes from prior plan
+- Extended plan to cover camp#169 and camp#170 as a bundle (user decision 2026-08-05)
+- Resolved Plan Review must-fix: committed to option (a) test strategy for #168 — test the `destroyed`-signal erasure via a local mock `std::set`, headless, null Node, bypassing the full manager stack
+- Adopted all Plan Review suggestions: `std::set` instead of `map<string,bool>`, per-test `ament_add_gtest` block pattern, header comment update, one-line deleteLater-window comment
+- Added full context/approach/files/consequences/test sections for #169 (catalog-buffer-and-replay) and #170 (dimension cap before allocation)
+- #170 GUI-thread load items (eviction amortization, render rate-limit) explicitly deferred with rationale
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
