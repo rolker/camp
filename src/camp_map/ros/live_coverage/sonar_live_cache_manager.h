@@ -3,7 +3,7 @@
 
 #include "../../tools/layer_manager.h"
 
-#include <map>
+#include <set>
 #include <string>
 
 namespace camp
@@ -29,13 +29,27 @@ class SonarLiveCacheManager: public tools::LayerManager
 public:
   SonarLiveCacheManager(MapTool* parent);
 
+  /// True while a layer for `base` is tracked (spawned and not yet destroyed).
+  /// Introspection + test seam (camp#168).
+  bool isSourceTracked(const std::string& base) const;
+
 public slots:
   void updateTopics();
 
+protected:
+  /// Register a spawned layer for `base`: insert into `sources_` and arrange
+  /// for the entry to clear when the layer is destroyed, so the source can be
+  /// re-added after an operator removes the layer (camp#168). Factored from
+  /// `updateTopics()` so the tracking contract is testable without the live
+  /// `Node` ancestor that topic discovery requires.
+  void trackSpawnedLayer(const std::string& base, QObject* layer);
+
 private:
-  // base namespace -> spawned, so a topic reappearing (DDS re-discovery) doesn't
-  // spawn a duplicate; the existing layer's subscriptions reconnect on their own.
-  std::map<std::string, bool> sources_;
+  // Base namespaces with a live spawned layer, so a topic reappearing (DDS
+  // re-discovery) doesn't spawn a duplicate. The entry is erased when the
+  // layer is destroyed (operator remove -> deleteLater, or shutdown), so the
+  // next updateTopics() can respawn it (camp#168).
+  std::set<std::string> sources_;
 };
 
 }  // namespace live_coverage
