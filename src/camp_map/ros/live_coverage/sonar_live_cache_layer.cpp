@@ -235,6 +235,13 @@ void SonarLiveCacheLayer::enableLiveCoverage()
   // GUI-thread warm-load can't race a callback (ADR-0006 D3/D4).
   warmLoad();
   subscribeTiles();
+  // [camp#169] Replay the buffered catalog so reconcile (and the resulting tile
+  // requests) fire on every enable — the latched sample may have arrived while
+  // disabled (startup settings-restore race) or the request publisher may have
+  // been torn down by a disable since the last reconcile. Direct call on the
+  // GUI thread; enabled_ is already true so handleCatalog() proceeds.
+  if(last_catalog_)
+    handleCatalog(*last_catalog_);
   writeSettings();
   updateDisplay();
   cached_image_ = QImage();
@@ -388,6 +395,12 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   // Learn the level even while inactive (used for availability + later warm-load).
   if(!level_ && !msg.entries.empty())
     level_ = msg.entries.front().index.level;
+
+  // [camp#169] Always buffer, even while disabled: the transient-local depth-1
+  // subscription delivers its latched sample exactly once — discarding it here
+  // while disabled means no reconcile ever fires (the boat's catalog is stable,
+  // so nothing re-delivers it). enableLiveCoverage() replays this buffer.
+  last_catalog_ = msg;
 
   if(!enabled_)
   {

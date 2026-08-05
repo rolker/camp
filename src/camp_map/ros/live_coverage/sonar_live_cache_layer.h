@@ -235,6 +235,15 @@ private:
   // Needed to recover a GridIndex from a cached GeoTIFF on warm-load.
   std::optional<std::uint8_t> level_;
 
+  // [camp#169] Last catalog seen, buffered even while disabled. The catalog
+  // subscription is transient-local depth-1: if the single latched sample is
+  // delivered while enabled_ is false it would otherwise be discarded, and —
+  // the boat's catalog being stable — never re-delivered, so requests would
+  // never resume until a restart (the 2026-07-23 field incident's timing
+  // race). enableLiveCoverage() replays this buffer through handleCatalog()
+  // so reconcile/request fire on every enable.
+  std::optional<marine_interfaces::msg::TileCatalog> last_catalog_;
+
   // [camp#134] The shared GL raster renderer (its own offscreen context + the
   // unified shader + colormap LUT). Replaces the shader/program/LUT/FBO this layer
   // used to duplicate from GggsTileLayer. Default ramp Grayscale (renderer default).
