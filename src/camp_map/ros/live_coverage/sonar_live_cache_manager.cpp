@@ -61,14 +61,33 @@ void SonarLiveCacheManager::updateTopics()
       continue;
     const std::string base = full.substr(0, full.size() - suffix.size());
 
-    if(sources_[base])
+    if(sources_.count(base))
       continue;   // already spawned a layer for this source
     auto layers = topLevelLayers();
     if(!layers)
       continue;
-    new SonarLiveCacheLayer(layers, node_item, QString::fromStdString(base));
-    sources_[base] = true;
+    auto layer = new SonarLiveCacheLayer(layers, node_item, QString::fromStdString(base));
+    trackSpawnedLayer(base, layer);
   }
+}
+
+bool SonarLiveCacheManager::isSourceTracked(const std::string& base) const
+{
+  return sources_.count(base) > 0;
+}
+
+void SonarLiveCacheManager::trackSpawnedLayer(const std::string& base, QObject* layer)
+{
+  sources_.insert(base);
+  // Clear the entry when the layer dies so the next updateTopics() can respawn
+  // it (camp#168 — the 2026-07-23 field incident: remove made the live coverage
+  // layer un-re-addable for the rest of the session). Between the operator's
+  // remove (deleteLater()) and ~QObject firing `destroyed` the entry lingers;
+  // the event loop drains before any human re-add, so no spurious skip in
+  // practice. DirectConnection is safe: both deleteLater() destruction and this
+  // erase run on the GUI thread and the lambda touches only the set.
+  connect(layer, &QObject::destroyed, this,
+          [this, base]() { sources_.erase(base); }, Qt::DirectConnection);
 }
 
 }  // namespace live_coverage
