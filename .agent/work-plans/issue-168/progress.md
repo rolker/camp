@@ -75,3 +75,22 @@ issue: 168
 - ADRs referenced (0001, 0006, 0010) all exist under `docs/decisions/`. Headless test harness (offscreen QApplication + Map + null Node) confirmed in `test_sonar_live_eviction.cpp` — supports the #169/#170 layer-level test plans; `residentTileCount()` is public (layer.h:85).
 - `review-issue` was not run for #168/#169/#170 (no `## Issue Review` entry / no comment) — noted, not penalized (optional step).
 - **Independence**: fresh-context, independent review (host-dispatched Opus sub-agent) of a Sonnet-authored plan. The skill's self-review heuristic (match on `**By**` agent-name prefix) false-positives here because all Claude Code agents share the `Claude Code Agent` identity string; the differing model line (Opus vs Sonnet) is the true independence signal. No self-review annotation applied.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-05 19:01 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-168 at `ee21fd0`
+**Mode**: pre-push
+**Depth**: Deep (reason: field-incident crash-path fix + Qt object-lifecycle/concurrency in cross-cutting live_coverage subsystem)
+**Must-fix**: 0 | **Suggestions**: 4
+**Round**: 1 | **Ship**: recommended — no must-fix; two independent adversarial passes confirmed all three fixes correct
+
+### Findings
+- [ ] (suggestion) #170 ingest cap reuses render-clamp constant kMaxImageEdge (4096) as tile-ingest ceiling; edge>4096 producer would hit a silent reject/re-request loop — consider kMaxIngestEdge or a documenting comment — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:363`
+- [ ] (suggestion) Catalog-resume test comment misstates prune mechanism: tiles seeded at reconciler version 0 (markHave(index,0)), not stamp.sec=100; the 100-vs-200 margin doesn't exist — `test/test_sonar_live_catalog_resume.cpp:137`
+- [ ] (suggestion) enableLiveCoverage replay re-requests the full held set every enable (v0 seeding); rapid disable/enable emits a full-catalog TileRequest burst per cycle (by-design ADR-0006 D3) — worth a one-line note — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:243`
+- [ ] (suggestion) #170 byte ceiling multiplies by msg.bands.size() but applyPatch allocates per unique band name; duplicate-named bands over-counted (conservative, safe direction) — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:361`
+- [ ] (note) C++ test suite not built/run locally (offline; heavy ROS/Qt build) — CI colcon+gtest is the gate. Static analysis: cppcheck aborts on Qt slots macro; cmake-lint/yamllint enforced by pre-commit. Local/Copilot adversarial unavailable (no Ollama, off by default).
