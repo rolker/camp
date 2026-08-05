@@ -239,7 +239,10 @@ void SonarLiveCacheLayer::enableLiveCoverage()
   // requests) fire on every enable — the latched sample may have arrived while
   // disabled (startup settings-restore race) or the request publisher may have
   // been torn down by a disable since the last reconcile. Direct call on the
-  // GUI thread; enabled_ is already true so handleCatalog() proceeds.
+  // GUI thread; enabled_ is already true so handleCatalog() proceeds. Warm-load
+  // seeds tiles at reconciler version 0, so each enable re-requests the full
+  // catalog set — a deliberate full-heal burst per enable (ADR-0006 D3), not
+  // an incremental delta.
   if(last_catalog_)
     handleCatalog(*last_catalog_);
   writeSettings();
@@ -356,6 +359,11 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
   // tiles after they are resident. Per-edge cap plus a combined byte ceiling:
   // per-edge alone still admits 4096x4096 x 64 bands x 4B ~= 4 GiB. 256 MiB
   // admits any legitimate <=4-band full-size tile (64 MiB/band at 4096^2).
+  // kMaxImageEdge doubles as the ingest ceiling (it is the render clamp): a
+  // producer emitting larger tiles would loop reject -> catalog re-request, so
+  // raising producer tile size means raising the clamp too. The byte ceiling
+  // counts msg.bands.size() even though applyPatch allocates per unique band
+  // name — duplicate-named bands over-count, which errs on rejection (safe).
   constexpr std::size_t kMaxBandCount = 64;
   constexpr std::size_t kMaxTileBytes = std::size_t(256) * 1024 * 1024;
   const std::size_t tile_bytes = std::size_t(msg.width) * msg.height *

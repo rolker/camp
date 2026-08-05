@@ -136,9 +136,11 @@ TEST(SonarLiveCatalogResume, CatalogBufferedWhileDisabledReconcilesOnEnable)
 
   // The latched catalog lands while disabled. Empty catalog = the boat holds
   // nothing = prune-all on the next reconcile. Its generation time must be
-  // NEWER than the held tiles' version (stamp.sec=100): the reconciler's
-  // timestamp gate (ADR-0008 D4b) refuses to prune tiles fresher than the
-  // catalog, so a zero-stamped catalog would prune nothing.
+  // NONZERO: warm-loaded tiles are seeded at reconciler version 0 (markHave
+  // can't recover the original stamp from a cached GeoTIFF), and the
+  // reconciler's timestamp gate (ADR-0008 D4b) prunes only tiles with
+  // version < generation_time — a zero-stamped catalog prunes nothing
+  // (0 < 0 is false).
   mi::TileCatalog empty_catalog;
   empty_catalog.header.stamp.sec = 200;
   ASSERT_TRUE(deliverCatalog(layer, empty_catalog));
