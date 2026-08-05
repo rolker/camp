@@ -37,11 +37,16 @@ public:
 };
 
 // Build the minimal MapItem ancestry the manager requires (MapItem asserts a
-// non-null parent): Map -> LayerList -> host LayerManager -> manager.
+// non-null parent): Map -> LayerList -> host LayerManager -> manager. Returns
+// nullptr (rather than crashing on a null LayerList) so call sites can
+// ASSERT_NE and fail with a message — this helper is non-void, so it cannot
+// use ASSERT_* itself.
 TestManager* makeManager(Map& map)
 {
   auto layers = map.topLevelLayers();
   EXPECT_NE(layers, nullptr);
+  if(!layers)
+    return nullptr;
   auto host = new camp::tools::LayerManager(layers, "test_host_tool");
   return new TestManager(host);
 }
@@ -52,6 +57,7 @@ TEST(SonarLiveCacheManagerRespawn, DirectDeleteClearsTrackingAndAllowsRetrack)
 {
   Map map;
   TestManager* manager = makeManager(map);
+  ASSERT_NE(manager, nullptr);
 
   const std::string base = "/cube_bathymetry";
   EXPECT_FALSE(manager->isSourceTracked(base));
@@ -77,6 +83,7 @@ TEST(SonarLiveCacheManagerRespawn, DeleteLaterClearsTrackingOnceEventLoopDrains)
 {
   Map map;
   TestManager* manager = makeManager(map);
+  ASSERT_NE(manager, nullptr);
 
   const std::string base = "/cube_bathymetry";
   auto layer = new QObject();
