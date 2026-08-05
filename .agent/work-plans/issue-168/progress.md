@@ -55,3 +55,23 @@ issue: 168
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-08-05 18:19 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-168/plan.md` at `0f81a67`
+**PR**: PR-less (dispatched via review-plan skill on the local worktree; `gh` unauthenticated in this environment)
+**Verdict**: approve-with-suggestions
+
+### Findings
+- [ ] (suggestion) #168 test validates the Qt `destroyed`-signal pattern via a *local* mock `std::set` + its own lambda — it does NOT exercise `SonarLiveCacheManager::sources_` nor the manager's real `connect(...)` wiring. Deleting the manager's `connect(layer, &QObject::destroyed, …)` line would not fail this test (~zero regression protection for the actual fix). Prior review's must-fix option (a) was "public accessor + test seam"; extension chose the weaker mock. Consider a thin white-box accessor (`bool isSourceTracked(base) const`) so the test asserts against the manager's set after a real remove. Defensible tradeoff — `updateTopics()` requires a live `Node` ancestor + real publishers for a true end-to-end respawn test. — `plan.md:49-58`
+- [ ] (suggestion) #170 cap: `msg.width`/`msg.height` are `uint16` (confirmed in `SonarVisualizationTile.msg`), so `msg.width <= 0` is effectively `== 0` (harmless, promotes to signed int). Residual: even at the 4096 cap, `4096×4096×64 bands×4B ≈ 4 GB` remains a large single allocation. Cap correctly eliminates the unbounded uint16-max crash path; a combined `width*height*bands` ceiling would harden further if cheap. Not blocking. — `plan.md:146-157`
+
+### Notes
+- Root causes and fixes verified correct and idiomatic against source. #168: `<map>` include (manager.h:6) and `sources_[base]` guard (manager.cpp:64,70) confirmed; `new SonarLiveCacheLayer(...)` return currently discarded — impl must capture the pointer for the `connect`. #169: catalog subscription is created once in the ctor and never torn down, so re-enable does NOT re-deliver the transient-local latched catalog — the buffered replay is exactly the needed reconcile trigger; `enableLiveCoverage` order (warmLoad→subscribeTiles→writeSettings, cpp:235-238) means `request_pub_` is live when the replay's `publishRequest` fires. #170: `kMaxImageEdge=4096` (layer.h:221) and the pre-construction validation site in `handleTile` (cpp:358-359) confirmed; node-boundary cap is the correct location.
+- Scope: 3 issues / 1 PR / 3 atomic commits per explicit user decision (2026-08-05). Upper-bound but cohesive — all three are the same `live_coverage` field-incident subsystem. ~10 lines production across `sonar_live_cache_manager.{h,cpp}` + `sonar_live_cache_layer.{h,cpp}` plus 3 new headless test files + CMakeLists blocks.
+- ADRs referenced (0001, 0006, 0010) all exist under `docs/decisions/`. Headless test harness (offscreen QApplication + Map + null Node) confirmed in `test_sonar_live_eviction.cpp` — supports the #169/#170 layer-level test plans; `residentTileCount()` is public (layer.h:85).
+- `review-issue` was not run for #168/#169/#170 (no `## Issue Review` entry / no comment) — noted, not penalized (optional step).
+- **Independence**: fresh-context, independent review (host-dispatched Opus sub-agent) of a Sonnet-authored plan. The skill's self-review heuristic (match on `**By**` agent-name prefix) false-positives here because all Claude Code agents share the `Claude Code Agent` identity string; the differing model line (Opus vs Sonnet) is the true independence signal. No self-review annotation applied.
