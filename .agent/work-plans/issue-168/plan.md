@@ -46,16 +46,19 @@ permanently, and the layer cannot be re-added within the session.
 4. **Update the header comment** (sonar_live_cache_manager.h:36-38) to note that
    removal now clears the entry.
 
-5. **Regression test** (`test_sonar_live_cache_manager_respawn.cpp`): create a
-   `SonarLiveCacheLayer` headlessly (null Node, same harness as
-   `test_sonar_live_eviction.cpp`), maintain a local `std::set<std::string>`,
-   connect its `QObject::destroyed` to erase from that set (the same lambda
-   pattern the fix adds to `updateTopics()`), delete the layer, and assert the
-   set is empty. This tests the exact mechanism the fix relies on without
-   needing the full manager stack (which requires a live `Node` ancestor for
-   `updateTopics()` to proceed). One `ament_add_gtest` block per
-   CMakeLists.txt:925 pattern (same include-dirs, deps, link-libs as
-   `test_sonar_live_eviction`).
+5. **Regression test — white-box on the real manager** (amended per Plan Review
+   round 2, adopted at the plan checkpoint): factor the tracking contract out of
+   `updateTopics()` into a protected `trackSpawnedLayer(const std::string& base,
+   QObject* layer)` (inserts into `sources_` + connects `destroyed` → erase), and
+   add a public const accessor `isSourceTracked(const std::string& base)`. The
+   test (`test_sonar_live_cache_manager_respawn.cpp`) subclasses the manager to
+   promote `trackSpawnedLayer` (`using`-declaration), tracks a plain `QObject`
+   (the contract is QObject-generic), asserts `isSourceTracked()` flips
+   true → (delete layer) → false, and re-tracks to prove respawn. This exercises
+   the manager's REAL set and REAL `connect` wiring — deleting the `connect`
+   line fails the test — without needing the live `Node` ancestor that
+   `updateTopics()` requires. One `ament_add_gtest` block per CMakeLists.txt:925
+   pattern (same include-dirs, deps, link-libs as `test_sonar_live_eviction`).
 
 ### #168 Files to Change
 
@@ -159,6 +162,14 @@ They are deferred to follow-up issues referencing #154/#155/#156.
    `kMaxImageEdge = 4096` is already a private static constexpr on the class
    (sonar_live_cache_layer.h:221). `kMaxBandCount` is a new local constant in
    the `.cpp`.
+
+   **Amended per Plan Review round 2 (adopted at the plan checkpoint)**: also
+   enforce a combined per-message allocation ceiling — per-dimension caps alone
+   still admit `4096×4096×64 bands×4 B ≈ 4 GB`. Add
+   `kMaxTileBytes = 256 MiB` (a full 4096×4096 float tile is 64 MiB/band, so
+   this admits any legitimate ≤4-band full-size tile while bounding the worst
+   case at ~6% of the old ceiling) and reject when
+   `width × height × bands × sizeof(float) > kMaxTileBytes`, same warning path.
 
 2. **Regression test** (extend `test_sonar_live_cache.cpp` or new
    `test_sonar_live_tile_validation.cpp`): enable a headless layer, invoke
