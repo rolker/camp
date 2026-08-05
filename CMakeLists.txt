@@ -998,6 +998,32 @@ if(BUILD_TESTING)
     Qt5::Positioning
     ${GDAL_LIBRARY}
   )
+
+  # [camp#170] Tile dimension/byte validation before allocation (crash guard).
+  # Same offscreen harness.
+  ament_add_gtest(test_sonar_live_tile_validation
+    test/test_sonar_live_tile_validation.cpp
+  )
+  target_include_directories(test_sonar_live_tile_validation PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_tile_validation
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_tile_validation
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
 endif()
 
 

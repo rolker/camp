@@ -348,6 +348,29 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
 {
   if(!enabled_)
     return;
+
+  // [camp#170] Validate dimensions BEFORE any allocation or state mutation: a
+  // single oversized/corrupt message would otherwise allocate
+  // width*height*bands floats on the GUI thread on receipt (the 2026-07-23
+  // operator-station crash) — the ADR-0010 eviction budget only accounts for
+  // tiles after they are resident. Per-edge cap plus a combined byte ceiling:
+  // per-edge alone still admits 4096x4096 x 64 bands x 4B ~= 4 GiB. 256 MiB
+  // admits any legitimate <=4-band full-size tile (64 MiB/band at 4096^2).
+  constexpr std::size_t kMaxBandCount = 64;
+  constexpr std::size_t kMaxTileBytes = std::size_t(256) * 1024 * 1024;
+  const std::size_t tile_bytes = std::size_t(msg.width) * msg.height *
+                                 msg.bands.size() * sizeof(float);
+  if(msg.width == 0 || msg.height == 0 ||
+     msg.width > kMaxImageEdge || msg.height > kMaxImageEdge ||
+     msg.bands.size() > kMaxBandCount || tile_bytes > kMaxTileBytes)
+  {
+    qWarning().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
+                         << "] rejected tile with absurd dimensions"
+                         << msg.width << "x" << msg.height
+                         << "bands:" << msg.bands.size();
+    return;
+  }
+
   const gggs::GridIndex index = gridIndexFromTileIndex(msg.index);
   if(!index.valid())
     return;
