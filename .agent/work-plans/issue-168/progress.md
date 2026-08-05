@@ -94,3 +94,19 @@ issue: 168
 - [ ] (suggestion) enableLiveCoverage replay re-requests the full held set every enable (v0 seeding); rapid disable/enable emits a full-catalog TileRequest burst per cycle (by-design ADR-0006 D3) — worth a one-line note — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:243`
 - [ ] (suggestion) #170 byte ceiling multiplies by msg.bands.size() but applyPatch allocates per unique band name; duplicate-named bands over-counted (conservative, safe direction) — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:361`
 - [ ] (note) C++ test suite not built/run locally (offline; heavy ROS/Qt build) — CI colcon+gtest is the gate. Static analysis: cppcheck aborts on Qt slots macro; cmake-lint/yamllint enforced by pre-commit. Local/Copilot adversarial unavailable (no Ollama, off by default).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-08-05 15:55 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #185 at `16e6e53`
+**Sources**: 3 (Copilot R1 APPROVED @ `16e6e53`, Local Review (Pre-Push) R1, CI rollup)
+**Cross-source confirmations**: 0
+**CI**: all-pass
+
+### Findings
+- [ ] (trivial, Copilot ×2 same root) `makeManager()` helper EXPECTs non-null `topLevelLayers()` then dereferences anyway (non-void helper can't ASSERT); null would segfault instead of failing cleanly. Guard-return nullptr in the helper + `ASSERT_NE(manager, nullptr)` at both call sites — `test/test_sonar_live_cache_manager_respawn.cpp:44,57,78`
+
+### False positives
+- (none — Copilot approved; the pre-push review's 4 suggestions were already applied at this head)
