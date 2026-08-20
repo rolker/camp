@@ -130,6 +130,90 @@ TEST(SonarLiveEviction, WarmLoadTrimsToBudgetAndBuildsOverviews)
   // held count is exactly the fine tiles loaded — asserts both the no-drop / no-churn
   // policy (D2) and the reconciler-isolation invariant (D4).
   EXPECT_EQ(layer->reconcilerHeldCount(), kTiles);
+
+  // [camp#171] Per-pool byte seams are self-consistent: accountedBytes() is exactly the
+  // sum of the fine and overview pools, and both hold real bytes. (At this deliberately
+  // tiny budget the protected apex floor can exceed the budget, so no ratio assertion
+  // here — see EvictionHeadroomAtSurveyScale for the bounded-pyramid regression.)
+  EXPECT_GT(layer->overviewResidentBytes(), std::size_t(0));
+  EXPECT_EQ(layer->fineResidentBytes() + layer->overviewResidentBytes(),
+            layer->accountedBytes());
+}
+
+// [camp#171] Realistic-scale eviction-headroom regression (Issue Review action). The
+// 2026-07-23 field failure was the overview pyramid growing until it consumed the whole
+// budget, so phase-1 eviction shed EVERY fine tile (full-resolution collapse). With the
+// uma-convergent uniform-edge pyramid (4 fine tiles collapse into 1 same-size parent),
+// eviction against a budget comfortably above the protected apex must leave real
+// headroom: some fine tiles stay resident and the pyramid itself stays under budget.
+TEST(SonarLiveEviction, EvictionHeadroomAtSurveyScale)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+
+  const QString ns = "/headroom_test";
+  // A CONTIGUOUS 10x10 block of GGGS tiles (adjacent row/col), so parents actually
+  // share 4->1 up the pyramid (the collapse the convergent pyramid relies on). A sparse
+  // lat/lon scatter would put each fine tile under a distinct coarse parent, inflating
+  // the pyramid — contiguity is what bounds it. 100 fine tiles; the full pyramid is then
+  // bounded by geometry (~half the tiles per level: ~25 at L9, ~9 at L8, ... + the small
+  // protected apex). Budget = 70 tiles' worth — comfortably above that bound but below
+  // the 100 fine tiles — so eviction must fold the pyramid AND leave real fine-tile
+  // headroom rather than shedding every fine tile (the 2026-07-23 field collapse). If
+  // the pyramid grew unbounded (the regression) it would fill the budget → this fails.
+  constexpr int kRows = 10;
+  constexpr int kCols = 10;
+  constexpr std::size_t kTiles = kRows * kCols;
+  const std::size_t per_tile = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  const std::size_t budget = 70 * per_tile;
+
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes", qulonglong(budget));
+
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  // Anchor on a real grid, then step by whole row/col so the block is contiguous.
+  const gggs::GridIndex anchor = level.gridIndex(43.0, -70.5);
+  ASSERT_TRUE(anchor.valid());
+  std::size_t written = 0;
+  for(int r = 0; r < kRows; ++r)
+    for(int c = 0; c < kCols; ++c)
+    {
+      marine_interfaces::msg::TileIndex ti;
+      ti.level = static_cast<std::uint8_t>(kLevel);
+      ti.row = anchor.row() + r;
+      ti.col = anchor.column() + c;
+      const gggs::GridIndex grid = camp::ros::live_coverage::gridIndexFromTileIndex(ti);
+      ASSERT_TRUE(grid.valid());
+      SonarLiveTile tile(grid, kEdge, kEdge);
+      tile.applyPatch(makeUniformDepth(grid, static_cast<std::int16_t>(300 + written)));
+      const QString path =
+        QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                  .arg(static_cast<int>(grid.level()))
+                                  .arg(grid.row())
+                                  .arg(grid.column()));
+      ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+      ++written;
+    }
+  ASSERT_EQ(written, kTiles);
+
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+
+  // Eviction holds the budget (the crash guard) ...
+  EXPECT_LE(layer->accountedBytes(), budget);
+  // ... but does NOT shed every fine tile — the collapse regression: headroom remains
+  // for fine detail near the (headless: most-recent) view.
+  EXPECT_GT(layer->residentTileCount(), std::size_t(0));
+  // ... and the overview pyramid itself stays bounded well under the budget (it did not
+  // grow to consume it, as it did in the field). Both pools present.
+  EXPECT_GT(layer->overviewTileCount(), std::size_t(0));
+  EXPECT_LT(layer->overviewResidentBytes(), budget);
 }
 
 int main(int argc, char** argv)
