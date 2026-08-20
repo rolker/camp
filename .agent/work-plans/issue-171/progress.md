@@ -88,3 +88,35 @@ Per the consequences map and the code:
 
 ### Open questions
 - [ ] No open questions — plan is review-plan-ready.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-08-20 17:40 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+<!-- Independent review: the ## Plan Authored entry was written by Claude Code Agent
+     (Claude Sonnet); this review is a separately-dispatched fresh-context sub-agent on
+     a different model (Claude Opus). The name-based self-review heuristic collides
+     because all agents share the "Claude Code Agent" name, so the annotation is
+     deliberately omitted — this is a genuinely independent review. -->
+
+**Plan**: `.agent/work-plans/issue-171/plan.md` at `447eec3`
+**PR**: PR-less (local branch `feature/issue-171`; `gh` auth unavailable in this
+gitcloud worktree, so a draft PR could not be confirmed)
+**Verdict**: changes-requested
+
+**Note on issue fetch**: `gh` is unauthenticated here, so issue #171/#172 bodies
+could not be re-fetched. The review relies on the `## Issue Review` entry above
+(which captured them) plus source verification against the code.
+
+### Findings
+- [ ] (must-fix) Plan mischaracterizes decimation as "adoption of / equivalent to the uma shared fold engine." Verified `buildParentTile` (`marine_tiled_raster_store/.../overview_builder.hpp:182`) builds the parent at the **fixed uniform** `TiledRasterTile::edge` size — the standard half-resolution-per-level pyramid. The plan's `⌊W/2⌋` decimation gives **quarter**-resolution per level (a parent cell spans ~4×4 child cells), a deliberate camp-specific **divergence**. Only the MEAN cell-fold policy matches uma. ADR-0010 amendment, the `foldIntoParent()` code comment, and the ADR-Compliance/Uma-ADR-0011 row must record it as a divergence-with-rationale, not convergence. — `plan.md:62-64,71,168`
+- [ ] (must-fix) State the resolution trade explicitly: each pyramid level drops linear resolution by 4× (not 2×). The 1.33× memory series is correct for bytes, but the coarser mid-zoom fidelity vs a standard pyramid is unstated in the plan and the ADR-0010 amendment. — `plan.md:42,64`
+- [ ] (must-fix) `handleCatalog()` prune (`sonar_live_cache_layer.cpp:460-476`) `fs::remove`s the fine-tile GeoTIFF and drops reconciler possession, but the plan's Files-to-Change table does not wire it to erase the index from `evicted_fine_indices_`. Step 3a promises this in prose only. Without it, a pruned-then-deleted index lingers in the set → `kickReload` snapshots it → `loadFromGeoTiff` fails → index never cleared. — `plan.md:76,149`
+- [ ] (must-fix) The `paint()` reload trigger (Step 3c) omits the moved-since-last-kick guard the sibling loader uses (`gggs_tile_layer.cpp:428-429,479-483`: `load_viewport_ != last_kick_viewport_`). The plan declares `reload_kicked_viewport_` but never consults it in the trigger condition, and `onReloadFinished()` clears "loaded" indices only. A permanently-unloadable evicted index re-kicks `kickReload` every frame. Fix: gate on viewport-changed-since-last-kick AND clear attempted-but-failed indices in `onReloadFinished()`. — `plan.md:99-107,92-94`
+- [ ] (must-fix) New test `test/test_sonar_live_reload.cpp` is not registered in `CMakeLists.txt` (tests are wired via `ament_add_gtest`, e.g. `CMakeLists.txt:925`). An unregistered gtest never runs. Add `CMakeLists.txt` to Files-to-Change. — `plan.md:151`
+- [ ] (suggestion) Naming: ADR-0013 §"camp#172 hook" and the sibling `GggsTileLayer` both name the seam `hasUnloadedVisibleTiles()`. The plan introduces `hasEvictedVisibleTiles()`. Reuse the ADR-named seam or note the divergence in Step 4. — `plan.md:80,148`
+- [ ] (suggestion) Reference `GggsTileLayer`'s existing demand-driven loader (`gggs_tile_layer.cpp` reload worker + `waitForLoad()` headless seam) as the implementation template, not just `write_watchers_` — it already carries the hysteresis, moved-since-kick guard, and headless-drive seam #172 needs. — `plan.md:83-111`
+- [ ] (suggestion) Test seams: Step 5a's "overview footprint < budget/4" needs a per-pool byte seam (only `overviewTileCount()`/`accountedBytes()` exist today); Step 5b reload tests need a `waitForReload()` headless seam mirroring `GggsTileLayer::waitForLoad()`. Declare these in the header change list. — `plan.md:124,131-136`
+- [ ] (suggestion) On-disk migration: overviews written by the pre-fix (uniform-size) code warm-load at their old full size and mix with decimated folds until re-evicted. Low impact (display-grade, self-heals on next eviction/regen) but worth a line in ADR-0010 Consequences. — `plan.md:69-70`
+- [ ] (suggestion) ADR-0010 amendment should reconcile the existing "Alternatives considered" entry ("rejected fixed-64×64 in favour of matching fine dimensions … uniform tile size") which the decimation decision now reverses — otherwise stale contradictory rationale remains in the ADR. — `plan.md:36-42`
