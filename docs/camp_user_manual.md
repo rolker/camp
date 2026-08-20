@@ -31,9 +31,10 @@ Start CAMP from the operator station:
 ros2 launch camp camp_launch.py
 ```
 
-- CAMP **auto-loads a default background chart** (the `background_chart` launch
-  argument; currently NOAA chart 13283). To use a different chart, pass
-  `background_chart:=<path-to-.KAP>`.
+- CAMP starts with its **OpenStreetMap backdrop**; no chart is loaded for you.
+  Open one with *Open Background* from the map context menu. Charts are app
+  state — CAMP remembers what you opened and restores it next start, and
+  removing a chart layer makes that stick too.
 - CAMP is typically started as part of the operator launcher (see the boat's
   operator manual, *Starting the stack*), so you don't usually run it by hand.
 

@@ -476,6 +476,35 @@ if(BUILD_TESTING)
     Qt5::Widgets
   )
 
+  # AIS unknown speed/course must not render as a number (uninitialised cog,
+  # and int() of NaN, both surfaced as huge values in the hover label)
+  ament_add_gtest(test_ais_contact_state
+    test/test_ais_contact_state.cpp
+    src/camp/ais/ais_contact.cpp
+    src/camp/ship_track.cpp
+    src/camp/geographicsitem.cpp
+    src/camp/georeferenced.cpp
+    src/camp/ros/ros_object.cpp
+    src/camp_map/map_view/web_mercator.cpp
+  )
+  target_include_directories(test_ais_contact_state PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_ais_contact_state
+    rclcpp
+    marine_ais_msgs
+    tf2
+    tf2_geometry_msgs
+    geometry_msgs
+  )
+  target_link_libraries(test_ais_contact_state
+    Qt5::Core
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # earth<-frame transform cache / staleness decision (#59 — TF-gap flicker fix)
   ament_add_gtest(test_transform_cache
     test/test_transform_cache.cpp

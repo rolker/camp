@@ -2,6 +2,7 @@
 #define CAMP_AIS_CONTACT_H
 
 #include <QObject>
+#include <cmath>
 #include "../ship_track.h"
 #include "marine_ais_msgs/msg/ais_contact.hpp"
 #include "../locationposition.h"
@@ -12,12 +13,17 @@ struct AISContactDetails
 {
   AISContactDetails();
   AISContactDetails(const marine_ais_msgs::msg::AISContact& message);
-  uint32_t mmsi;
+  uint32_t mmsi = 0;
   std::string name;
-  float dimension_to_stbd; 
-  float dimension_to_port;
-  float dimension_to_bow;
-  float dimension_to_stern;
+  // Zero is AIS's "dimension not available", and is what shape() already
+  // tests to fall back from a ship outline to a triangle. Initialising to it
+  // means a details object built before any report describes an unknown-size
+  // vessel rather than one whose dimensions are whatever was on the stack --
+  // those feed drawShipOutline directly.
+  float dimension_to_stbd = 0.0f;
+  float dimension_to_port = 0.0f;
+  float dimension_to_bow = 0.0f;
+  float dimension_to_stern = 0.0f;
 };
 
 struct AISContactState
@@ -26,9 +32,16 @@ struct AISContactState
   AISContactState(const marine_ais_msgs::msg::AISContact& message);
   rclcpp::Time timestamp;
   LocationPosition location;
-  double heading;
-  float cog;
-  float sog;
+  // Initialised to NaN, the "unavailable" value the rest of the AIS path
+  // already uses. None of these is guaranteed to be assigned: a contact that
+  // is not moving never computes a course, and AIS reports SOG/COG as
+  // unavailable often enough (the parser writes NaN into the twist) that the
+  // motion vector is frequently NaN, which fails the > 0.0 test the same way.
+  // Left uninitialised, the label rendered whatever was on the stack as a
+  // course over ground.
+  double heading = std::nan("");
+  float cog = std::nan("");
+  float sog = std::nan("");
 };
 
 struct AISReport: public QObject, AISContactDetails, AISContactState

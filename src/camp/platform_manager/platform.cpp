@@ -13,12 +13,14 @@ Platform::Platform(QWidget* parent, QGraphicsItem *parentItem):
   m_ui(new Ui::Platform)
 {
   m_ui->setupUi(this);
-  // Order: helm, running-task tree, mission command buttons. Give the tree all
-  // the vertical stretch so the helm panel and the (now header-less) button row
-  // stay at their natural, compact height instead of each taking a third.
+  // The splitter holds only the two panes worth resizing: the helm panel and
+  // the running-task tree. The tree takes all the spare height so the helm
+  // panel stays at its natural, compact size. The mission command buttons sit
+  // below the splitter in the parent layout (platform.ui) rather than inside
+  // it -- a button row has nothing to reveal by growing, and a handle above it
+  // could only shrink or collapse the buttons out of reach.
   m_ui->splitter->setStretchFactor(0, 0);  // helmManager
   m_ui->splitter->setStretchFactor(1, 1);  // runningTasksView
-  m_ui->splitter->setStretchFactor(2, 0);  // missionManager (buttons)
   setAcceptHoverEvents(true);
   setZValue(6.0);
   connect(this, &Platform::pathUpdated, this, &Platform::updatePath, Qt::QueuedConnection);

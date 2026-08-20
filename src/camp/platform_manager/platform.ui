@@ -13,16 +13,24 @@
   <property name="windowTitle">
    <string>Platform</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout">
+  <!-- Stretch 1,0,0: the splitter absorbs all spare height; the mission
+       command buttons and the SOG readout keep their natural size. -->
+  <layout class="QVBoxLayout" name="verticalLayout" stretch="1,0,0">
    <item>
+    <!-- Only the two resizable panes belong in the splitter. missionManager
+         is a single row of buttons with nothing to reveal by growing, so
+         putting it here would add a second handle that can only make the
+         layout worse (and collapse the buttons out of sight). -->
     <widget class="QSplitter" name="splitter">
      <property name="orientation">
       <enum>Qt::Vertical</enum>
      </property>
      <widget class="HelmManager" name="helmManager" native="true"/>
      <widget class="RunningTasksView" name="runningTasksView" native="true"/>
-     <widget class="MissionManager" name="missionManager" native="true"/>
     </widget>
+   </item>
+   <item>
+    <widget class="MissionManager" name="missionManager" native="true"/>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">

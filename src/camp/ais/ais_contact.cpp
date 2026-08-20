@@ -37,7 +37,12 @@ AISContactState::AISContactState(const marine_ais_msgs::msg::AISContact& message
   sog = motion.length();
   if (motion.length() > 0.0)
   {
-    cog = -motion.angle(tf2::Vector3(0.0, 1.0, 0.0))*180/M_PI;
+    // Bearing from north, clockwise positive, from the ENU motion vector
+    // (x east, y north — the parser's convention). Vector3::angle() is
+    // unsigned (acos of the dot product), so the previous -angle() form
+    // mirrored every eastward course (true 090 rendered as 270) in the
+    // label and the prediction vector.
+    cog = atan2(motion.x(), motion.y())*180/M_PI;
     if (cog < 0.0)
      cog += 360.0;
   }
@@ -129,12 +134,24 @@ void AISContact::updateLabel()
 
   if(!m_states.empty())
   {
-    label += "\nsog: " + QString::number(int(m_states.rbegin()->second.sog*10)/10.0) + " m/s";
-    label += "\ncog: " + QString::number(int(m_states.rbegin()->second.cog));
+    // NaN means the value is genuinely unavailable -- either AIS reported its
+    // not-available sentinel, or the contact is not moving so no course can be
+    // derived. Say so rather than printing a number. The int() casts these
+    // replace were also undefined behaviour on NaN, which is how an absent
+    // value reached the label as a huge one.
+    const auto& state = m_states.rbegin()->second;
+    if(std::isnan(state.sog))
+      label += "\nsog: n/a";
+    else
+      label += "\nsog: " + QString::number(state.sog, 'f', 1) + " m/s";
+    if(std::isnan(state.cog))
+      label += "\ncog: n/a";
+    else
+      label += "\ncog: " + QString::number(static_cast<int>(state.cog));
   }
   setLabel(label);
 }
-  
+
 
 
 void AISContact::updateProjectedPoints()
@@ -166,7 +183,7 @@ void AISContact::paint(QPainter* painter, const QStyleOptionGraphicsItem* option
   painter->drawPath(shape());
 
   p.setColor(QColor(128, 128, 128, 128));
-  
+
   painter->setPen(p);
   painter->drawPath(predictionShape());
 
@@ -227,6 +244,11 @@ QPainterPath AISContact::predictionShape() const
       state++;
     if(state != m_states.rend())
     {
+      // No prediction without a speed AND course: NaN (unavailable) would
+      // otherwise reach atDistanceAndAzimuth and only disappear by the
+      // accident of release-Qt dropping non-finite path points.
+      if(std::isnan(state->second.sog) || std::isnan(state->second.cog))
+        return ret;
       ret.moveTo(state->second.location.pos);
       QGeoCoordinate futureLocation = state->second.location.location.atDistanceAndAzimuth(state->second.sog*300, state->second.cog);
       auto timeSinceReport = m_displayTime - state->first;
