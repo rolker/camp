@@ -275,3 +275,26 @@ Round-1 verification: the load-bearing `reload_attempted_.empty()` gate (must-fi
 
 ### Next step
 Lifecycle: **Local Review** → push / open PR → **triage-reviews**. Verdict is **approved** (0 must-fix); the 6 suggestions are non-blocking. Optionally apply the two cheap robustness suggestions (disable-clear, kickReload gate) before push, then hand off to a fresh-context sub-agent for triage-reviews once pushed. No push performed (host pushes).
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-08-20 15:32 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**PR**: #190 at `9c69f69`
+**Sources**: 3 (Copilot R1 @ `9c69f69`, Local Review (Pre-Push) R1–R2 @ prior SHAs, CI rollup)
+**Cross-source confirmations**: 1
+**CI**: all-pass (hosted build-and-test green at head)
+
+### Findings
+- [ ] (cross-confirmed: Local R2 deferred-suggestion + Copilot @ head) `disableLiveCoverage()` joins the worker (`waitForFinished()`) but clears `reload_attempted_` out-of-band while the `QFutureWatcher::finished` delivery stays queued; after re-enable + a new kick sets a new future, the stale slot's `result()` binds to the NEW in-flight future — GUI-thread block + lost old batch. Fix per the in-file pattern: synchronously consume the completed reload in `disableLiveCoverage()` (as `waitForReload()` does) so the queued `finished` no-ops on the double-invoke guard — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:309-324`. Code-verified this triage: the deferral rationale ("harmless") does not survive the re-enable interleave; two independent sources now agree.
+
+### False positives
+- (none)
+
+**Local-timeline reconciliation**: R2's other five deferred suggestions were
+not raised by Copilot and stay deferred with their recorded rationale
+(self-correcting prune-resurrect window → hardened in camp#191; hysteresis-gate
+duplication; transient burst-fold peak; high-lat band seam — pre-existing store
+behavior; ADR fidelity wording). The disable/re-enable edge graduates from
+deferred to must-fix on cross-confirmation.
