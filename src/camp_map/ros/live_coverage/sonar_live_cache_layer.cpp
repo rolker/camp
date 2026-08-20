@@ -314,9 +314,17 @@ void SonarLiveCacheLayer::disableLiveCoverage()
   unsubscribeTiles();
   // [camp#172] Join any in-flight reload and drop the evicted-index bookkeeping — a
   // disabled layer keeps its in-memory + on-disk cache but stops the reload machinery.
+  // [camp#171 triage] Synchronously consume the completed reload via onReloadFinished()
+  // (as waitForReload() does) rather than a bare reload_attempted_.clear(): the
+  // QFutureWatcher::finished delivery stays queued after waitForFinished(), so consuming
+  // it here — which clears reload_attempted_ — makes that queued slot no-op on the
+  // double-invoke guard (reload_attempted_.empty()). A bare clear instead leaves the
+  // queued finished to bind result() to a NEW in-flight future after a re-enable + kick,
+  // blocking the GUI thread and dropping that batch. onReloadFinished() is a no-op when
+  // no reload was in flight (reload_attempted_ empty), so this is safe unconditionally.
   reload_watcher_.waitForFinished();
+  onReloadFinished();
   evicted_fine_indices_.clear();
-  reload_attempted_.clear();
   last_reload_viewport_ = QRectF();
   writeSettings();
   updateDisplay();

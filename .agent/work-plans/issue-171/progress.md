@@ -287,7 +287,7 @@ Lifecycle: **Local Review** → push / open PR → **triage-reviews**. Verdict i
 **CI**: all-pass (hosted build-and-test green at head)
 
 ### Findings
-- [ ] (cross-confirmed: Local R2 deferred-suggestion + Copilot @ head) `disableLiveCoverage()` joins the worker (`waitForFinished()`) but clears `reload_attempted_` out-of-band while the `QFutureWatcher::finished` delivery stays queued; after re-enable + a new kick sets a new future, the stale slot's `result()` binds to the NEW in-flight future — GUI-thread block + lost old batch. Fix per the in-file pattern: synchronously consume the completed reload in `disableLiveCoverage()` (as `waitForReload()` does) so the queued `finished` no-ops on the double-invoke guard — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:309-324`. Code-verified this triage: the deferral rationale ("harmless") does not survive the re-enable interleave; two independent sources now agree.
+- [x] (cross-confirmed: Local R2 deferred-suggestion + Copilot @ head) `disableLiveCoverage()` joins the worker (`waitForFinished()`) but clears `reload_attempted_` out-of-band while the `QFutureWatcher::finished` delivery stays queued; after re-enable + a new kick sets a new future, the stale slot's `result()` binds to the NEW in-flight future — GUI-thread block + lost old batch. Fix per the in-file pattern: synchronously consume the completed reload in `disableLiveCoverage()` (as `waitForReload()` does) so the queued `finished` no-ops on the double-invoke guard — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:309-324`. Code-verified this triage: the deferral rationale ("harmless") does not survive the re-enable interleave; two independent sources now agree.
 
 ### False positives
 - (none)
