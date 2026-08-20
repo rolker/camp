@@ -274,6 +274,33 @@ unregistered gtest never runs).
 - None — geometry decision (convergence, no `⌊W/2⌋`), scope boundary (catalog-prune propagation
   = tracked follow-up), and the hysteresis value (0.75) are operator-confirmed.
 
+## Implementation Divergences (recorded at implementation time)
+
+Minor deltas from the plan above, all verified against a green build + test run:
+
+- **Eviction-headroom test scale.** The Issue-Review sketch (38 fine tiles, budget =
+  512 MiB / 38 ≈ one fine tile) cannot demonstrate *headroom*: at that scale the overview
+  pyramid (with its protected apex + the full chain to level 0) is comparable to the
+  budget, so eviction correctly collapses to overviews — which is the LOD design, remedied
+  by #172 reload, not a bug. The headroom regression instead seeds a **contiguous 10×10
+  GGGS block** (so parents actually share 4→1) against a budget **above** the bounded
+  pyramid, proving eviction leaves real fine-tile headroom (measured: pyramid 43 tiles vs
+  70-tile budget → 27 fine tiles resident). A sparse lat/lon scatter (the first attempt)
+  does *not* share coarse parents and inflates the pyramid past the budget — contiguity is
+  essential to the test and to the convergent-pyramid memory claim.
+- **Per-pool byte assertion.** Plan Step 5a's "overview footprint < budget/4" only holds
+  when the budget dwarfs the apex floor; at the existing test's deliberately tiny 4-tile
+  budget the protected apex alone can exceed it. So the tiny-budget test asserts per-pool
+  seam *consistency* (`fine + overview == accounted`, both > 0), and the bounded-pyramid
+  assertion lives in the survey-scale headroom test where the budget > pyramid.
+- **`waitForReload()` mirrors the full `paint()` gate** (including the D6 hysteresis), so
+  the `ReloadHysteresisPreventsPingPong` test can exercise the guard headlessly. Added a
+  test-only `setResidentBudgetForTest()` seam and an `evictedFineCount()` introspection for
+  the reload tests; `accountedBytes()` was made public (it is the sum of the two public
+  per-pool seams).
+- **No `sonar_live_tile.cpp` code change** — only the `foldChild()` comment gained the uma
+  `buildParentTile` convergence note, as planned.
+
 ## Estimated Scope
 
 Single PR closing #171 and #172.
