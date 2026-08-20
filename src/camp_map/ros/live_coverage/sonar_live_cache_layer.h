@@ -17,11 +17,13 @@
 #include <QFutureWatcher>
 #include <QImage>
 #include <QPointF>
+#include <QRectF>
 #include <QSize>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -84,6 +86,16 @@ public:
   /// Introspection for tests and the future status indicator (#158).
   std::size_t residentTileCount() const { return tiles_.size(); }
   std::size_t overviewTileCount() const { return overview_tiles_.size(); }
+  /// [camp#171] Per-pool resident footprint (bytes). The eviction-headroom test needs
+  /// the overview-pool total to assert the pyramid stays bounded well under budget
+  /// (accountedBytes() is fine + overview combined). CPU band data + any GL texture.
+  std::size_t fineResidentBytes() const;
+  std::size_t overviewResidentBytes() const;
+  /// [camp#160] Total resident footprint (fine + overview), the eviction budget metric.
+  std::size_t accountedBytes() const;
+  /// [camp#172] Count of fine indices evicted but still recoverable from disk (the
+  /// on-demand reload set). Introspection for the reload regression test.
+  std::size_t evictedFineCount() const { return evicted_fine_indices_.size(); }
   /// [camp#160] Number of indices the reconciler holds — used by tests to assert
   /// overview tiles never enter the anti-entropy set (ADR-0010 D4).
   std::size_t reconcilerHeldCount() const { return reconciler_.size(); }
@@ -103,6 +115,18 @@ public:
 
   /// The layer's Web-Mercator extent (union of tile extents). Exposed for tests.
   QRectF sceneBounds() const { return scene_bounds_; }
+
+  /// [camp#172] Test/headless seam mirroring `GggsTileLayer::waitForLoad()`: kick the
+  /// on-demand reload for @p viewport_scene (if idle, the viewport moved since the last
+  /// kick, and it exposes an evicted visible tile), then join the worker and run the
+  /// ready-slot so the reloaded tiles are resident on return. paint() drives the same
+  /// path live; this lets a test drive it deterministically without a scene/view.
+  void waitForReload(const QRectF& viewport_scene);
+
+  /// [camp#172] Test seam: override the resident-footprint eviction budget after
+  /// construction (the ctor reads it once from QSettings). Lets a reload test create
+  /// budget headroom — or remove it — mid-test to exercise the D6 hysteresis gate.
+  void setResidentBudgetForTest(std::size_t bytes) { vram_budget_bytes_ = bytes; }
 
   /// [camp#142] Per-layer colormap range override. Auto tracks the data extents
   /// (data_min_/data_max_, folded in foldAutoRange()); Manual pins an operator
@@ -191,10 +215,26 @@ private:
   // attached). foldIntoParent(): 2x2-decimate a fine tile up the full overview
   // chain to level 0. currentViewCentre(): viewport centre in Web-Mercator scene
   // coords, or nullopt when headless.
-  std::size_t accountedBytes() const;
+  // [camp#171] Resident footprint of one entry (CPU band data + any GL texture). The
+  // per-pool byte seams and accountedBytes() all sum this.
+  static std::size_t entryBytes(const Entry& entry);
   void evictIfOverBudget();
   void foldIntoParent(const SonarLiveTile& fine);
   std::optional<QPointF> currentViewCentre() const;
+
+  // [camp#172] On-demand reload of evicted fine tiles (the ADR-0013 §"camp#172 hook").
+  // hasUnloadedVisibleTiles(): does the viewport expose an evicted fine index whose
+  // disk copy is not yet resident? (the ADR-0013-named reload predicate; tests the
+  // GGGS extent of the index, no live tile needed). kickReload(): snapshot the visible
+  // evicted indices + cache_dir_ + level into a self-contained QtConcurrent worker that
+  // loads each cached fine GeoTIFF; connect its watcher to onReloadFinished().
+  // onReloadFinished() (GUI thread): insert the loaded tiles back into tiles_, clear
+  // EVERY attempted index from evicted_fine_indices_ (loaded or not, so a permanently
+  // unloadable index can't re-kick forever), and run evictIfOverBudget() (D6 hysteresis
+  // keeps it from re-evicting the inserts). See ADR-0010 D2/D6.
+  bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
+  void kickReload(const QRectF& viewport_scene);
+  void onReloadFinished();
 
   void recomputeBounds();
   void resetAutoRange();
@@ -226,6 +266,11 @@ private:
   // while the numerous near-fine overview levels ARE evicted by view like fine tiles —
   // so total resident memory stays bounded (ADR-0010 D1/D3).
   static constexpr std::uint8_t kApexProtectLevel = 6;
+
+  // [camp#172 / ADR-0010 D6] Reload only when resident footprint is below this fraction
+  // of the budget, so a reload insert can't immediately re-trigger eviction (no
+  // reload<->evict ping-pong). 0.75 leaves a quarter-budget headroom for the inserts.
+  static constexpr double kReloadHysteresisFactor = 0.75;
 
   std::string base_namespace_;   // e.g. "/cube_bathymetry"
   std::string cache_dir_;        // <base cache dir>/<sanitized source ns>
@@ -263,6 +308,34 @@ private:
   // going blank. These are a LOCAL derived product: they are NEVER entered into
   // `reconciler_`, so anti-entropy prune-on-absence can't delete them.
   std::map<gggs::GridIndex, Entry> overview_tiles_;
+
+  // [camp#172] Fine indices that were evicted (folded to overview + dropped from
+  // tiles_) but whose disk copy is still present — the on-demand reload candidate set
+  // (ADR-0010 D2). Populated in evictIfOverBudget() phase 1; an index leaves the set
+  // when it is reloaded (onReloadFinished, whether the load succeeded or not),
+  // re-received live (handleTile), or pruned by the catalog (handleCatalog).
+  std::set<gggs::GridIndex> evicted_fine_indices_;
+
+  // [camp#172] Async reload worker (loads evicted fine GeoTIFFs off the GUI thread) and
+  // the moved-since-last-kick guard, mirroring GggsTileLayer's demand-driven loader.
+  // reload_attempted_ is the snapshot of indices the in-flight worker is loading, so
+  // onReloadFinished() can clear them from evicted_fine_indices_ (GUI-thread-only, the
+  // worker never touches it). It is non-empty for exactly the span between a kickReload()
+  // and its matching onReloadFinished(), so the kick gates also require it empty — that
+  // closes the queued-`finished` race where isRunning() has flipped false but the result
+  // is not yet consumed (see kickReload). last_reload_viewport_ gates paint()'s re-kick to
+  // actual viewport moves (a permanently-unloadable index re-kicks at most once per
+  // viewport).
+  QFutureWatcher<std::vector<SonarLiveTile>> reload_watcher_;
+  std::vector<gggs::GridIndex> reload_attempted_;
+  QRectF last_reload_viewport_;
+
+  // [camp#172] Footprint of the last fine tile evicted (set in evictIfOverBudget phase 1,
+  // so it is always non-zero once there is anything in evicted_fine_indices_ to reload).
+  // kickReload uses it to estimate how many fine tiles a reload would bring resident and
+  // cap the per-kick volume, so a wide zoom-out can't reload the whole survey in one shot
+  // and spike over budget before onReloadFinished()'s evict runs (ADR-0010 D6).
+  std::size_t last_evicted_fine_bytes_ = 0;
 
   // [camp#160] Monotonic access counter feeding Entry::last_access_seq (LRU
   // eviction fallback), and the resident-footprint budget for eviction

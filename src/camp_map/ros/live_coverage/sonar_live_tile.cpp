@@ -129,13 +129,19 @@ void SonarLiveTile::applyPatch(const marine_interfaces::msg::SonarVisualizationT
 
 void SonarLiveTile::foldChild(const SonarLiveTile& child)
 {
-  // [camp#160] Decimate a finer child into this coarser parent's matching
-  // sub-window for the overview pyramid. Both tiles are the same width x height
-  // (a parent cell therefore spans ~2x2 child cells). We area-map each child
-  // cell to the parent cell containing its geographic centre and average the
-  // finite, non-NoData samples landing in each parent cell — north-up, so row 0
-  // is the northernmost row. Only cells the child covers are written, so folding
-  // each of a parent's children in turn accumulates the full parent.
+  // [camp#160] Fold a finer child into this coarser parent's matching sub-window for
+  // the overview pyramid. Both tiles are the same width x height (a parent cell
+  // therefore spans ~2x2 child cells). We area-map each child cell to the parent cell
+  // containing its geographic centre and average the finite, non-NoData samples landing
+  // in each parent cell — north-up, so row 0 is the northernmost row. Only cells the
+  // child covers are written, so folding each of a parent's children in turn accumulates
+  // the full parent.
+  // [camp#171] This is the same geographic-centre + MEAN cell fold as the uma shared
+  // fold engine (marine_tiled_raster_store overview_builder.hpp buildParentTile<float>,
+  // imagery = mean policy) at the fixed uniform TiledRasterTile::edge — the live overview
+  // pyramid CONVERGES with the merged store's pyramid (ADR-0010 D3). The same-size
+  // parent/child is required here (each child fills a 1/4 sub-window), which is why the
+  // caller must build the parent at the child's width/height, not a decimated size.
   if(width_ <= 0 || height_ <= 0 || child.width_ <= 0 || child.height_ <= 0)
     return;
   const double parent_lon0 = minLon();

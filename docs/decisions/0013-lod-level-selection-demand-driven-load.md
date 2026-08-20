@@ -100,14 +100,22 @@ it. This is sound because the imagery overview fold is MEAN (uma ADR-0011), so
 overview values are contained in the fine range. A fold policy that can exceed
 the source range (none exists today) would need a reset-on-switch here.
 
-### The camp#172 hook (enabled, not implemented)
+### The camp#172 hook (implemented — camp#171/#172 PR)
 
 The demand-driven pattern — "the viewport exposes tiles whose pixels are not
 resident ⇒ kick a filtered load" — is exactly the reload seam
 `SonarLiveCacheLayer` needs for evicted tiles (camp#172), and the shared-fold
-adoption path (camp#171) rides the same structure. This PR deliberately keeps
-the hook clean (`hasUnloadedVisibleTiles()` + the snapshot-filtered worker) and
-implements neither.
+adoption path (camp#171) rides the same structure. That PR **implements** the
+hook: `SonarLiveCacheLayer::hasUnloadedVisibleTiles()` tests the evicted-fine
+index set against the viewport, and `paint()` kicks a snapshot-filtered
+`QtConcurrent` reload worker (loading each evicted fine tile's cached GeoTIFF),
+reusing this loader's moved-since-last-kick guard and the `waitForLoad()`-style
+headless seam (`waitForReload()`). The one addition over this layer's loader is a
+**reload-hysteresis** guard (ADR-0010 D6): the reload fires only while residency
+is below `0.75×` the eviction budget, so the reloaded tile cannot immediately
+re-trigger eviction (no reload↔evict ping-pong). camp#171 confirms the overview
+fold converges with the uma shared fold engine (uniform `TiledRasterTile::edge`,
+MEAN) — same geometry this ADR's overview render already assumes.
 
 ## Consequences
 

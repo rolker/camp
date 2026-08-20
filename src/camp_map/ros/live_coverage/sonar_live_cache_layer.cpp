@@ -66,6 +66,53 @@ double tileSceneDistanceSquared(const SonarLiveTile& tile, const QPointF& point)
   return dx * dx + dy * dy;
 }
 
+// [camp#172] Web-Mercator scene rect for a GGGS index, from its geographic extent
+// alone (no live tile needed — the tile has been evicted). Matches the extent math
+// itemsIntersecting() uses per tile, so the reload viewport test agrees with the draw
+// filter. North-up normalized.
+QRectF indexSceneRect(const gggs::GridIndex& index)
+{
+  const QPointF lo = web_mercator::geoToMap(
+    QGeoCoordinate(index.southLatitude(), index.westLongitude()));
+  const QPointF hi = web_mercator::geoToMap(
+    QGeoCoordinate(index.northLatitude(), index.eastLongitude()));
+  return QRectF(lo, hi).normalized();
+}
+
+// [camp#172] Off-thread reload worker: load each evicted fine tile's cached GeoTIFF
+// from the fine-tile cache dir. Takes everything by value so it is fully
+// self-contained — safe even if the layer is destroyed before it finishes (same
+// contract as writeTileToCache). Skips any index whose file is missing/unreadable;
+// the caller clears every attempted index regardless (onReloadFinished).
+//
+// Threading-model divergence from GggsTileLayer (deliberate): that loader supports
+// abort of an in-flight batch so a subsequent pan can cancel stale work; this worker
+// returns its tiles by value and is consumed via future().result() with NO abort. A
+// kick therefore always runs to completion — a subsequent pan cannot cancel it. Two
+// guards keep that cheap rather than costly: kickReload bounds each batch to a
+// quarter-budget of tiles (so an uncancellable kick is small), and the reload_attempted_
+// gate blocks overlapping kicks. Abort was not worth the extra machinery for batches this
+// bounded; revisit if the per-kick cap ever needs to grow.
+std::vector<SonarLiveTile> reloadTilesFromCache(std::vector<gggs::GridIndex> indices,
+                                                std::string dir, std::uint8_t level_value)
+{
+  namespace fs = std::filesystem;
+  const gggs::Level level(level_value);
+  std::vector<SonarLiveTile> loaded;
+  loaded.reserve(indices.size());
+  for(const gggs::GridIndex& index : indices)
+  {
+    const std::string stem = std::to_string(static_cast<int>(index.level())) + "_" +
+                             std::to_string(index.row()) + "_" +
+                             std::to_string(index.column()) + ".tif";
+    const std::string path = (fs::path(dir) / stem).string();
+    auto tile = SonarLiveTile::loadFromGeoTiff(path, level);
+    if(tile && tile->index().valid())
+      loaded.push_back(std::move(*tile));
+  }
+  return loaded;
+}
+
 // Off-thread write-through worker. Takes everything by value so it is fully
 // self-contained — safe even if the layer is destroyed before it finishes.
 // Atomic temp+rename for crash safety only (ADR-0006 D2).
@@ -114,6 +161,11 @@ SonarLiveCacheLayer::SonarLiveCacheLayer(MapItem* parent, Node* node,
   vram_budget_bytes_ = static_cast<std::size_t>(
     settings.value("LiveTileCache/max_vram_bytes", kDefaultBudgetBytes).toULongLong());
 
+  // [camp#172] The on-demand reload worker publishes its loaded tiles on the GUI
+  // thread via onReloadFinished() (queued by Qt from the watcher's finished signal).
+  connect(&reload_watcher_, &QFutureWatcher<std::vector<SonarLiveTile>>::finished, this,
+          [this]() { onReloadFinished(); });
+
   // Availability is cheap: subscribe to the catalog even while inactive so the
   // operator can see how much coverage the source holds. The tile stream stays
   // unsubscribed until enableLiveCoverage().
@@ -135,6 +187,9 @@ SonarLiveCacheLayer::~SonarLiveCacheLayer()
   shutting_down_ = true;
   for(QFutureWatcher<void>* watcher : write_watchers_)
     watcher->waitForFinished();
+  // [camp#172] Join the on-demand reload worker too (it is self-contained, so this is
+  // a pure lifetime join; shutting_down_ makes its finished-slot a no-op).
+  reload_watcher_.waitForFinished();
   // [camp#134] Release each tile's GL texture under the renderer's context (the
   // textures are owned by the Entries, not the renderer). The renderer frees its
   // own program/LUT/FBO/context in its destructor right after this.
@@ -257,6 +312,20 @@ void SonarLiveCacheLayer::disableLiveCoverage()
     return;
   enabled_ = false;
   unsubscribeTiles();
+  // [camp#172] Join any in-flight reload and drop the evicted-index bookkeeping — a
+  // disabled layer keeps its in-memory + on-disk cache but stops the reload machinery.
+  // [camp#171 triage] Synchronously consume the completed reload via onReloadFinished()
+  // (as waitForReload() does) rather than a bare reload_attempted_.clear(): the
+  // QFutureWatcher::finished delivery stays queued after waitForFinished(), so consuming
+  // it here — which clears reload_attempted_ — makes that queued slot no-op on the
+  // double-invoke guard (reload_attempted_.empty()). A bare clear instead leaves the
+  // queued finished to bind result() to a NEW in-flight future after a re-enable + kick,
+  // blocking the GUI thread and dropping that batch. onReloadFinished() is a no-op when
+  // no reload was in flight (reload_attempted_ empty), so this is safe unconditionally.
+  reload_watcher_.waitForFinished();
+  onReloadFinished();
+  evicted_fine_indices_.clear();
+  last_reload_viewport_ = QRectF();
   writeSettings();
   updateDisplay();
   update(boundingRect());
@@ -397,6 +466,9 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
     it = tiles_.emplace(index,
                         Entry{SonarLiveTile(index, msg.width, msg.height), nullptr, true, 0})
            .first;
+  // [camp#172] The index is resident again (live re-send) — drop it from the
+  // on-demand reload set so a pending reload doesn't redundantly reload it.
+  evicted_fine_indices_.erase(index);
   Entry& entry = it->second;
   entry.tile.applyPatch(msg);
   entry.texture_dirty = true;
@@ -473,6 +545,10 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
                              std::to_string(index.column()) + ".tif";
     std::error_code ec;
     fs::remove(fs::path(cache_dir_) / stem, ec);
+    // [camp#172] The disk copy is gone, so this index is no longer reloadable — drop
+    // it from the on-demand reload set, or kickReload() would snapshot it and
+    // loadFromGeoTiff() would fail forever with the index never cleared.
+    evicted_fine_indices_.erase(index);
     reconciler_.drop(index);
   }
   if(gl_current)
@@ -548,28 +624,41 @@ void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
 
 // -------------------------- eviction / overview pyramid ----------------------
 
-std::size_t SonarLiveCacheLayer::accountedBytes() const
+std::size_t SonarLiveCacheLayer::entryBytes(const Entry& e)
 {
-  // Total resident footprint: CPU band data (always present) plus the selected
-  // band's GL texture when uploaded, over BOTH fine tiles and overview (pyramid)
-  // tiles — the overviews grow with survey area, so they must count toward the
-  // budget or they'd be an unbounded second cache (ADR-0010 D1).
-  auto tileBytes = [](const Entry& e) -> std::size_t
-  {
-    std::size_t bytes = 0;
-    for(const auto& name : e.tile.bandNames())
-      if(const SonarLiveBand* band = e.tile.band(name))
-        bytes += band->data.size() * sizeof(float);
-    if(e.texture)
-      bytes += static_cast<std::size_t>(e.tile.width()) * e.tile.height() * sizeof(float);
-    return bytes;
-  };
+  // Resident footprint of one entry: CPU band data (always present) plus the selected
+  // band's GL texture when uploaded.
+  std::size_t bytes = 0;
+  for(const auto& name : e.tile.bandNames())
+    if(const SonarLiveBand* band = e.tile.band(name))
+      bytes += band->data.size() * sizeof(float);
+  if(e.texture)
+    bytes += static_cast<std::size_t>(e.tile.width()) * e.tile.height() * sizeof(float);
+  return bytes;
+}
+
+std::size_t SonarLiveCacheLayer::fineResidentBytes() const
+{
   std::size_t bytes = 0;
   for(const auto& item : tiles_)
-    bytes += tileBytes(item.second);
-  for(const auto& item : overview_tiles_)
-    bytes += tileBytes(item.second);
+    bytes += entryBytes(item.second);
   return bytes;
+}
+
+std::size_t SonarLiveCacheLayer::overviewResidentBytes() const
+{
+  std::size_t bytes = 0;
+  for(const auto& item : overview_tiles_)
+    bytes += entryBytes(item.second);
+  return bytes;
+}
+
+std::size_t SonarLiveCacheLayer::accountedBytes() const
+{
+  // Total resident footprint over BOTH fine tiles and overview (pyramid) tiles — the
+  // overviews grow with survey area, so they must count toward the budget or they'd be
+  // an unbounded second cache (ADR-0010 D1).
+  return fineResidentBytes() + overviewResidentBytes();
 }
 
 std::optional<QPointF> SonarLiveCacheLayer::currentViewCentre() const
@@ -588,11 +677,18 @@ std::optional<QPointF> SonarLiveCacheLayer::currentViewCentre() const
 
 void SonarLiveCacheLayer::foldIntoParent(const SonarLiveTile& fine)
 {
-  // Decimate a fine tile into its coarse parent and recurse up to level 0, so a
-  // zoomed-out view always has coverage even after the fine tiles are evicted.
-  // Overview tiles match the fine tile's width/height (standard pyramid) and are
-  // persisted under the `overviews/` cache sub-dir. They are never added to the
-  // reconciler (a local derived product; prune-on-absence must not touch them).
+  // Fold a fine tile into its coarse parent and recurse up to level 0, so a zoomed-out
+  // view always has coverage even after the fine tiles are evicted. Each overview tile
+  // is built at the fine tile's own width/height — the fixed uniform
+  // TiledRasterTile::edge — so this is the standard half-resolution-per-level pyramid
+  // and CONVERGES with the uma shared fold engine (overview_builder.hpp::buildParentTile
+  // folds every parent at the fixed TiledRasterTile<T>::edge with the MEAN cell policy):
+  // identical fidelity to the merged store's pyramid at the same zoom (ADR-0010 D3,
+  // camp#171). foldChild() requires parent and child to be the same size (it maps each
+  // child into a 1/4 sub-window), so the parent MUST match fine.width()/height(). They
+  // persist under the `overviews/` cache sub-dir (the uma sidecar layout) and are never
+  // added to the reconciler (a local derived product; prune-on-absence must not touch
+  // them).
   const gggs::GridIndex parent_index = gggs::parent(fine.index());
   if(!parent_index.valid())
     return;
@@ -667,8 +763,15 @@ void SonarLiveCacheLayer::evictIfOverBudget()
       if(it == tiles_.end())
         continue;
       foldIntoParent(it->second.tile);   // degrade to coarse parent (persists it)
+      // [camp#172] Remember a fine tile's resident footprint so kickReload can bound how
+      // many it reloads at once (captured before the texture is freed, so it reflects the
+      // full displayed cost a reload will re-incur once painted).
+      last_evicted_fine_bytes_ = entryBytes(it->second);
       it->second.texture.reset();
       tiles_.erase(it);
+      // [camp#172] Record it for on-demand reload: its disk copy survives (persisted by
+      // handleTile's write-through), so panning back can reload it (ADR-0010 D2).
+      evicted_fine_indices_.insert(index);
       evicted = true;
     }
   }
@@ -711,6 +814,162 @@ void SonarLiveCacheLayer::evictIfOverBudget()
     cached_image_ = QImage();
     update(boundingRect());
   }
+}
+
+// --------------------------- on-demand reload (#172) -------------------------
+
+bool SonarLiveCacheLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) const
+{
+  // [camp#172 / ADR-0013] Does the viewport expose an evicted fine tile whose disk copy
+  // is not resident? GUI thread. The tile is gone, so test the GGGS extent of the index
+  // directly (same extent math as itemsIntersecting's per-tile clip test). A null
+  // viewport (headless with no clip) matches nothing — reload is viewport-driven.
+  if(viewport_scene.isNull())
+    return false;
+  for(const gggs::GridIndex& index : evicted_fine_indices_)
+    if(indexSceneRect(index).intersects(viewport_scene))
+      return true;
+  return false;
+}
+
+void SonarLiveCacheLayer::kickReload(const QRectF& viewport_scene)
+{
+  // [camp#172] Snapshot the visible evicted indices + cache location into a
+  // self-contained worker and launch it (mirrors GggsTileLayer::loadTiles()). Record
+  // the kick's viewport so paint()'s re-kick fires only when the viewport actually
+  // moved, and the attempted set so onReloadFinished() clears it whether or not each
+  // load succeeds. Requires a known fine level to recover a GridIndex from a GeoTIFF.
+  //
+  // The `reload_attempted_` guard is load-bearing, not just an optimization: the
+  // watcher's `finished` signal is queued, so `isRunning()` flips false one event-loop
+  // hop BEFORE onReloadFinished() runs and consumes the result. A paint() in that
+  // window would otherwise pass the `!isRunning()` gate and `setFuture()` a second
+  // future — the pending onReloadFinished() would then read the NEW future's result()
+  // (possibly blocking the GUI thread), drop the first reload, and overwrite the
+  // attempted set. `reload_attempted_` is non-empty for exactly that window (kickReload
+  // sets it; onReloadFinished clears it), so gating on it empty closes the race.
+  if(reload_watcher_.isRunning() || !reload_attempted_.empty() || !level_ ||
+     viewport_scene.isNull())
+    return;
+  std::vector<gggs::GridIndex> visible;
+  for(const gggs::GridIndex& index : evicted_fine_indices_)
+    if(indexSceneRect(index).intersects(viewport_scene))
+      visible.push_back(index);
+  if(visible.empty())
+    return;
+
+  // [camp#172 / ADR-0010 D6] Bound the per-kick reload volume. onReloadFinished() inserts
+  // the whole batch BEFORE evictIfOverBudget() runs, so an unbounded kick (a wide
+  // zoom-out re-entering the whole survey) would spike residency far over budget in one
+  // shot. Cap the batch to a quarter-budget's worth of fine tiles — the same headroom the
+  // hysteresis gate guarantees before a kick — keeping the nearest-to-viewport-centre
+  // ones (the rest re-kick on the next paint once these are consumed and the viewport
+  // moves). last_evicted_fine_bytes_ is non-zero whenever there is anything to reload
+  // (eviction set it), so this only no-ops the cap when the budget is disabled.
+  if(vram_budget_bytes_ > 0 && last_evicted_fine_bytes_ > 0)
+  {
+    const std::size_t cap_bytes =
+      static_cast<std::size_t>(vram_budget_bytes_ * (1.0 - kReloadHysteresisFactor));
+    const std::size_t max_tiles = std::max<std::size_t>(1, cap_bytes / last_evicted_fine_bytes_);
+    if(visible.size() > max_tiles)
+    {
+      const QPointF centre = viewport_scene.center();
+      std::sort(visible.begin(), visible.end(),
+                [&](const gggs::GridIndex& a, const gggs::GridIndex& b)
+                {
+                  const QPointF ca = indexSceneRect(a).center();
+                  const QPointF cb = indexSceneRect(b).center();
+                  const double da = (ca.x() - centre.x()) * (ca.x() - centre.x()) +
+                                    (ca.y() - centre.y()) * (ca.y() - centre.y());
+                  const double db = (cb.x() - centre.x()) * (cb.x() - centre.x()) +
+                                    (cb.y() - centre.y()) * (cb.y() - centre.y());
+                  return da < db;
+                });
+      qInfo().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
+                        << "] reload capped to" << qulonglong(max_tiles) << "of"
+                        << qulonglong(visible.size())
+                        << "visible evicted tiles (nearest first); rest reload on later frames";
+      visible.resize(max_tiles);
+    }
+  }
+
+  last_reload_viewport_ = viewport_scene;
+  reload_attempted_ = visible;
+  reload_watcher_.setFuture(
+    QtConcurrent::run(reloadTilesFromCache, std::move(visible), cache_dir_, *level_));
+}
+
+void SonarLiveCacheLayer::onReloadFinished()
+{
+  // GUI thread (Qt-queued from the watcher's finished signal). Insert the reloaded fine
+  // tiles back into tiles_, then maintain the budget — ADR-0010 D6 hysteresis (paint()
+  // only kicks under 0.75x budget) keeps evictIfOverBudget() from immediately shedding
+  // what we just reloaded.
+  if(shutting_down_)
+    return;
+  // Idempotent + safe against a spurious call with no in-flight reload: reload_attempted_
+  // is non-empty exactly between a kickReload() and the matching onReloadFinished()
+  // (this clears it below). Guards both the double-invoke (explicit waitForReload() call
+  // plus the queued finished signal) and reading result() on a never-set future.
+  if(reload_attempted_.empty())
+    return;
+  const std::vector<SonarLiveTile> loaded = reload_watcher_.future().result();
+
+  // Clear EVERY attempted index (loaded or not): a permanently-unloadable index must
+  // not keep hasUnloadedVisibleTiles() true and re-kick on the next viewport move.
+  for(const gggs::GridIndex& index : reload_attempted_)
+    evicted_fine_indices_.erase(index);
+  reload_attempted_.clear();
+
+  bool inserted = false;
+  for(const SonarLiveTile& tile : loaded)
+  {
+    const gggs::GridIndex index = tile.index();
+    // A live re-send may have re-added it while the worker ran — newest resident wins.
+    if(tiles_.count(index))
+      continue;
+    tiles_.insert_or_assign(index, Entry{tile, nullptr, true, ++access_seq_});
+    // Defensive: possession was kept across eviction (D2 never drops markHave), so the
+    // reconciler already holds this index — but re-assert it so residency and possession
+    // can never silently diverge if that invariant is ever weakened. markHave is
+    // idempotent (newest version wins).
+    reconciler_.markHave(index, tile.version());
+    inserted = true;
+  }
+
+  if(!inserted)
+  {
+    updateDisplay();
+    return;
+  }
+
+  if(band_name_.empty())
+    band_name_ = defaultBand();
+  recomputeBounds();
+  resetAutoRange();
+  foldAutoRange();
+  evictIfOverBudget();   // maintain the budget; D6 hysteresis prevents a re-evict storm
+  updateDisplay();
+  cached_image_ = QImage();
+  update(boundingRect());
+}
+
+void SonarLiveCacheLayer::waitForReload(const QRectF& viewport_scene)
+{
+  // [camp#172] Test/headless analogue of paint()'s reload kick + GggsTileLayer's
+  // waitForLoad(): apply the SAME gate as paint() (idle + budget headroom via the D6
+  // hysteresis + viewport-moved-since-last-kick + an evicted visible tile), kick, then
+  // join and run the ready-slot so the reload is visible on return. Mirroring the full
+  // gate lets a test exercise the hysteresis guard by controlling the budget.
+  if(!reload_watcher_.isRunning() &&
+     reload_attempted_.empty() &&
+     vram_budget_bytes_ > 0 &&
+     accountedBytes() < static_cast<std::size_t>(vram_budget_bytes_ * kReloadHysteresisFactor) &&
+     viewport_scene != last_reload_viewport_ &&
+     hasUnloadedVisibleTiles(viewport_scene))
+    kickReload(viewport_scene);
+  reload_watcher_.waitForFinished();
+  onReloadFinished();
 }
 
 // ------------------------------ extent / range -------------------------------
@@ -962,6 +1221,23 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
   // (pan) changes; a viewport-sized FBO makes the per-frame pan re-render cheap.
   const raster::ViewportClip clip = raster::deriveViewportClip(
     painter, this, boundingRect(), scene_bounds_, kMaxImageEdge);
+
+  // [camp#172 / ADR-0010 D2/D6] On-demand reload: if the viewport now exposes an evicted
+  // fine tile and there is budget headroom (hysteresis, so the reload can't immediately
+  // re-trigger eviction), kick a filtered reload. The moved-since-last-kick guard
+  // (clip.scene != last_reload_viewport_) keeps a permanently-unloadable index from
+  // re-kicking every frame — mirrors GggsTileLayer's demand-driven loader. The
+  // `reload_attempted_.empty()` guard closes the queued-`finished` race (see kickReload):
+  // don't kick a second reload while a finished one's result is still unconsumed.
+  if(!reload_watcher_.isRunning() &&
+     reload_attempted_.empty() &&
+     vram_budget_bytes_ > 0 &&
+     accountedBytes() < static_cast<std::size_t>(vram_budget_bytes_ * kReloadHysteresisFactor) &&
+     clip.scene != last_reload_viewport_ &&
+     hasUnloadedVisibleTiles(clip.scene))
+  {
+    kickReload(clip.scene);
+  }
 
   if(cached_image_.isNull() || cached_size_ != clip.size ||
      cached_clip_ != clip.scene)
