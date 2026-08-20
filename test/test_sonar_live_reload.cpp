@@ -102,6 +102,47 @@ SonarLiveCacheLayer* seedAndEnable(const QString& cache_path, const QString& ns,
   return layer;
 }
 
+// Seed a CONTIGUOUS @p rows x @p cols block of fine tiles (adjacent row/col) so parents
+// actually share 4->1 up the pyramid — the overview pool stays geometrically bounded
+// (unlike a sparse lat scatter, where each fine tile gets its own parent chain and the
+// pyramid bloats). Used by the per-kick-cap test, which needs a predictable resident
+// footprint to reason about the quarter-budget cap.
+SonarLiveCacheLayer* seedContiguousAndEnable(const QString& cache_path, const QString& ns,
+                                             int rows, int cols, std::size_t budget,
+                                             camp::map::LayerList* layers)
+{
+  QSettings().setValue("LiveTileCache/cache_dir", cache_path);
+  QSettings().setValue("LiveTileCache/max_vram_bytes", qulonglong(budget));
+
+  const QString tile_dir = QDir(cache_path).filePath(sanitizeNamespace(ns));
+  QDir().mkpath(tile_dir);
+  const gggs::Level level(kLevel);
+  const gggs::GridIndex anchor = level.gridIndex(43.0, -70.5);
+  std::size_t n = 0;
+  for(int r = 0; r < rows; ++r)
+    for(int c = 0; c < cols; ++c)
+    {
+      marine_interfaces::msg::TileIndex ti;
+      ti.level = static_cast<std::uint8_t>(kLevel);
+      ti.row = anchor.row() + r;
+      ti.col = anchor.column() + c;
+      const gggs::GridIndex grid = camp::ros::live_coverage::gridIndexFromTileIndex(ti);
+      SonarLiveTile tile(grid, kEdge, kEdge);
+      tile.applyPatch(makeUniformDepth(grid, static_cast<std::int16_t>(300 + n)));
+      const QString path =
+        QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                  .arg(static_cast<int>(grid.level()))
+                                  .arg(grid.row())
+                                  .arg(grid.column()));
+      tile.writeToGeoTiff(path.toStdString());
+      ++n;
+    }
+
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  return layer;
+}
+
 }  // namespace
 
 // The whole point of #172: an evicted fine tile is reloaded from disk when the viewport
@@ -190,6 +231,61 @@ TEST(SonarLiveReload, ReloadHysteresisPreventsPingPong)
   layer->waitForReload(viewport);
   EXPECT_GT(layer->residentTileCount(), resident_before);
   EXPECT_EQ(layer->evictedFineCount(), std::size_t(0));
+  // The permitted reload stays within budget (here trivially — the headroom is vast; the
+  // meaningful budget-vs-reload interaction is BudgetBoundedReloadCapsPerKickVolume).
+  EXPECT_LE(layer->accountedBytes(), std::size_t(1) << 30);
+}
+
+// [camp#172 / ADR-0010 D6] A permitted reload never blows the budget, because kickReload
+// caps each batch to a quarter-budget of fine tiles (the headroom the hysteresis gate
+// guarantees) — a wide re-entry can't reload the whole survey in one over-budget spike.
+// With a moderate budget (headroom to reload, but well below the whole evicted set) one
+// waitForReload() brings SOME tiles back yet leaves the rest evicted, and residency stays
+// within budget. NOTE: this drives the deterministic waitForReload() seam (paint()'s
+// headless analogue, same gate); the live paint()->queued-`finished` path and its re-kick
+// race are guarded by the reload_attempted_ gate exercised there.
+TEST(SonarLiveReload, BudgetBoundedReloadCapsPerKickVolume)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+
+  // A contiguous 8x8 block so the overview pyramid stays geometrically bounded and the
+  // resident footprint is predictable. Small initial budget so warm-load evicts most of
+  // the 64 fine tiles into overviews (a large reload candidate set).
+  const std::size_t per_tile = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  const std::size_t small_budget = 8 * per_tile;
+
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer =
+    seedContiguousAndEnable(cache.path(), "/cap_test", 8, 8, small_budget, layers);
+
+  const std::size_t evicted_before = layer->evictedFineCount();
+  ASSERT_GT(evicted_before, std::size_t(4));   // a real reload candidate set
+  const std::size_t resident_before = layer->residentTileCount();
+  const QRectF viewport = layer->sceneBounds();
+  ASSERT_FALSE(viewport.isNull());
+
+  // Derive the reload budget from the measured post-eviction footprint so the test does
+  // not hard-code (fragile) pyramid sizes. budget = 2*A: the hysteresis gate (A < 0.75*2A)
+  // always opens, while the per-kick cap (0.25*2A = 0.5A worth of fine tiles) is smaller
+  // than the evicted set — so one reload brings back a bounded batch, not the whole block.
+  const std::size_t accounted_after_evict = layer->accountedBytes();
+  ASSERT_GT(accounted_after_evict, std::size_t(0));
+  const std::size_t reload_budget = 2 * accounted_after_evict;
+  layer->setResidentBudgetForTest(reload_budget);
+  layer->waitForReload(viewport);
+
+  // Some tiles reloaded ...
+  EXPECT_GT(layer->residentTileCount(), resident_before);
+  // ... but NOT all of them — the cap bounded the batch, so evicted tiles remain for a
+  // later frame (the whole survey did not reload in one over-budget kick).
+  EXPECT_GT(layer->evictedFineCount(), std::size_t(0));
+  EXPECT_LT(layer->evictedFineCount(), evicted_before);
+  // ... and residency stayed within budget across the permitted reload (no spike).
+  EXPECT_LE(layer->accountedBytes(), reload_budget);
 }
 
 int main(int argc, char** argv)
