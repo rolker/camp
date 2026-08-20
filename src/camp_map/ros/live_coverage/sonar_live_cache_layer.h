@@ -330,6 +330,13 @@ private:
   std::vector<gggs::GridIndex> reload_attempted_;
   QRectF last_reload_viewport_;
 
+  // [camp#172] Footprint of the last fine tile evicted (set in evictIfOverBudget phase 1,
+  // so it is always non-zero once there is anything in evicted_fine_indices_ to reload).
+  // kickReload uses it to estimate how many fine tiles a reload would bring resident and
+  // cap the per-kick volume, so a wide zoom-out can't reload the whole survey in one shot
+  // and spike over budget before onReloadFinished()'s evict runs (ADR-0010 D6).
+  std::size_t last_evicted_fine_bytes_ = 0;
+
   // [camp#160] Monotonic access counter feeding Entry::last_access_seq (LRU
   // eviction fallback), and the resident-footprint budget for eviction
   // (QSettings "LiveTileCache/max_vram_bytes", default 512 MiB — ADR-0006 D2 /

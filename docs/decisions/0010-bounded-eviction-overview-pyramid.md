@@ -161,6 +161,18 @@ so a permanently-unloadable evicted index re-kicks at most once per distinct vie
 never every frame. This is the GUI-thread-only (D4 / ADR-0006 D4) analogue of the
 demand-driven worker in `GggsTileLayer` (ADR-0013).
 
+The hysteresis blocks a *same-frame* reload↔evict ping-pong; it does **not** by itself
+eliminate *cross-pan* churn, where panning back and forth across a boundary reloads a
+region on one frame and evicts it a few frames later as a new region comes into view.
+That churn is bounded, not pathological: (a) each reload batch is capped to a
+quarter-budget of fine tiles (`kickReload`, using the last evicted tile's footprint), so
+a wide zoom-out cannot reload the whole survey in one transient over-budget spike; and
+(b) the reloads are display-grade off the disk cache — no network, no reconciler traffic
+(D2 keeps possession, so a reload never re-requests). Both make the worst case a bounded
+amount of local disk I/O, which is the accepted trade for pan-back recovering full
+resolution. A stronger anti-churn scheme (e.g. a dwell timer before eviction) was judged
+unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
+
 ## Consequences
 
 - Long surveys no longer grow resident memory/VRAM without bound; the crash scenario

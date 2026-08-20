@@ -84,6 +84,15 @@ QRectF indexSceneRect(const gggs::GridIndex& index)
 // self-contained — safe even if the layer is destroyed before it finishes (same
 // contract as writeTileToCache). Skips any index whose file is missing/unreadable;
 // the caller clears every attempted index regardless (onReloadFinished).
+//
+// Threading-model divergence from GggsTileLayer (deliberate): that loader supports
+// abort of an in-flight batch so a subsequent pan can cancel stale work; this worker
+// returns its tiles by value and is consumed via future().result() with NO abort. A
+// kick therefore always runs to completion — a subsequent pan cannot cancel it. Two
+// guards keep that cheap rather than costly: kickReload bounds each batch to a
+// quarter-budget of tiles (so an uncancellable kick is small), and the reload_attempted_
+// gate blocks overlapping kicks. Abort was not worth the extra machinery for batches this
+// bounded; revisit if the per-kick cap ever needs to grow.
 std::vector<SonarLiveTile> reloadTilesFromCache(std::vector<gggs::GridIndex> indices,
                                                 std::string dir, std::uint8_t level_value)
 {
@@ -746,6 +755,10 @@ void SonarLiveCacheLayer::evictIfOverBudget()
       if(it == tiles_.end())
         continue;
       foldIntoParent(it->second.tile);   // degrade to coarse parent (persists it)
+      // [camp#172] Remember a fine tile's resident footprint so kickReload can bound how
+      // many it reloads at once (captured before the texture is freed, so it reflects the
+      // full displayed cost a reload will re-incur once painted).
+      last_evicted_fine_bytes_ = entryBytes(it->second);
       it->second.texture.reset();
       tiles_.erase(it);
       // [camp#172] Record it for on-demand reload: its disk copy survives (persisted by
@@ -836,6 +849,42 @@ void SonarLiveCacheLayer::kickReload(const QRectF& viewport_scene)
       visible.push_back(index);
   if(visible.empty())
     return;
+
+  // [camp#172 / ADR-0010 D6] Bound the per-kick reload volume. onReloadFinished() inserts
+  // the whole batch BEFORE evictIfOverBudget() runs, so an unbounded kick (a wide
+  // zoom-out re-entering the whole survey) would spike residency far over budget in one
+  // shot. Cap the batch to a quarter-budget's worth of fine tiles — the same headroom the
+  // hysteresis gate guarantees before a kick — keeping the nearest-to-viewport-centre
+  // ones (the rest re-kick on the next paint once these are consumed and the viewport
+  // moves). last_evicted_fine_bytes_ is non-zero whenever there is anything to reload
+  // (eviction set it), so this only no-ops the cap when the budget is disabled.
+  if(vram_budget_bytes_ > 0 && last_evicted_fine_bytes_ > 0)
+  {
+    const std::size_t cap_bytes =
+      static_cast<std::size_t>(vram_budget_bytes_ * (1.0 - kReloadHysteresisFactor));
+    const std::size_t max_tiles = std::max<std::size_t>(1, cap_bytes / last_evicted_fine_bytes_);
+    if(visible.size() > max_tiles)
+    {
+      const QPointF centre = viewport_scene.center();
+      std::sort(visible.begin(), visible.end(),
+                [&](const gggs::GridIndex& a, const gggs::GridIndex& b)
+                {
+                  const QPointF ca = indexSceneRect(a).center();
+                  const QPointF cb = indexSceneRect(b).center();
+                  const double da = (ca.x() - centre.x()) * (ca.x() - centre.x()) +
+                                    (ca.y() - centre.y()) * (ca.y() - centre.y());
+                  const double db = (cb.x() - centre.x()) * (cb.x() - centre.x()) +
+                                    (cb.y() - centre.y()) * (cb.y() - centre.y());
+                  return da < db;
+                });
+      qInfo().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
+                        << "] reload capped to" << qulonglong(max_tiles) << "of"
+                        << qulonglong(visible.size())
+                        << "visible evicted tiles (nearest first); rest reload on later frames";
+      visible.resize(max_tiles);
+    }
+  }
+
   last_reload_viewport_ = viewport_scene;
   reload_attempted_ = visible;
   reload_watcher_.setFuture(
