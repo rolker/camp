@@ -298,3 +298,23 @@ not raised by Copilot and stay deferred with their recorded rationale
 duplication; transient burst-fold peak; high-lat band seam — pre-existing store
 behavior; ADR fidelity wording). The disable/re-enable edge graduates from
 deferred to must-fix on cross-confirmation.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-20 19:36 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-171 at `05ff4ff` (progress commit follows this entry)
+**Addressed**: Integrated Review of 2026-08-20 15:32 -04:00 (PR #190 at `9c69f69`) — its single cross-confirmed must-fix (Local R2 deferred-suggestion + Copilot @ head). No other open actions (the five other R2 suggestions stay deferred per that entry's reconciliation; not this skill's to reopen).
+**Commits**: `05ff4ff` (fix + box-check)
+
+### Actions
+- [x] (cross-confirmed) `disableLiveCoverage()` now synchronously consumes the completed reload via `onReloadFinished()` after `reload_watcher_.waitForFinished()`, replacing the bare `reload_attempted_.clear()`. `onReloadFinished()` clears `reload_attempted_`, so the still-queued `QFutureWatcher::finished` delivery no-ops on the `reload_attempted_.empty()` double-invoke guard — a re-enable + new kick can no longer bind the stale slot's `result()` to a NEW in-flight future (which blocked the GUI thread and dropped the old batch). Mirrors the in-file `waitForReload()` pattern; safe unconditionally since `onReloadFinished()` early-returns when no reload was in flight. `evicted_fine_indices_.clear()` is retained (drops the remaining evicted bookkeeping `onReloadFinished()` doesn't touch). — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:309-333` (`05ff4ff`)
+
+### Build / test note
+`cppcheck --enable=warning,performance` clean on the changed file (the sole diagnostic is a pre-existing `unknownMacro` on Qt's `slots` in an unrelated header, suppressed). Lower dependency layers are unbuilt in this worktree, so camp could not be compiled and `test_sonar_live_eviction` / `test_sonar_live_reload` could not be run — same limitation recorded in Rounds 1–2. **The re-review must build camp and run both gtests to confirm green** — the compile/test gate is unverified locally. No new test was added: the disable/re-enable → queued-`finished` → GUI-thread `result()` interleave requires a live QEventLoop delivering the queued `finished` slot after a real `paint()`-driven kick, which is not headlessly reproducible (same non-headless constraint noted for the finding-1 gate in prior rounds); the fix is covered structurally by the double-invoke guard it now leans on.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fix). Dispatch a fresh-context sub-agent:
+`.agent/scripts/dispatch_subagent.sh --mode in-process --issue 171 --skill review-code`.
+No push performed (host pushes).
