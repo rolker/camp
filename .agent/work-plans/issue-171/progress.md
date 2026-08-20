@@ -215,3 +215,36 @@ Static analysis: cppcheck clean (lone Qt `slots`-macro note is a config artifact
 - [x] (suggestion) ReloadHysteresisPreventsPingPong never asserts `accountedBytes() <= budget` after a permitted reload; both reload tests drive only synchronous `waitForReload()`, never the production `paint()`→queued-`finished` path (finding 1). — `test/test_sonar_live_reload.cpp`
 - [x] (suggestion) Reloaded tile reinserted without `reconciler_.markHave()`; harmless today but relies on a remote invariant — add a defensive markHave. — `sonar_live_cache_layer.cpp:864`
 - [x] (suggestion) Document the deliberate threading-model divergence from `GggsTileLayer` (return-by-value + `result()`, no abort) — a large kick can't be cancelled by a subsequent pan. — `sonar_live_cache_layer.cpp:64`
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-20 18:48 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-171 at `cdcdfb2`
+**Addressed**: Local Review (Pre-Push) (When 2026-08-20 18:32 +00:00, branch at `63c4708`) — all 1 must-fix + 6 suggestions
+**Commits**: `b1c8ee2`, `5771e8d`, `a06f8ea`, `984e1df`, `cdcdfb2`
+
+### Actions
+- [x] (must-fix) Gate reload kicks on `reload_attempted_.empty()` — `sonar_live_cache_layer.cpp` (kickReload guard, `paint()` gate, `waitForReload()` gate) + header `reload_attempted_` doc. Closes the queued-`finished` race: the watcher's `finished` signal is queued, so `isRunning()` flips false one hop before `onReloadFinished()` consumes the result; a paint in that window would `setFuture()` a second future and the pending slot would read the *new* future's `result()`. `reload_attempted_` is non-empty for exactly that window, so gating on it empty is the load-bearing guard (commit `b1c8ee2`).
+- [x] (suggestion) Bound per-kick reload volume, nearest-first — `kickReload` now caps the batch to a quarter-budget of fine tiles (using `last_evicted_fine_bytes_`, recorded in `evictIfOverBudget` phase 1) and keeps the ones nearest the viewport centre; a `qInfo` logs when the cap drops tiles (no silent truncation). The remainder reload on a later frame once the viewport moves (commit `5771e8d`).
+- [x] (suggestion) Cross-pan reload↔evict thrash — documented in ADR-0010 D6: the hysteresis blocks same-frame ping-pong, not cross-pan churn, which is bounded (per-kick cap + disk-only/no-reconciler reloads) and judged acceptable at the lake/harbour envelope; a dwell-timer scheme was considered and deferred (commit `5771e8d`).
+- [x] (suggestion) Document the no-abort threading divergence — comment on `reloadTilesFromCache`: unlike `GggsTileLayer`, this worker returns by value + `result()` with no abort, so a kick always runs to completion; kept cheap by the per-kick cap + the `reload_attempted_` gate (commit `5771e8d`).
+- [x] (suggestion) Defensive `reconciler_.markHave()` on reload reinsert — `onReloadFinished` re-asserts possession so residency and possession can't silently diverge if D2's keep-possession invariant is ever weakened; `markHave` is idempotent (commit `a06f8ea`).
+- [x] (suggestion) EvictionHeadroomAtSurveyScale — replaced the near-tautological `overviewResidentBytes() < budget` with a geometric-bound assertion: `overviewTileCount()` ≤ the set of every parent the full 10×10 block folds into (walking `gggs::parent()` to level 0), and that set is strictly smaller than the fine-tile count — the actual 4→1 collapse (commit `984e1df`).
+- [x] (suggestion) ReloadHysteresisPreventsPingPong / budget-after-reload — added `accountedBytes() <= budget` after the permitted reload, plus a new `BudgetBoundedReloadCapsPerKickVolume` test (contiguous 8×8 block, budget derived from measured post-eviction footprint) that proves one reload brings back a *bounded* batch and leaves the rest evicted while residency stays within budget (commit `cdcdfb2`). **Partial:** the tests drive the deterministic `waitForReload()` seam (paint()'s headless analogue, same gate); the live `paint()`→queued-`finished` path is not exercised because it needs a real `QGraphicsView`/`QPainter` transform — impractical headless. The queued-`finished` race it would exercise is closed structurally by the must-fix `reload_attempted_` gate. Noted in the test comment; a paint-path integration test is left for a GUI-harnessed suite if one is added.
+
+### Build / test note
+The lower dependency layers (underlay/core/platforms/sensors/simulation) are **not built** in this
+sub-agent's environment (no `install/` trees; `marine_ais_msgs` and the rest resolve nowhere), so
+`camp` could not be compiled or the gtests run here — a full-chain rebuild is outside address-findings'
+"quick local checks" scope. Changes were verified by static inspection and `cppcheck`
+(`--enable=warning,performance`, clean on the diff aside from the two pre-existing intentional
+by-value QtConcurrent-worker params and the Qt `slots`-macro config artifact the pre-push review already
+dismissed). **The re-review must build camp and run `test_sonar_live_eviction` + `test_sonar_live_reload`
+(now 3 reload cases) to confirm green** — treat the compile/test gate as unverified locally.
+
+### Next step
+Lifecycle: **Implementation** → **review-code** (re-review the fixes). Dispatch a fresh-context
+sub-agent: `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 171 --skill review-code`.
+No push performed (host pushes).
