@@ -13,12 +13,17 @@ struct AISContactDetails
 {
   AISContactDetails();
   AISContactDetails(const marine_ais_msgs::msg::AISContact& message);
-  uint32_t mmsi;
+  uint32_t mmsi = 0;
   std::string name;
-  float dimension_to_stbd; 
-  float dimension_to_port;
-  float dimension_to_bow;
-  float dimension_to_stern;
+  // Zero is AIS's "dimension not available", and is what shape() already
+  // tests to fall back from a ship outline to a triangle. Initialising to it
+  // means a details object built before any report describes an unknown-size
+  // vessel rather than one whose dimensions are whatever was on the stack --
+  // those feed drawShipOutline directly.
+  float dimension_to_stbd = 0.0f;
+  float dimension_to_port = 0.0f;
+  float dimension_to_bow = 0.0f;
+  float dimension_to_stern = 0.0f;
 };
 
 struct AISContactState

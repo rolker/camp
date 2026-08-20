@@ -29,6 +29,19 @@ marine_ais_msgs::msg::AISContact contactWithVelocity(double x, double y)
 
 }  // namespace
 
+TEST(AISContactDetails, DefaultConstructedDimensionsAreUnknownNotGarbage)
+{
+  // Zero is AIS's "not available" for dimensions, and what AISContact::shape()
+  // tests to choose a triangle over a ship outline. Uninitialised members
+  // would feed drawShipOutline whatever was on the stack.
+  AISContactDetails details;
+  EXPECT_EQ(0u, details.mmsi);
+  EXPECT_FLOAT_EQ(0.0f, details.dimension_to_bow);
+  EXPECT_FLOAT_EQ(0.0f, details.dimension_to_stern);
+  EXPECT_FLOAT_EQ(0.0f, details.dimension_to_port);
+  EXPECT_FLOAT_EQ(0.0f, details.dimension_to_stbd);
+}
+
 TEST(AISContactState, DefaultConstructedValuesAreUnknownNotGarbage)
 {
   AISContactState state;
