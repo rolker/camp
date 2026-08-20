@@ -120,3 +120,75 @@ could not be re-fetched. The review relies on the `## Issue Review` entry above
 - [ ] (suggestion) Test seams: Step 5a's "overview footprint < budget/4" needs a per-pool byte seam (only `overviewTileCount()`/`accountedBytes()` exist today); Step 5b reload tests need a `waitForReload()` headless seam mirroring `GggsTileLayer::waitForLoad()`. Declare these in the header change list. — `plan.md:124,131-136`
 - [ ] (suggestion) On-disk migration: overviews written by the pre-fix (uniform-size) code warm-load at their old full size and mix with decimated folds until re-evicted. Low impact (display-grade, self-heals on next eviction/regen) but worth a line in ADR-0010 Consequences. — `plan.md:69-70`
 - [ ] (suggestion) ADR-0010 amendment should reconcile the existing "Alternatives considered" entry ("rejected fixed-64×64 in favour of matching fine dimensions … uniform tile size") which the decimation decision now reverses — otherwise stale contradictory rationale remains in the ADR. — `plan.md:36-42`
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-20 18:20 +00:00
+**By**: Claude Opus
+
+**Branch**: feature/issue-171
+**Commits** (this work unit, atop `123654d`):
+- `0e6af1e` plan: revise for uma-convergence geometry + review findings
+- `460c726` docs: amend ADR-0010 (convergence + D6 hysteresis) and ADR-0013 (#172 hook implemented)
+- `39a6f65` live coverage: implement #172 on-demand reload; document #171 uma convergence
+- `5ba1457` test: eviction-headroom + on-demand reload regressions
+- `b18c268` plan: record implementation divergences
+
+**Build/tests**: `camp` builds clean (ui_ws build.sh chain: underlay `sound_play` +
+core nav/tiled-raster-store built first, all green). Full suite via `colcon test`:
+**224 tests, 0 errors, 0 failures, 13 skipped** (skips are offscreen-GL renders). The
+two new/extended sonar tests pass (`test_sonar_live_eviction` 2/2,
+`test_sonar_live_reload` 2/2).
+
+### What landed
+
+**Plan revision (operator checkpoint applied).** Pyramid geometry = the uma fold engine
+AS-IS (fixed uniform `TiledRasterTile::edge` parents, half-res-per-level, MEAN) — the
+plan's `⌊W/2⌋` decimation was DROPPED. Key finding: `foldChild()` **requires** a
+same-size parent/child (it maps each child into a ¼ sub-window), so a decimated parent
+would break it — the uniform edge is the *only* valid choice, and the shipped
+`foldIntoParent()` already produces it. Hence **#171 carries no fold-geometry code
+change**; it is documented as convergence with the merged store's pyramid. Catalog-prune
+propagation is scoped to a tracked follow-up per operator decision 2.
+
+**Governance.** ADR-0010: D3 reframed as convergence (not a camp divergence); the
+`⌊W/2⌋` option recorded as rejected; "Alternatives considered" fixed-64×64 entry reconciled
+(uniform size *is* the convergence choice — not reversed); D2 no-reload limitation removed;
+**D6 reload-hysteresis** added; Consequences state the 1.33× memory series and that **no
+on-disk migration** is needed (geometry unchanged). ADR-0013 §"camp#172 hook" marked
+implemented, with the hysteresis addition noted.
+
+**#172 reload (the field-collapse remedy).** `evictIfOverBudget()` records evicted fine
+indices; `paint()` kicks a snapshot-filtered `QtConcurrent` reload worker under the D6
+hysteresis (`< 0.75×` budget) + a moved-since-last-kick guard (reusing the ADR-0013-named
+`hasUnloadedVisibleTiles()` seam); `onReloadFinished()` reinserts on the GUI thread and
+clears every *attempted* index (loaded or not — a permanently-unloadable index can't
+re-kick forever). `handleCatalog()` prune and `handleTile()` re-send both drop the index
+from the reload set; destructor + `disableLiveCoverage()` join/cancel the worker. Mirrors
+`GggsTileLayer`'s demand-driven loader incl. a `waitForReload()` headless seam.
+
+### Review findings dispositions (all 5 must-fix + 5 suggestions)
+- MF1/MF2 (decimation = divergence / resolution trade): resolved by DROPPING `⌊W/2⌋`;
+  ADR-0010 D3 now records convergence, no quarter-res trade exists.
+- MF3 (handleCatalog prune erases evicted index): done.
+- MF4 (moved-since-kick guard + clear attempted-but-failed): done (both).
+- MF5 (register new gtest): done via `ament_add_gtest(test_sonar_live_reload …)`.
+- S6 (reuse `hasUnloadedVisibleTiles()` name): done.
+- S7 (use GggsTileLayer loader as template): done (incl. `waitForReload()`).
+- S8 (per-pool byte seam + `waitForReload()`): done (`fineResidentBytes`/
+  `overviewResidentBytes`; `accountedBytes()` made public).
+- S9 (on-disk migration note): resolved as "no migration" — geometry unchanged (see
+  divergence note in plan.md; the original concern assumed the dropped `⌊W/2⌋`).
+- S10 (reconcile "Alternatives considered"): done.
+
+### Divergences from plan
+Recorded in `plan.md` §"Implementation Divergences": eviction-headroom test uses a
+**contiguous 10×10 GGGS block** with budget > pyramid (a sparse scatter or a
+one-fine-tile budget cannot show headroom — that is LOD, remedied by reload); tiny-budget
+test asserts per-pool seam consistency instead of a ratio; `waitForReload()` mirrors the
+full `paint()` gate; added `setResidentBudgetForTest()` + `evictedFineCount()` seams.
+
+### Next step
+Ready for `/review-code`. No push performed (host pushes). The catalog-prune /
+nightly-regen anti-clobber follow-up issue should be filed by the host at the publish
+checkpoint (operator decision 2).
