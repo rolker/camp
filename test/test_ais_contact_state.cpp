@@ -73,6 +73,8 @@ TEST(AISContactState, MovingContactYieldsSpeedAndCourse)
   AISContactState state(contactWithVelocity(3.0, 4.0));
   EXPECT_FLOAT_EQ(5.0f, state.sog);
   ASSERT_FALSE(std::isnan(state.cog));
-  EXPECT_GE(state.cog, 0.0f);
-  EXPECT_LT(state.cog, 360.0f);
+  // ENU (east=3, north=4) is a true course of atan2(3,4) = 036.87 degrees.
+  // Pinned: a range-only assertion would accept the mirrored 323.13 the old
+  // -angle() form produced.
+  EXPECT_NEAR(36.8699f, state.cog, 0.01f);
 }
