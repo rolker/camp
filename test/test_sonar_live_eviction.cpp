@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <set>
 
 #include <QApplication>
 #include <QDir>
@@ -210,10 +211,36 @@ TEST(SonarLiveEviction, EvictionHeadroomAtSurveyScale)
   // ... but does NOT shed every fine tile — the collapse regression: headroom remains
   // for fine detail near the (headless: most-recent) view.
   EXPECT_GT(layer->residentTileCount(), std::size_t(0));
-  // ... and the overview pyramid itself stays bounded well under the budget (it did not
-  // grow to consume it, as it did in the field). Both pools present.
+
+  // ... and the overview pyramid stays bounded by GEOMETRY, not by phase-2's budget
+  // backstop. `overviewResidentBytes() < budget` is near-tautological — phase-2 eviction
+  // evicts overviews precisely to hold `accountedBytes() <= budget`, so it would pass even
+  // for an unbounded same-count re-tiling. Assert the pyramid tile COUNT against the
+  // geometric bound instead: the set of every parent the full 10x10 block could fold into
+  // (walk `gggs::parent()` to level 0). Every built overview key is such a parent, so the
+  // resident overview count can never exceed this set — and the set is strictly smaller
+  // than the fine-tile count, which is exactly the 4->1 collapse that frees the headroom
+  // the field regression never got (folding produced no fewer cells there).
+  std::set<gggs::GridIndex> pyramid_parents;
+  for(int r = 0; r < kRows; ++r)
+    for(int c = 0; c < kCols; ++c)
+    {
+      marine_interfaces::msg::TileIndex ti;
+      ti.level = static_cast<std::uint8_t>(kLevel);
+      ti.row = anchor.row() + r;
+      ti.col = anchor.column() + c;
+      gggs::GridIndex p =
+        gggs::parent(camp::ros::live_coverage::gridIndexFromTileIndex(ti));
+      while(p.valid())
+      {
+        pyramid_parents.insert(p);
+        p = gggs::parent(p);
+      }
+    }
   EXPECT_GT(layer->overviewTileCount(), std::size_t(0));
-  EXPECT_LT(layer->overviewResidentBytes(), budget);
+  EXPECT_LE(layer->overviewTileCount(), pyramid_parents.size());
+  // The collapse itself: the whole pyramid has strictly fewer cells than the fine tiles.
+  EXPECT_LT(pyramid_parents.size(), kTiles);
 }
 
 int main(int argc, char** argv)
