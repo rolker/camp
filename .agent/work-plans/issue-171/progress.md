@@ -248,3 +248,30 @@ dismissed). **The re-review must build camp and run `test_sonar_live_eviction` +
 Lifecycle: **Implementation** → **review-code** (re-review the fixes). Dispatch a fresh-context
 sub-agent: `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 171 --skill review-code`.
 No push performed (host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-20 19:00 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-171 at `d5cb0b1`
+**Mode**: pre-push
+**Depth**: Deep (reason: cross-thread QtConcurrent reload worker + GUI-thread-only mutation + lifecycle joins; substantive ADR-0010/0013 rewrites)
+**Must-fix**: 0 | **Suggestions**: 6
+**Round**: 2 | **Ship**: recommended — 0 must-fix; Round 1's 1 must-fix + 6 suggestions all verified addressed. Remaining items are non-blocking robustness/doc suggestions.
+
+Static analysis: cppcheck clean on the diff (only the two intentional by-value QtConcurrent worker params + the Qt `slots`-macro config artifact, both dismissed in Round 1). Claude Adversarial: 2 fresh-context passes (Lens A logic + Lens B concurrency). Copilot: off (default). Local: skipped (no Ollama server). **Build/test gate UNVERIFIED locally** — `core_ws/install` is empty in this worktree, so camp could not be compiled and `test_sonar_live_eviction` / `test_sonar_live_reload` could not be run (same limitation as Round 1); CI must confirm green before merge.
+
+Round-1 verification: the load-bearing `reload_attempted_.empty()` gate (must-fix) correctly closes the queued-`finished` re-kick race (confirmed independently by Lens B); per-kick cap, D6 doc, no-abort doc, defensive markHave, geometric-bound eviction assertion, and budget-after-reload/cap tests all present and correct. Destructor ordering, worker self-containment (capture-by-value), GUI-thread-only invariant, and the double-invoke guard all hold under adversarial reading.
+
+### Findings
+- [ ] (suggestion) ADR-0010 D3 "identical fidelity to the merged store's pyramid" overstates: uma folds depth shallowest-preserving (D9), camp live folds by mean; defensible since the visualization tile is imagery-class (scalar, no value/uncertainty pair), but scope the claim to the imagery/mean path and note it is NOT the nav-grade shoal-preserving depth pyramid — `docs/decisions/0010-bounded-eviction-overview-pyramid.md` (D3)
+- [ ] (suggestion) `disableLiveCoverage()` clears `reload_attempted_` out-of-band without consuming the queued `finished`; a stale `finished` after re-enable + a new kick could `result()` on the new in-flight future and block the GUI thread. Prefer `onReloadFinished()` / watcher reset over a bare clear — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:317`
+- [ ] (suggestion) Reload can resurrect a catalog-pruned tile: an in-flight reload of X that already read disk, interleaved with a `handleCatalog` prune of X, re-inserts + re-`markHave`s X (self-corrects next reconcile). Skip loaded indices `reconciler_.versionOf()` no longer holds — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:917`
+- [ ] (suggestion) Hysteresis headroom gate (`accountedBytes() < 0.75*budget`) is duplicated in `paint()` + `waitForReload()` but absent from `kickReload()` (which enforces only the per-batch cap); a future caller forgetting it reintroduces churn — consider moving it into `kickReload` — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:827`
+- [ ] (suggestion) `accountedBytes()` can transiently rise within a phase-1 eviction pass when `foldIntoParent` allocates a fresh ancestor chain; loop still terminates + phase 2 converges, but a burst-fold can momentarily peak above budget — worth a one-line comment on the transient overshoot — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:750`
+- [ ] (suggestion) `foldChild`'s same-size "1/4 sub-window" invariant (now called a hard invariant in D3) breaks at ±72/±80 GGGS latitude-band boundaries (parent lon-span != 2x child) → possible high-lat overview seam; already a tracked ADR follow-up, both tests anchor at 43N so it is unexercised. A high-latitude boundary test would close it — `src/camp_map/ros/live_coverage/sonar_live_tile.cpp:129`
+
+### Next step
+Lifecycle: **Local Review** → push / open PR → **triage-reviews**. Verdict is **approved** (0 must-fix); the 6 suggestions are non-blocking. Optionally apply the two cheap robustness suggestions (disable-clear, kickReload gate) before push, then hand off to a fresh-context sub-agent for triage-reviews once pushed. No push performed (host pushes).
