@@ -76,3 +76,15 @@ Per the consequences map and the code:
 - [ ] Add regression test: eviction at realistic survey scale (e.g., 38 fine tiles + 45 overview tiles) leaves budget headroom after the fix rather than shedding all fine tiles.
 - [ ] Add regression test: an evicted fine tile is reloaded on-demand when the viewport re-enters its area (hysteresis / budget-margin must prevent immediate re-eviction).
 - [ ] Confirm nightly-regen anti-clobber / catalog-prune propagation scope (in this PR or a tracked follow-up).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-20 17:32 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-171/plan.md` at `447eec3`
+**Branch**: feature/issue-171 at `447eec3`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
