@@ -129,8 +129,20 @@ void AISContact::updateLabel()
 
   if(!m_states.empty())
   {
-    label += "\nsog: " + QString::number(int(m_states.rbegin()->second.sog*10)/10.0) + " m/s";
-    label += "\ncog: " + QString::number(int(m_states.rbegin()->second.cog));
+    // NaN means the value is genuinely unavailable -- either AIS reported its
+    // not-available sentinel, or the contact is not moving so no course can be
+    // derived. Say so rather than printing a number. The int() casts these
+    // replace were also undefined behaviour on NaN, which is how an absent
+    // value reached the label as a huge one.
+    const auto& state = m_states.rbegin()->second;
+    if(std::isnan(state.sog))
+      label += "\nsog: n/a";
+    else
+      label += "\nsog: " + QString::number(state.sog, 'f', 1) + " m/s";
+    if(std::isnan(state.cog))
+      label += "\ncog: n/a";
+    else
+      label += "\ncog: " + QString::number(static_cast<int>(state.cog));
   }
   setLabel(label);
 }

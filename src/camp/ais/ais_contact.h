@@ -2,6 +2,7 @@
 #define CAMP_AIS_CONTACT_H
 
 #include <QObject>
+#include <cmath>
 #include "../ship_track.h"
 #include "marine_ais_msgs/msg/ais_contact.hpp"
 #include "../locationposition.h"
@@ -26,9 +27,16 @@ struct AISContactState
   AISContactState(const marine_ais_msgs::msg::AISContact& message);
   rclcpp::Time timestamp;
   LocationPosition location;
-  double heading;
-  float cog;
-  float sog;
+  // Initialised to NaN, the "unavailable" value the rest of the AIS path
+  // already uses. None of these is guaranteed to be assigned: a contact that
+  // is not moving never computes a course, and AIS reports SOG/COG as
+  // unavailable often enough (the parser writes NaN into the twist) that the
+  // motion vector is frequently NaN, which fails the > 0.0 test the same way.
+  // Left uninitialised, the label rendered whatever was on the stack as a
+  // course over ground.
+  double heading = std::nan("");
+  float cog = std::nan("");
+  float sog = std::nan("");
 };
 
 struct AISReport: public QObject, AISContactDetails, AISContactState
