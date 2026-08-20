@@ -921,6 +921,11 @@ void SonarLiveCacheLayer::onReloadFinished()
     if(tiles_.count(index))
       continue;
     tiles_.insert_or_assign(index, Entry{tile, nullptr, true, ++access_seq_});
+    // Defensive: possession was kept across eviction (D2 never drops markHave), so the
+    // reconciler already holds this index — but re-assert it so residency and possession
+    // can never silently diverge if that invariant is ever weakened. markHave is
+    // idempotent (newest version wins).
+    reconciler_.markHave(index, tile.version());
     inserted = true;
   }
 
