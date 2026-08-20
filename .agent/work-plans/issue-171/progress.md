@@ -318,3 +318,39 @@ deferred to must-fix on cross-confirmation.
 Lifecycle: **Implementation** → **review-code** (re-review the fix). Dispatch a fresh-context sub-agent:
 `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 171 --skill review-code`.
 No push performed (host pushes).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-20 19:44 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: approved
+
+**Branch**: feature/issue-171 at `27954ed` (fix commit `05ff4ff`)
+**Mode**: pre-push
+**Depth**: Deep (reason: cross-thread QtConcurrent reload worker + GUI-thread-only mutation + lifecycle join in the changed function)
+**Must-fix**: 0 | **Suggestions**: 0 new
+**Round**: 3 | **Ship**: recommended — single incremental fix (`05ff4ff`) verified; 0 must-fix; Integrated Review's cross-confirmed must-fix closed.
+
+Round-3 focused re-review of the ONLY new code since the Round-2 approval (`d5cb0b1`) + Integrated Review (PR #190 @ `9c69f69`): the 10-line `disableLiveCoverage()` fix (`05ff4ff`). The twice-reviewed remainder is not re-litigated. Static analysis: cppcheck clean on the diff (only the pre-existing Qt `slots` `unknownMacro` artifact, dismissed Rounds 1–2). Claude Adversarial: 2 fresh-context passes (Lens A logic + Lens B concurrency), scoped to the fix. Copilot: off (default). Local: skipped (no Ollama server).
+
+### Outcome
+The fix replaced a bare `reload_attempted_.clear()` in `disableLiveCoverage()` with `onReloadFinished()` right after `reload_watcher_.waitForFinished()`. Verified correct end-to-end and cross-confirmed by an independent concurrency pass:
+- **Race closed**: after the worker is joined, the synchronous `onReloadFinished()` consumes `result()` (no GUI block) and clears `reload_attempted_`; the still-queued `finished` slot drains as a no-op via the `reload_attempted_.empty()` guard before any re-enable-driven re-kick (posted-event ordering). No interleaving binds the stale slot to a new in-flight future.
+- **Consistent with the destructor** (which relies on `shutting_down_` early-return) and **mirrors the reviewed `waitForReload()` pattern**.
+
+### Adversarial adjudication (Lens A false positives — recorded)
+- FP1 — "add `if(!enabled_) return;` to `onReloadFinished()`": actively wrong. `disableLiveCoverage()` sets `enabled_=false` BEFORE calling `onReloadFinished()`; an `enabled_` early-return would stop `reload_attempted_` from being cleared and REOPEN the exact race. `onReloadFinished()` guards only on `shutting_down_` and `reload_attempted_.empty()` (`sonar_live_cache_layer.cpp:908,914`).
+- FP2 — "clearing `evicted_fine_indices_` leaks evicted tiles": `evicted_fine_indices_` is transient GUI-thread reload bookkeeping; on-disk GeoTIFFs are the source of truth. `enableLiveCoverage()`→`warmLoad()` (`:291,:334`) rebuilds resident state + replays the catalog on every re-enable, so clearing on disable is intended (pre-existing behavior).
+- Benign behavior change (not a finding): a reload batch completing during disable is now folded into `tiles_` + budget-maintained (was discarded pre-fix) — consistent with "disabled layer keeps its in-memory cache", bounded by the per-kick cap. Double `updateDisplay()`/`update()` coalesces to one repaint — harmless.
+
+### Deferred (unchanged, not reopened this round)
+The 6 Round-2 suggestions + prune-resurrect window stay deferred/tracked per the Integrated Review reconciliation (prune-resurrect hardened in camp#191; hysteresis-gate duplication; transient burst-fold peak; high-lat band seam; ADR-0010 D3 fidelity wording).
+
+### Caveat — build/test gate UNVERIFIED locally
+Dependency layers (underlay/core/platforms/sensors/simulation) have empty `install/` trees in this worktree, so camp could not be compiled and `test_sonar_live_eviction` / `test_sonar_live_reload` could not be run (same limitation as Rounds 1–2). `05ff4ff` landed AFTER the implementation sub-agent's clean 224-test build (18:20) — never compiled here. No new symbols (calls existing `onReloadFinished()`), so compile risk is minimal. **CI must confirm both gtests green before merge.**
+
+### Findings
+- [ ] No must-fix. Verdict approved. CI must confirm `test_sonar_live_eviction` + `test_sonar_live_reload` green (standing build/test gate, all rounds).
+
+### Next step
+Lifecycle: **Local Review (approved)** → push / open PR → **triage-reviews**. 0 must-fix, so no address-findings round is required. Once pushed, dispatch a fresh-context sub-agent: `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 171 --skill triage-reviews`. No push performed (host pushes).
