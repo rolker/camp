@@ -320,8 +320,12 @@ private:
   // the moved-since-last-kick guard, mirroring GggsTileLayer's demand-driven loader.
   // reload_attempted_ is the snapshot of indices the in-flight worker is loading, so
   // onReloadFinished() can clear them from evicted_fine_indices_ (GUI-thread-only, the
-  // worker never touches it). last_reload_viewport_ gates paint()'s re-kick to actual
-  // viewport moves (a permanently-unloadable index re-kicks at most once per viewport).
+  // worker never touches it). It is non-empty for exactly the span between a kickReload()
+  // and its matching onReloadFinished(), so the kick gates also require it empty — that
+  // closes the queued-`finished` race where isRunning() has flipped false but the result
+  // is not yet consumed (see kickReload). last_reload_viewport_ gates paint()'s re-kick to
+  // actual viewport moves (a permanently-unloadable index re-kicks at most once per
+  // viewport).
   QFutureWatcher<std::vector<SonarLiveTile>> reload_watcher_;
   std::vector<gggs::GridIndex> reload_attempted_;
   QRectF last_reload_viewport_;

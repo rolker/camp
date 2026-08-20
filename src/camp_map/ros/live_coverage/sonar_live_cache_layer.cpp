@@ -818,7 +818,17 @@ void SonarLiveCacheLayer::kickReload(const QRectF& viewport_scene)
   // the kick's viewport so paint()'s re-kick fires only when the viewport actually
   // moved, and the attempted set so onReloadFinished() clears it whether or not each
   // load succeeds. Requires a known fine level to recover a GridIndex from a GeoTIFF.
-  if(reload_watcher_.isRunning() || !level_ || viewport_scene.isNull())
+  //
+  // The `reload_attempted_` guard is load-bearing, not just an optimization: the
+  // watcher's `finished` signal is queued, so `isRunning()` flips false one event-loop
+  // hop BEFORE onReloadFinished() runs and consumes the result. A paint() in that
+  // window would otherwise pass the `!isRunning()` gate and `setFuture()` a second
+  // future — the pending onReloadFinished() would then read the NEW future's result()
+  // (possibly blocking the GUI thread), drop the first reload, and overwrite the
+  // attempted set. `reload_attempted_` is non-empty for exactly that window (kickReload
+  // sets it; onReloadFinished clears it), so gating on it empty closes the race.
+  if(reload_watcher_.isRunning() || !reload_attempted_.empty() || !level_ ||
+     viewport_scene.isNull())
     return;
   std::vector<gggs::GridIndex> visible;
   for(const gggs::GridIndex& index : evicted_fine_indices_)
@@ -890,6 +900,7 @@ void SonarLiveCacheLayer::waitForReload(const QRectF& viewport_scene)
   // join and run the ready-slot so the reload is visible on return. Mirroring the full
   // gate lets a test exercise the hysteresis guard by controlling the budget.
   if(!reload_watcher_.isRunning() &&
+     reload_attempted_.empty() &&
      vram_budget_bytes_ > 0 &&
      accountedBytes() < static_cast<std::size_t>(vram_budget_bytes_ * kReloadHysteresisFactor) &&
      viewport_scene != last_reload_viewport_ &&
@@ -1153,8 +1164,11 @@ void SonarLiveCacheLayer::paint(QPainter* painter, const QStyleOptionGraphicsIte
   // fine tile and there is budget headroom (hysteresis, so the reload can't immediately
   // re-trigger eviction), kick a filtered reload. The moved-since-last-kick guard
   // (clip.scene != last_reload_viewport_) keeps a permanently-unloadable index from
-  // re-kicking every frame — mirrors GggsTileLayer's demand-driven loader.
+  // re-kicking every frame — mirrors GggsTileLayer's demand-driven loader. The
+  // `reload_attempted_.empty()` guard closes the queued-`finished` race (see kickReload):
+  // don't kick a second reload while a finished one's result is still unconsumed.
   if(!reload_watcher_.isRunning() &&
+     reload_attempted_.empty() &&
      vram_budget_bytes_ > 0 &&
      accountedBytes() < static_cast<std::size_t>(vram_budget_bytes_ * kReloadHysteresisFactor) &&
      clip.scene != last_reload_viewport_ &&
