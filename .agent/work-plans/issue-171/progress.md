@@ -192,3 +192,26 @@ full `paint()` gate; added `setResidentBudgetForTest()` + `evictedFineCount()` s
 Ready for `/review-code`. No push performed (host pushes). The catalog-prune /
 nightly-regen anti-clobber follow-up issue should be filed by the host at the publish
 checkpoint (operator decision 2).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-20 18:32 +00:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-171 at `63c4708`
+**Mode**: pre-push
+**Depth**: Deep (reason: cross-thread QtConcurrent reload worker + GUI-thread mutation + lifecycle join; substantive ADR-0010/0013 rewrites)
+**Must-fix**: 1 | **Suggestions**: 6
+**Round**: 1 | **Ship**: continue — one genuine concurrency/correctness must-fix in the GUI paint path
+
+Static analysis: cppcheck clean (lone Qt `slots`-macro note is a config artifact). Claude Adversarial: 2 passes (Lens A + Lens B). Copilot: off (default). Local: skipped (no Ollama server). Finding 1 is a cross-pass catch — Lens A corrected Lens B's `isRunning()`-sufficiency assumption.
+
+### Findings
+- [ ] (must-fix) Re-kick between worker-finish and the queued `finished` slot: paint/waitForReload/kickReload gate only on `!reload_watcher_.isRunning()`, which flips false before `onReloadFinished()` runs — a moved-viewport paint in that window calls `setFuture(F2)`, so the pending `onReloadFinished()` reads the NEW future's `result()` (can block the GUI thread), drops the first reload, and scrambles bookkeeping. Fix: add `reload_attempted_.empty()` to the kick gates. — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:1157,892,821,849`
+- [ ] (suggestion) Per-kick reload volume is unbounded vs budget: `kickReload` snapshots every visible evicted index and `onReloadFinished` inserts all before `evictIfOverBudget()`; a wide zoom-out reloads the whole survey in one kick (transient over-budget spike). Cap to ~0.25×budget headroom, nearest-first. — `sonar_live_cache_layer.cpp:824`
+- [ ] (suggestion) Cross-pan reload↔evict thrash: D6 hysteresis blocks same-frame ping-pong, not cross-pan churn; bounding per-kick volume mitigates; note in ADR-0010 if intended. — `sonar_live_cache_layer.cpp:855`
+- [ ] (suggestion) EvictionHeadroomAtSurveyScale: `overviewResidentBytes() < budget` is near-tautological; assert `overviewTileCount()` against the geometric bound to actually prove the 4→1 collapse. — `test/test_sonar_live_eviction.cpp:611`
+- [ ] (suggestion) ReloadHysteresisPreventsPingPong never asserts `accountedBytes() <= budget` after a permitted reload; both reload tests drive only synchronous `waitForReload()`, never the production `paint()`→queued-`finished` path (finding 1). — `test/test_sonar_live_reload.cpp`
+- [ ] (suggestion) Reloaded tile reinserted without `reconciler_.markHave()`; harmless today but relies on a remote invariant — add a defensive markHave. — `sonar_live_cache_layer.cpp:864`
+- [ ] (suggestion) Document the deliberate threading-model divergence from `GggsTileLayer` (return-by-value + `result()`, no abort) — a large kick can't be cancelled by a subsequent pan. — `sonar_live_cache_layer.cpp:64`
