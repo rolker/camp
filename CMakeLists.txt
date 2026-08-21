@@ -894,6 +894,36 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#195 / uma-ADR-0013 D4] GggsTileLayer viewport-scoped retention: a
+  # synthetic tile strip panned far wider than the residency budget must keep the
+  # resident count bounded while the visited count grows, without ever evicting
+  # the current viewport's working set. Headless/GL-free, same link surface as
+  # test_gggs_rescan.
+  ament_add_gtest(test_gggs_eviction
+    test/test_gggs_eviction.cpp
+  )
+  target_include_directories(test_gggs_eviction PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_gggs_eviction
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#195 / uma-ADR-0013 D4] TileResidency — the splice partition that makes
+  # current-frame protection structural. Pure C++ (no Qt/GL/GDAL): header-only
+  # type, so nothing to link but gtest itself.
+  ament_add_gtest(test_tile_residency
+    test/test_tile_residency.cpp
+  )
+  target_include_directories(test_tile_residency PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+
   # [camp#121] Live tile cache (Part B): warm-load + patch-apply/dequantize
   # (SonarLiveTile, GDAL) and the downtime-gap reconcile + prune timestamp-gate
   # (the node-boundary catalog conversion + TileCatalogReconciler). Headless: no

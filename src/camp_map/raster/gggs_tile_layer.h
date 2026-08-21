@@ -4,6 +4,7 @@
 #include "../map/layer.h"
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
+#include "tile_residency.h"
 
 #include <marine_colormap/transfer.hpp>
 
@@ -178,6 +179,34 @@ public:
   /// [camp#103] Test-only: number of tiles at @p level whose pixels are loaded.
   int pixelsLoadedCount(int level) const;
 
+  /// [camp#195] Number of tiles currently holding pixels — the quantity the
+  /// residency budget bounds. Cheap (a flag test per tile); exposed for tests
+  /// and for diagnostics.
+  std::size_t residentTileCount() const;
+
+  /// [camp#195] Test-only: override the residency budget in BYTES (0 disables
+  /// eviction entirely — the pre-#195 behaviour). Mirrors
+  /// SonarLiveCacheLayer::setResidentBudgetForTest(); the production value comes
+  /// from `QSettings GggsTileLayers/max_resident_bytes`.
+  void setResidentBudgetBytesForTest(std::size_t bytes)
+  {
+    resident_budget_bytes_ = bytes;
+  }
+
+  /// [camp#195] Test-only: run the residency pass synchronously — the headless
+  /// analogue of paint()'s protect-then-schedule plus the queued
+  /// evictIfOverBudget() slot. A headless test has no event loop turn between
+  /// paints, so it drives the pass directly.
+  void refreshResidencyForTest() { evictIfOverBudget(); }
+
+  /// [camp#195] Test-only: run paint()'s HALF of the residency pass — protect
+  /// the current frame's set and SCHEDULE the eviction — without a
+  /// QGraphicsView. Exercises the debounce and the queued hop, so a test can
+  /// assert the deferred path converges after
+  /// `QCoreApplication::processEvents()` rather than only the synchronous
+  /// refreshResidencyForTest() shortcut.
+  void scheduleResidencyForTest() { scheduleEvictionIfNeeded(refreshProtection()); }
+
   /// [camp#103/#194] True if any tile at a level <= the selected level
   /// intersects @p viewport_scene (Web-Mercator scene rect) with its pixels
   /// not yet loaded — the pan/zoom re-kick condition for the demand-driven
@@ -249,6 +278,22 @@ private slots:
   /// [camp#102] Fold completed tiles' ranges into data_min_/data_max_, mark them
   /// pixelsLoaded(), invalidate the cache, and repaint.
   void tilesReady();
+  /// [camp#195 / uma-ADR-0013 D4] Deferred, debounced residency eviction.
+  /// paint() only SCHEDULES this (queued invocation + eviction_pending_):
+  /// releasing a tile inside paint() would mutate the set the render pass is
+  /// reading. Running from the event loop, it re-derives the protected working
+  /// set LIVE (a tile that re-entered the view since scheduling must never be
+  /// evicted — the MapTiles/camp#98 rule), computes the cap, and releases
+  /// candidates farthest/stalest-first down to the hysteresis target.
+  ///
+  /// It must not mutate tiles the loader worker is iterating, so it checks
+  /// `future_watcher_.isRunning()` — and when the worker IS busy it **re-arms**
+  /// on a short timer with the debounce still held, rather than dropping the
+  /// request. Dropping it would make the budget almost never fire during a
+  /// continuous pan (every pan step re-kicks the loader), which is precisely
+  /// the scenario the budget exists for. Abort+join (what loadTiles() does) is
+  /// rejected here: it would stall the GUI thread mid-pan for a whole tile read.
+  void evictIfOverBudget();
 
 private:
   /// [camp#108] The non-persisting band switch shared by setBand() (persists
@@ -298,6 +343,61 @@ private:
   /// spatial filter (both together = the pre-LOD "load everything" behavior the
   /// headless tests rely on).
   void loadTilesWorker(int level, QRectF viewport);
+  /// [camp#194/#195] Scene rects of the terminally-failed tiles at levels <= the
+  /// selection — the holes in the composited picture. Empty with no selection.
+  std::vector<QRectF> failedFootprints() const;
+  /// [camp#194/#195] True if @p tile is finer than the selection and overlaps
+  /// one of @p holes, i.e. it is the only usable coverage over a footprint whose
+  /// selected-or-coarser tile failed to read. Shared by tilesReady()'s release
+  /// gate and the residency budget's eviction pass so the two retention rules
+  /// cannot drift apart.
+  bool coversHole(const GggsTile& tile, const std::vector<QRectF>& holes) const;
+  /// [camp#195] The single tile-release path: `releaseGL()` + `resetPixels()`
+  /// under this layer's GL context, with the makeCurrent()-or-skip dance that
+  /// keeps the gggs_tile.h pairing invariant intact. GUI thread only, and only
+  /// with no loader worker running (it mutates tiles the worker iterates —
+  /// both callers gate on that). Returns true if anything was released; false
+  /// when there were no victims or a live context refused to become current
+  /// (in which case NOTHING is released, deliberately).
+  bool releaseTiles(const std::vector<GggsTile*>& victims);
+  /// [camp#195] THE status composer. Every condition the layer reports (no
+  /// tiles / loading / no data / failed tiles) is assembled here from live
+  /// state, so no writer can clobber another's message. Call this instead of
+  /// setStatus() — tilesReady() used to rewrite the status unconditionally.
+  void updateStatus();
+  /// [camp#195 / uma-ADR-0013 D4] Re-derive the current frame's protected
+  /// working set into residency_ and return its size. The predicate is the
+  /// LOADER's, not the draw list's: tiles intersecting load_viewport_ at a level
+  /// <= the selection. It must not be the draw list — `cached_image_`
+  /// short-circuits itemsIntersecting() on a static frame, so a
+  /// draw-list-sourced protection would protect NOTHING on exactly the frames
+  /// eviction runs on. Not-yet-loaded tiles count: they are part of the working
+  /// set the cap must accommodate. loadFailed() tiles do not: they never become
+  /// resident, so they must not inflate the floor.
+  ///
+  /// Two classes of in-view tile FINER than the selection are protected on top
+  /// of the loader's set, because both are drawn and neither can reload
+  /// (loadTilesWorker skips level > selection): an already-RESIDENT finer tile,
+  /// which during a zoom-out is the whole visible picture until the coarser
+  /// selection loads (the camp#103/#194 no-blank-frame guarantee — and
+  /// tilesReady()'s level-switch release still drops it at the right moment, so
+  /// this leaks nothing); and a camp#194 hole coverer.
+  std::size_t refreshProtection();
+  /// [camp#195] The budget expressed as a tile count: the byte budget divided by
+  /// the OBSERVED per-tile resident cost. 0 means unbounded (budget disabled, or
+  /// no valid tile to measure yet).
+  std::size_t budgetTiles() const;
+  /// [camp#195] Bytes a loaded tile occupies, observed from the tile-set rather
+  /// than assumed: width_/height_ come from GDAL, so 960x960 is a store
+  /// convention, not a guarantee. A loaded tile holds its Float32 CPU buffer
+  /// (retained past the GPU upload for camp#180's cursor readout) and, once
+  /// painted, an R32F texture of the same size — so the displayed cost is
+  /// 2 x w x h x 4. The largest tile in the set speaks, so a non-uniform store
+  /// cannot undercount. 0 if no valid tile exists yet.
+  std::size_t perTileResidentBytes() const;
+  /// [camp#195] Update over_budget_ from @p protected_count and queue an
+  /// eviction pass when residency exceeds the cap. Called from paint().
+  void scheduleEvictionIfNeeded(std::size_t protected_count);
 
   // [camp#134] Latitude tessellation moved into RasterGlRenderer (the shared warp).
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
@@ -352,6 +452,11 @@ private:
   bool abort_flag_ = false;
   QMutex abort_flag_mutex_;
   bool load_started_ = false;  // first paint() kicks the load exactly once
+  // [camp#195] Load-in-flight flag feeding updateStatus()'s "(loading...)".
+  // A flag rather than future_watcher_.isRunning(): tilesReady() runs from the
+  // watcher's finished signal, where isRunning() is already false, and
+  // waitForLoad() calls tilesReady() directly after a join.
+  bool loading_ = false;
 
   // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes the
   // size, pan changes the clip, so both re-render. (Pre-#103, pan reused the
@@ -360,6 +465,53 @@ private:
   QImage cached_image_;
   QSize cached_size_;
   QRectF cached_clip_;
+
+  // ---- [camp#195 / uma-ADR-0013 D4] Viewport-scoped retention -------------
+  // Default residency budget in BYTES. A byte target rather than a tile count
+  // because width_/height_ come from GDAL (960x960 is a store convention, not a
+  // guarantee) and because it is then directly comparable to the co-resident
+  // LiveTileCache/max_vram_bytes, which carries the same 512 MiB default.
+  // Operator-overridable via QSettings (camp#117: a default, never an
+  // un-changeable hardcode); 0 disables eviction (the pre-#195 behaviour).
+  static constexpr qulonglong kDefaultResidentBudgetBytes = 512ull * 1024 * 1024;
+  // Evict down to this fraction of the cap so the next frame cannot immediately
+  // re-trigger (the SonarLiveCacheLayer kReloadHysteresisFactor analogue).
+  static constexpr double kEvictHysteresisFactor = 0.75;
+  // The zoom-out floor: tiles at the coarsest available level are exempt (the
+  // kApexProtectLevel analogue) — but BOUNDED, because that set grows with the
+  // area panned. Beyond this many, the farthest coarsest tiles become
+  // last-resort candidates rather than exemptions. Only applies to a real
+  // ladder: on a single-level store every tile would otherwise be exempt and
+  // the budget would be a no-op.
+  static constexpr std::size_t kCoarsestExemptCap = 64;
+  // A tile seen within this many paints is "recent" and evicts after the stale
+  // ones — the staleness term that keeps distance from being the primary key
+  // (uma-ADR-0013 D4: distance-only "discards history along a path being
+  // traversed"). ~2 s of paints at typical repaint rates.
+  static constexpr quint64 kRecentGenerations = 120;
+  // Re-arm delay when the eviction pass finds the loader worker busy.
+  static constexpr int kEvictionRetryMs = 100;
+
+  TileResidency residency_;             // protected/evictable partition
+  std::vector<quint64> tile_last_visible_gen_;   // parallel to tiles_ (LRU key)
+  quint64 paint_generation_ = 0;        // bumped by refreshProtection()
+  std::size_t resident_budget_bytes_ = 0;   // 0 = eviction disabled
+  bool eviction_pending_ = false;       // debounces the queued eviction
+  bool eviction_warned_ = false;        // one qWarning per layer, not per pass
+  bool over_budget_ = false;            // protected set alone exceeds the budget
+  bool hole_coverage_released_ = false; // a camp#194 hole coverer was evicted
+  // Set when releaseTiles() refused because a live GL context would not become
+  // current. RasterGlRenderer latches that failure without destroying the
+  // context, so the condition can be permanent and the budget stops being
+  // enforced entirely — which the status must say rather than grow silently.
+  bool eviction_blocked_ = false;
+  // Memoized perTileResidentBytes(), keyed on tiles_.size() — this is on the
+  // paint path. tiles_ only ever grows, so the size covers every ADDED tile.
+  // It does NOT cover a refresh: [camp#194] GggsTile::refreshFromFile() re-reads
+  // metadata and a replacement file may carry different dimensions while the
+  // count stays put, so rescan() invalidates this explicitly after refreshing.
+  mutable std::size_t per_tile_bytes_ = 0;
+  mutable std::size_t per_tile_bytes_count_ = std::size_t(-1);
 };
 
 }  // namespace raster

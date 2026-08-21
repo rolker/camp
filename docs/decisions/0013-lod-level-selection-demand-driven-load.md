@@ -6,6 +6,10 @@ Accepted (camp#103, the LOD half; the visible-region half is ADR-0011).
 Amended by camp#194: the selection is a **ceiling** (multi-level
 compositing), not an equality filter — see "Multi-level compositing",
 "Extent semantics", and "Auto-range across levels" below.
+Amended by camp#195: residency is **budgeted and viewport-scoped** —
+"levels ≤ the selection stay resident permanently" no longer holds. The
+residency policy itself moved to [ADR-0014](0014-gggs-viewport-scoped-residency.md);
+this ADR keeps the LOD selection and the demand-driven load.
 
 ## Context
 
@@ -79,9 +83,17 @@ zoom (camp#194).
 The amended model: `selected_level_` is a **max threshold (ceiling)**.
 
 - **Residency**: every available level ≤ the selection loads
-  (viewport-bounded) and stays resident **permanently** — it is part of the
-  composited picture, not a transient backdrop. Levels > the selection never
-  load.
+  (viewport-bounded) and is part of the composited picture, not a transient
+  backdrop. Levels > the selection never load.
+  *Amended by camp#195*: such a tile stays resident **while the viewport
+  selects it** — not permanently. A tile the view has panned away from is
+  released once the layer exceeds its residency budget, and re-read on
+  pan-back by this ADR's own demand-driven loader. The permanence claim was
+  never a decision, only the absence of any viewport-driven release path; it
+  is what made residency the union of every viewport ever visited. The budget,
+  the current-frame protection that makes "never evict what this frame
+  selected" structural, and the eviction ordering are
+  [ADR-0014](0014-gggs-viewport-scoped-residency.md).
 - **Render**: `itemsIntersecting()` draws the whole resident set in one
   ascending pass — coarse→fine painter's order, **no render-time level
   filter**. Fine overdraws coarse where both exist; coarse fills where fine
@@ -94,7 +106,12 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   finer-than-needed data to fill coarse zooms would reintroduce the
   store-bounded open this ADR exists to avoid; if it matters in practice
   (e.g. a chart ladder whose finest-only regions vanish at overview zooms),
-  the residency/coverage follow-up family is camp#195.
+  it needs its own issue. camp#195 settled the **residency** half of that
+  follow-up family ([ADR-0014](0014-gggs-viewport-scoped-residency.md)) and
+  deliberately did **not** touch this coverage half — a budget bounds what is
+  kept, it does not decide to load finer-than-selection data. The coverage
+  half is at least as likely to be answered store-side, by giving those
+  regions coarse coverage (uma-ADR-0010 D9), as display-side.
 - **Level-switch transitions** (the camp#103 field-verified no-blank-frame
   guarantee, both directions). Scope of "no blank frame": it is a guarantee
   about the *transition*, not about coverage — a region that has coverage at
@@ -123,12 +140,18 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   compilation/fold than the tile that nominally covers it. Two mitigations
   keep it honest today: the depth-at-cursor readout (camp#180,
   `getElevation()`) always samples **finest-covering-tile-first** independent
-  of what is drawn, so inspection is unaffected; and the auto-range fold
+  of what is drawn, so inspection is unaffected — since camp#195 that means
+  the finest covering tile *that is resident*, which under the viewport-scoped
+  budget ([ADR-0014](0014-gggs-viewport-scoped-residency.md)) is still the
+  finest one wherever the cursor is, because viewport tiles are structurally
+  protected from eviction; and the auto-range fold
   spans every composited level, so the coarse fill is colour-mapped on the
   same scale as the fine data rather than against a foreign range. If a QA
   workflow ever needs "show me only this level's own data", that is a
   render-time opt-in (a composite-depth cap of 1), not a change to this
-  decision — it rides camp#195 alongside the overdraw mitigation.
+  decision — it rides **camp#198** alongside the overdraw mitigation.
+  (Re-routed from camp#195 by camp#195 itself: that issue became a residency
+  budget, which is a memory decision and touches nothing render-time.)
 - **Release**: `tilesReady()` releases only tiles at levels **finer than the
   selection** (CPU `resetPixels()` **paired with** GL `releaseGL()` — a
   CPU-only clear leaves a stale texture shadowing any re-load), and only once
@@ -136,6 +159,15 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   (`hasUnloadedVisibleTiles()`, which tests the same ≤-selection ceiling)
   with no worker running. That load-before-release gate is what carries the
   zoom-out no-blank guarantee.
+  *Amended by camp#195*: this is no longer the **only** release path. It
+  remains the level-switch release — the one that ends a zoom-out transition —
+  but a second, orthogonal path now releases **off-viewport** tiles at any
+  level when the layer exceeds its residency budget
+  ([ADR-0014](0014-gggs-viewport-scoped-residency.md)). The two share one
+  helper for the actual `resetPixels()`/`releaseGL()` pairing and one predicate
+  for camp#194's hole-coverage retention, so the rules cannot drift. This
+  release is keyed on the **viewport**, not the level: what the current frame
+  selected is structurally protected from it, at every level.
 
 A rapid multi-level zoom/pan sweep can transiently stack several
 finer-than-selection levels (each load aborted before the release condition
@@ -144,25 +176,42 @@ completed load — self-healing, and still far below the pre-#103 eager
 whole-store residency. If that transient ever matters in practice, a
 release-on-abort pass is the follow-up shape.
 
-**Residency bound (ADR-0010 cross-reference, camp#195)**: `GggsTileLayer` has
-no residency/eviction budget — camp ADR-0010 governs `SonarLiveCacheLayer`, a
-different class. Under compositing, multiple levels stay resident
-simultaneously at steady state, so the pre-existing unbounded-within-level
-growth multiplies across every level ≤ the selection. For the `chart` store
-this is genuinely bounded (a fixed native ladder, 54 tiles); for a derived
-`overviews/` pyramid the overhead is a bounded geometric series (~33% over
-the fine level alone). The classes to watch are **`reference`** (mixed-level
-imports: S-102 + fine imported grids vs coarse legacy priors) and
-**`draft`/`processed`** (uma ADR-0010 D9 generates overview pyramids over
-potentially large fine-level survey coverage) — `chart` is the one member of
-this family that is *not* the risk. Given the camp#153 `SonarLiveCacheLayer`
-OOM precedent for this accumulation shape, the eviction-bound follow-up is
-tracked as **camp#195**. Compositing also multiplies per-frame **overdraw**,
-not just memory: on a deep nested pyramid every resident level contributes a
-near-full-viewport quad at fine zoom (up to ~14 stacked quads for a full L13
-pyramid — a fill-rate cost that software-GL backends pay too). Mitigation
-(skip fully-covered coarse tiles, or a composite-depth cap) rides camp#195
-if pan latency regresses.
+**Residency bound (`camp-ADR-0010` / `camp-ADR-0014` cross-reference,
+camp#195 — RESOLVED)**: this paragraph originally recorded that
+`GggsTileLayer` had *no* residency/eviction budget, and reasoned about which
+store classes the unbounded growth would hurt first. That gap is now closed by
+[`camp-ADR-0014`](0014-gggs-viewport-scoped-residency.md) (camp#195): the layer
+has a byte budget with structural current-frame protection and viewport-scoped
+eviction, so residency is bounded by the viewport rather than by the union of
+every viewport ever visited.
+
+Two corrections to the original framing, both established while implementing
+camp#195 and worth keeping because they are easy to re-derive wrongly:
+
+- The accumulation was **never** a consequence of compositing. Before camp#194
+  the release gate was `level == selection → skip`, so the selected level was
+  already exempt from the only release path that existed; a single large
+  `draft`/`processed` layer had the full hazard on `jazzy`. camp#194's `≤`
+  gate widened the exemption to the coarser levels — a *bounded* addition
+  (~33% for a nested `overviews/` pyramid; 54 tiles total for the ENC chart
+  store) — it did not create the problem.
+- The store-class risk ranking still holds as written (`reference` and
+  `draft`/`processed` accumulate, `chart` is bounded by its fixed native
+  ladder), but it now describes how quickly a layer reaches its budget, not
+  whether it is bounded at all.
+
+`camp-ADR-0010` continues to govern `SonarLiveCacheLayer`, a different class
+with different forces; `camp-ADR-0014` records where the two policies
+deliberately diverge (drop-and-re-read vs fold-to-parent).
+
+Compositing also multiplies per-frame **overdraw**, not just memory: on a deep
+nested pyramid every resident level contributes a near-full-viewport quad at
+fine zoom (up to ~14 stacked quads for a full L13 pyramid — a fill-rate cost
+that software-GL backends pay too). The residency budget bounds this only
+indirectly, and it protects the current frame's whole working set — which is
+exactly the stack being overdrawn. Mitigation (skip fully-covered coarse tiles,
+or a composite-depth cap) therefore rides **camp#198**, not camp#195, if pan
+latency regresses.
 
 **Headless / no-selection defaults**: `selected_level_ == -1` disables the
 level ceiling everywhere (worker, range fold, release) and a null viewport

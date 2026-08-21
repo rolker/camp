@@ -148,10 +148,16 @@ public:
   /// so a later loadPixels() re-reads from scratch — the CPU half of releasing a
   /// tile when the LOD switches away from its level. Does NOT touch the GL
   /// texture. INVARIANT: every call site must pair this with releaseGL() under a
-  /// current context — after a texture() upload, data_ is already freed while
-  /// texture_ is non-null, so a CPU-only clear leaves a stale texture that
-  /// shadows any re-loaded pixels (texture() returns the old texture and never
-  /// consumes the new data_).
+  /// current context — texture() uploads from data_ exactly ONCE and then
+  /// returns the cached texture_ forever, so a CPU-only clear leaves a stale
+  /// texture that shadows any re-loaded pixels (texture() returns the old
+  /// texture and never consumes the new data_).
+  /// [camp#180] This used to read "data_ is already freed after the upload".
+  /// That stopped being true when camp#180 made texture() RETAIN the CPU copy
+  /// for the depth-at-cursor readout (gggs_tile.cpp): a painted tile now holds
+  /// BOTH copies, which is why camp-ADR-0014's residency budget charges
+  /// 2 x width x height x 4 per tile. The invariant above is unaffected — it
+  /// rests on the upload happening once, not on data_ being freed.
   void resetPixels();
 
   /// True once `loadPixels()` has read the band into CPU memory (or freed it into

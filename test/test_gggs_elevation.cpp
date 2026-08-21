@@ -23,10 +23,12 @@
 
 #include <QApplication>
 #include <QGeoCoordinate>
+#include <QRectF>
 #include <QTemporaryDir>
 
 #include "map/map.h"
 #include "map/layer_list.h"
+#include "map_view/web_mercator.h"
 #include "raster/gggs_tile_layer.h"
 
 namespace
@@ -67,6 +69,16 @@ QString writeUniformTile(const QTemporaryDir& dir, const QString& name,
 QGeoCoordinate insidePoint(double lon0, double lat0)
 {
   return QGeoCoordinate(lat0 - 0.0008, lon0 + 0.0008);
+}
+
+// [camp#195] The Web-Mercator scene rect of the tile at (lon0, lat0) — the
+// load/paint viewport the residency budget protects.
+QRectF tileViewport(double lon0, double lat0)
+{
+  const QPointF lo = web_mercator::geoToMap(QGeoCoordinate(lat0 - 0.0016, lon0));
+  const QPointF hi =
+    web_mercator::geoToMap(QGeoCoordinate(lat0, lon0 + 0.0016));
+  return QRectF(lo, hi).normalized();
 }
 
 }  // namespace
@@ -122,6 +134,43 @@ TEST(GggsElevationTest, AllNoDataCoveringTileIsNaN)
   layer->waitForLoad();
 
   EXPECT_TRUE(std::isnan(layer->getElevation(insidePoint(-71.40, 43.00))));
+}
+
+// [camp#195] The residency budget's consequence for this readout, stated as a
+// test rather than only as prose in camp-ADR-0014: getElevation() answers from
+// the RESIDENT tile buffers, so a point in an area the view has panned away from
+// (and whose tile the budget released) reads NaN, while the point under the
+// current viewport still answers. That asymmetry is the reason the readout is
+// unaffected in practice — the cursor is always inside the viewport, and
+// viewport tiles are structurally protected from eviction.
+TEST(GggsElevationTest, ReadoutOverAnEvictedAreaIsNaN)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  // Two adjacent 0.0016-deg tiles at the same level.
+  ASSERT_FALSE(writeUniformTile(dir, "13_0_0.tif", -71.4000, 43.00, 10.0f).isEmpty());
+  ASSERT_FALSE(writeUniformTile(dir, "13_0_1.tif", -71.3984, 43.00, 20.0f).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  // One tile's worth of budget: 16x16 Float32 CPU buffer + R32F texture.
+  layer->setResidentBudgetBytesForTest(16 * 16 * sizeof(float) * 2);
+
+  layer->setLodForTest(13, tileViewport(-71.4000, 43.00));
+  layer->waitForLoad();
+  layer->refreshResidencyForTest();
+  ASSERT_FLOAT_EQ(layer->getElevation(insidePoint(-71.4000, 43.00)), 10.0f);
+
+  // Pan to the neighbour: the first tile leaves the viewport and is released.
+  layer->setLodForTest(13, tileViewport(-71.3984, 43.00));
+  layer->waitForLoad();
+  layer->refreshResidencyForTest();
+
+  EXPECT_FLOAT_EQ(layer->getElevation(insidePoint(-71.3984, 43.00)), 20.0f)
+    << "the readout under the current viewport must still answer";
+  EXPECT_TRUE(std::isnan(layer->getElevation(insidePoint(-71.4000, 43.00))))
+    << "a readout over an evicted area must degrade to NaN, not to a stale value";
 }
 
 int main(int argc, char** argv)
