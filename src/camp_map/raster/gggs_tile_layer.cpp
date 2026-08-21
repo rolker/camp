@@ -138,8 +138,9 @@ void GggsTileLayer::loadDirectory(const QString& directory)
   // All tiles share tiles_; their filename-parsed level() distinguishes them.
   const QDir fine_dir(directory);
   const QDir overview_dir(directory + "/overviews");
-  for(const QDir& dir : {fine_dir, overview_dir})
+  for(const bool overview : {false, true})
   {
+    const QDir& dir = overview ? overview_dir : fine_dir;
     if(!dir.exists())
       continue;
     const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
@@ -158,6 +159,27 @@ void GggsTileLayer::loadDirectory(const QString& directory)
       auto tile = std::make_unique<GggsTile>(dir.filePath(name));
       if(!tile->valid())
         continue;
+      // [camp#194] Drop a tile whose level failed to parse. -1 is the layer's
+      // NO-SELECTION sentinel (selected_level_ == -1 disables the ceiling
+      // everywhere), so a tile carrying it as a real level is indistinguishable
+      // from "no filter": it would enter available_levels_, and the first
+      // viewport whose ideal level is coarser than every other level would make
+      // selectLodLevel() return -1 — silently reverting to the eager
+      // whole-store load ADR-0013 exists to prevent. isValueTile() already
+      // requires three digit groups, so the only way to get here is a digit
+      // string too long for int (tileLevel()'s overflow -> -1); no GGGS
+      // producer emits one (levels are 0-20), which is exactly why such a name
+      // must be rejected rather than folded into the ladder.
+      if(tile->level() < 0)
+      {
+        qWarning("GggsTileLayer: skipping '%s' — unparsable tile level",
+                 qUtf8Printable(name));
+        continue;
+      }
+      // [camp#194] Tag sidecar provenance: overview tiles are padded to their
+      // coarse GGGS grid cell, so rebuildLevelIndex() excludes them from the
+      // scene-bounds union; native tiles at ANY level are the true footprint.
+      tile->setOverview(overview);
       tiles_.push_back(std::move(tile));
     }
   }
@@ -168,12 +190,19 @@ void GggsTileLayer::rebuildLevelIndex()
 {
   // [camp#103] Deduplicated ascending level list + the layer extent.
   //
-  // scene_bounds_ unions FINEST-level tile extents only, NOT all tiles: an
-  // overview tile is padded to its (coarse) GGGS grid cell, so the L0 apex
-  // spans a whole 8-degree grid — uniting it would balloon boundingRect /
-  // fit-to-extent far beyond the data footprint. The finest level present is
-  // the true footprint; every coarser level covers the same data padded with
-  // NoData, and the renderer clips coarse tiles to the bounding rect anyway.
+  // [camp#194] scene_bounds_ unions every NATIVE (non-overview) tile's extent,
+  // at ANY level — not the finest level only. A region-disjoint native ladder
+  // (ENC chart store, uma ADR-0010 D7: one native level per compilation
+  // scale, each covering only its own sub-region) needs every level's
+  // footprint in the union, or the regions outside the finest level's
+  // coverage sit outside boundingRect() and can never paint (QGraphicsView
+  // culls there regardless of any render-side fix). Overview-sidecar tiles
+  // stay excluded: they are padded to their (coarse) GGGS grid cell — the L0
+  // apex spans a whole 8-degree grid — so uniting them would balloon
+  // boundingRect/fit-to-extent far beyond the data footprint (the hazard the
+  // previous finest-level-only union guarded against). For the legacy
+  // single-native-level store + overviews/ sidecar the two unions are
+  // identical.
   available_levels_.clear();
   for(const auto& tile : tiles_)
   {
@@ -185,8 +214,22 @@ void GggsTileLayer::rebuildLevelIndex()
   scene_bounds_ = QRectF();
   if(available_levels_.empty())
     return;
-  const int finest = available_levels_.back();
   bool first_extent = true;
+  for(const auto& tile : tiles_)
+  {
+    if(tile->isOverview())
+      continue;
+    const QRectF tile_rect = tileSceneRect(*tile);
+    scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
+    first_extent = false;
+  }
+  if(!first_extent)
+    return;
+  // Degenerate store: overview tiles only, no native tile at all. Fall back
+  // to the finest level present so the layer keeps an extent (matching the
+  // old finest-level-only behavior for this case) instead of a null
+  // boundingRect that would silently blank the layer.
+  const int finest = available_levels_.back();
   for(const auto& tile : tiles_)
   {
     if(tile->level() != finest)
@@ -212,9 +255,39 @@ bool GggsTileLayer::rescan()
   // aborting it here (whole-tile granularity, never re-kicked because there is
   // nothing to add) would strand those tiles at pixelsLoaded()==false forever —
   // a silently half-blank layer with no recovery, even though status reads loaded.
+  // [camp#194 review] Same read-only first pass collects the tiles whose FILE
+  // CHANGED under us (size/mtime differ from the stat taken at their last
+  // metadata read). A tile whose loadPixels() failed is otherwise latched for
+  // the session — rescan()'s known-path dedup skips its path, the worker skips
+  // loadFailed() tiles, and a single-band store never calls setBand() — so a
+  // producer that REPAIRS the tile (uma `enc_updater`'s cron rewrite of the
+  // chart layer, `overview_pyramid`'s rename-aside swap, or an NFS blip that
+  // simply passes) would leave the region blank until CAMP restarts. Detecting
+  // the swap here gives the operator a same-band retry through the existing
+  // Rescan affordance. Not limited to failed tiles: a rewritten tile that DID
+  // load is also stale (it is still serving the old file's pixels), and the
+  // refresh re-reads it.
+  //
+  // [camp#194 review round 3] The file-stat test alone does NOT cover the case
+  // the sticky-latch finding was raised against in the first place: a TRANSIENT
+  // I/O error (an NFS blip failing GDALOpen()/RasterIO() on a file nobody
+  // touched) leaves size and mtime unchanged, so a stat-gated refresh never
+  // fires, the worker keeps skipping the latched tile, and every Rescan returns
+  // false — the failure is still permanent for the session. Rescan is an
+  // EXPLICIT operator action ("I fixed it, try again"), not a background poll,
+  // so a latched failure is a retry candidate INDEPENDENTLY of the stat: retry
+  // cost is one operator-requested re-read, the cost of not retrying is a
+  // permanently blank region. The stat check is kept for the other half of the
+  // contract — an already-LOADED tile is only re-read when its file actually
+  // changed, so Rescan never churns a healthy resident store.
   QSet<QString> known;
+  std::vector<GggsTile*> changed;
   for(const auto& tile : tiles_)
+  {
     known.insert(tile->path());
+    if(tile->loadFailed() || tile->fileChangedOnDisk())
+      changed.push_back(tile.get());
+  }
 
   QDir dir(directory_);
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
@@ -235,11 +308,20 @@ bool GggsTileLayer::rescan()
     auto tile = std::make_unique<GggsTile>(path);
     if(!tile->valid())
       continue;
+    // [camp#194] Same -1-sentinel guard as loadDirectory() (see the rationale
+    // there): a tile whose level parses to the no-selection sentinel must never
+    // enter available_levels_.
+    if(tile->level() < 0)
+    {
+      qWarning("GggsTileLayer: skipping '%s' — unparsable tile level",
+               qUtf8Printable(name));
+      continue;
+    }
     new_tiles.push_back(std::move(tile));
   }
 
-  if(new_tiles.empty())
-    return false;   // nothing new — leave any in-flight load running untouched
+  if(new_tiles.empty() && changed.empty())
+    return false;   // nothing new/changed — leave any in-flight load untouched
 
   // [camp#102] Now that there IS something to add, abort + join any in-flight load
   // before mutating tiles_ (the worker captures `this` and iterates tiles_, so a
@@ -257,6 +339,64 @@ bool GggsTileLayer::rescan()
     future_watcher_.waitForFinished();
   }
 
+  // [camp#194 review] Refresh the swapped-under-us tiles: release each one's GL
+  // texture under this layer's context FIRST (the resetPixels() pairing
+  // INVARIANT — a CPU-only clear would leave the old texture shadowing the
+  // re-read pixels), then re-read the metadata + clear any latched failure so
+  // the kick below re-reads the current file. Context handling mirrors
+  // applyBand()/tilesReady(): no context yet (hasContext() == false) means no
+  // tile can hold a texture, so the CPU half alone is the complete release; a
+  // context that EXISTS but fails makeCurrent() means textures may exist and
+  // cannot be freed, so skip the refresh entirely rather than break the pairing
+  // (the renderer has latched its GL-failed flag and is drawing nothing anyway;
+  // the next Rescan retries, and fileChangedOnDisk() still reports true because
+  // no re-stat happened).
+  const bool refresh_ok = !changed.empty() &&
+    (!renderer_.hasContext() || renderer_.makeCurrent());
+  if(refresh_ok)
+  {
+    for(auto* tile : changed)
+    {
+      if(renderer_.hasContext())
+        tile->releaseGL();
+      if(!tile->refreshFromFile())
+        qWarning("GggsTileLayer: '%s' cannot be re-read",
+                 qUtf8Printable(tile->path()));
+    }
+    if(renderer_.hasContext())
+      renderer_.doneCurrent();
+
+    // [camp#194 review round 3] refreshFromFile() DROPPED each refreshed tile's
+    // pixels and range, and the replacement file may carry an entirely different
+    // one. tilesReady()'s fold only ever WIDENS the aggregate, so without an
+    // explicit invalidation the departed file's extremes would stay in
+    // data_min_/data_max_ for the rest of the session: replace the sole [1, 10]
+    // tile with a [100, 110] one and Auto renders [1, 110]; replace it with an
+    // all-NoData tile and the layer draws blank against a stale, non-crossed
+    // range with a clear status. On a bathymetry display that is a wrong
+    // colormap range the operator reads as real depth. Recompute the aggregate
+    // from the CURRENT resident set instead (the refreshed tiles contribute
+    // nothing until their pixels re-load, then re-widen it through tilesReady()).
+    // update_auto() is a no-op while the operator holds a Manual override, so a
+    // pinned range survives the recompute untouched (camp#142).
+    // If the recompute leaves the aggregate CROSSED (every resident tile was
+    // refreshed, or the replacements are all-NoData) update_auto() is skipped —
+    // as in tilesReady() and applyBand(), the resolved Auto bounds simply hold
+    // their last values. Nothing is drawn against them: renderImage() bails on a
+    // crossed aggregate and tilesReady() sets the "(no data)" status, so the
+    // operator sees an explicitly empty layer rather than a plausible-looking
+    // wrong one.
+    // NOTE camp#138 tracks the same only-widens class of staleness for
+    // SonarLiveCacheLayer; that layer is deliberately NOT touched here.
+    foldDataRange(true);
+    if(data_min_ <= data_max_)
+      range_model_.update_auto(float(data_min_), float(data_max_));
+    cached_image_ = QImage();
+  }
+  else if(!changed.empty())
+    qWarning("GggsTileLayer: %d changed tile(s) not refreshed — no current GL "
+             "context to release their textures under", int(changed.size()));
+
   for(auto& tile : new_tiles)
   {
     // [camp#108] A freshly-constructed GggsTile defaults to band 1; inherit the
@@ -272,7 +412,7 @@ bool GggsTileLayer::rescan()
   }
   // [camp#103] Wholesale re-index: a rescan can add tiles at a new (finer)
   // level, which both extends available_levels_ and re-bases scene_bounds_
-  // (finest-level union — see rebuildLevelIndex). The item pos is DERIVED
+  // (native-tile union — see rebuildLevelIndex). The item pos is DERIVED
   // state of scene_bounds_, so re-anchor unconditionally: a west/north
   // extension (or a finest-level re-base) moves the NW corner, and keeping
   // the old pos would leave the added footprint outside boundingRect() —
@@ -342,13 +482,35 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
   // tile mid-write. (tilesReady() still runs post-join to fold the range +
   // repaint, but a paint() that races an in-flight worker is already safe.)
   //
-  // [camp#103 / ADR-0013] Demand-driven: only tiles at the selected level that
-  // intersect the load viewport are read — this is what turns the 3.6 GB eager
-  // whole-store open into a viewport-bounded load. @p level == -1 (no selection:
-  // headless tests, pre-first-paint) disables the level filter and a null
-  // @p viewport disables the spatial filter, preserving the pre-LOD
-  // load-everything behavior exactly.
+  // [camp#103 / ADR-0013] Demand-driven: only tiles at levels UP TO the
+  // selected level that intersect the load viewport are read — this is what
+  // turns the 3.6 GB eager whole-store open into a viewport-bounded load.
+  // [camp#194] The level gate is a CEILING, not an equality: a region-disjoint
+  // native ladder (ENC chart store) needs every level <= the selection loaded
+  // so the coarser levels' regions composite under the selected level
+  // (itemsIntersecting). Levels finer than the selection stay excluded — the
+  // demand-driven bound. @p level == -1 (no selection: headless tests,
+  // pre-first-paint) disables the level filter and a null @p viewport disables
+  // the spatial filter, preserving the pre-LOD load-everything behavior
+  // exactly.
+  //
+  // [camp#194 review] Read coarse levels FIRST. tiles_ is in directory scan
+  // order (alphabetical: fine native files sort before coarse ones, and
+  // overviews/ is scanned last), which would queue the coarse fill behind
+  // large fine reads on a freshly exposed region — on a slow/NFS store the
+  // region trickles in at fine resolution with no coarse backdrop. A stable
+  // ascending-by-level pass restores coarse-first progressive refinement.
+  // Sorting here is off the GUI hot path (worker thread), and tiles_ cannot
+  // be mutated while this worker runs (every mutator aborts + joins first),
+  // so the raw pointers are safe.
+  std::vector<GggsTile*> order;
+  order.reserve(tiles_.size());
   for(auto& tile : tiles_)
+    order.push_back(tile.get());
+  std::stable_sort(order.begin(), order.end(),
+                   [](const GggsTile* a, const GggsTile* b)
+                   { return a->level() < b->level(); });
+  for(auto* tile : order)
   {
     {
       QMutexLocker lock(&abort_flag_mutex_);
@@ -357,7 +519,12 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
     }
     if(tile->pixelsLoaded())
       continue;
-    if(level != -1 && tile->level() != level)
+    // [camp#194] Skip a tile whose read already failed terminally — otherwise
+    // the worker re-opens + re-RasterIOs the dead tile on EVERY kick, i.e. once
+    // per pan step (see GggsTile::loadFailed()).
+    if(tile->loadFailed())
+      continue;
+    if(level != -1 && tile->level() > level)
       continue;
     if(!viewport.isNull() && !tileSceneRect(*tile).intersects(viewport))
       continue;
@@ -368,11 +535,25 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
 bool GggsTileLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) const
 {
   // [camp#103] The pan/zoom re-kick predicate (see header). GUI thread.
+  // [camp#194] Ceiling semantics matching the worker: any level <= the
+  // selection counts — the composited picture is complete only when every
+  // visible tile at every level up to the selection has loaded (this is also
+  // tilesReady()'s release gate for the finer-than-selection backdrop).
   for(const auto& tile : tiles_)
   {
     if(tile->pixelsLoaded())
       continue;
-    if(selected_level_ != -1 && tile->level() != selected_level_)
+    // [camp#194] A tile whose read failed terminally is NOT "still loading".
+    // Counting it would leave this predicate true forever: the pan/zoom re-kick
+    // guard would keep firing and — the sharper failure — tilesReady()'s
+    // load-before-release gate would never open, so the finer-than-selection
+    // zoom-out backdrop would stay resident (and excluded from the auto-range
+    // fold, rendering clipped) for the rest of the session. The ceiling
+    // semantics widen the exposure from "a failing tile AT the selection" to
+    // "any failing tile at any level <= the selection", at every zoom.
+    if(tile->loadFailed())
+      continue;
+    if(selected_level_ != -1 && tile->level() > selected_level_)
       continue;
     if(!viewport_scene.isNull() && !tileSceneRect(*tile).intersects(viewport_scene))
       continue;
@@ -391,11 +572,21 @@ int GggsTileLayer::pixelsLoadedCount(int level) const
   return count;
 }
 
-void GggsTileLayer::tilesReady()
+void GggsTileLayer::foldDataRange(bool reset)
 {
-  // [camp#102] GUI thread, after the worker's join. Fold each loaded tile's range
-  // into the layer auto-range incrementally (the range is unknown until a tile's
-  // pixels load — an all-NoData tile reports a crossed range and is skipped).
+  // [camp#102] Fold each loaded tile's range into the layer auto-range (the
+  // range is unknown until a tile's pixels load — an all-NoData tile reports a
+  // crossed range and is skipped).
+  // [camp#194 review round 3] `reset` picks the two modes (see the header):
+  // false = the incremental widening fold tilesReady() has always done;
+  // true = discard the accumulated aggregate first and recompute it from the
+  // CURRENT resident set, for callers that made a tile's contribution stale
+  // (rescan()'s refreshFromFile()).
+  if(reset)
+  {
+    data_min_ = 1.0;
+    data_max_ = 0.0;
+  }
   bool first_range = (data_min_ > data_max_);
   for(auto& tile : tiles_)
   {
@@ -405,11 +596,14 @@ void GggsTileLayer::tilesReady()
     // min/max must not pollute the current band's auto-range.
     if(tile->band() != band_)
       continue;
-    // [camp#103] Off-level tiles must not pollute the auto-range either (-1 =
-    // no selection = fold everything, the headless default). Note the fold only
-    // ever WIDENS the range across level switches — acceptable because the MEAN
-    // fold guarantees overview values ⊆ the fine range (ADR-0013).
-    if(selected_level_ != -1 && tile->level() != selected_level_)
+    // [camp#103/#194] Tiles finer than the selection must not pollute the
+    // auto-range (-1 = no selection = fold everything, the headless default).
+    // The fold covers exactly the composited steady-state render set (every
+    // level <= the selection); a transiently-resident finer backdrop tile
+    // already contributed while it was <= an earlier selection, and the fold
+    // only ever WIDENS the range across level switches — acceptable because
+    // the MEAN fold guarantees overview values ⊆ the fine range (ADR-0013).
+    if(selected_level_ != -1 && tile->level() > selected_level_)
       continue;
     if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
       continue;
@@ -417,29 +611,102 @@ void GggsTileLayer::tilesReady()
     if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
     first_range = false;
   }
-  // [camp#103] Once the selected level's visible set has fully loaded, release
-  // the stale levels kept resident as the zoom-transition backdrop
-  // (progressive refinement — see itemsIntersecting). Only when no worker is
-  // running: this mutates tiles the worker iterates, and a re-kick may already
-  // be in flight; the release then happens at that load's own tilesReady().
+}
+
+void GggsTileLayer::tilesReady()
+{
+  // [camp#102] GUI thread, after the worker's join. Fold the freshly-loaded
+  // tiles' ranges into the layer auto-range INCREMENTALLY (widening only — see
+  // foldDataRange(): a tile that already contributed keeps its contribution
+  // across a level switch, deliberately).
+  foldDataRange(false);
+  // [camp#103/#194] Once the composited picture's visible set has fully
+  // loaded (hasUnloadedVisibleTiles tests every level <= the selection —
+  // the same ceiling the loader uses), release the tiles at levels FINER
+  // than the selection: they are the zoom-OUT transition backdrop, kept
+  // drawing on top (see itemsIntersecting) until the coarser selection's
+  // visible tiles are complete — the zoom-out mirror of camp#103's
+  // field-verified zoom-in timing, so a LEVEL SWITCH never blanks a region
+  // that has coverage at both levels. (The coarse-zoom blank of a region
+  // whose only native level is finer than the new selection is a separate,
+  // documented limitation of the residency rule — ADR-0013 "Render".)
+  // Levels <= the selection are never released: under multi-level
+  // compositing they are a permanent part of the picture, not a transient
+  // backdrop. Only when no worker is running: this mutates tiles the worker
+  // iterates, and a re-kick may already be in flight; the release then
+  // happens at that load's own tilesReady().
   // The safety of the mutation rests on the GUI-thread-only invariant (both
   // this slot and every loadTiles() caller) — assert it.
   Q_ASSERT(thread() == QThread::currentThread());
   if(selected_level_ != -1 && !future_watcher_.isRunning() &&
      !hasUnloadedVisibleTiles(load_viewport_))
   {
+    // [camp#194 review] The gate above is satisfied by a FAILED tile as well as
+    // a loaded one (hasUnloadedVisibleTiles() excludes loadFailed() tiles so the
+    // loader can settle — see its contract). "Complete" therefore does NOT imply
+    // "covered": where a selected-or-coarser tile failed to read, the picture has
+    // a hole, and the resident finer tiles over that footprint are the ONLY
+    // usable coverage there. Releasing them would blank a previously-visible
+    // region on zoom-out and leave nothing but the failure status — in a nested
+    // store one transient coarse RasterIO error (NFS hiccup, a producer swapping
+    // the file) throws away good fine data.
+    //
+    // So release only the footprint that successfully-loaded selected-or-coarser
+    // tiles actually cover: a finer tile intersecting ANY failed tile at a level
+    // <= the selection is retained. Deliberately conservative — a finer tile that
+    // a second, readable coarse tile also covers is kept too. Over-retention costs
+    // a little residency until the next successful pass (the failure clears via
+    // rescan()'s changed-file refresh or a band switch); under-retention costs
+    // the operator their data.
+    // NOT a coverage/eviction policy: a region with NO coarse tile at all still
+    // releases and blanks per the documented residency rule (ADR-0013 "Render");
+    // that family is camp#195.
+    std::vector<QRectF> failed_rects;
+    for(const auto& tile : tiles_)
+      if(tile->loadFailed() && tile->level() <= selected_level_)
+        failed_rects.push_back(tileSceneRect(*tile));
     bool have_context = false, context_tried = false;
     for(auto& tile : tiles_)
     {
-      if(tile->level() == selected_level_ || !tile->pixelsLoaded())
+      // NOTE: this comparison carries NO -1 guard of its own, unlike every
+      // other selected_level_ site — it relies entirely on the enclosing
+      // `selected_level_ != -1` gate. With -1 (no selection) every tile would
+      // satisfy `level() > -1` and the whole resident store would be released.
+      // Do not relax the outer gate without adding the guard here. (Since
+      // camp#194 loadDirectory()/rescan() also reject tiles whose level parses
+      // to -1, so a real tile can never carry the sentinel.)
+      if(tile->level() <= selected_level_ || !tile->pixelsLoaded())
         continue;
+      // [camp#194 review] Keep this finer tile if it is the only coverage over a
+      // footprint whose selected-or-coarser tile failed to read (see above).
+      if(!failed_rects.empty())
+      {
+        const QRectF tile_rect = tileSceneRect(*tile);
+        const bool over_hole =
+          std::any_of(failed_rects.begin(), failed_rects.end(),
+                      [&tile_rect](const QRectF& hole)
+                      { return hole.intersects(tile_rect); });
+        if(over_hole)
+          continue;
+      }
       if(!context_tried)
       {
         context_tried = true;
         have_context = renderer_.hasContext() && renderer_.makeCurrent();
+        // [camp#194] resetPixels()/releaseGL() pairing invariant (gggs_tile.h):
+        // a CPU-only clear on a tile that already uploaded its texture leaves a
+        // stale texture shadowing any re-load (texture() returns the old one and
+        // never consumes the new data_). With NO context yet (hasContext() ==
+        // false) no tile can have a texture, so the CPU half alone IS the
+        // complete release. But if a context EXISTS and makeCurrent() FAILED,
+        // textures may well exist and we cannot free them — so skip the release
+        // entirely rather than breaking the pairing. Leaving the finer level
+        // resident is harmless (it is drawn under the compositing rules and
+        // released at the next successful pass), and the renderer has latched
+        // its GL-failed flag anyway, so nothing is being rendered meanwhile.
+        if(renderer_.hasContext() && !have_context)
+          break;
       }
-      // resetPixels()/releaseGL() pairing invariant (gggs_tile.h); with no GL
-      // context yet there are no textures, so the CPU half alone is complete.
       if(have_context)
         tile->releaseGL();
       tile->resetPixels();
@@ -448,12 +715,26 @@ void GggsTileLayer::tilesReady()
       renderer_.doneCurrent();
   }
   cached_image_ = QImage();   // re-render now that pixels (and the range) exist
+  // [camp#194] Surface terminally-unreadable tiles. Now that loadFailed() tiles
+  // are excluded from hasUnloadedVisibleTiles(), the loader correctly goes idle
+  // with them missing — so without this the operator would see a settled,
+  // status-clear layer with silent holes in it. Count over the whole tile-set
+  // (not just the visible/selected set) so the number does not flicker with the
+  // viewport.
+  int failed = 0;
+  for(const auto& tile : tiles_)
+    if(tile->loadFailed())
+      ++failed;
   // [camp#102] If the range is still crossed after the fold, every loaded tile was
   // all-NoData (or failed to read): there is nothing to draw and clearing the
   // status would leave a silently-blank enabled layer. Signal "(no data)" so the
   // operator can tell an empty tile-set from one that simply hasn't loaded yet.
   if(data_min_ > data_max_)
-    setStatus("(no data)");
+    setStatus(failed > 0
+              ? QString("(no data; %1 tile(s) failed to load)").arg(failed)
+              : QString("(no data)"));
+  else if(failed > 0)
+    setStatus(QString("(%1 tile(s) failed to load)").arg(failed));
   else
     setStatus("");
   // [camp#142] Keep the Auto resolved range current with the freshly-folded
@@ -599,33 +880,36 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
     item.nodata = tile.hasNoData() ? float(tile.noData()) : 0.0f;
     result.push_back(item);
   };
-  if(selected_level_ == -1)
-  {
-    // No selection (headless default): everything loaded renders, as pre-LOD.
-    for(auto& tile : tiles_)
-      appendTile(*tile);
-    return result;
-  }
-  // [camp#103 / ADR-0013] Progressive refinement across a level switch: tiles
-  // from OTHER levels stay resident (paint() no longer eager-releases them)
-  // and draw FIRST, in ascending level order (coarse→fine), so the outgoing
-  // level backs the view while the selected level streams in — no
-  // blank/flicker on zoom in EITHER direction (the stale backdrop is coarser
-  // on zoom-in, finer on zoom-out). The selected level draws LAST (on top),
-  // so each arriving tile covers its backdrop.
-  // tilesReady() releases the stale levels once the selected level's visible
-  // set is complete, so steady-state renders only the selected level.
+  // [camp#194 / ADR-0013] Multi-level compositing: draw EVERY resident tile,
+  // in ascending level order (coarse→fine painter's order), with no
+  // render-time level filter. WHICH levels are resident is governed by the
+  // loader (only levels <= selected_level_ ever load — the ceiling filter in
+  // loadTilesWorker) and by tilesReady()'s release (levels > selected_level_
+  // drop once the selection's visible set completes). Painter's order then
+  // gives:
+  //  - steady state: levels <= selection composite, fine overdrawing coarse
+  //    where both exist and coarse filling where fine is absent — a
+  //    region-disjoint native ladder (ENC chart store) renders all its
+  //    regions at every zoom AT-OR-FINER than each region's native level. A
+  //    region whose only native level is finer than the selection does not
+  //    load (levels > selection never load — the viewport-bounded tradeoff)
+  //    and renders blank at coarser zooms even though sceneBounds() includes
+  //    its footprint; the residency/coverage follow-up family is camp#195;
+  //  - zoom-in: the stale coarser levels back the arriving selected level
+  //    (unchanged from camp#103's progressive refinement);
+  //  - zoom-out: the still-resident finer tiles draw ABOVE the coarse levels
+  //    (ascending puts them last) and back the view until the coarser
+  //    selection's visible set finishes loading — no blank frame across a
+  //    level switch in either direction. That guarantee is about the
+  //    TRANSITION only: a region with no coverage at-or-coarser than the
+  //    selection still blanks, per the residency rule above (ADR-0013
+  //    "Render" coarse-zoom limitation).
+  // selected_level_ == -1 (headless, no selection) is the same pass: with no
+  // ceiling anywhere, everything loads and everything draws.
   for(const int level : available_levels_)
-  {
-    if(level == selected_level_)
-      continue;
     for(auto& tile : tiles_)
       if(tile->level() == level)
         appendTile(*tile);
-  }
-  for(auto& tile : tiles_)
-    if(tile->level() == selected_level_)
-      appendTile(*tile);
   return result;
 }
 
@@ -678,13 +962,14 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     level_changed = (target != selected_level_);
     if(level_changed)
     {
-      // [camp#103 field verify] Do NOT release the outgoing level here. Its
-      // loaded tiles keep rendering as the backdrop (itemsIntersecting draws
-      // stale levels UNDER the selected level — stale may be coarser on
-      // zoom-in or finer on zoom-out; selected is always on top) until the
-      // new level's visible tiles finish loading — tilesReady() releases them
-      // then. The original eager release blanked the layer for the whole load
-      // on every zoom across a level boundary — very visible flicker.
+      // [camp#103 field verify / camp#194] Do NOT release the outgoing level
+      // here. On zoom-in the coarser levels stay a permanent part of the
+      // composited picture; on zoom-out the finer levels keep rendering
+      // (above the coarse — see itemsIntersecting) as the transition
+      // backdrop until tilesReady() releases them once the new selection's
+      // visible tiles finish loading. The original eager release blanked the
+      // layer for the whole load on every zoom across a level boundary —
+      // very visible flicker.
       selected_level_ = target;
       cached_image_ = QImage();
     }

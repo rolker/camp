@@ -3,6 +3,7 @@
 
 #include <gdal_priv.h>
 
+#include <QDateTime>
 #include <QFileInfo>
 #include <QOpenGLTexture>
 #include <algorithm>
@@ -24,6 +25,33 @@ GggsTile::GggsTile(const QString& path):
   // is set even for a tile that fails to open (-1 only on a non-value name).
   level_(tileLevel(QFileInfo(path).fileName()))
 {
+  readMetadata();
+}
+
+void GggsTile::readMetadata()
+{
+  // [camp#194 review] Re-runnable metadata read (constructor + refreshFromFile).
+  // Zero the dimensions/band count first so a failed re-read leaves valid() ==
+  // false (and loadPixels() re-latching the failure) rather than reporting the
+  // PREVIOUS file's shape. The geographic extent members are deliberately NOT
+  // zeroed: they are the layer's scene-bounds/spatial-filter input for every
+  // tile regardless of valid(), and a GGGS tile's extent is fixed by its
+  // `<level>_<row>_<col>` grid cell, so keeping the last known extent is both
+  // correct and stops a failed re-read from collapsing the layer's footprint.
+  width_ = 0;
+  height_ = 0;
+  band_count_ = 0;
+
+  // [camp#194 review] Record the file identity the change detector compares
+  // against. Taken BEFORE the read so a producer swapping the file mid-read is
+  // seen as changed by the next rescan (the stat then predates the bytes we
+  // actually got) rather than missed.
+  const QFileInfo info(path_);
+  const bool exists = info.exists() && info.isFile();
+  file_size_ = exists ? info.size() : -1;
+  file_mtime_ms_ = exists ? info.lastModified().toMSecsSinceEpoch() : -1;
+
+  const QString& path = path_;
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
 
@@ -69,20 +97,65 @@ GggsTile::GggsTile(const QString& path):
   height_ = height;
 }
 
+bool GggsTile::fileChangedOnDisk() const
+{
+  // [camp#194 review] Cheap stat compare — see the header contract. A file that
+  // vanished reports changed (-1/-1 vs the recorded stat), so a tile removed and
+  // rewritten by a producer swap is refreshed rather than left latched-failed.
+  const QFileInfo info(path_);
+  const bool exists = info.exists() && info.isFile();
+  const qint64 size = exists ? info.size() : -1;
+  const qint64 mtime = exists ? info.lastModified().toMSecsSinceEpoch() : -1;
+  return size != file_size_ || mtime != file_mtime_ms_;
+}
+
+bool GggsTile::refreshFromFile()
+{
+  // [camp#194 review] The explicit same-band retry for a REPLACED file: drop the
+  // stale pixels/range, clear the sticky failure (the premise of the failure —
+  // the bytes at this path — has changed), and re-read the metadata so the
+  // extent/dimensions follow the new file. Ordering: clear the failure BEFORE
+  // the re-read, so a re-read that itself fails leaves valid() false and the
+  // next loadPixels() re-latches honestly.
+  // The caller must have aborted + joined the load worker first (it mutates
+  // state the worker reads) and released the GL texture under a current context
+  // (the resetPixels() pairing INVARIANT) — GggsTileLayer::rescan() does both.
+  resetPixels();
+  load_failed_.store(false, std::memory_order_release);
+  readMetadata();
+  return valid();
+}
+
 bool GggsTile::loadPixels()
 {
+  // [camp#194] Every failure exit below latches load_failed_ (RELEASE, pairing
+  // with the GUI thread's ACQUIRE in loadFailed()) so a tile that passed the
+  // constructor's cheap metadata scan but cannot actually be read stops being
+  // retried on every kick — and, more importantly, stops holding the layer's
+  // hasUnloadedVisibleTiles() predicate true for the rest of the session (see
+  // the loadFailed() contract in gggs_tile.h). Failures here are terminal for
+  // the current band: the causes are a vanished/truncated file, a missing band,
+  // or a GDAL read error, none of which a retry with identical parameters
+  // resolves.
   if(!valid())
+  {
+    load_failed_.store(true, std::memory_order_release);
     return false;
+  }
   if(pixels_loaded_.load(std::memory_order_acquire))
     return true;
 
   // [camp#102] Pure GDAL read — safe off the GUI thread (no GL touched here).
   auto dataset = GDALDataset::FromHandle(GDALOpen(path_.toUtf8().constData(), GA_ReadOnly));
   if(!dataset)
+  {
+    load_failed_.store(true, std::memory_order_release);
     return false;
+  }
   if(dataset->GetRasterCount() < band_)
   {
     GDALClose(dataset);
+    load_failed_.store(true, std::memory_order_release);
     return false;
   }
   auto band = dataset->GetRasterBand(band_);
@@ -100,6 +173,7 @@ bool GggsTile::loadPixels()
                     width_, height_, GDT_Float32, 0, 0) != CE_None)
   {
     GDALClose(dataset);
+    load_failed_.store(true, std::memory_order_release);
     return false;
   }
   GDALClose(dataset);
@@ -179,6 +253,13 @@ void GggsTile::setBand(int band)
   if(band < 1 || band > band_count_ || band == band_)
     return;
   band_ = band;
+  // [camp#194] An explicit band switch is a genuine retry: the new band may be
+  // readable where the old one was not (e.g. a band the file never carried), so
+  // clear the sticky failure marker before the reload. Cleared HERE rather than
+  // in resetPixels(), which is also the LOD release path — a tile released as a
+  // stale finer-level backdrop is re-read with identical parameters, so its
+  // failure must survive that.
+  load_failed_.store(false, std::memory_order_release);
   // [camp#103] The clear body is shared with the LOD level-switch path.
   resetPixels();
 }

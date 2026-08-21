@@ -149,11 +149,16 @@ public:
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
   void waitForLoad();
 
-  /// [camp#103 / ADR-0013] The currently selected LOD level, or -1 when no
-  /// selection has been made (headless / never painted): -1 means NO level
-  /// filter anywhere — worker, items, range fold — so the pre-LOD behavior
-  /// (load and render everything) is preserved bit-for-bit for the existing
-  /// headless tests. paint() drives this from the viewport scale.
+  /// [camp#103 / ADR-0013 / camp#194] The currently selected LOD level, or -1
+  /// when no selection has been made (headless / never painted). The
+  /// selection is a CEILING, not an equality filter: every available level
+  /// <= it loads (viewport-bounded) and stays resident, compositing
+  /// coarse→fine so a region-disjoint native ladder renders all its regions
+  /// (camp#194); levels above it are excluded from loading and released once
+  /// the selection's visible set completes. -1 means NO level filter
+  /// anywhere — worker, range fold, release — so the pre-LOD behavior (load
+  /// and render everything) is preserved for the existing headless tests.
+  /// paint() drives this from the viewport scale.
   int selectedLevel() const { return selected_level_; }
 
   /// [camp#103] Deduplicated ascending list of GGGS levels present across the
@@ -173,13 +178,26 @@ public:
   /// [camp#103] Test-only: number of tiles at @p level whose pixels are loaded.
   int pixelsLoadedCount(int level) const;
 
-  /// [camp#103] True if any tile at the selected level intersects
-  /// @p viewport_scene (Web-Mercator scene rect) with its pixels not yet
-  /// loaded — the pan/zoom re-kick condition for the demand-driven loader
-  /// (a pure pan must re-kick or panned-in regions stay blank forever). With
-  /// no selection (selected_level_ == -1) the level filter is off; a null
-  /// viewport means everything is "visible". Public as the paint() helper and
-  /// the unit-test seam for the re-kick predicate.
+  /// [camp#103/#194] True if any tile at a level <= the selected level
+  /// intersects @p viewport_scene (Web-Mercator scene rect) with its pixels
+  /// not yet loaded — the pan/zoom re-kick condition for the demand-driven
+  /// loader (a pure pan must re-kick or panned-in regions stay blank
+  /// forever), and tilesReady()'s release gate for the finer-than-selection
+  /// zoom-out backdrop (the composited picture is complete only when every
+  /// visible tile up to the selection has loaded). With no selection
+  /// (selected_level_ == -1) the level filter is off; a null viewport means
+  /// everything is "visible". Public as the paint() helper and the unit-test
+  /// seam for the re-kick predicate.
+  /// [camp#194] Tiles whose read failed terminally (GggsTile::loadFailed())
+  /// are EXCLUDED: they will never load, so counting them would pin this
+  /// predicate true for the session — wedging both the re-kick guard and the
+  /// release gate. tilesReady() surfaces their count through setStatus()
+  /// instead, so the layer settles visibly-incomplete rather than silently so.
+  /// [camp#194 review] Consequence for the release gate: "no unloaded visible
+  /// tiles" means the loader has SETTLED, not that the footprint is covered —
+  /// a failed tile leaves a hole. tilesReady() therefore retains finer tiles
+  /// intersecting a failed selected-or-coarser tile rather than releasing the
+  /// only usable coverage over that hole.
   bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
 
   /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds
@@ -187,6 +205,20 @@ public:
   /// pixel load if the layer is already loaded. A half-written tile that fails to
   /// open degrades to valid()==false and is skipped — never crashes. Returns true
   /// if any tile was added; safe to call repeatedly / when nothing changed.
+  /// [camp#194 review] ALSO refreshes tiles whose file was REPLACED at the same
+  /// path (GggsTile::fileChangedOnDisk(): size/mtime differ from the last
+  /// metadata read) — re-reading their metadata and clearing any latched
+  /// GggsTile::loadFailed(), so a tile repaired by a producer (uma
+  /// `enc_updater`'s cron chart-layer rewrite, `overview_pyramid`'s
+  /// rename-aside swap) recovers without restarting CAMP. Such a refresh also
+  /// returns true.
+  /// [camp#194 review round 3] EVERY latched GggsTile::loadFailed() tile is a
+  /// refresh candidate too, whether or not its file changed: a transient I/O
+  /// error (NFS blip) leaves size and mtime identical, and Rescan is an
+  /// explicit operator retry, so it must not be gated on a stat that a
+  /// transient failure never perturbs. Loaded tiles remain stat-gated (no churn
+  /// on a healthy store). A tile that is still unreadable simply re-latches.
+  /// Consequently Rescan returns true while any tile stays failed.
   /// [camp#104] Wired to the "Rescan" context-menu action — the manual stopgap
   /// for the live pickup lost with the retired GggsStoreLayer QFileSystemWatcher
   /// (ADR-0005); a per-layer watcher is a follow-up.
@@ -227,12 +259,29 @@ private:
   /// resets the layer auto-range, invalidates the cached image, re-kicks the async
   /// load, and repaints. No-op if @p band is out of range or unchanged.
   void applyBand(int band);
+  /// [camp#102/#194] Fold the loaded tiles' data ranges into the layer aggregate
+  /// data_min_/data_max_ (current band only, levels <= the selection; all-NoData
+  /// and failed tiles contribute nothing).
+  ///
+  /// @p reset selects the two modes. FALSE (tilesReady()'s steady-state fold) is
+  /// INCREMENTAL: it starts from the existing aggregate and only ever WIDENS it,
+  /// which is deliberate — a finer tile that contributed while it was <= an
+  /// earlier selection keeps its contribution across a level switch, and the
+  /// MEAN fold guarantees overview values ⊆ the fine range (ADR-0013).
+  /// [camp#194 review round 3] TRUE discards the aggregate first and recomputes
+  /// it from the CURRENT resident set — required by any caller that made an
+  /// already-folded contribution STALE, which widening alone can never undo
+  /// (rescan()'s refreshFromFile() replacing a loaded tile's file). Callers that
+  /// reset are responsible for pushing the result to range_model_ (a no-op under
+  /// a Manual override, which the recompute must never disturb).
+  void foldDataRange(bool reset);
   void loadDirectory(const QString& directory);
-  /// [camp#103] Recompute available_levels_ (dedup ascending) and scene_bounds_
-  /// (union of FINEST-level tile extents only — overview tiles are padded to
-  /// their coarse GGGS grid cell, so uniting them would balloon the extent far
-  /// beyond the data footprint) from tiles_. Called after any tiles_ mutation
-  /// (loadDirectory, rescan).
+  /// [camp#103/#194] Recompute available_levels_ (dedup ascending) and
+  /// scene_bounds_ (union of every NATIVE tile's extent, at any level — a
+  /// region-disjoint native ladder needs every level's footprint; overview
+  /// sidecar tiles are padded to their coarse GGGS grid cell, so uniting them
+  /// would balloon the extent far beyond the data footprint) from tiles_.
+  /// Called after any tiles_ mutation (loadDirectory, rescan).
   void rebuildLevelIndex();
   /// [camp#103] items() body with an optional scene-space clip: a non-null
   /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
@@ -266,7 +315,7 @@ private:
   int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   bool smooth_interpolation_ = false;   // [camp#132] blit hint only (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
-  QRectF scene_bounds_;        // union of FINEST-level tile extents (see loadDirectory)
+  QRectF scene_bounds_;        // union of NATIVE tile extents (see rebuildLevelIndex)
 
   // [camp#103 / ADR-0013] LOD selection state (GUI thread only — the worker gets
   // value copies at kick time, see loadTilesWorker). selected_level_ == -1 =
