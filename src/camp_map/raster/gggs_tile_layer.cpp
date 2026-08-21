@@ -267,12 +267,25 @@ bool GggsTileLayer::rescan()
   // Rescan affordance. Not limited to failed tiles: a rewritten tile that DID
   // load is also stale (it is still serving the old file's pixels), and the
   // refresh re-reads it.
+  //
+  // [camp#194 review round 3] The file-stat test alone does NOT cover the case
+  // the sticky-latch finding was raised against in the first place: a TRANSIENT
+  // I/O error (an NFS blip failing GDALOpen()/RasterIO() on a file nobody
+  // touched) leaves size and mtime unchanged, so a stat-gated refresh never
+  // fires, the worker keeps skipping the latched tile, and every Rescan returns
+  // false — the failure is still permanent for the session. Rescan is an
+  // EXPLICIT operator action ("I fixed it, try again"), not a background poll,
+  // so a latched failure is a retry candidate INDEPENDENTLY of the stat: retry
+  // cost is one operator-requested re-read, the cost of not retrying is a
+  // permanently blank region. The stat check is kept for the other half of the
+  // contract — an already-LOADED tile is only re-read when its file actually
+  // changed, so Rescan never churns a healthy resident store.
   QSet<QString> known;
   std::vector<GggsTile*> changed;
   for(const auto& tile : tiles_)
   {
     known.insert(tile->path());
-    if(tile->fileChangedOnDisk())
+    if(tile->loadFailed() || tile->fileChangedOnDisk())
       changed.push_back(tile.get());
   }
 
@@ -347,7 +360,7 @@ bool GggsTileLayer::rescan()
       if(renderer_.hasContext())
         tile->releaseGL();
       if(!tile->refreshFromFile())
-        qWarning("GggsTileLayer: '%s' changed on disk but cannot be re-read",
+        qWarning("GggsTileLayer: '%s' cannot be re-read",
                  qUtf8Printable(tile->path()));
     }
     if(renderer_.hasContext())

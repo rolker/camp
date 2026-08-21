@@ -210,8 +210,15 @@ public:
   /// metadata read) — re-reading their metadata and clearing any latched
   /// GggsTile::loadFailed(), so a tile repaired by a producer (uma
   /// `enc_updater`'s cron chart-layer rewrite, `overview_pyramid`'s
-  /// rename-aside swap) or by a transient I/O error clearing recovers without
-  /// restarting CAMP. Such a refresh also returns true.
+  /// rename-aside swap) recovers without restarting CAMP. Such a refresh also
+  /// returns true.
+  /// [camp#194 review round 3] EVERY latched GggsTile::loadFailed() tile is a
+  /// refresh candidate too, whether or not its file changed: a transient I/O
+  /// error (NFS blip) leaves size and mtime identical, and Rescan is an
+  /// explicit operator retry, so it must not be gated on a stat that a
+  /// transient failure never perturbs. Loaded tiles remain stat-gated (no churn
+  /// on a healthy store). A tile that is still unreadable simply re-latches.
+  /// Consequently Rescan returns true while any tile stays failed.
   /// [camp#104] Wired to the "Rescan" context-menu action — the manual stopgap
   /// for the live pickup lost with the retired GggsStoreLayer QFileSystemWatcher
   /// (ADR-0005); a per-layer watcher is a follow-up.

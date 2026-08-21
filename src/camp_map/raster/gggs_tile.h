@@ -60,15 +60,19 @@ public:
   /// the retry storm this prevents). It IS cleared by the two explicit retry
   /// paths, which both change the read's premise:
   ///  - setBand() — different read parameters (a band the old file lacked);
-  ///  - refreshFromFile() — a DIFFERENT file at the same path, detected by
-  ///    fileChangedOnDisk() during the layer's rescan(). A latched failure is
-  ///    not necessarily permanent: a transient NFS error, or a producer
-  ///    replacing the tile (uma's `enc_updater` rewrites the chart layer on a
-  ///    cron cycle; `overview_pyramid` does rename-aside directory swaps, both
-  ///    potentially under a running CAMP). Without that path a repaired tile
-  ///    would stay blank until CAMP restarts — rescan()'s known-path dedup
-  ///    skips the path and the worker skips loadFailed() tiles, and a one-band
-  ///    store never calls setBand().
+  ///  - refreshFromFile() — invoked by the layer's rescan() (the operator's
+  ///    explicit "Rescan"). A latched failure is not necessarily permanent: a
+  ///    transient NFS error, or a producer replacing the tile (uma's
+  ///    `enc_updater` rewrites the chart layer on a cron cycle;
+  ///    `overview_pyramid` does rename-aside directory swaps, both potentially
+  ///    under a running CAMP). Without that path a repaired tile would stay
+  ///    blank until CAMP restarts — rescan()'s known-path dedup skips the path
+  ///    and the worker skips loadFailed() tiles, and a one-band store never
+  ///    calls setBand(). [round 3] rescan() refreshes EVERY latched tile, not
+  ///    just those whose fileChangedOnDisk() — a transient read error leaves
+  ///    size and mtime untouched, so a stat-gated retry would never fire for
+  ///    the very case this path exists for. (The stat still gates the refresh
+  ///    of tiles that DID load, so a healthy store is never churned.)
   ///
   /// [camp#102] Atomic with the same ACQUIRE/RELEASE discipline as
   /// pixelsLoaded(): stored by the load worker, read from the GUI thread.
@@ -92,7 +96,8 @@ public:
   /// band count / stat) and clear both the loaded pixels and any latched
   /// loadFailed(), so the next loadPixels() reads the CURRENT file. The explicit
   /// same-band retry path for a repaired tile (see loadFailed()); the layer
-  /// calls it from rescan() for tiles whose fileChangedOnDisk() is true.
+  /// calls it from rescan() for every latched tile and for any loaded tile
+  /// whose fileChangedOnDisk() is true.
   /// Returns valid() — false if the replacement can't be opened / has no
   /// geotransform, in which case the tile keeps its (now zeroed) metadata and
   /// the next loadPixels() re-latches the failure. The selected band() is

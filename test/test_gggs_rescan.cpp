@@ -31,7 +31,9 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QDateTime>
 #include <QFile>
+#include <QFileInfo>
 #include <QTemporaryDir>
 
 #include "map/map.h"
@@ -219,6 +221,66 @@ TEST(GggsRescanTest, RepairedTileRecoversWithoutRestart)
     layer->status().toStdString();
 
   // Nothing changed since the refresh re-stat'ed the file: back to a no-op.
+  EXPECT_FALSE(layer->rescan());
+}
+
+// [camp#194 review round 3] The stat-gated refresh above does NOT cover the case
+// the sticky-latch finding was raised against: a TRANSIENT read error on a file
+// nobody rewrote. Size and mtime are then unchanged, so a stat-gated Rescan
+// returns false forever and the tile stays blank for the session — the fix not
+// landing, rather than a new defect. rescan() therefore retries every latched
+// tile regardless of the stat.
+//
+// The transient error is staged by renaming the tile aside so loadPixels()'s
+// GDALOpen() fails, then renaming it BACK: POSIX rename preserves the inode's
+// size and mtime, so the restored file is byte-for-byte the file the tile
+// stat'ed at construction — fileChangedOnDisk() is false and only the
+// latched-failure branch can drive the recovery. The test asserts that premise
+// explicitly rather than assuming it.
+TEST(GggsRescanTest, TransientFailureOnUnchangedFileRetriesOnRescan)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00).isEmpty());
+  const QString flaky_path = writeTile(dir, "13_0_1.tif", -71.39, 43.00);
+  ASSERT_FALSE(flaky_path.isEmpty());
+
+  const QFileInfo before(flaky_path);
+  const qint64 size_before = before.size();
+  const qint64 mtime_before = before.lastModified().toMSecsSinceEpoch();
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  // The "NFS blip": the file is unreachable exactly while the worker reads it.
+  const QString aside = dir.filePath("13_0_1.tif.aside");
+  ASSERT_TRUE(QFile::rename(flaky_path, aside));
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+  ASSERT_TRUE(layer->status().contains("failed")) << layer->status().toStdString();
+
+  // The blip passes: the SAME file is reachable again, with the SAME stat.
+  ASSERT_TRUE(QFile::rename(aside, flaky_path));
+  const QFileInfo after(flaky_path);
+  ASSERT_EQ(after.size(), size_before);
+  ASSERT_EQ(after.lastModified().toMSecsSinceEpoch(), mtime_before)
+      << "premise broken: the restored file's stat changed, so this test would "
+         "pass through the file-changed path instead of the latched-failure one";
+
+  EXPECT_TRUE(layer->rescan()) <<
+    "rescan() skipped a latched tile whose file never changed — a transient "
+    "read error is still permanent for the session";
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 2) <<
+    "the latched tile's pixels were not re-read after the transient failure "
+    "cleared";
+  EXPECT_FALSE(layer->status().contains("failed")) <<
+    "the layer still reports a failed tile after the transient error cleared: "
+    << layer->status().toStdString();
+
+  // Nothing failed and nothing changed: back to a no-op (no Rescan churn on a
+  // healthy store).
   EXPECT_FALSE(layer->rescan());
 }
 
