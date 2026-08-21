@@ -756,8 +756,11 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
   //    (unchanged from camp#103's progressive refinement);
   //  - zoom-out: the still-resident finer tiles draw ABOVE the coarse levels
   //    (ascending puts them last) and back the view until the coarser
-  //    selection's visible set finishes loading — no blank frame in either
-  //    direction.
+  //    selection's visible set finishes loading — no blank frame across a
+  //    level switch in either direction. That guarantee is about the
+  //    TRANSITION only: a region with no coverage at-or-coarser than the
+  //    selection still blanks, per the residency rule above (ADR-0013
+  //    "Render" coarse-zoom limitation).
   // selected_level_ == -1 (headless, no selection) is the same pass: with no
   // ceiling anywhere, everything loads and everything draws.
   for(const int level : available_levels_)

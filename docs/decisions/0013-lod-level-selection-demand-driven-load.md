@@ -96,7 +96,14 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   (e.g. a chart ladder whose finest-only regions vanish at overview zooms),
   the residency/coverage follow-up family is camp#195.
 - **Level-switch transitions** (the camp#103 field-verified no-blank-frame
-  guarantee, both directions):
+  guarantee, both directions). Scope of "no blank frame": it is a guarantee
+  about the *transition*, not about coverage — a region that has coverage at
+  both the outgoing and the incoming selection never blanks while the switch
+  is in flight. It does **not** override the coarse-zoom limitation above: a
+  region whose only native level is finer than the new selection has no
+  coverage to draw once its tiles release, so it blanks by the residency
+  rule, not by a transition gap.
+
   - *Zoom-in*: the resident coarser levels back the arriving selected level —
     unchanged, except they now simply remain part of the picture afterward.
   - *Zoom-out*: the still-resident finer tiles (now > the selection) keep
