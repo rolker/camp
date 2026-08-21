@@ -103,7 +103,6 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   region whose only native level is finer than the new selection has no
   coverage to draw once its tiles release, so it blanks by the residency
   rule, not by a transition gap.
-
   - *Zoom-in*: the resident coarser levels back the arriving selected level —
     unchanged, except they now simply remain part of the picture afterward.
   - *Zoom-out*: the still-resident finer tiles (now > the selection) keep
@@ -111,6 +110,25 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
     coarser selection's visible set finishes loading. Release earlier and
     the view would blank for the whole load, the exact flicker the
     2026-07-31 field verify eliminated for zoom-in.
+- **NoData backfill (QA fidelity)**: with no render-time level filter, the
+  shader's NoData discard means coarse data now shows through *within* a fine
+  tile's footprint — both through interior NoData holes and through the
+  padding a fine tile carries out to its GGGS grid-cell edge. Pre-camp#194
+  those pixels were transparent (only one level drew), so a hole read as
+  "no data here"; now it reads as the coarser level's value. This is a
+  deliberate consequence of compositing — filling coverage gaps from coarser
+  levels is the whole point of the fix — but it is a **fidelity** change of
+  the same family that keeps `smooth_interpolation_` default-OFF (camp#132):
+  what the operator sees at a given pixel may come from a coarser
+  compilation/fold than the tile that nominally covers it. Two mitigations
+  keep it honest today: the depth-at-cursor readout (camp#180,
+  `getElevation()`) always samples **finest-covering-tile-first** independent
+  of what is drawn, so inspection is unaffected; and the auto-range fold
+  spans every composited level, so the coarse fill is colour-mapped on the
+  same scale as the fine data rather than against a foreign range. If a QA
+  workflow ever needs "show me only this level's own data", that is a
+  render-time opt-in (a composite-depth cap of 1), not a change to this
+  decision — it rides camp#195 alongside the overdraw mitigation.
 - **Release**: `tilesReady()` releases only tiles at levels **finer than the
   selection** (CPU `resetPixels()` **paired with** GL `releaseGL()` — a
   CPU-only clear leaves a stale texture shadowing any re-load), and only once
@@ -165,6 +183,28 @@ excluded: they are padded to their coarse GGGS grid cell (the L0 apex spans a
 whole 8° grid); uniting them would balloon fit-to-extent far beyond the data
 footprint. For the legacy single-native-level store + `overviews/` sidecar
 the two unions are identical.
+
+**The store-layout contract this depends on.** `isOverview()` records
+*directory provenance* (the tile was found under `overviews/`), but the
+exclusion rule above is about *padding* (the tile is padded out to its full
+GGGS grid cell). Those are different properties, and the guard is only
+correct because the producer side guarantees they coincide:
+
+- Tiles under `overviews/` are the derived pyramid (uma ADR-0011): each is a
+  4→1 MEAN fold filling its whole coarse grid cell, so its extent is the grid
+  cell, not the data footprint.
+- Tiles in the store's main directory are native — written where the data is.
+  They may be padded to their own (fine) grid cell, but that cell is at most
+  one fine tile larger than the data, which is the footprint granularity the
+  extent has always had.
+
+So a producer that ever wrote grid-cell-padded coarse tiles into the **main**
+directory, or unpadded data tiles into `overviews/`, would break
+`sceneBounds()` — over-large fit-to-extent in the first case, a clipped
+extent in the second. That is a uma-side contract, not something camp can
+detect from a tile alone (a padded tile and a coincidentally-full tile are
+byte-identical in geometry). If the layouts ever diverge, the fix is an
+explicit padded/native flag in the store metadata, not a heuristic here.
 
 ### Auto-range across levels (amended by camp#194)
 
