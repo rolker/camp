@@ -730,12 +730,16 @@ TEST(GggsRenderTest, LevelSwitchResidencyAcrossZoomInAndOut)
   ASSERT_EQ(layer->pixelsLoadedCount(0), 1);
   ASSERT_EQ(layer->pixelsLoadedCount(13), 0);
 
-  // Zoom IN: select the fine level. The coarse tile must stay resident both
-  // mid-transition (backdrop) and — new under compositing — permanently after
-  // the fine level completes (it is part of the composited picture).
+  // Zoom IN: select the fine level. The check right after the setter is
+  // state-sequencing documentation only — setLodForTest() is a plain setter,
+  // so no release path can fire between it and the EXPECT; the real guard
+  // that paint()'s level_changed branch does not eager-release the outgoing
+  // level is PaintDrivenLevelSwitchKeepsOutgoingLevelResident (below), which
+  // drives the actual paint() path. The meaningful assertion here is the
+  // PERMANENT residency after the fine level completes (compositing keeps
+  // every level <= the selection).
   layer->setLodForTest(13, QRectF());
-  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
-    "outgoing level released eagerly — zoom would flicker blank";
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);   // sequencing doc (see comment)
   layer->waitForLoad();
   EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
   EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
@@ -751,6 +755,89 @@ TEST(GggsRenderTest, LevelSwitchResidencyAcrossZoomInAndOut)
   EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
     "finer-than-selection level not released after the selection's visible "
     "set completed";
+}
+
+// [camp#194 review] The paint()-path eager-release guard: drive the REAL
+// paint() across a level boundary (view scale change through QGraphicsView
+// grab(), not setLodForTest()) and assert the outgoing coarse level stays
+// resident through the switch. paint()'s level_changed branch must only
+// reassign the selection and kick the loader — an eager release there (the
+// original pre-camp#103-field-verify design) blanks the layer for the whole
+// incoming load. The setLodForTest()-based residency tests above cannot pin
+// this: a plain setter cannot fire any release path. Scale math: ground
+// metres-per-pixel = metersPerUnit(centre)/view_scale; ~0.15 m/px makes the
+// ideal GGGS level 13 (fine), ~100 m/px makes it ~4 (selects 0 from a {0,13}
+// ladder). Discrimination is made DETERMINISTIC by keeping the coarse tile
+// OUTSIDE the zoomed-in viewport: after an (incorrect) eager release, the
+// level-switch kick's spatial filter cannot reload it, so its residency
+// stays lost and the asserts fail — with the coarse tile in-viewport the
+// tiny reload would race the assert and mask the release. (GL-gated: paint
+// renders through the offscreen GL path.)
+TEST(GggsRenderTest, PaintDrivenLevelSwitchKeepsOutgoingLevelResident)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // A two-level NATIVE ladder at disjoint regions ~1.6 km apart: at the
+  // coarse zoom the viewport (tens of km) covers both; at the fine zoom
+  // (tens of m, centred on the fine tile) the coarse tile is far offscreen.
+  const double fine_geo[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const double coarse_geo[6] = {-71.420, 0.0001, 0.0, 43.020, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples, "0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  const QRectF sb = layer->sceneBounds();   // union of both native regions
+  const QPointF fine_center = web_mercator::geoToMap(QGeoCoordinate(42.999, -71.399));
+  const double mpu = web_mercator::metersPerUnit(sb.center());
+  const double coarse_scale = mpu / 100.0;   // ~100 m ground per px -> level 0
+  const double fine_scale = mpu / 0.15;      // ~0.15 m ground per px -> level 13
+
+  QGraphicsView view(map.scene());
+  view.resize(400, 300);
+  view.setTransform(QTransform::fromScale(coarse_scale, -coarse_scale));
+  view.centerOn(sb.center());
+  view.show();
+  QApplication::processEvents();
+  layer->setVisible(true);   // tile-set layers default hidden (camp#102)
+  QApplication::processEvents();
+
+  // Paint at the coarse zoom: selects level 0 and loads it (13 > ceiling).
+  view.viewport()->grab();
+  ASSERT_EQ(layer->selectedLevel(), 0);
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(0), 1);
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 0);
+
+  // Cross the level boundary through the REAL paint path: rescale onto the
+  // fine tile + repaint. The coarse tile is now far outside the viewport.
+  view.setTransform(QTransform::fromScale(fine_scale, -fine_scale));
+  view.centerOn(fine_center);
+  QApplication::processEvents();
+  view.viewport()->grab();
+  ASSERT_EQ(layer->selectedLevel(), 13);
+  // The pin: paint()'s level_changed branch ran (selection moved 0 -> 13)
+  // and the outgoing coarse level must still be resident — an eager release
+  // in that branch drops it (and the offscreen tile would never be
+  // reloaded), blanking its region for good.
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
+    "paint() eager-released the outgoing level on a level switch — zoom "
+    "blanks for the whole incoming load";
+
+  // Drive the kicked load to completion: fine loads, and under compositing
+  // the coarse level (<= selection) stays resident permanently.
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
+    "coarse level released after the fine level completed — compositing "
+    "keeps every level <= the selection resident";
 }
 
 // [camp#194] Zoom-OUT transition backdrop: with the coarse level selected but
@@ -791,12 +878,15 @@ TEST(GggsRenderTest, ZoomOutRetainsFinerBackdropUntilCoarseLoads)
   ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
   ASSERT_EQ(layer->pixelsLoadedCount(0), 0);
 
-  // Zoom OUT: select the coarse level over the whole extent. Mid-transition
-  // (coarse not yet loaded) the fine tile must stay resident...
+  // Zoom OUT: select the coarse level over the whole extent. The residency
+  // check right after the setter is state-sequencing documentation only (a
+  // plain setter cannot fire a release; the paint()-path eager-release guard
+  // is PaintDrivenLevelSwitchKeepsOutgoingLevelResident). The load-bearing
+  // assertion of THIS test is the render below: mid-transition (coarse not
+  // yet loaded) the still-resident finer tile must still DRAW — the
+  // no-blank-frame guarantee on zoom-out.
   layer->setLodForTest(0, layer->sceneBounds());
-  EXPECT_EQ(layer->pixelsLoadedCount(13), 1) <<
-    "zoom-out backdrop released before the coarse level loaded";
-  // ...and must still RENDER — the no-blank-frame guarantee on zoom-out.
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);   // sequencing doc (see comment)
   const QImage img = layer->renderImage(QSize(200, 200));
   ASSERT_FALSE(img.isNull());
   int opaque = 0;
