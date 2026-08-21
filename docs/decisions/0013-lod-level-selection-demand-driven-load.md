@@ -184,6 +184,20 @@ whole 8° grid); uniting them would balloon fit-to-extent far beyond the data
 footprint. For the legacy single-native-level store + `overviews/` sidecar
 the two unions are identical.
 
+**Exception — the overview-only store.** The exclusion above is stated for a
+store that HAS native tiles. If a store's main directory holds no usable
+native tile at all (only an `overviews/` sidecar — a pyramid whose fine level
+was pruned or has not been imported), excluding overviews would leave
+`scene_bounds_` null, and a null `boundingRect()` silently blanks the layer
+everywhere. So `rebuildLevelIndex()` falls back in that case to unioning the
+FINEST overview level present (`gggs_tile_layer.cpp`, the second union pass),
+which is also the old finest-level-only behavior for this store shape. The
+contract in full: **overview tiles are excluded whenever any native tile
+exists; an overview-only store takes the finest-overview-level union
+instead** — a deliberately over-large (grid-cell-padded) extent, chosen
+because an over-large fit-to-extent is recoverable by the operator and a null
+one is not.
+
 **The store-layout contract this depends on.** `isOverview()` records
 *directory provenance* (the tile was found under `overviews/`), but the
 exclusion rule above is about *padding* (the tile is padded out to its full
