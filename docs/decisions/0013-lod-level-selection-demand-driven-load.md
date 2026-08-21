@@ -140,7 +140,11 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
   compilation/fold than the tile that nominally covers it. Two mitigations
   keep it honest today: the depth-at-cursor readout (camp#180,
   `getElevation()`) always samples **finest-covering-tile-first** independent
-  of what is drawn, so inspection is unaffected; and the auto-range fold
+  of what is drawn, so inspection is unaffected — since camp#195 that means
+  the finest covering tile *that is resident*, which under the viewport-scoped
+  budget ([ADR-0014](0014-gggs-viewport-scoped-residency.md)) is still the
+  finest one wherever the cursor is, because viewport tiles are structurally
+  protected from eviction; and the auto-range fold
   spans every composited level, so the coarse fill is colour-mapped on the
   same scale as the fine data rather than against a foreign range. If a QA
   workflow ever needs "show me only this level's own data", that is a

@@ -199,6 +199,14 @@ public:
   /// paints, so it drives the pass directly.
   void refreshResidencyForTest() { evictIfOverBudget(); }
 
+  /// [camp#195] Test-only: run paint()'s HALF of the residency pass — protect
+  /// the current frame's set and SCHEDULE the eviction — without a
+  /// QGraphicsView. Exercises the debounce and the queued hop, so a test can
+  /// assert the deferred path converges after
+  /// `QCoreApplication::processEvents()` rather than only the synchronous
+  /// refreshResidencyForTest() shortcut.
+  void scheduleResidencyForTest() { scheduleEvictionIfNeeded(refreshProtection()); }
+
   /// [camp#103/#194] True if any tile at a level <= the selected level
   /// intersects @p viewport_scene (Web-Mercator scene rect) with its pixels
   /// not yet loaded — the pan/zoom re-kick condition for the demand-driven
@@ -360,12 +368,20 @@ private:
   /// [camp#195 / uma-ADR-0013 D4] Re-derive the current frame's protected
   /// working set into residency_ and return its size. The predicate is the
   /// LOADER's, not the draw list's: tiles intersecting load_viewport_ at a level
-  /// <= the selection (plus camp#194 hole coverers). It must not be the draw
-  /// list — `cached_image_` short-circuits itemsIntersecting() on a static
-  /// frame, so a draw-list-sourced protection would protect NOTHING on exactly
-  /// the frames eviction runs on. Not-yet-loaded tiles count: they are part of
-  /// the working set the cap must accommodate. loadFailed() tiles do not: they
-  /// never become resident, so they must not inflate the floor.
+  /// <= the selection. It must not be the draw list — `cached_image_`
+  /// short-circuits itemsIntersecting() on a static frame, so a
+  /// draw-list-sourced protection would protect NOTHING on exactly the frames
+  /// eviction runs on. Not-yet-loaded tiles count: they are part of the working
+  /// set the cap must accommodate. loadFailed() tiles do not: they never become
+  /// resident, so they must not inflate the floor.
+  ///
+  /// Two classes of in-view tile FINER than the selection are protected on top
+  /// of the loader's set, because both are drawn and neither can reload
+  /// (loadTilesWorker skips level > selection): an already-RESIDENT finer tile,
+  /// which during a zoom-out is the whole visible picture until the coarser
+  /// selection loads (the camp#103/#194 no-blank-frame guarantee — and
+  /// tilesReady()'s level-switch release still drops it at the right moment, so
+  /// this leaks nothing); and a camp#194 hole coverer.
   std::size_t refreshProtection();
   /// [camp#195] The budget expressed as a tile count: the byte budget divided by
   /// the OBSERVED per-tile resident cost. 0 means unbounded (budget disabled, or
@@ -484,6 +500,16 @@ private:
   bool eviction_warned_ = false;        // one qWarning per layer, not per pass
   bool over_budget_ = false;            // protected set alone exceeds the budget
   bool hole_coverage_released_ = false; // a camp#194 hole coverer was evicted
+  // Set when releaseTiles() refused because a live GL context would not become
+  // current. RasterGlRenderer latches that failure without destroying the
+  // context, so the condition can be permanent and the budget stops being
+  // enforced entirely — which the status must say rather than grow silently.
+  bool eviction_blocked_ = false;
+  // Memoized perTileResidentBytes(), keyed on tiles_.size(). Tile extents are
+  // immutable after their metadata read and tiles_ only ever grows, so the size
+  // is a sufficient key — and this is on the paint path.
+  mutable std::size_t per_tile_bytes_ = 0;
+  mutable std::size_t per_tile_bytes_count_ = std::size_t(-1);
 };
 
 }  // namespace raster

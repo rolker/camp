@@ -8,6 +8,15 @@ Amended by camp#171/#172 (world-store LOD step 4): D3 reframed as *convergence* 
 the uma shared fold engine (no geometry change); D2 on-demand reload implemented; D6
 reload-hysteresis added. See the "Consequences" memory-math and migration notes.
 
+Cross-reference (camp#195, no change to this decision):
+[ADR-0014](0014-gggs-viewport-scoped-residency.md) gives `GggsTileLayer` its own
+residency budget. It is a **sibling**, not an extension — same forces, different
+data contract — and it records where the two policies deliberately diverge: a
+GGGS tile is file-backed, so it is dropped and re-read on pan-back instead of
+being folded into a parent, and its budget is expressed in bytes converted to a
+tile count from the observed tile size. Both decisions implement
+`uma-ADR-0013` D4.
+
 Implements camp issue #160 (supersedes #153, bounded eviction alone). Part of the
 #154 camp resource self-monitoring umbrella. Extends
 [ADR-0006](0006-live-tile-cache-persistence.md) (live tile cache persistence): it

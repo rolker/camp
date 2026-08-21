@@ -53,7 +53,8 @@ one.
 2. **The cap is floored at the protected (current-frame) set.** A ceiling that
    can fall below the working set is D4's "thrashes by construction" (review
    finding 6). The floor is paired with a **non-silent over-budget status**, so
-   D4's "never fail silently" holds without the degrade lever.
+   camp#195's "Report the degraded state; never fail silently" holds without
+   the degrade lever.
 3. **The `pressure_bias_` / degrade-under-pressure lever is deferred entirely**
    to **camp#197** (review finding 9: as specified it oscillates with a period
    equal to its cool-down). camp#155/#156 are named there as the measured-pressure
@@ -197,7 +198,7 @@ Governed by `uma-ADR-0013` D4.
 | Test | Asserts |
 |---|---|
 | `test/test_tile_residency.cpp` (new, pure) | `beginFrame()`/`protect()`/`candidates()` invariants: a protected index never appears in `candidates()`; re-protect within a frame is idempotent; `beginFrame()` returns the whole protected partition to the candidates; `sync()` admits tiles appended by `rescan()` |
-| `test/test_gggs_eviction.cpp` (new, headless, GL-free) | Synthetic single-level strip walked far wider than the cap: resident count stays ≤ cap while visited count grows (the `test_map_tiles_eviction.cpp` / `test_tile_eviction_rss.cpp` bounded-count shape); no tile intersecting the current `load_viewport_` is ever evicted; pan-back reloads a dropped tile (`pixelsLoadedCount()`); a ladder's coarsest level survives a pan that evicts the fine level, and the exemption is bounded; a `loadFailed()`-covering finer tile in view is retained; over-budget (working set alone above the byte target) floors the cap and reports a non-empty status rather than evicting the visible set; `max_resident_bytes = 0` reproduces pre-#195 residency |
+| `test/test_gggs_eviction.cpp` (new, headless, GL-free) | Synthetic single-level strip walked far wider than the cap: resident count stays ≤ cap while visited count grows (the `test_map_tiles_eviction.cpp` / `test_tile_eviction_rss.cpp` bounded-count shape); no tile intersecting the current `load_viewport_` is ever evicted; pan-back reloads a dropped tile; a ladder's coarsest level survives a pan that evicts the fine level; a `loadFailed()`-covering finer tile in view is retained; over-budget (working set alone above the byte target) floors the cap and reports a non-empty status rather than evicting the visible set; `max_resident_bytes = 0` reproduces pre-#195 residency. **Added after the local review**: the coarsest exemption is bounded *by the cap* (an exemption that can outgrow the eviction target makes the victim loop unable to reach it); the zoom-out backdrop under the viewport is protected; the released-coverage report clears on `rescan()`; and the **deferred** path — protect-and-schedule, then `processEvents()` — converges, covering the debounce and the queued hop rather than only the synchronous test shortcut |
 | `test/test_gggs_elevation.cpp` (extend — review finding 14) | `getElevation()` over an **evicted** (panned-away) area returns NaN while the in-viewport readout still answers — the consequence the plan's own table names |
 
 Headless coverage is the CPU half of the release only: with no GL context
@@ -209,6 +210,43 @@ The A→B→A ping-pong assertion from the original plan is **withdrawn** (revie
 finding 12): with a cap below `|A ∪ B|` ping-pong is guaranteed, so the
 assertion was either unachievable or vacuous. The reload behaviour is covered by
 the pan-back assertion instead, at a cap that admits the working set.
+
+## Corrections from the local review (pre-push)
+
+The `/review-code` round on the implementation found seven issues that changed
+the landed design; recorded here so the plan matches what shipped:
+
+1. **Protection is the loader predicate *plus* the in-view resident backdrop.**
+   `itemsIntersecting()` draws the whole resident set with no level filter, so
+   during a zoom-out the in-view tiles *finer* than the selection are the entire
+   visible picture — and they cannot reload. Protecting only the loader's set
+   would have let the budget undo camp#103/#194's no-blank-frame guarantee.
+2. **The coarsest exemption is bounded by the cap** (`min(64, cap / 4)`), not by
+   a flat 64: at the 512 MiB / 960×960 default the flat cap (64) exceeds the
+   eviction target (~57), and since exempt tiles still count toward residency
+   the victim loop could never reach the target — it would shed every ordinary
+   candidate every pass.
+3. **`tilesReady()` drains a pending eviction.** The timer re-arm alone is a
+   blind resample: during a sustained pan the loader-idle window is about one
+   event-loop turn, so a 100 ms retry lands in it only by luck. `tilesReady()`
+   is the deterministic rendezvous — GUI thread, right after the worker's join,
+   before any `paint()` can re-kick.
+4. **A refused GL release is reported.** `RasterGlRenderer` latches a
+   `makeCurrent()` failure without destroying the context, so "release nothing"
+   can be permanent and the budget would silently cease to exist.
+5. **The released-hole-coverage report is live, not latched** (cleared by
+   `rescan()`, shown only while a tile is still failed), and it names the
+   recovery actions that actually work — zoom in, or Rescan to repair the failed
+   tile. Rescan alone does not reload an evicted finer tile.
+6. **A malformed `max_resident_bytes` no longer disables the budget silently**
+   (`toULongLong()` returns 0 — the disable sentinel — for any unparsable
+   value); it warns and falls back to the default.
+7. Smaller: generation `0` (never seen) now classifies as *stale* rather than
+   "recent"; `budgetTiles() == 0` clears the published budget state;
+   `QMetaObject::invokeMethod` uses the compile-checked pointer-to-member
+   overload; `perTileResidentBytes()` is memoized off the paint path; and
+   "loading…" is a status *part* rather than an early return that would hide the
+   residency reports for the whole duration of a pan.
 
 ## Files to Change
 
@@ -242,7 +280,7 @@ Not changed (was in the `b70311f` plan): `viewport_clip.h`,
 
 | ADR | Triggered | How addressed |
 |---|---|---|
-| `uma-ADR-0013` D4 | Yes | Budget + structural current-frame protection + hybrid ordering implemented; the quality-relaxation lever is deferred to camp#197 with the cap floor + over-budget status standing in for "never fail silently" |
+| `uma-ADR-0013` D4 | Yes | Budget + structural current-frame protection + hybrid ordering implemented; the quality-relaxation lever is deferred to camp#197 with the cap floor + over-budget status standing in for the issue's "never fail silently" requirement |
 | `uma-ADR-0013` D5 | Yes | Ascending (zoom-out) backdrop retention is untouched; eviction never targets the current frame, so "the picture never gets worse" holds except across a true pan-away |
 | `uma-ADR-0013` D6 | No | No prefetch — the ADR requires latency measurement first |
 | `uma-ADR-0013` D8 | No | `getElevation()` is a display readout, not a safety query |

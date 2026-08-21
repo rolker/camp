@@ -86,14 +86,18 @@ QString writeTile(const QTemporaryDir& dir, const QString& name, double lon0,
 }
 
 // A west-to-east strip of @p count level-13 tiles, tile k carrying value k+1 so
-// a sample identifies which tile answered.
-void writeStrip(const QTemporaryDir& dir, int count)
+// a sample identifies which tile answered. Returns false on the first failed
+// write: a gtest fatal assertion inside a helper aborts only the HELPER, so a
+// short strip would otherwise leak into the test as a confusing — or, for an
+// upper-bound assertion, a spuriously passing — result.
+bool writeStrip(const QTemporaryDir& dir, int count)
 {
   for(int k = 0; k < count; ++k)
-    ASSERT_FALSE(writeTile(dir, QString("13_0_%1.tif").arg(k),
-                           kLon0 + k * kTileSpan, kLat0, kCell, kTileEdge,
-                           float(k + 1))
-                   .isEmpty());
+    if(writeTile(dir, QString("13_0_%1.tif").arg(k), kLon0 + k * kTileSpan,
+                 kLat0, kCell, kTileEdge, float(k + 1))
+         .isEmpty())
+      return false;
+  return true;
 }
 
 // A point comfortably inside strip tile @p k.
@@ -134,7 +138,7 @@ TEST(GggsEvictionTest, PanAcrossStripStaysWithinBudget)
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
   const int kTiles = 12;
-  writeStrip(dir, kTiles);
+  ASSERT_TRUE(writeStrip(dir, kTiles));
 
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
@@ -167,7 +171,7 @@ TEST(GggsEvictionTest, PannedAwayAreaIsReleasedAndReadsNaN)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
-  writeStrip(dir, 10);
+  ASSERT_TRUE(writeStrip(dir, 10));
 
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
@@ -194,7 +198,7 @@ TEST(GggsEvictionTest, PanBackReloadsAnEvictedTile)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
-  writeStrip(dir, 8);
+  ASSERT_TRUE(writeStrip(dir, 8));
 
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
@@ -223,7 +227,7 @@ TEST(GggsEvictionTest, ZeroBudgetDisablesEviction)
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
   const int kTiles = 8;
-  writeStrip(dir, kTiles);
+  ASSERT_TRUE(writeStrip(dir, kTiles));
 
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
@@ -246,7 +250,7 @@ TEST(GggsEvictionTest, CoarsestLadderLevelIsExemptFromEviction)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
-  writeStrip(dir, 10);
+  ASSERT_TRUE(writeStrip(dir, 10));
   // Level 0 tile spanning strip tiles 0..3 (4 x kTileSpan wide).
   ASSERT_FALSE(writeTile(dir, "0_0_0.tif", kLon0, kLat0, kCell * 4, kTileEdge,
                          500.0f)
@@ -280,7 +284,7 @@ TEST(GggsEvictionTest, InViewHoleCoverageIsProtected)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
-  writeStrip(dir, 6);
+  ASSERT_TRUE(writeStrip(dir, 6));
   // A coarse (level 10) tile over strip tiles 0..3, which we then break.
   const QString coarse_path =
     writeTile(dir, "10_0_0.tif", kLon0, kLat0, kCell * 4, kTileEdge, 500.0f);
@@ -335,7 +339,7 @@ TEST(GggsEvictionTest, WorkingSetAboveBudgetFloorsTheCapAndReportsIt)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
-  writeStrip(dir, 6);
+  ASSERT_TRUE(writeStrip(dir, 6));
 
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
@@ -356,6 +360,162 @@ TEST(GggsEvictionTest, WorkingSetAboveBudgetFloorsTheCapAndReportsIt)
   panTo(layer, 0, 0);
   EXPECT_FALSE(layer->status().contains("over the tile budget"))
     << layer->status().toStdString();
+}
+
+// A repaired store clears the released-coverage report: the message names a
+// recovery action, so it must describe live state rather than latch for the
+// session. (The over-budget message's live-ness is asserted above; this is its
+// twin, and the asymmetry between them was a review finding.)
+TEST(GggsEvictionTest, RescanClearsTheReleasedCoverageReport)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(writeStrip(dir, 6));
+  const QString coarse_path =
+    writeTile(dir, "10_0_0.tif", kLon0, kLat0, kCell * 4, kTileEdge, 500.0f);
+  ASSERT_FALSE(coarse_path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setResidentBudgetBytesForTest(2 * kTileBytes);
+  {
+    QFile file(coarse_path);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    ASSERT_TRUE(file.resize(0));
+  }
+
+  panTo(layer, 0, 3);
+  layer->setLodForTest(10, viewportOverTiles(0, 1));
+  layer->waitForLoad();
+  layer->refreshResidencyForTest();
+  ASSERT_TRUE(layer->status().contains("released")) << layer->status().toStdString();
+
+  // The producer writes a good tile back at the same path; Rescan is the
+  // operator's retry.
+  ASSERT_FALSE(
+    writeTile(dir, "10_0_0.tif", kLon0, kLat0, kCell * 4, kTileEdge, 500.0f)
+      .isEmpty());
+  EXPECT_TRUE(layer->rescan());
+  layer->waitForLoad();
+
+  EXPECT_FALSE(layer->status().contains("released"))
+    << "the released-coverage report survived the repair: "
+    << layer->status().toStdString();
+}
+
+// The zoom-out backdrop must be protected, not merely drawn. itemsIntersecting()
+// renders the whole resident set with no level filter, so during a zoom-out the
+// still-resident FINER tiles are the entire visible picture until the coarser
+// selection loads (camp#103/#194's no-blank-frame guarantee). They are outside
+// the loader's level ceiling, so a protection predicate that used the loader's
+// filter alone would leave exactly the on-screen picture evictable — and unlike
+// other evictions it could not reload, because loadTilesWorker() skips levels
+// finer than the selection.
+TEST(GggsEvictionTest, ZoomOutBackdropInViewIsProtected)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(writeStrip(dir, 6));
+  // A coarse level-0 tile covering strip tiles 4..5 only — it is NOT under the
+  // viewport used below, so it cannot satisfy the assertion by itself.
+  ASSERT_FALSE(writeTile(dir, "0_0_0.tif", kLon0 + 4 * kTileSpan, kLat0,
+                         kCell * 2, kTileEdge, 500.0f)
+                 .isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setResidentBudgetBytesForTest(2 * kTileBytes);
+
+  // Load fine tiles 0..3 at a fine selection.
+  panTo(layer, 0, 3);
+  ASSERT_FALSE(std::isnan(layer->getElevation(insideTile(0))));
+
+  // Zoom OUT to the coarse level over tiles 0..1 WITHOUT letting the coarse load
+  // settle (no waitForLoad): mid-transition, the resident fine tiles 0..1 are
+  // level > selection, in view, and the only thing on screen. Residency is over
+  // budget, so something must go — it must not be them.
+  layer->setLodForTest(0, viewportOverTiles(0, 1));
+  layer->refreshResidencyForTest();
+
+  EXPECT_FALSE(std::isnan(layer->getElevation(insideTile(0))))
+    << "the zoom-out backdrop under the viewport was evicted — the view would "
+       "blank for the whole coarse load";
+  EXPECT_FALSE(std::isnan(layer->getElevation(insideTile(1))))
+    << "the zoom-out backdrop under the viewport was evicted";
+}
+
+// The coarsest-level exemption is bounded relative to the cap, not just by a
+// flat count: an exemption that can exceed the eviction target would make the
+// victim loop unable to reach it, evicting every ordinary candidate on every
+// pass. Here the cap is small, so at most a couple of coarse tiles stay exempt
+// while the rest are demoted to last-resort candidates and eventually taken.
+TEST(GggsEvictionTest, CoarsestExemptionIsBoundedByTheCap)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_TRUE(writeStrip(dir, 12));
+  // Six level-5 tiles, each spanning two strip tiles, covering the whole strip.
+  for(int k = 0; k < 6; ++k)
+    ASSERT_FALSE(writeTile(dir, QString("5_0_%1.tif").arg(k),
+                           kLon0 + 2 * k * kTileSpan, kLat0, kCell * 2,
+                           kTileEdge, 500.0f + k)
+                   .isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  ASSERT_EQ(layer->availableLevels().size(), 2u);
+  layer->setResidentBudgetBytesForTest(4 * kTileBytes);
+
+  for(int k = 0; k + 1 < 12; ++k)
+    panTo(layer, k, k + 1);
+
+  EXPECT_GE(layer->pixelsLoadedCount(5), 1)
+    << "the zoom-out floor was eliminated entirely";
+  EXPECT_LT(layer->pixelsLoadedCount(5), 6)
+    << "every coarsest-level tile stayed exempt — the exemption grows with the "
+       "area panned and can exceed the eviction target";
+}
+
+// The deferred path, not just the synchronous shortcut the other tests use:
+// paint() PROTECTS and SCHEDULES, and the pass runs from the event loop. This
+// covers the eviction_pending_ debounce and the queued invocation — the
+// mechanism the budget actually runs on in the application.
+TEST(GggsEvictionTest, ScheduledEvictionConvergesThroughTheEventLoop)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int kTiles = 8;
+  ASSERT_TRUE(writeStrip(dir, kTiles));
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->setResidentBudgetBytesForTest(3 * kTileBytes);
+
+  // Load the whole strip with no residency pass in between (no level filter, no
+  // viewport filter), so residency starts well over the budget.
+  layer->setLodForTest(-1, QRectF());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), kTiles);
+
+  // Now a "frame" over two tiles: protect + schedule only. Scheduling twice must
+  // not queue two passes (the debounce).
+  layer->setLodForTest(13, viewportOverTiles(0, 1));
+  layer->scheduleResidencyForTest();
+  layer->scheduleResidencyForTest();
+  EXPECT_EQ(layer->residentTileCount(), std::size_t(kTiles))
+    << "eviction ran inside the scheduling call — it must be deferred off the "
+       "paint path";
+
+  QCoreApplication::processEvents();
+
+  EXPECT_LE(layer->residentTileCount(), 3u)
+    << "the queued eviction pass never ran";
+  EXPECT_FALSE(std::isnan(layer->getElevation(insideTile(0))));
+  EXPECT_FALSE(std::isnan(layer->getElevation(insideTile(1))));
 }
 
 int main(int argc, char** argv)
