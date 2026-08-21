@@ -2,7 +2,10 @@
 
 ## Status
 
-Accepted (camp#103, the LOD half; the visible-region half is ADR-0011)
+Accepted (camp#103, the LOD half; the visible-region half is ADR-0011).
+Amended by camp#194: the selection is a **ceiling** (multi-level
+compositing), not an equality filter — see "Multi-level compositing",
+"Extent semantics", and "Auto-range across levels" below.
 
 ## Context
 
@@ -44,8 +47,10 @@ ADR-0010 — native levels, no derived overviews) feeds it its own ladder.
 `paint()` derives the viewport clip first (ADR-0011), selects the level, then
 kicks the loader with a **snapshotted filter** (level + viewport as value
 copies — the live members are reassigned every frame, so the worker must never
-read them). The worker loads only not-yet-loaded tiles at the selected level
-intersecting the snapshot viewport.
+read them). The worker loads only not-yet-loaded tiles at levels **up to**
+the selected level (the ceiling — camp#194) intersecting the snapshot
+viewport; levels finer than the selection stay excluded, which is what keeps
+the load viewport-bounded rather than store-bounded.
 
 Re-kick conditions (each a reviewed must-fix):
 
@@ -59,46 +64,97 @@ Re-kick conditions (each a reviewed must-fix):
   every frame, and kicking only when idle avoids per-frame abort+join stalls
   during pan storms.
 
-### Progressive refinement across a level switch (field-verified fix)
+### Multi-level compositing (amended by camp#194; supersedes "progressive refinement")
 
-A level change does **not** release the outgoing level's tiles. They stay
-resident and `itemsIntersecting()` draws them as the backdrop — stale levels
-first, coarse→fine, with the selected level last (on top) — so the view stays
-populated while the new level streams in, each arriving tile covering its
-backdrop. The initial eager-release design blanked the layer for the whole
-load on every zoom across a level boundary (very visible flicker in the
-2026-07-31 field verify against the real store).
+The original design treated `selected_level_` as an **equality** filter:
+exactly one level loaded, rendered, and stayed resident at steady state, with
+other levels drawn only transiently as a zoom backdrop. That model implicitly
+assumed a nested pyramid (every coarser level covers the same footprint as
+the finest) — true for a derived `overviews/` sidecar, false for a
+**region-disjoint native ladder** (ENC chart store, uma ADR-0010 D7: one
+native level per compilation scale, each covering only its own sub-region).
+Under the equality filter such a store rendered exactly one region band per
+zoom (camp#194).
 
-`tilesReady()` releases the stale levels (CPU `resetPixels()` **paired with**
-GL `releaseGL()` — a CPU-only clear leaves a stale texture shadowing any
-re-load) once the selected level's visible set has fully loaded and no worker
-is running, so steady-state renders — and holds resident — only the selected
-level. Transient cost: the outgoing level's visible tiles stay resident for
-the duration of the incoming load. A rapid multi-level zoom/pan sweep can
-transiently stack several stale levels (each load aborted before the release
-condition fires), bounded by the levels traversed and freed wholesale at the
-first idle completed load — self-healing, and still far below the pre-#103
-eager whole-store residency. If that transient ever matters in practice, a
+The amended model: `selected_level_` is a **max threshold (ceiling)**.
+
+- **Residency**: every available level ≤ the selection loads
+  (viewport-bounded) and stays resident **permanently** — it is part of the
+  composited picture, not a transient backdrop. Levels > the selection never
+  load.
+- **Render**: `itemsIntersecting()` draws the whole resident set in one
+  ascending pass — coarse→fine painter's order, **no render-time level
+  filter**. Fine overdraws coarse where both exist; coarse fills where fine
+  is absent, so a disjoint ladder shows all its regions at every zoom.
+- **Level-switch transitions** (the camp#103 field-verified no-blank-frame
+  guarantee, both directions):
+  - *Zoom-in*: the resident coarser levels back the arriving selected level —
+    unchanged, except they now simply remain part of the picture afterward.
+  - *Zoom-out*: the still-resident finer tiles (now > the selection) keep
+    drawing — on top, since ascending order puts them last — until the
+    coarser selection's visible set finishes loading. Release earlier and
+    the view would blank for the whole load, the exact flicker the
+    2026-07-31 field verify eliminated for zoom-in.
+- **Release**: `tilesReady()` releases only tiles at levels **finer than the
+  selection** (CPU `resetPixels()` **paired with** GL `releaseGL()` — a
+  CPU-only clear leaves a stale texture shadowing any re-load), and only once
+  the selection's visible set has fully loaded
+  (`hasUnloadedVisibleTiles()`, which tests the same ≤-selection ceiling)
+  with no worker running. That load-before-release gate is what carries the
+  zoom-out no-blank guarantee.
+
+A rapid multi-level zoom/pan sweep can transiently stack several
+finer-than-selection levels (each load aborted before the release condition
+fires), bounded by the levels traversed and freed wholesale at the first idle
+completed load — self-healing, and still far below the pre-#103 eager
+whole-store residency. If that transient ever matters in practice, a
 release-on-abort pass is the follow-up shape.
 
+**Residency bound (ADR-0010 cross-reference, camp#195)**: `GggsTileLayer` has
+no residency/eviction budget — camp ADR-0010 governs `SonarLiveCacheLayer`, a
+different class. Under compositing, multiple levels stay resident
+simultaneously at steady state, so the pre-existing unbounded-within-level
+growth multiplies across every level ≤ the selection. For the `chart` store
+this is genuinely bounded (a fixed native ladder, 54 tiles); for a derived
+`overviews/` pyramid the overhead is a bounded geometric series (~33% over
+the fine level alone). The classes to watch are **`reference`** (mixed-level
+imports: S-102 + fine imported grids vs coarse legacy priors) and
+**`draft`/`processed`** (uma ADR-0010 D9 generates overview pyramids over
+potentially large fine-level survey coverage) — `chart` is the one member of
+this family that is *not* the risk. Given the camp#153 `SonarLiveCacheLayer`
+OOM precedent for this accumulation shape, the eviction-bound follow-up is
+tracked as **camp#195**.
+
 **Headless / no-selection defaults**: `selected_level_ == -1` disables the
-level filter everywhere (worker, `itemsIntersecting()`, the range fold) and a
-null viewport disables the spatial filter — so a layer that never paints
-(headless tests driving `waitForLoad()` + `renderImage()`) behaves exactly as
-before this ADR: load and render everything.
+level ceiling everywhere (worker, range fold, release) and a null viewport
+disables the spatial filter — so a layer that never paints (headless tests
+driving `waitForLoad()` + `renderImage()`) behaves exactly as before this
+ADR: load and render everything. (Since camp#194 the render path itself has
+no level filter to disable — it always draws the resident set.)
 
-### Extent semantics
+### Extent semantics (amended by camp#194)
 
-`sceneBounds()` unions **finest-level tile extents only**. Overview tiles are
-padded to their coarse GGGS grid cell (the L0 apex spans a whole 8° grid);
-uniting them would balloon fit-to-extent far beyond the data footprint.
+`sceneBounds()` unions **every native (non-overview-sidecar) tile's extent,
+at any level**. A region-disjoint native ladder needs every level's footprint
+in the union — with the old finest-level-only union, the regions covered only
+by coarser native levels sat outside `boundingRect()` and could never paint
+(QGraphicsView culls there), regardless of the compositing fix. Overview
+tiles (tagged via `GggsTile::isOverview()` from the `overviews/` scan) stay
+excluded: they are padded to their coarse GGGS grid cell (the L0 apex spans a
+whole 8° grid); uniting them would balloon fit-to-extent far beyond the data
+footprint. For the legacy single-native-level store + `overviews/` sidecar
+the two unions are identical.
 
-### Auto-range across levels
+### Auto-range across levels (amended by camp#194)
 
 A level switch does not reset the layer auto-range; the fold only ever widens
-it. This is sound because the imagery overview fold is MEAN (uma ADR-0011), so
-overview values are contained in the fine range. A fold policy that can exceed
-the source range (none exists today) would need a reset-on-switch here.
+it. The fold's level gate matches the composited steady-state render set
+exactly (every level ≤ the selection) — a strictly more precise statement of
+the same never-reset behavior, not a policy change. This is sound because the
+imagery overview fold is MEAN (uma ADR-0011), so overview values are
+contained in the fine range; a native ladder's levels each contribute their
+own regions' true extents. A fold policy that can exceed the source range
+(none exists today) would need a reset-on-switch here.
 
 ### The camp#172 hook (implemented — camp#171/#172 PR)
 
