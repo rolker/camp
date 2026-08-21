@@ -231,6 +231,17 @@ contained in the fine range; a native ladder's levels each contribute their
 own regions' true extents. A fold policy that can exceed the source range
 (none exists today) would need a reset-on-switch here.
 
+**Widening is sound only while every folded contribution stays true.** A tile
+whose FILE is replaced under a running CAMP (`rescan()`'s `refreshFromFile()`
+— a producer rewrite, or a repaired tile after a read failure) invalidates the
+contribution it already made: the old file's extremes describe pixels that are
+no longer resident, and widening can never retract them. Auto would then span
+a range no pixel occupies — on a bathymetry display, a wrong colormap range
+that reads as real. So a **refresh** (not a level switch) discards the layer
+aggregate and recomputes it from the current resident set. An operator's
+Manual range override is independent of the data extents and is preserved
+across the recompute (camp#142).
+
 ### The camp#172 hook (implemented — camp#171/#172 PR)
 
 The demand-driven pattern — "the viewport exposes tiles whose pixels are not
