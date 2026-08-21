@@ -505,9 +505,11 @@ private:
   // context, so the condition can be permanent and the budget stops being
   // enforced entirely — which the status must say rather than grow silently.
   bool eviction_blocked_ = false;
-  // Memoized perTileResidentBytes(), keyed on tiles_.size(). Tile extents are
-  // immutable after their metadata read and tiles_ only ever grows, so the size
-  // is a sufficient key — and this is on the paint path.
+  // Memoized perTileResidentBytes(), keyed on tiles_.size() — this is on the
+  // paint path. tiles_ only ever grows, so the size covers every ADDED tile.
+  // It does NOT cover a refresh: [camp#194] GggsTile::refreshFromFile() re-reads
+  // metadata and a replacement file may carry different dimensions while the
+  // count stays put, so rescan() invalidates this explicitly after refreshing.
   mutable std::size_t per_tile_bytes_ = 0;
   mutable std::size_t per_tile_bytes_count_ = std::size_t(-1);
 };

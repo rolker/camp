@@ -431,6 +431,12 @@ bool GggsTileLayer::rescan()
     foldDataRange(true);
     if(data_min_ <= data_max_)
       range_model_.update_auto(float(data_min_), float(data_max_));
+    // [camp#195 review] refreshFromFile() re-reads metadata, so a replacement
+    // file may carry different dimensions. perTileResidentBytes() is memoized
+    // on tiles_.size(), which a refresh does not change — invalidate it here or
+    // the byte budget keeps deriving its tile cap from the departed file's
+    // extent.
+    per_tile_bytes_count_ = std::size_t(-1);
     cached_image_ = QImage();
   }
   else if(!changed.empty())
