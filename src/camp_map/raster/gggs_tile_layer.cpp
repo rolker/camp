@@ -534,6 +534,30 @@ void GggsTileLayer::tilesReady()
   if(selected_level_ != -1 && !future_watcher_.isRunning() &&
      !hasUnloadedVisibleTiles(load_viewport_))
   {
+    // [camp#194 review] The gate above is satisfied by a FAILED tile as well as
+    // a loaded one (hasUnloadedVisibleTiles() excludes loadFailed() tiles so the
+    // loader can settle — see its contract). "Complete" therefore does NOT imply
+    // "covered": where a selected-or-coarser tile failed to read, the picture has
+    // a hole, and the resident finer tiles over that footprint are the ONLY
+    // usable coverage there. Releasing them would blank a previously-visible
+    // region on zoom-out and leave nothing but the failure status — in a nested
+    // store one transient coarse RasterIO error (NFS hiccup, a producer swapping
+    // the file) throws away good fine data.
+    //
+    // So release only the footprint that successfully-loaded selected-or-coarser
+    // tiles actually cover: a finer tile intersecting ANY failed tile at a level
+    // <= the selection is retained. Deliberately conservative — a finer tile that
+    // a second, readable coarse tile also covers is kept too. Over-retention costs
+    // a little residency until the next successful pass (the failure clears via
+    // rescan()'s changed-file refresh or a band switch); under-retention costs
+    // the operator their data.
+    // NOT a coverage/eviction policy: a region with NO coarse tile at all still
+    // releases and blanks per the documented residency rule (ADR-0013 "Render");
+    // that family is camp#195.
+    std::vector<QRectF> failed_rects;
+    for(const auto& tile : tiles_)
+      if(tile->loadFailed() && tile->level() <= selected_level_)
+        failed_rects.push_back(tileSceneRect(*tile));
     bool have_context = false, context_tried = false;
     for(auto& tile : tiles_)
     {
@@ -546,6 +570,18 @@ void GggsTileLayer::tilesReady()
       // to -1, so a real tile can never carry the sentinel.)
       if(tile->level() <= selected_level_ || !tile->pixelsLoaded())
         continue;
+      // [camp#194 review] Keep this finer tile if it is the only coverage over a
+      // footprint whose selected-or-coarser tile failed to read (see above).
+      if(!failed_rects.empty())
+      {
+        const QRectF tile_rect = tileSceneRect(*tile);
+        const bool over_hole =
+          std::any_of(failed_rects.begin(), failed_rects.end(),
+                      [&tile_rect](const QRectF& hole)
+                      { return hole.intersects(tile_rect); });
+        if(over_hole)
+          continue;
+      }
       if(!context_tried)
       {
         context_tried = true;

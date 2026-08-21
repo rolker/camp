@@ -193,6 +193,11 @@ public:
   /// predicate true for the session — wedging both the re-kick guard and the
   /// release gate. tilesReady() surfaces their count through setStatus()
   /// instead, so the layer settles visibly-incomplete rather than silently so.
+  /// [camp#194 review] Consequence for the release gate: "no unloaded visible
+  /// tiles" means the loader has SETTLED, not that the footprint is covered —
+  /// a failed tile leaves a hole. tilesReady() therefore retains finer tiles
+  /// intersecting a failed selected-or-coarser tile rather than releasing the
+  /// only usable coverage over that hole.
   bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
 
   /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds

@@ -11,6 +11,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <limits>
 #include <vector>
@@ -971,6 +972,74 @@ TEST(GggsRenderTest, UnreadableTileDoesNotWedgeTheReleaseGate)
   EXPECT_TRUE(layer->status().contains("failed")) <<
     "unreadable tiles are not surfaced in the layer status: " <<
     layer->status().toStdString();
+}
+
+// [camp#194 review] Failed-tile exclusion must not over-release finer coverage.
+// hasUnloadedVisibleTiles() ignores loadFailed() tiles so the loader can settle,
+// which means tilesReady()'s release gate opens with the failed tile's footprint
+// still EMPTY. Releasing every finer-than-selection tile at that point throws
+// away the only usable coverage over that hole — a coarse RasterIO failure during
+// zoom-out blanks a region that was visible a frame earlier. The release must be
+// footprint-aware: finer tiles over a failed selected-or-coarser tile stay
+// resident; finer tiles backed by a readable coarse tile still release.
+//
+// Fixture: two OVERLAPPING coarse/fine pairs at disjoint regions. Region 1's
+// coarse tile is truncated after the metadata scan (the transient-I/O shape);
+// region 2's is readable.
+TEST(GggsRenderTest, FailedCoarseTileKeepsFinerCoverageResident)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // Region 1: fine tile inside a coarse tile that will be destroyed.
+  const double fine1_geo[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const double coarse1_geo[6] = {-71.410, 0.0010, 0.0, 43.010, 0.0, -0.0010};
+  // Region 2 (disjoint, ~8 km east): fine tile inside a READABLE coarse tile.
+  const double fine2_geo[6] = {-71.300, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const double coarse2_geo[6] = {-71.310, 0.0010, 0.0, 43.010, 0.0, -0.0010};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine1_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, fine2_geo, samples, "13_0_1.tif").isEmpty());
+  const QString broken = writeTile(dir, w, h, coarse1_geo, samples, "0_0_0.tif");
+  ASSERT_FALSE(broken.isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse2_geo, samples, "0_0_1.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  ASSERT_EQ(layer->availableLevels(), (std::vector<int>{0, 13}));
+
+  // Region 1's coarse tile becomes unreadable AFTER the scan (its extent/level
+  // are already held), so loadPixels() latches loadFailed() on it.
+  {
+    QFile file(broken);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    ASSERT_TRUE(file.resize(0));
+  }
+
+  // Zoom IN: with the fine level selected the ceiling loads every level, so both
+  // fine tiles load, region 2's coarse tile loads, region 1's coarse tile fails.
+  layer->setLodForTest(13, layer->sceneBounds());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 2);
+  ASSERT_EQ(layer->pixelsLoadedCount(0), 1);
+
+  // Zoom OUT to the coarse selection. The gate opens (the failed tile is not
+  // "still loading"), and the release runs.
+  layer->setLodForTest(0, layer->sceneBounds());
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1) <<
+    "expected exactly the region-2 fine tile to release: region 1's fine tile is "
+    "the only usable coverage under a failed coarse tile and must be retained";
+
+  // Region 1 must still answer with data — its coarse tile never loaded, so a
+  // value there can only come from the retained fine tile. This is the operator-
+  // visible consequence: the region did not blank on zoom-out.
+  const float region1 = layer->getElevation(QGeoCoordinate(42.9995, -71.3995));
+  EXPECT_FALSE(std::isnan(region1)) <<
+    "the footprint of the failed coarse tile blanked — its finer coverage was "
+    "released even though nothing replaced it";
 }
 
 // [camp#103 field verify / camp#194] The zoom-IN mid-transition render: with
