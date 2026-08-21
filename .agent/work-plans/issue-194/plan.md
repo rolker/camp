@@ -218,15 +218,81 @@ zoom") to actually hold.
      are unaffected (single-level fixtures / `-1` no-selection path) —
      verify they still pass, no code changes expected.
 
+9. **Review-driven additions** (folded into this plan during implementation —
+   each was raised by a review round, not present in the original approach):
+
+   *Round 1 (pre-push `review-code` + PR triage):*
+   - **All-overview fallback in `rebuildLevelIndex()`** (`9f8780d`). Step 2's
+     "union every native tile" rule leaves a *degenerate* store — one with an
+     `overviews/` sidecar and no native tile at all — with a null
+     `scene_bounds_`, i.e. a silently blank layer. Such a store keeps the old
+     finest-level union as a fallback so it retains an extent.
+   - **Coarse-first load order in `loadTilesWorker()`** (`3f0c7a8`). `tiles_`
+     is in directory-scan (alphabetical) order, which queues the coarse fill
+     *behind* the large fine reads on a freshly exposed region — on a slow/NFS
+     store the region trickles in at fine resolution with no coarse backdrop,
+     defeating the compositing this PR adds. A `stable_sort` ascending by
+     level restores coarse-first progressive refinement (worker thread, off
+     the GUI hot path).
+   - **Paint-driven level-switch test** (`635d51a`). The `setLodForTest()`
+     residency tests cannot pin paint()'s no-eager-release behavior — a plain
+     setter fires no release path. `PaintDrivenLevelSwitchKeepsOutgoingLevelResident`
+     drives the real `paint()` across a level boundary through a
+     `QGraphicsView` scale change, with the outgoing tile deliberately kept
+     offscreen so a wrong eager release cannot be masked by a reload race.
+   - **Auto-range fold-ceiling assertion** (`169d818`). The disjoint-ladder
+     render test asserted opacity + `pixelsLoadedCount()` only, so it pinned
+     the LOAD ceiling but not the fold ceiling: a fold silently reverted to an
+     equality filter would render the coarse band saturated and still pass.
+     The test now asserts `dataRange()` spans both bands.
+
+   *Round 2 (pre-push `review-code`):*
+   - **Sticky `GggsTile::loadFailed()` marker.** A tile can pass the
+     constructor's cheap metadata `valid()` scan and still fail `loadPixels()`
+     permanently (file truncated/removed under a live layer). With no failure
+     state, `pixelsLoaded()` stayed false forever, so
+     `hasUnloadedVisibleTiles()` never went quiet — wedging the pan/zoom
+     re-kick guard *and* `tilesReady()`'s load-before-release gate for the
+     session, while the worker re-`RasterIO`s the dead tile on every kick.
+     Step 3's ceiling widens the exposure from "a failing tile AT the
+     selection" to "any failing tile at any level ≤ the selection", at every
+     zoom — so this PR owns the fix. The marker is excluded from the
+     predicate and from the worker's retry pass, cleared only by `setBand()`
+     (an explicit operator retry with different parameters), and surfaced
+     through `setStatus()` so the layer settles visibly-incomplete rather
+     than silently so. Regression test:
+     `UnreadableTileDoesNotWedgeTheReleaseGate`.
+   - **Reject `level() < 0` tiles at scan.** `-1` is overloaded as both the
+     no-selection sentinel and a value `tileLevel()` returns on digit
+     overflow. Such a tile entering `available_levels_` can drive
+     `selectLodLevel()` to return `-1`, which disables the ceiling everywhere
+     — silently reverting to the eager whole-store load ADR-0013 exists to
+     prevent. `loadDirectory()`/`rescan()` now drop and warn.
+   - **`resetPixels()`/`releaseGL()` pairing under a failed `makeCurrent()`.**
+     The release loop did a CPU-only clear when a context existed but
+     `makeCurrent()` failed, leaving a stale texture to shadow any re-load.
+     It now skips the release entirely in that case (leaving the finer level
+     resident is harmless; the renderer has latched its GL-failed flag).
+   - **ADR-0013 wording**: the unqualified "no blank frame, both directions"
+     claim is scoped to level *transitions*, cross-referencing the
+     coarse-zoom blank the same section documents; plus two consequences the
+     original plan did not name — the **NoData/edge-padding backfill**
+     (compositing now fills fine-tile NoData holes and grid-cell padding with
+     coarse data, a QA-fidelity change of the same family that keeps
+     `smooth_interpolation_` default-OFF) and the **`overviews/` padding
+     contract** `isOverview()` depends on (it records directory provenance,
+     while the scene-bounds guard needs padding — they coincide only by uma
+     producer convention).
+
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/gggs_tile.h` / `.cpp` | Add `is_overview_` member + `setOverview(bool)` / `isOverview() const` (default `false`). |
+| `src/camp_map/raster/gggs_tile.h` / `.cpp` | Add `is_overview_` member + `setOverview(bool)` / `isOverview() const` (default `false`). Step 9: sticky `load_failed_` (atomic) + `loadFailed()`, latched on every `loadPixels()` failure path, cleared by `setBand()`. |
 | `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()`: tag overview-dir tiles via `setOverview(true)`. `rebuildLevelIndex()`: union all native (non-overview) tile extents instead of finest-level-only. `loadTilesWorker()` / `hasUnloadedVisibleTiles()`: `level != selected` → `level > selected`. `itemsIntersecting()`: collapse to one ascending pass over ALL resident levels (no render-time level filter — residency governs; the `-1` special case merges in). `tilesReady()`: range-fold gate `!= selected_level_` → `> selected_level_`; release-loop gate `== selected_level_` → `<= selected_level_`, keeping the `!hasUnloadedVisibleTiles(...)` load-before-release gate (zoom-out backdrop protection). |
 | `src/camp_map/raster/gggs_tile_layer.h` | Update the class-level Doxygen / inline comments describing `selected_level_` as an equality filter (multiple spots reference "the selected level" as the sole resident/rendered level) to describe the max-threshold / multi-level-resident model. |
 | `docs/decisions/0013-lod-level-selection-demand-driven-load.md` | Amend "Progressive refinement across a level switch", "Extent semantics", "Auto-range across levels"; add the ADR-0010 residency cross-reference note. |
-| `test/test_gggs_render.cpp` | Add the disjoint-ladder regression test; update/rewrite the three tests listed in step 8. |
+| `test/test_gggs_render.cpp` | Add the disjoint-ladder regression test; update/rewrite the three tests listed in step 8. Step 9: `PaintDrivenLevelSwitchKeepsOutgoingLevelResident`, the `dataRange()` fold-ceiling assertion, and `UnreadableTileDoesNotWedgeTheReleaseGate`. |
 
 ## Principles Self-Check
 
@@ -258,6 +324,25 @@ zoom") to actually hold.
   stores under multi-level residency are tracked as camp#195 (filed during
   plan review) — referenced from the ADR-0013 amendment, out of scope for
   this PR.
+- **Deferred to follow-ups** (raised in round-2 review, judged out of scope
+  here — see the `## Implementation` entry in `progress.md` for the
+  reasoning):
+  - `rescan()` still scans the main directory only, so an `overviews/`
+    pyramid generated *after* the layer loaded stays invisible until
+    restart while Rescan reports success. Pre-existing since camp#103 and
+    already recorded under ADR-0013's Consequences; compositing makes it
+    more consequential (the missing pyramid is now backdrop for every
+    level), but fixing it means extending `rescan()` to the sidecar with
+    provenance tagging + tests — a separate change.
+  - `rebuildLevelIndex()` leaves the `prepareGeometryChange()` + re-anchor
+    contract to its callers. Folding the pair in would change the
+    constructor path (which anchors conditionally on a non-empty tile-set),
+    so it is a refactor rather than a fix.
+  - Per-frame CPU under compositing: `itemsIntersecting()` is now
+    unconditionally O(levels × tiles) per pan frame and the worker re-sorts
+    an identical order every kick. A level-bucketed index in
+    `rebuildLevelIndex()` serves both. This is the same axis as the
+    overdraw mitigation ADR-0013 already routes to camp#195.
 - No `unh_marine_autonomy` (uma) or workspace-repo consequences — D7/D9 stay
   untouched; this is entirely a `camp`-repo, single-file-plus-ADR change.
 - camp#109 (sibling-layer z-order/opacity) and camp#189 (zoom-in teleport)
