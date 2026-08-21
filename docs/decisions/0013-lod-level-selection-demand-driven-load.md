@@ -85,7 +85,16 @@ The amended model: `selected_level_` is a **max threshold (ceiling)**.
 - **Render**: `itemsIntersecting()` draws the whole resident set in one
   ascending pass — coarse→fine painter's order, **no render-time level
   filter**. Fine overdraws coarse where both exist; coarse fills where fine
-  is absent, so a disjoint ladder shows all its regions at every zoom.
+  is absent, so a disjoint ladder shows all its regions at every zoom
+  **at-or-finer than each region's native level**. Coarse-zoom limitation:
+  a region whose *only* native level is finer than the current selection
+  never loads (levels > selection are excluded by the residency rule), so
+  it renders blank at coarser zooms even though `sceneBounds()` includes
+  its footprint. This is the intended viewport-bounded tradeoff — loading
+  finer-than-needed data to fill coarse zooms would reintroduce the
+  store-bounded open this ADR exists to avoid; if it matters in practice
+  (e.g. a chart ladder whose finest-only regions vanish at overview zooms),
+  the residency/coverage follow-up family is camp#195.
 - **Level-switch transitions** (the camp#103 field-verified no-blank-frame
   guarantee, both directions):
   - *Zoom-in*: the resident coarser levels back the arriving selected level —
@@ -123,7 +132,12 @@ imports: S-102 + fine imported grids vs coarse legacy priors) and
 potentially large fine-level survey coverage) — `chart` is the one member of
 this family that is *not* the risk. Given the camp#153 `SonarLiveCacheLayer`
 OOM precedent for this accumulation shape, the eviction-bound follow-up is
-tracked as **camp#195**.
+tracked as **camp#195**. Compositing also multiplies per-frame **overdraw**,
+not just memory: on a deep nested pyramid every resident level contributes a
+near-full-viewport quad at fine zoom (up to ~14 stacked quads for a full L13
+pyramid — a fill-rate cost that software-GL backends pay too). Mitigation
+(skip fully-covered coarse tiles, or a composite-depth cap) rides camp#195
+if pan latency regresses.
 
 **Headless / no-selection defaults**: `selected_level_ == -1` disables the
 level ceiling everywhere (worker, range fold, release) and a null viewport

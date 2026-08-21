@@ -670,8 +670,12 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
   // gives:
   //  - steady state: levels <= selection composite, fine overdrawing coarse
   //    where both exist and coarse filling where fine is absent — a
-  //    region-disjoint native ladder (ENC chart store) renders ALL its
-  //    regions at every zoom;
+  //    region-disjoint native ladder (ENC chart store) renders all its
+  //    regions at every zoom AT-OR-FINER than each region's native level. A
+  //    region whose only native level is finer than the selection does not
+  //    load (levels > selection never load — the viewport-bounded tradeoff)
+  //    and renders blank at coarser zooms even though sceneBounds() includes
+  //    its footprint; the residency/coverage follow-up family is camp#195;
   //  - zoom-in: the stale coarser levels back the arriving selected level
   //    (unchanged from camp#103's progressive refinement);
   //  - zoom-out: the still-resident finer tiles draw ABOVE the coarse levels
