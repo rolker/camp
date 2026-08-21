@@ -243,3 +243,20 @@ Static analysis: camp colcon test targets (green). Governance: ADR-0013 amended 
 
 ### False positives
 - (none) — Copilot filed one inline comment and one suppressed comment; both describe real properties of the current code. The only correction applied is to the inline comment's severity framing: its "the fixed-size chart ladder is not representative" premise is accurate, but its implicit claim that this PR introduces the unbounded path is not — `GggsTileLayer` had no within-level eviction before this PR either, and ADR-0013 (as amended here) already records the multiplier, the at-risk store classes, and the camp#153 OOM precedent.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-21 08:51 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #196 at `169d818`
+**Addressed**: `## Integrated Review` (2026-08-21 08:35 -04:00, PR #196 @ `ecbeb08`)
+**Commits**: `169d818`
+
+### Actions
+- [x] (cross-confirmed) Unbounded cross-level tile residency / eviction budget — `src/camp_map/raster/gggs_tile_layer.cpp` (~468-500) (deferred: explicit operator decision recorded in the Integrated Review entry — merge PR #196 with camp#195 as the named merge gate before large multi-level `reference`/`draft`/`processed` stores route through the compositing path; no eviction budget in this PR)
+- [x] (suggestion, Copilot R1 suppressed comment) `DisjointNativeLadderRendersAllRegions` now pins the AUTO-RANGE fold ceiling, not just the load ceiling: after `waitForLoad()` it asserts `layer->dataRange()` spans both native bands (`EXPECT_FLOAT_EQ` min 20000, max 60000), with a comment explaining that an equality-filter regression in `tilesReady()`'s fold gate would fold only the selected level's band and leave every existing pixel assert passing — `test/test_gggs_render.cpp:1024-1039`
+
+### Verification
+- `./ui_ws/build.sh camp` + `./ui_ws/test.sh camp` — 236 tests, 0 failures, 1 skipped. `DisjointNativeLadderRendersAllRegions` ran (not GL-skipped; offscreen GL available).
+- Mutation check on the new assert: with the expected min flipped to 60000 the suite reports failures at that line; reverting restores green. The assert is live and discriminating, not vacuous.
