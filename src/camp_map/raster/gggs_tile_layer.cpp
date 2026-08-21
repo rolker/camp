@@ -159,6 +159,23 @@ void GggsTileLayer::loadDirectory(const QString& directory)
       auto tile = std::make_unique<GggsTile>(dir.filePath(name));
       if(!tile->valid())
         continue;
+      // [camp#194] Drop a tile whose level failed to parse. -1 is the layer's
+      // NO-SELECTION sentinel (selected_level_ == -1 disables the ceiling
+      // everywhere), so a tile carrying it as a real level is indistinguishable
+      // from "no filter": it would enter available_levels_, and the first
+      // viewport whose ideal level is coarser than every other level would make
+      // selectLodLevel() return -1 — silently reverting to the eager
+      // whole-store load ADR-0013 exists to prevent. isValueTile() already
+      // requires three digit groups, so the only way to get here is a digit
+      // string too long for int (tileLevel()'s overflow -> -1); no GGGS
+      // producer emits one (levels are 0-20), which is exactly why such a name
+      // must be rejected rather than folded into the ladder.
+      if(tile->level() < 0)
+      {
+        qWarning("GggsTileLayer: skipping '%s' — unparsable tile level",
+                 qUtf8Printable(name));
+        continue;
+      }
       // [camp#194] Tag sidecar provenance: overview tiles are padded to their
       // coarse GGGS grid cell, so rebuildLevelIndex() excludes them from the
       // scene-bounds union; native tiles at ANY level are the true footprint.
@@ -261,6 +278,15 @@ bool GggsTileLayer::rescan()
     auto tile = std::make_unique<GggsTile>(path);
     if(!tile->valid())
       continue;
+    // [camp#194] Same -1-sentinel guard as loadDirectory() (see the rationale
+    // there): a tile whose level parses to the no-selection sentinel must never
+    // enter available_levels_.
+    if(tile->level() < 0)
+    {
+      qWarning("GggsTileLayer: skipping '%s' — unparsable tile level",
+               qUtf8Printable(name));
+      continue;
+    }
     new_tiles.push_back(std::move(tile));
   }
 
