@@ -894,6 +894,16 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#195 / uma-ADR-0013 D4] TileResidency — the splice partition that makes
+  # current-frame protection structural. Pure C++ (no Qt/GL/GDAL): header-only
+  # type, so nothing to link but gtest itself.
+  ament_add_gtest(test_tile_residency
+    test/test_tile_residency.cpp
+  )
+  target_include_directories(test_tile_residency PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+
   # [camp#121] Live tile cache (Part B): warm-load + patch-apply/dequantize
   # (SonarLiveTile, GDAL) and the downtime-gap reconcile + prune timestamp-gate
   # (the node-boundary catalog conversion + TileCatalogReconciler). Headless: no
