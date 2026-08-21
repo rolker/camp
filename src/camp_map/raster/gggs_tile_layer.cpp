@@ -17,6 +17,7 @@
 #include <QSet>
 #include <QThread>
 #include <QSettings>
+#include <QTimer>
 #include <QOpenGLTexture>
 #include <QPainter>
 #include <QTransform>
@@ -70,6 +71,18 @@ QRectF tileSceneRect(const camp::raster::GggsTile& tile)
   return QRectF(lo, hi).normalized();
 }
 
+// [camp#195] Squared distance from @p point to the nearest point of @p rect —
+// 0 while the point is inside. The eviction metric (farthest-from-the-viewport-
+// centre first), squared to avoid a sqrt in the sort comparator.
+double rectDistanceSquared(const QRectF& rect, const QPointF& point)
+{
+  const double dx = std::max({rect.left() - point.x(), 0.0,
+                              point.x() - rect.right()});
+  const double dy = std::max({rect.top() - point.y(), 0.0,
+                              point.y() - rect.bottom()});
+  return dx * dx + dy * dy;
+}
+
 }  // namespace
 
 GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory):
@@ -83,6 +96,17 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   // which is path-agnostic, so the absolute path works unchanged.
   directory_(QDir(directory).absolutePath())
 {
+  // [camp#195 / uma-ADR-0013 D4] Resident tile-footprint budget for eviction.
+  // Default 512 MiB, operator-overridable (camp#117: a default, never an
+  // un-changeable hardcode); 0 disables eviction (the pre-#195 unbounded
+  // behaviour). Mirrors LiveTileCache/max_vram_bytes, whose default is the same
+  // 512 MiB — the two working sets are co-resident, and the key exists so the
+  // pair can be tuned on the operator station rather than in a rebuild.
+  QSettings settings;
+  resident_budget_bytes_ = static_cast<std::size_t>(
+    settings.value("GggsTileLayers/max_resident_bytes",
+                   kDefaultResidentBudgetBytes).toULongLong());
+
   // [camp#102] tilesReady() folds completed tiles' ranges + repaints on the GUI
   // thread when the async pixel load finishes.
   connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
@@ -714,7 +738,267 @@ void GggsTileLayer::updateStatus()
       ++failed;
   if(failed > 0)
     parts << QString("%1 tile(s) failed to load").arg(failed);
+  // [camp#195 / uma-ADR-0013 D4] "Report the degraded state; never fail
+  // silently." The cap is FLOORED at the current-frame working set, so when that
+  // set alone exceeds the byte budget the layer does not evict what it is
+  // drawing (that is D4's "thrashes by construction") — it exceeds the budget
+  // and says so. Relaxing the quality target under this pressure — D4's tau
+  // lever — is camp#197.
+  if(over_budget_)
+    parts << "over the tile budget - raise GggsTileLayers/max_resident_bytes or zoom in";
+  // [camp#195] An evicted camp#194 hole coverer cannot come back on its own:
+  // loadTilesWorker() skips levels finer than the selection, so the demand-driven
+  // reload that makes every other eviction free does not apply to this one class.
+  // Surface the loss with the operator's recovery action rather than losing the
+  // coverage silently.
+  if(hole_coverage_released_)
+    parts << "coverage over failed tile(s) released - use Rescan";
   setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
+}
+
+std::size_t GggsTileLayer::residentTileCount() const
+{
+  std::size_t count = 0;
+  for(const auto& tile : tiles_)
+    if(tile->pixelsLoaded())
+      ++count;
+  return count;
+}
+
+std::size_t GggsTileLayer::perTileResidentBytes() const
+{
+  // [camp#195] Observed, never assumed (see the header). The largest tile in the
+  // set speaks so a non-uniform store cannot undercount the budget.
+  std::size_t max_pixels = 0;
+  for(const auto& tile : tiles_)
+    if(tile->valid())
+      max_pixels = std::max(max_pixels, std::size_t(tile->width()) *
+                                          std::size_t(tile->height()));
+  if(max_pixels == 0)
+    return 0;
+  // CPU Float32 buffer + R32F texture of the same extent (gggs_tile.cpp: the CPU
+  // copy is deliberately retained past the GPU upload for camp#180).
+  return max_pixels * sizeof(float) * 2;
+}
+
+std::size_t GggsTileLayer::budgetTiles() const
+{
+  const std::size_t per_tile = perTileResidentBytes();
+  if(resident_budget_bytes_ == 0 || per_tile == 0)
+    return 0;   // disabled, or nothing to measure yet
+  return std::max<std::size_t>(1, resident_budget_bytes_ / per_tile);
+}
+
+std::size_t GggsTileLayer::refreshProtection()
+{
+  // [camp#195 / uma-ADR-0013 D4] Re-derive the frame's protected working set.
+  // The predicate is the LOADER's, not the draw list's — see the header.
+  Q_ASSERT(thread() == QThread::currentThread());
+  residency_.sync(tiles_.size());
+  tile_last_visible_gen_.resize(tiles_.size(), 0);
+  residency_.beginFrame();
+  ++paint_generation_;
+
+  const std::vector<QRectF> holes = failedFootprints();
+  for(std::size_t i = 0; i < tiles_.size(); ++i)
+  {
+    const GggsTile& tile = *tiles_[i];
+    // A terminally-failed tile never becomes resident, so protecting it would
+    // inflate the cap floor with memory nothing will ever occupy.
+    if(tile.loadFailed())
+      continue;
+    if(!load_viewport_.isNull() &&
+       !tileSceneRect(tile).intersects(load_viewport_))
+      continue;
+    // Levels finer than the selection are not part of the picture — EXCEPT a
+    // camp#194 hole coverer, which is the only usable coverage over a footprint
+    // whose selected-or-coarser tile failed to read.
+    if(selected_level_ != -1 && tile.level() > selected_level_ &&
+       !coversHole(tile, holes))
+      continue;
+    residency_.protect(i);
+    tile_last_visible_gen_[i] = paint_generation_;
+  }
+  return residency_.protectedCount();
+}
+
+void GggsTileLayer::scheduleEvictionIfNeeded(std::size_t protected_count)
+{
+  // [camp#195] paint()'s half: publish the over-budget state and QUEUE the
+  // eviction. Nothing is released here — releasing a tile inside paint() would
+  // mutate the set the render pass reads.
+  const std::size_t budget = budgetTiles();
+  const bool over = (budget != 0 && protected_count > budget);
+  if(over != over_budget_)
+  {
+    over_budget_ = over;
+    updateStatus();
+  }
+  if(budget == 0 || eviction_pending_)
+    return;
+  // The cap is floored at the working set (D4), so a frame whose own selection
+  // exceeds the budget schedules nothing — there is nothing evictable to gain.
+  if(residentTileCount() <= std::max(budget, protected_count))
+    return;
+  eviction_pending_ = true;
+  QMetaObject::invokeMethod(this, "evictIfOverBudget", Qt::QueuedConnection);
+}
+
+void GggsTileLayer::evictIfOverBudget()
+{
+  // [camp#195 / uma-ADR-0013 D4] The eviction pass. GUI thread, off the event
+  // loop (or called directly by a headless test through
+  // refreshResidencyForTest()).
+  Q_ASSERT(thread() == QThread::currentThread());
+  eviction_pending_ = false;
+  if(budgetTiles() == 0)
+    return;
+
+  // This mutates tiles the loader worker iterates, so it must not run
+  // concurrently with it. RE-ARM rather than drop the request: a continuous pan
+  // re-kicks the loader every step, so a dropped request would mean the budget
+  // almost never fires in exactly the scenario it exists for. (Abort+join, what
+  // loadTiles() does, is rejected: a GUI-thread stall for a whole tile read,
+  // mid-pan.)
+  if(future_watcher_.isRunning())
+  {
+    eviction_pending_ = true;
+    QTimer::singleShot(kEvictionRetryMs, this, &GggsTileLayer::evictIfOverBudget);
+    return;
+  }
+
+  // Re-derive the protected set LIVE (the MapTiles/camp#98 rule): a tile that
+  // re-entered the view between scheduling and now must never be evicted, and
+  // the protection recorded at schedule time may be several pan steps stale.
+  const std::size_t protected_count = refreshProtection();
+  const std::size_t budget = budgetTiles();
+  over_budget_ = protected_count > budget;
+  const std::size_t cap = std::max(budget, protected_count);
+  const std::size_t resident = residentTileCount();
+  if(resident <= cap)
+  {
+    updateStatus();
+    return;
+  }
+
+  if(!eviction_warned_)
+  {
+    qWarning().noquote() << "[gggs" << directory_ << "] resident tile budget"
+                         << "exceeded (" << qulonglong(resident) << ">"
+                         << qulonglong(cap) << "tiles,"
+                         << qulonglong(perTileResidentBytes())
+                         << "bytes each) - evicting off-viewport tiles";
+    eviction_warned_ = true;
+  }
+
+  // Evict down to the hysteresis target so the next frame cannot immediately
+  // re-trigger (the kReloadHysteresisFactor analogue), but never below the
+  // protected working set.
+  const std::size_t target =
+    std::max(protected_count, std::size_t(kEvictHysteresisFactor * double(cap)));
+
+  const std::vector<QRectF> holes = failedFootprints();
+  const bool have_centre = !load_viewport_.isNull();
+  const QPointF centre = load_viewport_.center();
+  const bool have_ladder = available_levels_.size() > 1;
+  const int coarsest_level = have_ladder ? available_levels_.front() : -1;
+
+  struct Candidate
+  {
+    std::size_t index = 0;
+    int tier = 0;         // 0 = ordinary, 1 = last resort
+    int recent = 0;       // 0 = stale (evict first), 1 = seen recently
+    double distance = 0;  // squared, from the viewport centre
+    quint64 generation = 0;
+  };
+  std::vector<Candidate> candidates;
+  std::vector<Candidate> coarsest_tiles;
+  candidates.reserve(tiles_.size());
+  // residency_.candidates() is the evictable partition ONLY — the current
+  // frame's protected set is structurally unreachable from here (D4).
+  for(const std::size_t index : residency_.candidates())
+  {
+    const GggsTile& tile = *tiles_[index];
+    if(!tile.pixelsLoaded())
+      continue;   // nothing resident to free
+    Candidate candidate;
+    candidate.index = index;
+    candidate.generation = tile_last_visible_gen_[index];
+    candidate.distance =
+      have_centre ? rectDistanceSquared(tileSceneRect(tile), centre) : 0.0;
+    candidate.recent =
+      (paint_generation_ - candidate.generation) <= kRecentGenerations ? 1 : 0;
+    // An out-of-view camp#194 hole coverer is a LAST-RESORT candidate: unlike
+    // every other tile it cannot reload on pan-back (loadTilesWorker skips
+    // levels finer than the selection), so it is dropped only when nothing else
+    // can be, and its loss is reported (updateStatus).
+    candidate.tier = coversHole(tile, holes) ? 1 : 0;
+    if(have_ladder && tile.level() == coarsest_level)
+      coarsest_tiles.push_back(candidate);
+    else
+      candidates.push_back(candidate);
+  }
+
+  // The zoom-out floor, BOUNDED: the nearest kCoarsestExemptCap coarsest-level
+  // tiles are exempt so a zoom-out always has something to draw; the surplus —
+  // which is what grows with the area panned — joins the last-resort tier
+  // rather than accumulating forever. On a single-level store there is no
+  // ladder and hence no exemption, so the budget is not a no-op there.
+  if(coarsest_tiles.size() > kCoarsestExemptCap)
+  {
+    std::sort(coarsest_tiles.begin(), coarsest_tiles.end(),
+              [](const Candidate& a, const Candidate& b)
+              {
+                if(a.distance != b.distance)
+                  return a.distance < b.distance;   // nearest kept
+                return a.generation > b.generation; // then freshest kept
+              });
+    for(std::size_t k = kCoarsestExemptCap; k < coarsest_tiles.size(); ++k)
+    {
+      Candidate surplus = coarsest_tiles[k];
+      surplus.tier = 1;
+      candidates.push_back(surplus);
+    }
+  }
+
+  // Hybrid ordering (uma-ADR-0013 D4): last-resort tier last; then STALENESS,
+  // so a tile not seen for a while goes before one just traversed (D4's
+  // objection to distance-only is that it "discards history along a path being
+  // traversed"); then farthest-from-viewport first; then LRU generation.
+  std::sort(candidates.begin(), candidates.end(),
+            [](const Candidate& a, const Candidate& b)
+            {
+              if(a.tier != b.tier) return a.tier < b.tier;
+              if(a.recent != b.recent) return a.recent < b.recent;
+              if(a.distance != b.distance) return a.distance > b.distance;
+              return a.generation < b.generation;
+            });
+
+  std::vector<GggsTile*> victims;
+  bool released_hole_coverage = false;
+  for(const Candidate& candidate : candidates)
+  {
+    if(resident - victims.size() <= target)
+      break;
+    GggsTile* tile = tiles_[candidate.index].get();
+    victims.push_back(tile);
+    if(coversHole(*tile, holes))
+      released_hole_coverage = true;
+  }
+
+  // The auto-range is deliberately NOT recomputed here: the fold is
+  // widening-only (foldDataRange), so re-deriving it from a shrinking resident
+  // set would make the colormap flicker as tiles come and go. An evicted tile's
+  // contribution stays true — its pixels are unchanged on disk, which is exactly
+  // what distinguishes eviction from rescan()'s file-replacement case.
+  if(releaseTiles(victims))
+  {
+    if(released_hole_coverage)
+      hole_coverage_released_ = true;
+    cached_image_ = QImage();
+    update(boundingRect());
+  }
+  updateStatus();
 }
 
 void GggsTileLayer::tilesReady()
@@ -1044,6 +1328,19 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
   //    re-kicking every frame, and kicking only when idle avoids the
   //    abort+join stall a pan storm would otherwise pay per frame).
   load_viewport_ = clip.scene;
+
+  // [camp#195 / uma-ADR-0013 D4] Protect this frame's working set and schedule
+  // the residency pass. Placement is load-bearing on both sides:
+  //  - AFTER load_viewport_ is set, because the protection predicate IS the
+  //    loader's filter (level <= selection, intersecting the load viewport);
+  //  - BEFORE every remaining early return (the crossed-range return below),
+  //    because refreshProtection() begins by splicing the whole protected
+  //    partition back into the evictable one — returning between beginFrame()
+  //    and protect() would leave the live visible set evictable.
+  // The tiles_.empty() return at the top of paint() is vacuous here: with no
+  // tiles there is nothing to protect and nothing to evict.
+  scheduleEvictionIfNeeded(refreshProtection());
+
   if(!load_started_)
   {
     load_started_ = true;
