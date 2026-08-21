@@ -106,8 +106,7 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
     setTransform(QTransform::fromScale(1.0, -1.0));
     setPos(QPointF(scene_bounds_.left(), scene_bounds_.bottom()));   // NW corner
   }
-  else
-    setStatus("(no tiles)");
+  updateStatus();
 }
 
 GggsTileLayer::~GggsTileLayer()
@@ -458,7 +457,8 @@ void GggsTileLayer::loadTiles()
   abort_flag_ = false;   // re-arm for the new job
   abort_flag_mutex_.unlock();
 
-  setStatus("(loading...)");
+  loading_ = true;
+  updateStatus();
   // [camp#103] Snapshot the demand-driven filter into value copies the worker
   // owns — paint() reassigns the live members every frame while the worker runs,
   // so member reads from the worker thread would race. Record the kick's filter
@@ -613,6 +613,110 @@ void GggsTileLayer::foldDataRange(bool reset)
   }
 }
 
+std::vector<QRectF> GggsTileLayer::failedFootprints() const
+{
+  // [camp#194/#195] Scene rects of the tiles at levels <= the selection whose
+  // read failed terminally — the holes in the composited picture. Shared by
+  // tilesReady()'s release gate and the residency budget's eviction pass so the
+  // "keep the only usable coverage over a hole" rule is stated once.
+  // With no selection (-1) there is no ceiling and no release/eviction level
+  // asymmetry to protect against, so the set is empty.
+  std::vector<QRectF> rects;
+  if(selected_level_ == -1)
+    return rects;
+  for(const auto& tile : tiles_)
+    if(tile->loadFailed() && tile->level() <= selected_level_)
+      rects.push_back(tileSceneRect(*tile));
+  return rects;
+}
+
+bool GggsTileLayer::coversHole(const GggsTile& tile,
+                               const std::vector<QRectF>& holes) const
+{
+  // [camp#194/#195] True if @p tile is FINER than the selection and overlaps a
+  // hole — i.e. it is the only usable coverage over a footprint whose
+  // selected-or-coarser tile failed to read. Tiles at or below the selection are
+  // not hole coverers: they ARE the picture (and the failed tile's own level).
+  if(holes.empty() || selected_level_ == -1 || tile.level() <= selected_level_)
+    return false;
+  const QRectF tile_rect = tileSceneRect(tile);
+  return std::any_of(holes.begin(), holes.end(),
+                     [&tile_rect](const QRectF& hole)
+                     { return hole.intersects(tile_rect); });
+}
+
+bool GggsTileLayer::releaseTiles(const std::vector<GggsTile*>& victims)
+{
+  // [camp#195] The single release path, extracted from tilesReady() and shared
+  // with the residency budget's evictIfOverBudget(). GUI thread only, and only
+  // with no loader worker running — both callers gate on that, because this
+  // mutates tiles the worker iterates.
+  //
+  // [camp#194] resetPixels()/releaseGL() pairing invariant (gggs_tile.h): a
+  // CPU-only clear on a tile that already uploaded its texture leaves a stale
+  // texture shadowing any re-load (texture() returns the old one and never
+  // consumes the new data_). With NO context yet (hasContext() == false) no tile
+  // can have a texture, so the CPU half alone IS the complete release — this is
+  // also the headless-test case. But if a context EXISTS and makeCurrent()
+  // FAILED, textures may well exist and we cannot free them, so release NOTHING
+  // rather than break the pairing: over-retention costs residency until the next
+  // successful pass, a broken pairing costs correctness. (The renderer has
+  // latched its GL-failed flag in that case anyway, so nothing is rendering.)
+  Q_ASSERT(thread() == QThread::currentThread());
+  if(victims.empty())
+    return false;
+  const bool have_context = renderer_.hasContext() && renderer_.makeCurrent();
+  if(renderer_.hasContext() && !have_context)
+    return false;
+  for(GggsTile* tile : victims)
+  {
+    if(have_context)
+      tile->releaseGL();
+    tile->resetPixels();
+  }
+  if(have_context)
+    renderer_.doneCurrent();
+  return true;
+}
+
+void GggsTileLayer::updateStatus()
+{
+  // [camp#195] THE status composer. Every condition the layer can report is
+  // assembled here from live state, so no writer can clobber another's message
+  // (tilesReady() previously rewrote the status unconditionally, which would
+  // have wiped the residency budget's over-budget report).
+  if(tiles_.empty())
+  {
+    setStatus("(no tiles)");
+    return;
+  }
+  if(loading_)
+  {
+    setStatus("(loading...)");
+    return;
+  }
+  if(!load_started_)
+  {
+    setStatus("");   // nothing attempted yet — not "no data"
+    return;
+  }
+  QStringList parts;
+  // [camp#102] A crossed range after the fold means every loaded tile was
+  // all-NoData (or failed to read): there is nothing to draw, and a clear status
+  // would leave a silently-blank enabled layer.
+  if(data_min_ > data_max_)
+    parts << "no data";
+  // [camp#194] Terminally-unreadable tiles. Counted over the WHOLE tile-set (not
+  // the visible/selected set) so the number does not flicker with the viewport.
+  int failed = 0;
+  for(const auto& tile : tiles_)
+    if(tile->loadFailed())
+      ++failed;
+  if(failed > 0)
+    parts << QString("%1 tile(s) failed to load").arg(failed);
+  setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
+}
+
 void GggsTileLayer::tilesReady()
 {
   // [camp#102] GUI thread, after the worker's join. Fold the freshly-loaded
@@ -661,11 +765,8 @@ void GggsTileLayer::tilesReady()
     // NOT a coverage/eviction policy: a region with NO coarse tile at all still
     // releases and blanks per the documented residency rule (ADR-0013 "Render");
     // that family is camp#195.
-    std::vector<QRectF> failed_rects;
-    for(const auto& tile : tiles_)
-      if(tile->loadFailed() && tile->level() <= selected_level_)
-        failed_rects.push_back(tileSceneRect(*tile));
-    bool have_context = false, context_tried = false;
+    const std::vector<QRectF> failed_rects = failedFootprints();
+    std::vector<GggsTile*> victims;
     for(auto& tile : tiles_)
     {
       // NOTE: this comparison carries NO -1 guard of its own, unlike every
@@ -679,64 +780,21 @@ void GggsTileLayer::tilesReady()
         continue;
       // [camp#194 review] Keep this finer tile if it is the only coverage over a
       // footprint whose selected-or-coarser tile failed to read (see above).
-      if(!failed_rects.empty())
-      {
-        const QRectF tile_rect = tileSceneRect(*tile);
-        const bool over_hole =
-          std::any_of(failed_rects.begin(), failed_rects.end(),
-                      [&tile_rect](const QRectF& hole)
-                      { return hole.intersects(tile_rect); });
-        if(over_hole)
-          continue;
-      }
-      if(!context_tried)
-      {
-        context_tried = true;
-        have_context = renderer_.hasContext() && renderer_.makeCurrent();
-        // [camp#194] resetPixels()/releaseGL() pairing invariant (gggs_tile.h):
-        // a CPU-only clear on a tile that already uploaded its texture leaves a
-        // stale texture shadowing any re-load (texture() returns the old one and
-        // never consumes the new data_). With NO context yet (hasContext() ==
-        // false) no tile can have a texture, so the CPU half alone IS the
-        // complete release. But if a context EXISTS and makeCurrent() FAILED,
-        // textures may well exist and we cannot free them — so skip the release
-        // entirely rather than breaking the pairing. Leaving the finer level
-        // resident is harmless (it is drawn under the compositing rules and
-        // released at the next successful pass), and the renderer has latched
-        // its GL-failed flag anyway, so nothing is being rendered meanwhile.
-        if(renderer_.hasContext() && !have_context)
-          break;
-      }
-      if(have_context)
-        tile->releaseGL();
-      tile->resetPixels();
+      // [camp#195] The hole predicate is shared with the residency budget's
+      // eviction pass (coversHole()) so the two retention rules cannot drift.
+      if(coversHole(*tile, failed_rects))
+        continue;
+      victims.push_back(tile.get());
     }
-    if(have_context)
-      renderer_.doneCurrent();
+    releaseTiles(victims);
   }
   cached_image_ = QImage();   // re-render now that pixels (and the range) exist
-  // [camp#194] Surface terminally-unreadable tiles. Now that loadFailed() tiles
-  // are excluded from hasUnloadedVisibleTiles(), the loader correctly goes idle
-  // with them missing — so without this the operator would see a settled,
-  // status-clear layer with silent holes in it. Count over the whole tile-set
-  // (not just the visible/selected set) so the number does not flicker with the
-  // viewport.
-  int failed = 0;
-  for(const auto& tile : tiles_)
-    if(tile->loadFailed())
-      ++failed;
-  // [camp#102] If the range is still crossed after the fold, every loaded tile was
-  // all-NoData (or failed to read): there is nothing to draw and clearing the
-  // status would leave a silently-blank enabled layer. Signal "(no data)" so the
-  // operator can tell an empty tile-set from one that simply hasn't loaded yet.
-  if(data_min_ > data_max_)
-    setStatus(failed > 0
-              ? QString("(no data; %1 tile(s) failed to load)").arg(failed)
-              : QString("(no data)"));
-  else if(failed > 0)
-    setStatus(QString("(%1 tile(s) failed to load)").arg(failed));
-  else
-    setStatus("");
+  // [camp#195] The load has settled; every status condition (failed tiles, no
+  // data, over budget, released hole coverage) is composed in ONE place —
+  // updateStatus(). This slot used to write setStatus() unconditionally, which
+  // would silently wipe an over-budget message written from paint().
+  loading_ = false;
+  updateStatus();
   // [camp#142] Keep the Auto resolved range current with the freshly-folded
   // extents (a no-op while the operator holds a Manual override, so an incoming
   // tile never disturbs a pinned range). camp#138 coordination: this is the

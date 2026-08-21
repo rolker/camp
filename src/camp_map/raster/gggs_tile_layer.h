@@ -298,6 +298,28 @@ private:
   /// spatial filter (both together = the pre-LOD "load everything" behavior the
   /// headless tests rely on).
   void loadTilesWorker(int level, QRectF viewport);
+  /// [camp#194/#195] Scene rects of the terminally-failed tiles at levels <= the
+  /// selection — the holes in the composited picture. Empty with no selection.
+  std::vector<QRectF> failedFootprints() const;
+  /// [camp#194/#195] True if @p tile is finer than the selection and overlaps
+  /// one of @p holes, i.e. it is the only usable coverage over a footprint whose
+  /// selected-or-coarser tile failed to read. Shared by tilesReady()'s release
+  /// gate and the residency budget's eviction pass so the two retention rules
+  /// cannot drift apart.
+  bool coversHole(const GggsTile& tile, const std::vector<QRectF>& holes) const;
+  /// [camp#195] The single tile-release path: `releaseGL()` + `resetPixels()`
+  /// under this layer's GL context, with the makeCurrent()-or-skip dance that
+  /// keeps the gggs_tile.h pairing invariant intact. GUI thread only, and only
+  /// with no loader worker running (it mutates tiles the worker iterates —
+  /// both callers gate on that). Returns true if anything was released; false
+  /// when there were no victims or a live context refused to become current
+  /// (in which case NOTHING is released, deliberately).
+  bool releaseTiles(const std::vector<GggsTile*>& victims);
+  /// [camp#195] THE status composer. Every condition the layer reports (no
+  /// tiles / loading / no data / failed tiles) is assembled here from live
+  /// state, so no writer can clobber another's message. Call this instead of
+  /// setStatus() — tilesReady() used to rewrite the status unconditionally.
+  void updateStatus();
 
   // [camp#134] Latitude tessellation moved into RasterGlRenderer (the shared warp).
   static constexpr int kMaxImageEdge = 4096;   // clamp the offscreen target
@@ -352,6 +374,11 @@ private:
   bool abort_flag_ = false;
   QMutex abort_flag_mutex_;
   bool load_started_ = false;  // first paint() kicks the load exactly once
+  // [camp#195] Load-in-flight flag feeding updateStatus()'s "(loading...)".
+  // A flag rather than future_watcher_.isRunning(): tilesReady() runs from the
+  // watcher's finished signal, where isRunning() is already false, and
+  // waitForLoad() calls tilesReady() directly after a join.
+  bool loading_ = false;
 
   // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes the
   // size, pan changes the clip, so both re-render. (Pre-#103, pan reused the
