@@ -277,18 +277,112 @@ Static analysis: camp colcon test targets (green). Governance: ADR-0013 amended 
 Re-review round following `/address-findings`. Static analysis: cpplint run — no findings on touched lines (camp CI runs no cpplint; all hits pre-existing/untouched). Build clean (0 warnings); suite 236 tests, 0 failures, 1 skipped. Copilot off (default); local model off (--no-local, workspace#590). Governance: no principle Concerns; camp ADR-0013 amended in-PR, ADR-0010/0011/0007 re-verified unaffected; doc-impact grep found no other camp doc asserting the old equality-filter behavior. The cross-confirmed cross-level residency finding was NOT re-raised — deferred by operator decision with camp#195 as the named merge gate.
 
 ### Findings
-- [ ] (must-fix, Lens B) Permanently-unreadable tile wedges the release gate for the session: `loadPixels()` failure sets no sticky marker, so `hasUnloadedVisibleTiles()` stays true forever; the `<=` ceiling widens this from "a failing tile AT the selection" to "any level <= selection", at every zoom. Retained finer tiles are excluded from the auto-range fold (render clipped/saturated) and the worker re-RasterIOs the failing tile every kick during a pan. Fix: sticky `load_failed_` on GggsTile, excluded from the predicate, surfaced via setStatus() — `src/camp_map/raster/gggs_tile_layer.cpp:416-434,490-491`
-- [ ] (suggestion, Lens A + Lens B cross-pass confirmed) `-1` overloaded as both the no-selection sentinel and a value `tileLevel()` can return (digit overflow); such a tile can drive `selected_level_ = -1` and revert to the eager whole-store load. Drop `level() < 0` tiles at scan — `src/camp_map/raster/gggs_tile_util.h:41-58`, `gggs_tile_layer.cpp:408,427,467,490`
-- [ ] (suggestion, Lens A) Compositing backfills fine-tile NoData holes and grid-cell edge padding with coarse data (shader discards NoData) — a QA-fidelity change, same concern that keeps `smooth_interpolation_` default-OFF. Document in ADR-0013 or pin with a test — `src/camp_map/raster/gggs_tile_layer.cpp:687-690`
-- [ ] (suggestion, Lens B) `resetPixels()` runs unpaired with `releaseGL()` when `makeCurrent()` fails, breaking the gggs_tile.h pairing invariant (currently masked by `gl_failed_` latching) — `src/camp_map/raster/gggs_tile_layer.cpp:493-508`
-- [ ] (suggestion, Lens A) Release-loop ceiling comparison lacks its own `-1` guard, unlike every other site; relaxing the outer gate would release the whole resident store — `src/camp_map/raster/gggs_tile_layer.cpp:496`
-- [ ] (suggestion, Lens A) `isOverview()` encodes directory provenance, not padding, while the scene-bounds guard depends on padding; state the uma store-layout contract in ADR-0013 — `src/camp_map/raster/gggs_tile.h:66-75`, `gggs_tile_layer.cpp:140,165`
-- [ ] (suggestion, Lens A) `rescan()` never scans `overviews/`, so a pyramid generated after load stays invisible until restart while Rescan appears to succeed — more consequential under compositing — `src/camp_map/raster/gggs_tile_layer.cpp:226-307`
-- [ ] (suggestion, Lens B) `rebuildLevelIndex()` leaves the `prepareGeometryChange()` + re-anchor contract to callers while the header invites new ones; #194 makes its output more volatile. Fold the pair in — `src/camp_map/raster/gggs_tile_layer.cpp:172-224`
-- [ ] (suggestion, Lens A/B) Per-frame CPU on the path the ADR already flags for overdraw: `itemsIntersecting()` now unconditionally O(levels x tiles) per pan frame, worker re-sorts an identical order every kick, and the GUI abort+join window widens with the ladder-wide batch. A level-bucketed index in `rebuildLevelIndex()` serves the first two — `src/camp_map/raster/gggs_tile_layer.cpp:687-690,392-398,772-773`
-- [ ] (suggestion, Lens A) ADR's unqualified "neither direction ever blanks" contradicts its own coarse-zoom-blank paragraph on a disjoint ladder; one cross-referencing clause resolves it — `docs/decisions/0013-lod-level-selection-demand-driven-load.md`
-- [ ] (suggestion, Governance) plan.md never synced with three review-driven additions recorded only in progress.md (coarse-first sort `3f0c7a8`, all-overview fallback `9f8780d`, paint-driven test `635d51a`) — the recurring plan-drift flag — `.agent/work-plans/issue-194/plan.md`
+- [x] (must-fix, Lens B) Permanently-unreadable tile wedges the release gate for the session: `loadPixels()` failure sets no sticky marker, so `hasUnloadedVisibleTiles()` stays true forever; the `<=` ceiling widens this from "a failing tile AT the selection" to "any level <= selection", at every zoom. Retained finer tiles are excluded from the auto-range fold (render clipped/saturated) and the worker re-RasterIOs the failing tile every kick during a pan. Fix: sticky `load_failed_` on GggsTile, excluded from the predicate, surfaced via setStatus() — `src/camp_map/raster/gggs_tile_layer.cpp:416-434,490-491`
+- [x] (suggestion, Lens A + Lens B cross-pass confirmed) `-1` overloaded as both the no-selection sentinel and a value `tileLevel()` can return (digit overflow); such a tile can drive `selected_level_ = -1` and revert to the eager whole-store load. Drop `level() < 0` tiles at scan — `src/camp_map/raster/gggs_tile_util.h:41-58`, `gggs_tile_layer.cpp:408,427,467,490`
+- [x] (suggestion, Lens A) Compositing backfills fine-tile NoData holes and grid-cell edge padding with coarse data (shader discards NoData) — a QA-fidelity change, same concern that keeps `smooth_interpolation_` default-OFF. Document in ADR-0013 or pin with a test — `src/camp_map/raster/gggs_tile_layer.cpp:687-690`
+- [x] (suggestion, Lens B) `resetPixels()` runs unpaired with `releaseGL()` when `makeCurrent()` fails, breaking the gggs_tile.h pairing invariant (currently masked by `gl_failed_` latching) — `src/camp_map/raster/gggs_tile_layer.cpp:493-508`
+- [x] (suggestion, Lens A) Release-loop ceiling comparison lacks its own `-1` guard, unlike every other site; relaxing the outer gate would release the whole resident store — `src/camp_map/raster/gggs_tile_layer.cpp:496`
+- [x] (suggestion, Lens A) `isOverview()` encodes directory provenance, not padding, while the scene-bounds guard depends on padding; state the uma store-layout contract in ADR-0013 — `src/camp_map/raster/gggs_tile.h:66-75`, `gggs_tile_layer.cpp:140,165`
+- [x] (suggestion, Lens A) `rescan()` never scans `overviews/`, so a pyramid generated after load stays invisible until restart while Rescan appears to succeed — more consequential under compositing — `src/camp_map/raster/gggs_tile_layer.cpp:226-307` (deferred: pre-existing since camp#103 and already recorded under ADR-0013's Consequences; extending rescan() to the overviews/ sidecar needs provenance tagging + dedup + its own tests — a separate change, recommended as a follow-up issue; noted in plan.md Consequences)
+- [x] (suggestion, Lens B) `rebuildLevelIndex()` leaves the `prepareGeometryChange()` + re-anchor contract to callers while the header invites new ones; #194 makes its output more volatile. Fold the pair in — `src/camp_map/raster/gggs_tile_layer.cpp:172-224` (deferred: folding prepareGeometryChange() + re-anchor into rebuildLevelIndex() changes the constructor path, which anchors conditionally on a non-empty tile-set — a refactor rather than a fix; noted in plan.md Consequences)
+- [x] (suggestion, Lens A/B) Per-frame CPU on the path the ADR already flags for overdraw: `itemsIntersecting()` now unconditionally O(levels x tiles) per pan frame, worker re-sorts an identical order every kick, and the GUI abort+join window widens with the ladder-wide batch. A level-bucketed index in `rebuildLevelIndex()` serves the first two — `src/camp_map/raster/gggs_tile_layer.cpp:687-690,392-398,772-773` (deferred: a level-bucketed index is a performance change on the same axis ADR-0013 already routes to camp#195 for overdraw mitigation; no measured regression to act on, and camp#195's scope is under operator review)
+- [x] (suggestion, Lens A) ADR's unqualified "neither direction ever blanks" contradicts its own coarse-zoom-blank paragraph on a disjoint ladder; one cross-referencing clause resolves it — `docs/decisions/0013-lod-level-selection-demand-driven-load.md`
+- [x] (suggestion, Governance) plan.md never synced with three review-driven additions recorded only in progress.md (coarse-first sort `3f0c7a8`, all-overview fallback `9f8780d`, paint-driven test `635d51a`) — the recurring plan-drift flag — `.agent/work-plans/issue-194/plan.md`
 
 ### False positives
 - (Lens A must-fix) "Release over-evicts and blanks the disjoint region on zoom-out" — real mechanism, wrong severity: the end state is exactly the coarse-zoom limitation ADR-0013 already documents and routes to camp#195, and it is UNCHANGED from pre-PR (the old `!=` release loop dropped the outgoing level just as immediately). Retained only as the ADR-wording suggestion above.
 - (Lens B must-fix #2) "Coarse-first sort produces no visible progressive refinement" — false for the scenario the comment describes: `paint()` re-renders whenever `cached_clip_` changes, so during a PAN (the freshly-exposed-region case) partially-completed batches do repaint and coarse-first ordering is visible. Holds only for a static-clip zoom-in, which the comment does not claim.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-21 09:15 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-194 at `4cda866`
+**PR**: #196
+**Addressed**: `## Local Review (Pre-Push)` (round 2, 2026-08-21 09:12 -04:00, branch at `a8a792f`), verdict changes-requested / `Ship: recommended`
+**Commits**: `27030c1`, `4a22198`, `93c905b`, `9c661e5`, `8ada8e1`, `4cda866`
+
+### Actions
+- [x] (must-fix, Lens B) Sticky load-failure marker — `src/camp_map/raster/gggs_tile.h:42-70`, `gggs_tile.cpp:72-120,180`, `gggs_tile_layer.cpp:406-414,436-448,527-545` (`27030c1`)
+- [x] (suggestion, cross-pass confirmed) Reject `level() < 0` at scan — `gggs_tile_layer.cpp:160-176,283-292` (`4a22198`)
+- [x] (suggestion, Lens A) NoData/edge-padding backfill documented in ADR-0013 — `docs/decisions/0013-lod-level-selection-demand-driven-load.md` (`8ada8e1`)
+- [x] (suggestion, Lens B) `resetPixels()`/`releaseGL()` pairing under a failed `makeCurrent()` — `gggs_tile_layer.cpp:537-566` (`93c905b`)
+- [x] (suggestion, Lens A) Release-loop `-1` dependency pinned — `gggs_tile_layer.cpp:538-546` (`93c905b`)
+- [x] (suggestion, Lens A) `overviews/` padding contract stated in ADR-0013 — `docs/decisions/0013-lod-level-selection-demand-driven-load.md` (`8ada8e1`)
+- [x] (suggestion, Lens A) ADR "neither direction ever blanks" scoped to level transitions — ADR-0013 + `gggs_tile_layer.cpp:522-526,700-704` (`9c661e5`)
+- [x] (suggestion, Governance) plan.md synced with the review-driven additions — `.agent/work-plans/issue-194/plan.md` (`4cda866`)
+- [x] (suggestion, Lens A) `rescan()` never scans `overviews/` (deferred: pre-existing since camp#103, already under ADR-0013 Consequences; extending the scan needs provenance tagging + dedup + tests — recommend a follow-up issue)
+- [x] (suggestion, Lens B) Fold `prepareGeometryChange()` into `rebuildLevelIndex()` (deferred: changes the constructor path, which anchors conditionally — a refactor, not a fix)
+- [x] (suggestion, Lens A/B) Level-bucketed index for per-frame CPU (deferred: same axis ADR-0013 already routes to camp#195 for overdraw; no measured regression, and camp#195's scope is under operator review)
+
+### Notes
+
+**Must-fix detail.** `GggsTile` gained a sticky `std::atomic<bool> load_failed_`
+with the same RELEASE/ACQUIRE discipline as `pixels_loaded_`, latched on every
+`loadPixels()` failure exit (invalid tile, `GDALOpen` failure, missing band,
+`RasterIO` error). The layer excludes `loadFailed()` tiles from
+`hasUnloadedVisibleTiles()` (the wedge) and from the worker's retry pass (the
+per-kick re-`RasterIO`), and `tilesReady()` surfaces the count via `setStatus()`
+(`"(N tile(s) failed to load)"`, composed with the existing `"(no data)"`) so
+the layer settles *visibly* incomplete rather than silently so. The marker is
+cleared only by `setBand()` — an explicit operator retry with different read
+parameters — deliberately not by `resetPixels()`, which is also the LOD release
+path (a released backdrop tile is re-read with identical parameters, so its
+failure must survive).
+
+Regression test `UnreadableTileDoesNotWedgeTheReleaseGate`: a three-tile
+`{0, 13}` native ladder where one level-0 tile is truncated to zero bytes
+*after* the metadata scan (so it passed `valid()`). Zoom-in loads only the fine
+tile via the spatial filter; zoom-out then loads the readable coarse tile while
+the broken one fails, and the test asserts the predicate goes quiet, the
+finer-than-selection backdrop *releases*, and the status reports the failure.
+**Mutation-verified**: with the `loadFailed()` exclusion neutered the test fails
+on both the predicate and the un-released backdrop (`pixelsLoadedCount(13)` is
+1, expected 0) — it discriminates the fix, not just the code path.
+
+**Judgement calls on the remaining suggestions.** Three were taken as cheap and
+clearly-correct: the `makeCurrent()`-failure pairing (now skips the release
+entirely rather than doing a CPU-only clear that would leave a stale texture
+shadowing a re-load — leaving the finer level resident is harmless, and the
+renderer has latched its GL-failed flag anyway), the release-loop `-1`
+dependency (documented in place rather than adding a dead guard — the
+enclosing gate already excludes `-1`, and the new scan-time rejection means no
+real tile can carry the sentinel), and the two ADR documentation additions.
+Three were deferred as scope growth, with reasons recorded above and in
+`plan.md`'s Consequences.
+
+**NoData / edge-padding backfill (explicitly recorded per operator
+instruction).** With no render-time level filter, the shader's NoData discard
+means coarse data now shows through *within* a fine tile's footprint — both
+through interior NoData holes and through the padding a fine tile carries out
+to its GGGS grid-cell edge. Pre-#194 those pixels were transparent (only one
+level drew), so a hole read as "no data here"; now it reads as the coarser
+level's value. This is deliberate — filling coverage gaps from coarser levels
+is the point of the fix — but it is a **fidelity** change of the same family
+that keeps `smooth_interpolation_` default-OFF (camp#132): what the operator
+sees at a pixel may come from a coarser compilation/fold than the tile that
+nominally covers it. **Documented in ADR-0013** (`8ada8e1`) rather than left to
+a follow-up, together with the two mitigations that keep it honest today: the
+depth-at-cursor readout (`getElevation()`, camp#180) always samples
+finest-covering-tile-first independent of what is drawn, so *inspection* is
+unaffected; and the auto-range fold spans every composited level, so the coarse
+fill is colour-mapped on the same scale as the fine data. If a QA workflow ever
+needs "only this level's own data", that is a render-time opt-in (a
+composite-depth cap of 1) riding camp#195 alongside the overdraw mitigation —
+not a change to this decision. No new issue filed.
+
+**Follow-up recommended (not filed):** `rescan()` extending to the `overviews/`
+sidecar. Pre-existing behavior, but compositing raises its cost — a pyramid
+generated after the layer loaded is now backdrop for every level, and Rescan
+reports success while it stays invisible until restart. Needs an operator
+decision on whether it folds into camp#195's family or gets its own issue.
+
+**Not re-raised:** the cross-level residency / eviction-budget finding remains
+DEFERRED by the operator's 2026-08-21 decision with camp#195 as the named merge
+gate. No code, ADR, or camp#195 edits were made on that axis (its scope is
+under operator review).
+
+**Verification:** `./ui_ws/build.sh camp` clean; `./ui_ws/test.sh camp` —
+237 tests, 0 failures, 1 skipped (the pre-existing GL-gated skip). Pre-commit
+hooks ran on every commit; no `--no-verify`. Not pushed.
