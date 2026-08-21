@@ -368,12 +368,17 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
   // tile mid-write. (tilesReady() still runs post-join to fold the range +
   // repaint, but a paint() that races an in-flight worker is already safe.)
   //
-  // [camp#103 / ADR-0013] Demand-driven: only tiles at the selected level that
-  // intersect the load viewport are read — this is what turns the 3.6 GB eager
-  // whole-store open into a viewport-bounded load. @p level == -1 (no selection:
-  // headless tests, pre-first-paint) disables the level filter and a null
-  // @p viewport disables the spatial filter, preserving the pre-LOD
-  // load-everything behavior exactly.
+  // [camp#103 / ADR-0013] Demand-driven: only tiles at levels UP TO the
+  // selected level that intersect the load viewport are read — this is what
+  // turns the 3.6 GB eager whole-store open into a viewport-bounded load.
+  // [camp#194] The level gate is a CEILING, not an equality: a region-disjoint
+  // native ladder (ENC chart store) needs every level <= the selection loaded
+  // so the coarser levels' regions composite under the selected level
+  // (itemsIntersecting). Levels finer than the selection stay excluded — the
+  // demand-driven bound. @p level == -1 (no selection: headless tests,
+  // pre-first-paint) disables the level filter and a null @p viewport disables
+  // the spatial filter, preserving the pre-LOD load-everything behavior
+  // exactly.
   for(auto& tile : tiles_)
   {
     {
@@ -383,7 +388,7 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
     }
     if(tile->pixelsLoaded())
       continue;
-    if(level != -1 && tile->level() != level)
+    if(level != -1 && tile->level() > level)
       continue;
     if(!viewport.isNull() && !tileSceneRect(*tile).intersects(viewport))
       continue;
@@ -394,11 +399,15 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
 bool GggsTileLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) const
 {
   // [camp#103] The pan/zoom re-kick predicate (see header). GUI thread.
+  // [camp#194] Ceiling semantics matching the worker: any level <= the
+  // selection counts — the composited picture is complete only when every
+  // visible tile at every level up to the selection has loaded (this is also
+  // tilesReady()'s release gate for the finer-than-selection backdrop).
   for(const auto& tile : tiles_)
   {
     if(tile->pixelsLoaded())
       continue;
-    if(selected_level_ != -1 && tile->level() != selected_level_)
+    if(selected_level_ != -1 && tile->level() > selected_level_)
       continue;
     if(!viewport_scene.isNull() && !tileSceneRect(*tile).intersects(viewport_scene))
       continue;
@@ -431,11 +440,14 @@ void GggsTileLayer::tilesReady()
     // min/max must not pollute the current band's auto-range.
     if(tile->band() != band_)
       continue;
-    // [camp#103] Off-level tiles must not pollute the auto-range either (-1 =
-    // no selection = fold everything, the headless default). Note the fold only
-    // ever WIDENS the range across level switches — acceptable because the MEAN
-    // fold guarantees overview values ⊆ the fine range (ADR-0013).
-    if(selected_level_ != -1 && tile->level() != selected_level_)
+    // [camp#103/#194] Tiles finer than the selection must not pollute the
+    // auto-range (-1 = no selection = fold everything, the headless default).
+    // The fold covers exactly the composited steady-state render set (every
+    // level <= the selection); a transiently-resident finer backdrop tile
+    // already contributed while it was <= an earlier selection, and the fold
+    // only ever WIDENS the range across level switches — acceptable because
+    // the MEAN fold guarantees overview values ⊆ the fine range (ADR-0013).
+    if(selected_level_ != -1 && tile->level() > selected_level_)
       continue;
     if(!tile->pixelsLoaded() || tile->dataMin() > tile->dataMax())
       continue;
@@ -443,11 +455,18 @@ void GggsTileLayer::tilesReady()
     if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
     first_range = false;
   }
-  // [camp#103] Once the selected level's visible set has fully loaded, release
-  // the stale levels kept resident as the zoom-transition backdrop
-  // (progressive refinement — see itemsIntersecting). Only when no worker is
-  // running: this mutates tiles the worker iterates, and a re-kick may already
-  // be in flight; the release then happens at that load's own tilesReady().
+  // [camp#103/#194] Once the composited picture's visible set has fully
+  // loaded (hasUnloadedVisibleTiles tests every level <= the selection —
+  // the same ceiling the loader uses), release the tiles at levels FINER
+  // than the selection: they are the zoom-OUT transition backdrop, kept
+  // drawing on top (see itemsIntersecting) until the coarser selection's
+  // visible tiles are complete — the zoom-out mirror of camp#103's
+  // field-verified zoom-in timing, so neither direction ever blanks.
+  // Levels <= the selection are never released: under multi-level
+  // compositing they are a permanent part of the picture, not a transient
+  // backdrop. Only when no worker is running: this mutates tiles the worker
+  // iterates, and a re-kick may already be in flight; the release then
+  // happens at that load's own tilesReady().
   // The safety of the mutation rests on the GUI-thread-only invariant (both
   // this slot and every loadTiles() caller) — assert it.
   Q_ASSERT(thread() == QThread::currentThread());
@@ -457,7 +476,7 @@ void GggsTileLayer::tilesReady()
     bool have_context = false, context_tried = false;
     for(auto& tile : tiles_)
     {
-      if(tile->level() == selected_level_ || !tile->pixelsLoaded())
+      if(tile->level() <= selected_level_ || !tile->pixelsLoaded())
         continue;
       if(!context_tried)
       {
@@ -625,33 +644,29 @@ QList<RasterFieldItem> GggsTileLayer::itemsIntersecting(const QRectF& clip_scene
     item.nodata = tile.hasNoData() ? float(tile.noData()) : 0.0f;
     result.push_back(item);
   };
-  if(selected_level_ == -1)
-  {
-    // No selection (headless default): everything loaded renders, as pre-LOD.
-    for(auto& tile : tiles_)
-      appendTile(*tile);
-    return result;
-  }
-  // [camp#103 / ADR-0013] Progressive refinement across a level switch: tiles
-  // from OTHER levels stay resident (paint() no longer eager-releases them)
-  // and draw FIRST, in ascending level order (coarse→fine), so the outgoing
-  // level backs the view while the selected level streams in — no
-  // blank/flicker on zoom in EITHER direction (the stale backdrop is coarser
-  // on zoom-in, finer on zoom-out). The selected level draws LAST (on top),
-  // so each arriving tile covers its backdrop.
-  // tilesReady() releases the stale levels once the selected level's visible
-  // set is complete, so steady-state renders only the selected level.
+  // [camp#194 / ADR-0013] Multi-level compositing: draw EVERY resident tile,
+  // in ascending level order (coarse→fine painter's order), with no
+  // render-time level filter. WHICH levels are resident is governed by the
+  // loader (only levels <= selected_level_ ever load — the ceiling filter in
+  // loadTilesWorker) and by tilesReady()'s release (levels > selected_level_
+  // drop once the selection's visible set completes). Painter's order then
+  // gives:
+  //  - steady state: levels <= selection composite, fine overdrawing coarse
+  //    where both exist and coarse filling where fine is absent — a
+  //    region-disjoint native ladder (ENC chart store) renders ALL its
+  //    regions at every zoom;
+  //  - zoom-in: the stale coarser levels back the arriving selected level
+  //    (unchanged from camp#103's progressive refinement);
+  //  - zoom-out: the still-resident finer tiles draw ABOVE the coarse levels
+  //    (ascending puts them last) and back the view until the coarser
+  //    selection's visible set finishes loading — no blank frame in either
+  //    direction.
+  // selected_level_ == -1 (headless, no selection) is the same pass: with no
+  // ceiling anywhere, everything loads and everything draws.
   for(const int level : available_levels_)
-  {
-    if(level == selected_level_)
-      continue;
     for(auto& tile : tiles_)
       if(tile->level() == level)
         appendTile(*tile);
-  }
-  for(auto& tile : tiles_)
-    if(tile->level() == selected_level_)
-      appendTile(*tile);
   return result;
 }
 
@@ -704,13 +719,14 @@ void GggsTileLayer::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QW
     level_changed = (target != selected_level_);
     if(level_changed)
     {
-      // [camp#103 field verify] Do NOT release the outgoing level here. Its
-      // loaded tiles keep rendering as the backdrop (itemsIntersecting draws
-      // stale levels UNDER the selected level — stale may be coarser on
-      // zoom-in or finer on zoom-out; selected is always on top) until the
-      // new level's visible tiles finish loading — tilesReady() releases them
-      // then. The original eager release blanked the layer for the whole load
-      // on every zoom across a level boundary — very visible flicker.
+      // [camp#103 field verify / camp#194] Do NOT release the outgoing level
+      // here. On zoom-in the coarser levels stay a permanent part of the
+      // composited picture; on zoom-out the finer levels keep rendering
+      // (above the coarse — see itemsIntersecting) as the transition
+      // backdrop until tilesReady() releases them once the new selection's
+      // visible tiles finish loading. The original eager release blanked the
+      // layer for the whole load on every zoom across a level boundary —
+      // very visible flicker.
       selected_level_ = target;
       cached_image_ = QImage();
     }

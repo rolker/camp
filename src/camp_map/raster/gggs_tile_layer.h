@@ -149,11 +149,16 @@ public:
   /// QGraphicsView paint loop that normally kicks + awaits the load via signals.
   void waitForLoad();
 
-  /// [camp#103 / ADR-0013] The currently selected LOD level, or -1 when no
-  /// selection has been made (headless / never painted): -1 means NO level
-  /// filter anywhere — worker, items, range fold — so the pre-LOD behavior
-  /// (load and render everything) is preserved bit-for-bit for the existing
-  /// headless tests. paint() drives this from the viewport scale.
+  /// [camp#103 / ADR-0013 / camp#194] The currently selected LOD level, or -1
+  /// when no selection has been made (headless / never painted). The
+  /// selection is a CEILING, not an equality filter: every available level
+  /// <= it loads (viewport-bounded) and stays resident, compositing
+  /// coarse→fine so a region-disjoint native ladder renders all its regions
+  /// (camp#194); levels above it are excluded from loading and released once
+  /// the selection's visible set completes. -1 means NO level filter
+  /// anywhere — worker, range fold, release — so the pre-LOD behavior (load
+  /// and render everything) is preserved for the existing headless tests.
+  /// paint() drives this from the viewport scale.
   int selectedLevel() const { return selected_level_; }
 
   /// [camp#103] Deduplicated ascending list of GGGS levels present across the
@@ -173,13 +178,16 @@ public:
   /// [camp#103] Test-only: number of tiles at @p level whose pixels are loaded.
   int pixelsLoadedCount(int level) const;
 
-  /// [camp#103] True if any tile at the selected level intersects
-  /// @p viewport_scene (Web-Mercator scene rect) with its pixels not yet
-  /// loaded — the pan/zoom re-kick condition for the demand-driven loader
-  /// (a pure pan must re-kick or panned-in regions stay blank forever). With
-  /// no selection (selected_level_ == -1) the level filter is off; a null
-  /// viewport means everything is "visible". Public as the paint() helper and
-  /// the unit-test seam for the re-kick predicate.
+  /// [camp#103/#194] True if any tile at a level <= the selected level
+  /// intersects @p viewport_scene (Web-Mercator scene rect) with its pixels
+  /// not yet loaded — the pan/zoom re-kick condition for the demand-driven
+  /// loader (a pure pan must re-kick or panned-in regions stay blank
+  /// forever), and tilesReady()'s release gate for the finer-than-selection
+  /// zoom-out backdrop (the composited picture is complete only when every
+  /// visible tile up to the selection has loaded). With no selection
+  /// (selected_level_ == -1) the level filter is off; a null viewport means
+  /// everything is "visible". Public as the paint() helper and the unit-test
+  /// seam for the re-kick predicate.
   bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
 
   /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds

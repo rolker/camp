@@ -583,11 +583,14 @@ TEST(GggsRenderTest, OverviewSidecarLoadsBothLevels)
   EXPECT_LT(layer->sceneBounds().width(), fine_width_m * 10.0);
 }
 
-// [camp#103] The demand-driven filter: with a forced LOD selection only tiles at
-// that level load; with NO selection (the headless default — selected_level_
-// == -1, null viewport) EVERYTHING loads, which is the regression guard that
-// keeps all the pre-existing waitForLoad()+renderImage() tests meaningful.
-TEST(GggsRenderTest, DemandDrivenLoadsOnlySelectedLevel)
+// [camp#103/#194] The demand-driven CEILING filter: with a forced LOD
+// selection, every level <= the selection loads (multi-level compositing —
+// the coarse level is a permanent part of the composited picture, so a
+// region-disjoint native ladder renders all its regions). The exclusion half
+// of the ceiling (levels ABOVE the selection stay out) is the mid-ladder case
+// below, DemandDrivenCeilingExcludesFinerLevels — selecting the max, as here,
+// cannot distinguish a ceiling from no filter at all.
+TEST(GggsRenderTest, DemandDrivenLoadsLevelsUpToSelection)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
@@ -603,11 +606,45 @@ TEST(GggsRenderTest, DemandDrivenLoadsOnlySelectedLevel)
   camp::map::Map map;
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
   ASSERT_TRUE(layer->valid());
-  layer->setLodForTest(13, QRectF());   // level filter only, no spatial filter
+  layer->setLodForTest(13, QRectF());   // level ceiling only, no spatial filter
   layer->waitForLoad();
   EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
-  EXPECT_EQ(layer->pixelsLoadedCount(0), 0) <<
-    "overview tile loaded despite level filter — demand-driven filter broken";
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
+    "coarse level excluded despite ceiling semantics — compositing must load "
+    "every level <= the selection";
+}
+
+// [camp#194] The exclusion half of the ceiling filter, selected MID-ladder:
+// levels above the selection must NOT load. This is the case that
+// distinguishes a correct ceiling from the filter being removed entirely (a
+// regression to the pre-camp#103 eager whole-store load) — with the selection
+// at the ladder's max, every level trivially satisfies level <= selection.
+TEST(GggsRenderTest, DemandDrivenCeilingExcludesFinerLevels)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // Three-level NATIVE ladder (all in the main directory, as an ENC chart
+  // store lays them out), at three disjoint regions.
+  const double geo_l0[6] = {-71.40, 0.0001, 0.0, 43.00, 0.0, -0.0001};
+  const double geo_l7[6] = {-71.40, 0.0001, 0.0, 43.10, 0.0, -0.0001};
+  const double geo_l13[6] = {-71.40, 0.0001, 0.0, 43.20, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l0, samples, "0_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l7, samples, "7_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l13, samples, "13_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->availableLevels(), (std::vector<int>{0, 7, 13}));
+  layer->setLodForTest(7, QRectF());    // mid-ladder selection
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(7), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
+    "level above the selection loaded — the demand-driven ceiling is gone "
+    "(eager whole-store load regression)";
 }
 
 TEST(GggsRenderTest, HeadlessDefaultsLoadEverything)
@@ -661,11 +698,16 @@ TEST(GggsRenderTest, UnloadedVisibleTilesTriggerRekick)
   EXPECT_FALSE(layer->hasUnloadedVisibleTiles(over_tile));
 }
 
-// [camp#103 field verify] Progressive refinement across a level switch: the
-// outgoing level's tiles stay resident (no eager release in paint()) and are
-// only dropped by tilesReady() once the new level's visible set has loaded —
-// eager release blanked the layer for the whole load (zoom flicker).
-TEST(GggsRenderTest, LevelSwitchKeepsPriorLevelUntilNewLoads)
+// [camp#103 field verify / camp#194] Residency across level switches under
+// multi-level compositing. Zoom-IN (coarse -> fine): the coarse level is <=
+// the new selection, so it stays resident PERMANENTLY as part of the
+// composited picture — even after the fine level finishes loading (the old
+// equality-filter model released it here). Zoom-OUT (fine -> coarse): the
+// fine level (now > selection) is the transition backdrop — never released
+// eagerly, dropped by tilesReady() once the selection's visible set has
+// loaded and the loader is idle — while the coarse level stays loaded
+// throughout.
+TEST(GggsRenderTest, LevelSwitchResidencyAcrossZoomInAndOut)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
@@ -682,30 +724,104 @@ TEST(GggsRenderTest, LevelSwitchKeepsPriorLevelUntilNewLoads)
   auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
   ASSERT_TRUE(layer->valid());
 
-  // Load at the coarse level only.
+  // Load at the coarse selection: only levels <= 0 load.
   layer->setLodForTest(0, QRectF());
   layer->waitForLoad();
   ASSERT_EQ(layer->pixelsLoadedCount(0), 1);
   ASSERT_EQ(layer->pixelsLoadedCount(13), 0);
 
-  // Switch selection to the fine level: the coarse tile must STAY resident
-  // (it is the transition backdrop) until the fine level loads.
+  // Zoom IN: select the fine level. The coarse tile must stay resident both
+  // mid-transition (backdrop) and — new under compositing — permanently after
+  // the fine level completes (it is part of the composited picture).
   layer->setLodForTest(13, QRectF());
   EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
     "outgoing level released eagerly — zoom would flicker blank";
-
-  // Drive the load to completion (waitForLoad re-kicks on the new selection):
-  // the fine level loads and tilesReady() then drops the stale coarse tile.
   layer->waitForLoad();
   EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
-  EXPECT_EQ(layer->pixelsLoadedCount(0), 0) <<
-    "stale backdrop level not released after the new level completed";
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) <<
+    "coarse level released after the fine level completed — compositing keeps "
+    "every level <= the selection resident permanently";
+
+  // Zoom OUT: select the coarse level again. Everything <= the selection is
+  // already loaded, so the now-stale fine level (> selection) releases at the
+  // next idle tilesReady(); the coarse level stays loaded throughout.
+  layer->setLodForTest(0, QRectF());
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
+    "finer-than-selection level not released after the selection's visible "
+    "set completed";
 }
 
-// [camp#103 field verify] The mid-transition render: with the fine level
-// selected but not yet loaded, the resident coarse tile draws as backdrop —
+// [camp#194] Zoom-OUT transition backdrop: with the coarse level selected but
+// its tiles not yet loaded, the still-resident FINER tiles (level > selection)
+// must keep rendering — the render-time path must draw the whole resident set,
+// not filter to level <= selection (which would blank the view until the
+// coarse load completes, the exact flicker ADR-0013/camp#103 fixed for
+// zoom-in). Residency asserts alone cannot catch this; the render must be
+// non-blank. (GL-gated, like the zoom-in twin below.)
+TEST(GggsRenderTest, ZoomOutRetainsFinerBackdropUntilCoarseLoads)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // A two-level NATIVE ladder at two disjoint regions (0.002 deg tiles ~0.01
+  // deg apart), so the spatial filter can load one without the other while
+  // both stay a visible fraction of the union extent.
+  const double fine_geo[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const double coarse_geo[6] = {-71.410, 0.0001, 0.0, 43.010, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples, "0_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  // Load ONLY the fine tile: fine selection + a viewport over the fine
+  // region — the disjoint coarse tile fails the spatial filter.
+  const QPointF fine_lo = web_mercator::geoToMap(QGeoCoordinate(42.998, -71.400));
+  const QPointF fine_hi = web_mercator::geoToMap(QGeoCoordinate(43.000, -71.398));
+  const QRectF fine_viewport = QRectF(fine_lo, fine_hi).normalized();
+  layer->setLodForTest(13, fine_viewport);
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+  ASSERT_EQ(layer->pixelsLoadedCount(0), 0);
+
+  // Zoom OUT: select the coarse level over the whole extent. Mid-transition
+  // (coarse not yet loaded) the fine tile must stay resident...
+  layer->setLodForTest(0, layer->sceneBounds());
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1) <<
+    "zoom-out backdrop released before the coarse level loaded";
+  // ...and must still RENDER — the no-blank-frame guarantee on zoom-out.
+  const QImage img = layer->renderImage(QSize(200, 200));
+  ASSERT_FALSE(img.isNull());
+  int opaque = 0;
+  for(int y = 0; y < img.height(); ++y)
+    for(int x = 0; x < img.width(); ++x)
+      if(img.pixelColor(x, y).alpha() > 0)
+        ++opaque;
+  EXPECT_GT(opaque, 0) <<
+    "zoom-out mid-transition render is blank — the finer backdrop is not drawn";
+
+  // Drive the coarse load; once the selection's visible set completes, the
+  // finer backdrop releases.
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
+    "finer backdrop not released after the coarse visible set completed";
+}
+
+// [camp#103 field verify / camp#194] The zoom-IN mid-transition render: with
+// the fine level selected but not yet loaded, the resident coarse tile draws —
 // the render must NOT be blank. (GL-gated; discriminates the old eager-release
-// behavior, under which this render was fully transparent.)
+// behavior, under which this render was fully transparent.) Under multi-level
+// compositing the coarse level, being <= the new selection, is a PERMANENT
+// part of the composited picture rather than a transient backdrop — the
+// assertions are unchanged, but what they demonstrate shifted (camp#194).
 TEST(GggsRenderTest, LevelSwitchBackdropRendersDuringTransition)
 {
   if(!offscreenGLAvailable())
