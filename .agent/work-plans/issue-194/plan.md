@@ -70,15 +70,33 @@ zoom") to actually hold.
    existing viewport-intersection filter, so this stays viewport-bounded,
    not store-bounded).
 
-4. **Make `itemsIntersecting()` composite instead of select.** Collapse the
-   current two-pass loop (draw every *other* level, then the selected level
-   last) into a single ascending pass over `available_levels_` that skips
-   `level > selected_level_`. Since `available_levels_` is sorted ascending
-   and `selected_level_` is itself a member of it (chosen by
-   `selectLodLevel` from the available set), this still draws coarse→fine
-   with the selected level naturally last (on top) — painter's-order
-   compositing, per the issue's fix direction, with less code than today's
-   two-pass version.
+4. **Make `itemsIntersecting()` composite instead of select — over every
+   RESIDENT tile, with no render-time level filter.** (Revised per plan
+   review must-fix: an ascending pass that *skips* `level > selected_level_`
+   would regress zoom-OUT — the still-resident finer tiles would vanish from
+   every render the moment selection drops to a coarser level, blanking the
+   view until the coarser level's tiles finish loading, exactly the flicker
+   ADR-0013/camp#103 fixed.) Collapse the current two-pass loop into a
+   single ascending pass over `available_levels_` that draws **every loaded
+   tile at every level** — no `selected_level_` comparison at render time at
+   all. Which levels are resident is governed entirely by the *loader*
+   (ceiling filter, step 3: only levels ≤ selection ever load) plus the
+   *release timing* (step 6: levels > selection release only once the
+   selection's visible set has loaded). Consequences of ascending
+   painter's order over the resident set:
+   - Steady state: levels ≤ selection composite coarse→fine, fine
+     overdrawing coarse where both exist, coarse filling where fine is
+     absent — the issue's fix direction.
+   - Zoom-IN transition: stale coarser levels draw under the arriving
+     selected level — unchanged from today.
+   - Zoom-OUT transition: the still-resident finer tiles (`level >
+     selection`) draw **above** the coarse levels (ascending puts them
+     last) and back the view until step 6 releases them — no blank frame,
+     and the finer data is preferred on top exactly as the compositing
+     philosophy wants while it is still resident.
+   - The `selected_level_ == -1` headless special case collapses into the
+     same pass (draw everything, now in deterministic ascending-level
+     order) — one code path instead of two.
 
 5. **Fold the auto-range over the same composited set.** In `tilesReady()`,
    change the range-fold's level gate from `!= selected_level_` to
@@ -86,31 +104,36 @@ zoom") to actually hold.
    tile that will actually appear on screen contributes to the auto-range,
    not just the topmost.
 
-6. **Simplify stale-level release — no more backdrop-then-release
-   two-phase dance.** Under compositing, all resident levels ≤ selected are
-   *permanently* part of the picture (not a transient zoom backdrop), and
-   levels > selected are *never* drawn once excluded by step 4 — so there is
-   no visual gap to protect by delaying their release. In `tilesReady()`,
-   change the stale-release loop's condition from `tile->level() ==
-   selected_level_ || !pixelsLoaded()` (skip) to `tile->level() <=
-   selected_level_ || !pixelsLoaded()` (skip) — i.e. release exactly the
-   tiles at levels *finer* than the current selection — and **drop** the
-   `!hasUnloadedVisibleTiles(load_viewport_)` gate that used to delay release
-   until the incoming level's visible set had fully loaded. That gate existed
-   only to avoid blanking the view under the old equality-filter model; under
-   compositing the coarser levels ≤ selection are already resident and
-   rendering, so releasing newly-stale finer levels as soon as idle
-   (`!future_watcher_.isRunning()`) is both safe and simpler. Keep the
-   existing `resetPixels()` + `releaseGL()` pairing and GL-context handling
-   unchanged — only the level predicate and the extra gate move.
+6. **Stale-level release: only levels finer than the selection, and only
+   once the selection's visible set has loaded.** (Revised per plan review
+   must-fix: the earlier draft dropped the `!hasUnloadedVisibleTiles(...)`
+   gate, which would have released the zoom-out backdrop while the coarser
+   level was still loading — with step 4 drawing the resident set, that
+   release timing is exactly what protects the no-blank-frame guarantee.)
+   In `tilesReady()`, change the stale-release loop's condition from
+   `tile->level() == selected_level_ || !pixelsLoaded()` (skip) to
+   `tile->level() <= selected_level_ || !pixelsLoaded()` (skip) — i.e.
+   release exactly the tiles at levels *finer* than the current selection —
+   and **keep** the existing `!future_watcher_.isRunning() &&
+   !hasUnloadedVisibleTiles(load_viewport_)` gate unchanged: with
+   `hasUnloadedVisibleTiles()` now testing levels ≤ selection (step 3), the
+   gate reads "every visible tile of the composited picture has loaded",
+   and only then do the finer-than-selection backdrop tiles release —
+   mirroring the zoom-in timing camp#103 field-verified, now applied
+   symmetrically to zoom-out. Keep the existing `resetPixels()` +
+   `releaseGL()` pairing and GL-context handling unchanged — only the level
+   predicate moves (`==` → `<=`).
 
 7. **Update `ADR-0013` in the same PR** (required — not a follow-up):
    - "Progressive refinement across a level switch" → rewrite as "Multi-level
      compositing": `selected_level_` is a max, not an equality filter;
      residency model is "every available level ≤ selection stays resident
-     permanently, coarse-to-fine painter's order"; stale-release condition is
-     now `level > selection`, fired promptly on idle (no more
-     load-before-release gate, and why: nothing to protect visually anymore).
+     permanently, coarse-to-fine painter's order; render draws the whole
+     resident set with no level filter"; stale-release condition is now
+     `level > selection`, still gated on the selection's visible set having
+     fully loaded while idle — the gate is what carries the zoom-out
+     no-blank-frame guarantee under the new model (the finer backdrop keeps
+     drawing on top until the coarser picture is complete).
    - "Extent semantics" → replace "finest-level tile extents only" with
      "every native (non-overview-sidecar) tile's extent, at any level" +
      rationale (region-disjoint native ladders need every level's footprint;
@@ -121,17 +144,22 @@ zoom") to actually hold.
      single-level "widen only" transition smoothing; note this is a strictly
      more precise statement of the same never-reset behavior, not a policy
      change (data_min_/data_max_ still never resets on a level switch).
-   - Add a short note (ADR-0010 cross-reference, "Watch, not triggered" from
-     the issue review): `GggsTileLayer` has no residency/eviction budget
-     (unlike `SonarLiveCacheLayer`, ADR-0010) — under compositing this now
-     matters more, since multiple levels stay resident simultaneously in
-     steady state. For a derived-overview store the added residency is
-     bounded (~33% over the fine level alone, since a 4:1-folded pyramid's
-     total size is a bounded geometric series); for a region-disjoint native
-     ladder it's bounded by the store's total tile count (fixed at
-     production time, not by zoom behavior). No eviction bound is needed for
-     this fix; flag as a future ADR-0010-style follow-up only if a
-     disjoint-ladder store ever grows large enough for it to matter.
+   - Add a short note (ADR-0010 cross-reference): `GggsTileLayer` has no
+     residency/eviction budget (unlike `SonarLiveCacheLayer`, ADR-0010) —
+     under compositing this now matters more, since multiple levels stay
+     resident simultaneously in steady state. For the `chart` store (54
+     tiles, fixed native ladder) the growth is genuinely bounded and
+     harmless; for a derived-overview store the added residency is bounded
+     (~33% over the fine level alone — a 4:1-folded pyramid's total size is
+     a bounded geometric series). The classes to watch are `reference` (the
+     issue names its exposure "once it holds mixed-level imports": S-102 +
+     the pending 1 m Appledore grid at a fine level vs coarse legacy
+     priors) and `draft`/`processed` (uma ADR-0010 D9 generates overview
+     pyramids over potentially large fine-level survey coverage) — name
+     them explicitly in the ADR note, since `chart` is the one case in this
+     family that is NOT the risk. The residency/eviction-bound follow-up is
+     tracked as **camp#195** (filed during plan review, given the camp#153
+     `SonarLiveCacheLayer` OOM precedent); reference it from the ADR note.
 
 8. **Regression tests** (`test/test_gggs_render.cpp`, following the existing
    `writeTile()`-based fixture pattern):
@@ -144,26 +172,48 @@ zoom") to actually hold.
      `sceneBounds()` shows opaque pixels in **both** regions' sub-rects, not
      just the L8 region — the direct symptom regression guard the issue
      asked for ("only one band renders").
-   - **Update `DemandDrivenLoadsOnlySelectedLevel`** → rename/extend to
-     assert levels ≤ selection all load (e.g. select level 13 with an
-     available `{0, 13}` ladder, expect both `pixelsLoadedCount(13) == 1`
-     and `pixelsLoadedCount(0) == 1`, not `0` as today).
+   - **Update `DemandDrivenLoadsOnlySelectedLevel`** → rename to
+     `DemandDrivenLoadsLevelsUpToSelection` and assert levels ≤ selection
+     all load (select level 13 with an available `{0, 13}` ladder, expect
+     both `pixelsLoadedCount(13) == 1` and `pixelsLoadedCount(0) == 1`, not
+     `0` as today).
+   - **New: mid-ladder ceiling case** (plan review must-fix — a
+     select-the-max case cannot distinguish "correct ceiling filter" from
+     "filter removed entirely", i.e. a regression to the pre-camp#103 eager
+     whole-store load): a three-level native ladder `{0, 7, 13}`, select
+     the mid level 7, assert `pixelsLoadedCount(0) == 1`,
+     `pixelsLoadedCount(7) == 1`, and `pixelsLoadedCount(13) == 0` — the
+     level ABOVE the selection stays excluded from loading at the new
+     threshold semantics.
    - **Rewrite `LevelSwitchKeepsPriorLevelUntilNewLoads`**: its premise ("the
      outgoing coarse level gets released once the fine level finishes
      loading") is now wrong under compositing — the coarse level stays
-     resident *permanently* once selected ≤ it was ever loaded at a coarser
-     selection that includes it. Replace with two assertions: (a) zooming
-     from coarse (0) to fine (13) does **not** release level 0 even after
-     level 13 finishes loading (the new steady-state residency model); (b)
-     zooming back out from fine (13) to coarse (0) **does** release the
-     now-stale level 13 tile once idle (the new `level > selection` release
-     condition) while level 0 stays loaded throughout.
+     resident *permanently*. Replace with the full two-direction residency
+     arc: (a) zooming from coarse (0) to fine (13) does **not** release
+     level 0 even after level 13 finishes loading (the new steady-state
+     residency model); (b) zooming back out from fine (13) to coarse (0)
+     keeps level 13 resident while the coarse visible set is incomplete and
+     **does** release it once the selection's visible tiles have loaded and
+     the loader is idle (the new `level > selection` release condition with
+     the retained load-before-release gate), while level 0 stays loaded
+     throughout.
+   - **New: zoom-OUT backdrop render assertion** (plan review must-fix —
+     `pixelsLoadedCount` residency asserts alone cannot catch a render-time
+     `level <= selected` filter regression): arrange "fine loaded, coarse
+     not" via the spatial filter (fine and coarse tiles at disjoint
+     regions; load with selection 13 and a viewport covering only the fine
+     tile), then select the coarse level (0). Mid-transition, assert (a)
+     the fine tile is still resident and (b) `renderImage()` over the full
+     extent is non-blank — the still-resident finer level (now `level >
+     selection`) must keep drawing as the zoom-out backdrop. Then
+     `waitForLoad()` and assert the coarse level loaded and the fine level
+     released. GL-gated like `LevelSwitchBackdropRendersDuringTransition`.
    - **`LevelSwitchBackdropRendersDuringTransition`** stays valid as a
-     regression (mid-transition render is non-blank) but the reasoning
-     shifts: it now demonstrates that the coarse level, being ≤ the newly
-     selected fine level, renders as a *permanent* part of the composited
-     image rather than a transient backdrop — worth a comment update even
-     though the assertions are unchanged.
+     regression (mid-transition zoom-IN render is non-blank) but the
+     reasoning shifts: it now demonstrates that the coarse level, being ≤
+     the newly selected fine level, renders as a *permanent* part of the
+     composited image rather than a transient backdrop — worth a comment
+     update even though the assertions are unchanged.
    - `HeadlessDefaultsLoadEverything` and `UnloadedVisibleTilesTriggerRekick`
      are unaffected (single-level fixtures / `-1` no-selection path) —
      verify they still pass, no code changes expected.
@@ -173,7 +223,7 @@ zoom") to actually hold.
 | File | Change |
 |------|--------|
 | `src/camp_map/raster/gggs_tile.h` / `.cpp` | Add `is_overview_` member + `setOverview(bool)` / `isOverview() const` (default `false`). |
-| `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()`: tag overview-dir tiles via `setOverview(true)`. `rebuildLevelIndex()`: union all native (non-overview) tile extents instead of finest-level-only. `loadTilesWorker()` / `hasUnloadedVisibleTiles()`: `level != selected` → `level > selected`. `itemsIntersecting()`: collapse to one ascending `level <= selected_level_` pass. `tilesReady()`: range-fold gate `!= selected_level_` → `> selected_level_`; release-loop gate `== selected_level_` → `<= selected_level_`, drop the `!hasUnloadedVisibleTiles(...)` condition. |
+| `src/camp_map/raster/gggs_tile_layer.cpp` | `loadDirectory()`: tag overview-dir tiles via `setOverview(true)`. `rebuildLevelIndex()`: union all native (non-overview) tile extents instead of finest-level-only. `loadTilesWorker()` / `hasUnloadedVisibleTiles()`: `level != selected` → `level > selected`. `itemsIntersecting()`: collapse to one ascending pass over ALL resident levels (no render-time level filter — residency governs; the `-1` special case merges in). `tilesReady()`: range-fold gate `!= selected_level_` → `> selected_level_`; release-loop gate `== selected_level_` → `<= selected_level_`, keeping the `!hasUnloadedVisibleTiles(...)` load-before-release gate (zoom-out backdrop protection). |
 | `src/camp_map/raster/gggs_tile_layer.h` | Update the class-level Doxygen / inline comments describing `selected_level_` as an equality filter (multiple spots reference "the selected level" as the sole resident/rendered level) to describe the max-threshold / multi-level-resident model. |
 | `docs/decisions/0013-lod-level-selection-demand-driven-load.md` | Amend "Progressive refinement across a level switch", "Extent semantics", "Auto-range across levels"; add the ADR-0010 residency cross-reference note. |
 | `test/test_gggs_render.cpp` | Add the disjoint-ladder regression test; update/rewrite the three tests listed in step 8. |
@@ -185,7 +235,7 @@ zoom") to actually hold.
 | Capture decisions, not just implementations | ADR-0013 amended in this same PR (step 7) — the fix-direction decision and its consequences for residency/extent/auto-range are recorded where the next agent will look, not just in the code diff or this plan. |
 | A change includes its consequences | The plan explicitly reconciles all three review-identified equality gates (loader, `itemsIntersecting()`, `tilesReady()`'s two roles) plus a fourth site the review didn't call out by name but the same investigation surfaced (`rebuildLevelIndex()`'s extent union) — without step 2, the compositing fix alone still fails the issue's own acceptance case, since the disjoint regions outside the finest level's footprint would stay outside `boundingRect()` regardless of how rendering is fixed. |
 | Test what breaks | Step 8's new fixture reproduces the reported symptom directly (disjoint regions, only one band renders) rather than only re-asserting individual filter predicates: a test suite that only checked "loads levels ≤ selection" could still pass while the extent bug silently drops a region. Existing tests whose *assertions* encoded the old equality-filter/backdrop-release model are rewritten, not left contradicting the new code (stale assertions passing for the wrong reason are worse than no test). |
-| Only what's needed | No eviction/residency bound is added for `GggsTileLayer` — the review flagged this as "Watch, not triggered," and the plan confirms why (bounded by store size / bounded pyramid-fold overhead) rather than pre-building infrastructure ADR-0010 doesn't currently require. `reference/`'s same latent exposure (mixed-level imports) is covered for free by this being a generic `GggsTileLayer` fix — no separate follow-up issue needed. |
+| Only what's needed | No eviction/residency bound is added for `GggsTileLayer` in this PR — bounded for the `chart` store this fix targets. The real exposure (`reference`/`draft` stores growing large under multi-level residency, camp#153 precedent) is tracked as camp#195 rather than built speculatively here. `reference/`'s disjoint-ladder rendering exposure itself is covered for free by this being a generic `GggsTileLayer` fix. |
 | Improve incrementally | Single PR, one file's render/load/range logic plus its governing ADR and tests — no wider refactor of `RasterFieldSource`/`RasterGlRenderer` or the LOD selector, both of which are already correctly generic (`selectLodLevel` needs no change; it already returns "the level to treat as the ceiling"). |
 
 ## ADR Compliance
@@ -194,7 +244,7 @@ zoom") to actually hold.
 |---|---|---|
 | ADR-0013 — LOD level selection and demand-driven load | Yes | Amended in this PR (step 7) — Decision section's progressive-refinement/extent/auto-range subsections rewritten for the compositing model. |
 | ADR-0001 — Adopt ADRs | Yes | Satisfied via the ADR-0013 amendment above; direction 1 is an amendment to an existing ADR, not a new one (it doesn't reverse a decision recorded elsewhere — ADR-0010 D7/D9 in `unh_marine_autonomy` are read, not touched). |
-| ADR-0010 — Bounded live-tile eviction + consumer-side overview pyramid | Watch, not triggered | Confirmed in step 7's added note: governs `SonarLiveCacheLayer`'s eviction budget, a different class from `GggsTileLayer`. The compositing change increases `GggsTileLayer`'s steady-state residency (multiple levels, not one) but stays bounded by store size in both the legacy-pyramid and native-ladder cases — no eviction bound needed for this fix. |
+| ADR-0010 — Bounded live-tile eviction + consumer-side overview pyramid | Watch, not triggered | Confirmed in step 7's added note: governs `SonarLiveCacheLayer`'s eviction budget, a different class from `GggsTileLayer`. The compositing change increases `GggsTileLayer`'s steady-state residency (multiple levels, not one); bounded for `chart` and for derived-overview pyramids, but the `reference`/`draft` exposure is tracked as camp#195 (no eviction bound needed for this fix). |
 | ADR-0011 — Viewport-clip-render-convention | Watch, not triggered | `itemsIntersecting(clip_scene)` already per-tile-clips before draw (line ~583); the compositing change only widens *which levels* enter that same per-tile clip loop, it doesn't bypass or duplicate the clip path. |
 
 ## Consequences
@@ -204,6 +254,10 @@ zoom") to actually hold.
 - `reference/` layer's latent same exposure (issue's own note: "same
   exposure once it holds mixed-level imports") is covered by this fix with
   no separate work — it goes through the same `GggsTileLayer` code path.
+- `GggsTileLayer` residency/eviction bounds for large `reference`/`draft`
+  stores under multi-level residency are tracked as camp#195 (filed during
+  plan review) — referenced from the ADR-0013 amendment, out of scope for
+  this PR.
 - No `unh_marine_autonomy` (uma) or workspace-repo consequences — D7/D9 stay
   untouched; this is entirely a `camp`-repo, single-file-plus-ADR change.
 - camp#109 (sibling-layer z-order/opacity) and camp#189 (zoom-in teleport)
@@ -222,7 +276,7 @@ zoom") to actually hold.
 
 ## Open Questions
 
-- [ ] None — direction 1 was settled in issue review, the extent-union bug found during codebase exploration is folded into the same fix (not split into a follow-up), and the residency/eviction question is answered (no bound needed) rather than deferred.
+- [ ] None — direction 1 was settled in issue review, the extent-union bug found during codebase exploration is folded into the same fix (not split into a follow-up), and the residency/eviction question is resolved by tracked follow-up camp#195 (no bound needed for this fix; `reference`/`draft` growth tracked there).
 
 ## Estimated Scope
 
