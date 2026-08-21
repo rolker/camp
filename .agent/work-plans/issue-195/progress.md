@@ -78,3 +78,42 @@ and 10 (cap defaults — re-derive from a byte target).
 - [ ] (suggestion) The `camp-ADR-0013` amendment is broader than one sentence: the Residency bullet (`:81-84`), the Release bullet (`:132-138`), the Residency-bound/camp#195 paragraph (`:147-165`), and the camp#195 pointers at `:97` and `:131` all go stale. The overdraw mitigation the ADR routes to camp#195 must be re-routed to the new follow-up issue, or the ADR will point at a closed issue — `plan.md:132`
 - [ ] (suggestion) `camp-ADR-0014` is warranted (not overkill): a new residency policy with deliberate divergences from `camp-ADR-0010` (drop vs fold, count vs bytes) plus the repo-local D4 compliance record. Record there that τ-raising weakens `camp-ADR-0013`'s "`getElevation()` samples finest-covering-tile-first" mitigation (`:124-126`) — `plan.md:131`
 - [ ] (suggestion) File targeting: add `test/test_gggs_elevation.cpp` (readout over an evicted area) — the consequences table names `getElevation()` but no test covers it. Cite the in-repo `test/test_map_tiles_eviction.cpp` as the count-budget precedent alongside cube's `test_tile_eviction_rss.cpp`. Note that headless tests exercise only the CPU half of `releaseTile()` — the GL texture free (the larger half of the 7.03 MiB) stays uncovered — `plan.md:113,119-131`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-21 16:00 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested (all findings addressed in `21751c2`)
+
+**Branch**: feature/issue-195 at `6b05355` (reviewed) → `21751c2` (fixed)
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + ~2000-line diff across a render hot path)
+**Specialists**: static analysis (cppcheck); Claude Adversarial Lens A (logic) + Lens B (systemic/safety); governance + plan drift. Copilot off (default). Local model off (`--no-local`).
+**Must-fix**: 5 | **Suggestions**: 12
+**Round**: 1 | **Ship**: recommended — every must-fix is fixed and re-tested; 263 tests green
+
+### Findings
+- [x] (must-fix) Zoom-out backdrop drawn but not protected: in-view tiles finer than the selection are the whole visible picture mid-transition and cannot reload, so the budget could undo camp#103/#194's no-blank-frame guarantee — `gggs_tile_layer.cpp:refreshProtection`
+- [x] (must-fix) Coarsest exemption (flat 64) can exceed the eviction target (~57 at the 512 MiB/960x960 default), so the victim loop can never reach it and sheds every ordinary candidate every pass — `gggs_tile_layer.cpp:evictIfOverBudget`
+- [x] (must-fix) Timer re-arm is a blind resample: the loader-idle window during a sustained pan is ~one event-loop turn, so the budget can be starved for seconds. `tilesReady()` now drains a pending pass — `gggs_tile_layer.cpp:tilesReady`
+- [x] (must-fix) A latched GL `makeCurrent()` failure permanently disables eviction with no report — now surfaced as "tile budget NOT enforced" — `gggs_tile_layer.cpp:evictIfOverBudget`
+- [x] (must-fix) `hole_coverage_released_` was a one-way latch surviving the recovery it advertised, and named Rescan alone (which does not reload an evicted finer tile) — `gggs_tile_layer.cpp:updateStatus`, `rescan`
+- [x] (suggestion) Malformed `GggsTileLayers/max_resident_bytes` parses to 0 = the disable sentinel, silently restoring pre-#195 behaviour — warn + fall back — `gggs_tile_layer.cpp` ctor
+- [x] (suggestion) Generation 0 (never seen) classified "recent" for the first 120 paints, inverting the staleness key — `gggs_tile_layer.cpp:evictIfOverBudget`
+- [x] (suggestion) `budgetTiles() == 0` early return left `over_budget_` stale — `gggs_tile_layer.cpp:evictIfOverBudget`
+- [x] (suggestion) String-based `QMetaObject::invokeMethod` — a rename would silently stop the budget; use the pointer-to-member overload — `gggs_tile_layer.cpp:scheduleEvictionIfNeeded`
+- [x] (suggestion) `perTileResidentBytes()` recomputed O(n) every frame — memoized against `tiles_.size()` — `gggs_tile_layer.cpp`
+- [x] (suggestion) `updateStatus()`'s `loading_` early return hid the residency reports for the whole duration of a pan — "loading..." is now a part — `gggs_tile_layer.cpp:updateStatus`
+- [x] (suggestion) Quotation "never fail silently" misattributed to `uma-ADR-0013` D4; it is camp#195's own ask (D4 says "degrades visibly and predictably rather than churning") — `gggs_tile_layer.cpp`, `0014-*.md`, `plan.md`
+- [x] (suggestion) ADR-0014's null-viewport "pure LRU" claim, its stated per-frame cost, and its `uma-ADR-0010` D9 store-class claim were imprecise — corrected against the code and D9's text
+- [x] (suggestion) `camp-ADR-0013`'s `getElevation()` "finest-covering-tile-first" fidelity mitigation is now residency-conditioned and was left unqualified — amended
+- [x] (suggestion) `camp-ADR-0010` had no back-reference to the sibling ADR-0014 — added
+- [x] (suggestion) `gggs_tile.h:resetPixels()` invariant still claimed `data_` is freed after upload; camp#180 retains it, and that retention is the basis of ADR-0014's 2x byte model — corrected
+- [x] (suggestion) Test gaps: the cap-relative exemption bound, the zoom-out backdrop, the rescan-clears-report path, and the entire deferred schedule→`processEvents` path were uncovered; `writeStrip()`'s in-helper fatal assertion could let an upper-bound assertion pass spuriously — four tests added, helper returns bool
+
+### Not accepted
+- Freeing the CPU half of a tile when GL release is refused (Lens B): correct in principle once the renderer's GL-failed flag is latched, but it depends on a renderer internal the layer cannot observe. Reported instead; exposing the flag is a follow-up, recorded in ADR-0014.
+- Skipping the per-frame protection sweep on unmoved frames: the sweep is what keeps the LRU generations honest. Cost is now stated accurately in ADR-0014 and named as the first thing to profile alongside camp#198.
+
+### Clean
+Static analysis (cppcheck) reported nothing on the changed lines. Both adversarial passes independently cleared the worker/GUI-thread ordering contract, the destruction-with-pending-invocation path, re-entrancy, the repaint loop, and `TileResidency` itself (epoch arithmetic, iterator stability, the append-only precondition). Plan drift: none — every planned file changed, nothing outside the plan, and all seven plan-review must-fixes verified present in code.
