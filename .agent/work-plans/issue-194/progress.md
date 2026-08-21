@@ -184,3 +184,22 @@ The extent-union fix (finding area 1) is well-verified against source and correc
 ### Notes for review
 - Commit grouping: the two behavior-encoding tests were rewritten inside the compositing commit (`dc26daa`) rather than the tests commit so every commit on the branch builds and tests green.
 - `rebuildLevelIndex()` gained an all-overview degenerate-store fallback (finest-level union) so a store with an `overviews/` sidecar but no native tiles keeps an extent instead of a null boundingRect.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-20 20:58 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**Branch**: feature/issue-194 at `635d51a` (pre-push review round 2 fixes)
+**Build**: camp builds clean; full camp suite green (236 tests, 0 errors, 0 failures, 1 skipped — the opt-in `GGGS_TEST_STORE` case).
+
+### Review findings addressed (two-lens pre-push review)
+1. **[must-fix, Lens B] all-regions overclaim** — `306d1ee`: ADR-0013's render bullet and the mirrored `itemsIntersecting()` comment now claim coverage "at every zoom at-or-finer than each region's native level" and state the coarse-zoom limitation explicitly (a region whose only native level is finer than the selection never loads — the intended viewport-bounded tradeoff), with the residency/coverage follow-up family referenced to camp#195.
+2. **[suggestion, Lens A] vacuous mid-transition residency asserts** — `635d51a`: new `PaintDrivenLevelSwitchKeepsOutgoingLevelResident` drives the REAL `paint()` path across a level boundary (QGraphicsView scale change + grab; ground-mpp math via `metersPerUnit`, ~100 m/px selects L0, ~0.15 m/px selects L13) and pins that the `level_changed` branch does not eager-release the outgoing level. Discrimination made deterministic by placing the coarse tile OUTSIDE the zoomed-in viewport (first attempt with an in-viewport coarse tile was masked by the kick reloading it in microseconds — a race, reworked). Verified: a temporary eager release in the `level_changed` branch fails exactly this test; removed, all green. The two formerly-vacuous EXPECTs kept as state-sequencing documentation with corrected comments pointing at the paint-driven test.
+3. **[suggestion, Lens B] fine-before-coarse load order** — `3f0c7a8`: `loadTilesWorker()` now iterates a stable ascending-by-level view of the tile set (sorted on the worker thread, off the GUI hot path; tiles_ immutable while the worker runs), restoring coarse-first progressive refinement on slow stores.
+4. **[suggestion, Lens B] overdraw note** — `306d1ee`: ADR residency note acknowledges per-frame overdraw multiplication for deep nested pyramids (~14 stacked near-full-viewport quads at fine zoom on a full L13 pyramid, software-GL included); mitigation (skip-covered-tiles / composite-depth cap) rides camp#195 if pan latency regresses.
+
+### Commits
+- `3f0c7a8` Load coarse levels first in the demand-driven worker (finding 3)
+- `306d1ee` ADR-0013: scope the all-regions claim; note compositing overdraw (findings 1 + 4)
+- `635d51a` Pin paint()'s no-eager-release on level switch with a paint-driven test (finding 2)
