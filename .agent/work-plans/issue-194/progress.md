@@ -472,3 +472,102 @@ Pre-commit hooks ran on every commit; no `--no-verify`. Not pushed.
 Lifecycle: **Implementation** → **review-code** (re-review the fixes):
 
     .agent/scripts/dispatch_subagent.sh --mode in-process --issue 194 --skill review-code
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-21 14:24 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-194 at `dbb9bb1`
+**PR**: #196
+**Addressed**: Copilot review round 3 on head `4cb35c4` (inline comments; no `## Integrated Review` / `## Local Review (Pre-Push)` entry existed for them, so the two actioned findings are recorded verbatim below — the host verified both against the code before dispatch)
+**Commits**: `8a3e340`, `06c6a07`, `2d43a8d`, `dbb9bb1`
+
+### Actions
+- [x] (MUST-FIX — the round-3 retry fix is incomplete) `gggs_tile_layer.cpp:276`: "The explicit Rescan path only refreshes tiles whose size/mtime changed. A `GDALOpen()`/`RasterIO()` failure from a transient NFS error leaves both values unchanged, so `loadFailed()` stays set, the worker skips the tile, and every Rescan returns false without ever retrying it. Transient NFS error was the *primary* case the sticky-latch finding was raised against, so this is the fix not landing rather than a new issue. Since Rescan is an explicit operator action, include latched failures as retry candidates independently of the file stat, while keeping the stat check for already-loaded replacements. Extend the regression test to cover a latched failure on an *unchanged* file recovering via Rescan." — `src/camp_map/raster/gggs_tile_layer.cpp:267-292`, `gggs_tile_layer.h:206-227`, `gggs_tile.h:57-71,91-96` (`8a3e340`)
+- [x] (MUST-FIX) `gggs_tile_layer.cpp:351`: "`refreshFromFile()` clears the tile's range and can replace an already-loaded tile, but the layer aggregate `data_min_`/`data_max_` is never invalidated and `tilesReady()` only ever widens it. Replacing the sole [1,10] tile with [100,110] leaves Auto at [1,110]; replacing it with all-NoData can leave a blank layer with a status-clear, non-crossed range. On a bathymetry display that is a wrong colormap range an operator would read as real. Mark the aggregate dirty and recompute from the current-band resident set after a refresh, preserving Manual range overrides." — `src/camp_map/raster/gggs_tile_layer.cpp:363-393,548-587,600-604`, `gggs_tile_layer.h:252-267`, ADR-0013 "Auto-range across levels" (`06c6a07`, `dbb9bb1`)
+- [x] (Governance, self-initiated) plan.md Files to Change synced with the round-3 fixes (the recurring plan-drift flag) — `.agent/work-plans/issue-194/plan.md` (`2d43a8d`)
+
+**Not actioned by instruction:** the third round-3 inline comment
+(`gggs_tile_layer.cpp:451`, unbounded cross-level residency) is the same
+finding Copilot has now raised verbatim three times. It remains DEFERRED by
+explicit operator decision with camp#195 (rescoped to cover it) as the named
+merge gate. No code, ADR, or camp#195 edits were made on that axis.
+
+### Notes
+
+**Finding 1 — the stat gate was the wrong gate for the motivating case.**
+Round 2's `fileChangedOnDisk()` (size + mtime vs. the stat taken at the last
+metadata read) recovers a tile a PRODUCER replaced, but a transient read error
+— the NFS blip the sticky-latch finding was actually raised against — perturbs
+neither value, so the latched tile was never a refresh candidate and Rescan
+returned false forever. `rescan()`'s read-only first pass now collects
+`tile->loadFailed() || tile->fileChangedOnDisk()`. The two halves of the
+contract are deliberately asymmetric: a latched tile is retried on any Rescan
+(an explicit operator "I fixed it, try again" — cost is one re-read, the cost
+of not retrying is a permanently blank region), while an already-LOADED tile is
+still stat-gated so Rescan never churns a healthy resident store. A tile that
+is still unreadable simply re-latches through `loadPixels()`; the visible
+consequence is that Rescan returns true (and aborts+rejoins the loader, which
+is re-kicked immediately after) while any tile stays failed — documented on
+`rescan()` and on `GggsTile::loadFailed()`.
+
+Regression test `TransientFailureOnUnchangedFileRetriesOnRescan`
+(`test_gggs_rescan.cpp`). Staging a transient error with a byte-identical stat
+needed a mechanism that does not touch the inode: the tile is renamed ASIDE so
+the worker's `GDALOpen()` fails and latches, then renamed BACK — POSIX rename
+preserves size and mtime, so the restored file is exactly the file the tile
+stat'ed at construction. The test asserts that premise explicitly
+(`ASSERT_EQ` on size and `lastModified()` before/after) so it can never
+silently degrade into re-testing the file-changed path. Chmod was rejected as
+the staging mechanism: it is a no-op for a root test runner (containerized CI).
+**Mutation-verified**: with the `loadFailed()` disjunct neutered
+(`if(false && tile->loadFailed() || ...)`) the test fails on all three
+assertions (`rescan()` false, 1 of 2 tiles loaded, status still "failed").
+
+**Finding 2 — a widening-only aggregate cannot survive a refresh.**
+`tilesReady()`'s fold is deliberately incremental/widening (ADR-0013: a finer
+tile that contributed while it was ≤ an earlier selection keeps its
+contribution across a level switch, sound because the overview fold is MEAN).
+That reasoning assumes every folded contribution stays TRUE — which a
+`refreshFromFile()` breaks: the departed file's extremes describe pixels that
+are no longer resident, and widening can never retract them. The fold body is
+now `foldDataRange(bool reset)`: `false` is the unchanged incremental fold
+(`tilesReady()` is behaviorally identical — no level-switch semantics were
+touched), `true` discards the aggregate and recomputes it from the current
+resident set under the same predicates (current band, level ≤ selection, loaded,
+non-crossed). `rescan()` calls it with `reset = true` after the refresh loop,
+then pushes the result through `range_model_.update_auto()` — a no-op under a
+Manual override, so a pinned operator range is preserved by construction
+(camp#142), and clears `cached_image_`. If the recompute leaves the aggregate
+CROSSED (every resident tile refreshed, or the replacements all-NoData),
+`update_auto()` is skipped exactly as in `tilesReady()`/`applyBand()`: nothing
+is drawn against the stale resolved bounds because `renderImage()` bails on a
+crossed aggregate and `tilesReady()` sets the "(no data)" status — the operator
+gets an explicitly empty layer, not a plausible-looking wrong one.
+
+Two regression tests, both mutation-verified against `foldDataRange(false)`:
+`RefreshRecomputesAutoRangeInsteadOfWidening` (sole constant-8000 tile replaced
+by a constant-100 one — Auto must read [100,100], not [100,8000]) and
+`RefreshPreservesManualRangeOverride` (a Manual [0,50] override survives the
+same swap while `dataRange()` still tracks the replacement). The test helper
+`writeTile()` gained `value` and raster-size parameters; the replacement is
+written at a different raster size (same geographic extent, scaled pixel size)
+so the swap changes the FILE SIZE and detection never rides on mtime
+granularity.
+
+**ADR-0013** ("Auto-range across levels") amended with the refresh exception —
+the never-reset statement it makes is scoped to level switches, and a
+recompute-on-refresh contradicted it as written.
+
+**camp#138 relationship:** `SonarLiveCacheLayer` has the same only-widens
+aggregate-range staleness class, tracked there. It is deliberately NOT fixed
+here (different layer, different lifecycle — that fold is driven by live tile
+eviction, not an operator-initiated refresh); the relationship is noted at the
+`foldDataRange(true)` call site so the next agent on camp#138 finds the
+precedent.
+
+**Verification:** `./ui_ws/build.sh camp` clean; `./ui_ws/test.sh camp` — 242
+tests, 0 failures, 1 skipped (the pre-existing GL-gated skip); the rescan suite
+alone is 8/8. Pre-commit hooks ran on every commit; no `--no-verify`. Not
+pushed.
