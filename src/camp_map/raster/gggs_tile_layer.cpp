@@ -405,6 +405,11 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
     }
     if(tile->pixelsLoaded())
       continue;
+    // [camp#194] Skip a tile whose read already failed terminally — otherwise
+    // the worker re-opens + re-RasterIOs the dead tile on EVERY kick, i.e. once
+    // per pan step (see GggsTile::loadFailed()).
+    if(tile->loadFailed())
+      continue;
     if(level != -1 && tile->level() > level)
       continue;
     if(!viewport.isNull() && !tileSceneRect(*tile).intersects(viewport))
@@ -423,6 +428,16 @@ bool GggsTileLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) const
   for(const auto& tile : tiles_)
   {
     if(tile->pixelsLoaded())
+      continue;
+    // [camp#194] A tile whose read failed terminally is NOT "still loading".
+    // Counting it would leave this predicate true forever: the pan/zoom re-kick
+    // guard would keep firing and — the sharper failure — tilesReady()'s
+    // load-before-release gate would never open, so the finer-than-selection
+    // zoom-out backdrop would stay resident (and excluded from the auto-range
+    // fold, rendering clipped) for the rest of the session. The ceiling
+    // semantics widen the exposure from "a failing tile AT the selection" to
+    // "any failing tile at any level <= the selection", at every zoom.
+    if(tile->loadFailed())
       continue;
     if(selected_level_ != -1 && tile->level() > selected_level_)
       continue;
@@ -510,12 +525,26 @@ void GggsTileLayer::tilesReady()
       renderer_.doneCurrent();
   }
   cached_image_ = QImage();   // re-render now that pixels (and the range) exist
+  // [camp#194] Surface terminally-unreadable tiles. Now that loadFailed() tiles
+  // are excluded from hasUnloadedVisibleTiles(), the loader correctly goes idle
+  // with them missing — so without this the operator would see a settled,
+  // status-clear layer with silent holes in it. Count over the whole tile-set
+  // (not just the visible/selected set) so the number does not flicker with the
+  // viewport.
+  int failed = 0;
+  for(const auto& tile : tiles_)
+    if(tile->loadFailed())
+      ++failed;
   // [camp#102] If the range is still crossed after the fold, every loaded tile was
   // all-NoData (or failed to read): there is nothing to draw and clearing the
   // status would leave a silently-blank enabled layer. Signal "(no data)" so the
   // operator can tell an empty tile-set from one that simply hasn't loaded yet.
   if(data_min_ > data_max_)
-    setStatus("(no data)");
+    setStatus(failed > 0
+              ? QString("(no data; %1 tile(s) failed to load)").arg(failed)
+              : QString("(no data)"));
+  else if(failed > 0)
+    setStatus(QString("(%1 tile(s) failed to load)").arg(failed));
   else
     setStatus("");
   // [camp#142] Keep the Auto resolved range current with the freshly-folded

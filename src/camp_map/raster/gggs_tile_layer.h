@@ -188,6 +188,11 @@ public:
   /// (selected_level_ == -1) the level filter is off; a null viewport means
   /// everything is "visible". Public as the paint() helper and the unit-test
   /// seam for the re-kick predicate.
+  /// [camp#194] Tiles whose read failed terminally (GggsTile::loadFailed())
+  /// are EXCLUDED: they will never load, so counting them would pin this
+  /// predicate true for the session — wedging both the re-kick guard and the
+  /// release gate. tilesReady() surfaces their count through setStatus()
+  /// instead, so the layer settles visibly-incomplete rather than silently so.
   bool hasUnloadedVisibleTiles(const QRectF& viewport_scene) const;
 
   /// [camp#102] Re-scan the tile directory for newly-landed `*.tif` files. Adds

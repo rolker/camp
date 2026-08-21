@@ -71,18 +71,34 @@ GggsTile::GggsTile(const QString& path):
 
 bool GggsTile::loadPixels()
 {
+  // [camp#194] Every failure exit below latches load_failed_ (RELEASE, pairing
+  // with the GUI thread's ACQUIRE in loadFailed()) so a tile that passed the
+  // constructor's cheap metadata scan but cannot actually be read stops being
+  // retried on every kick — and, more importantly, stops holding the layer's
+  // hasUnloadedVisibleTiles() predicate true for the rest of the session (see
+  // the loadFailed() contract in gggs_tile.h). Failures here are terminal for
+  // the current band: the causes are a vanished/truncated file, a missing band,
+  // or a GDAL read error, none of which a retry with identical parameters
+  // resolves.
   if(!valid())
+  {
+    load_failed_.store(true, std::memory_order_release);
     return false;
+  }
   if(pixels_loaded_.load(std::memory_order_acquire))
     return true;
 
   // [camp#102] Pure GDAL read — safe off the GUI thread (no GL touched here).
   auto dataset = GDALDataset::FromHandle(GDALOpen(path_.toUtf8().constData(), GA_ReadOnly));
   if(!dataset)
+  {
+    load_failed_.store(true, std::memory_order_release);
     return false;
+  }
   if(dataset->GetRasterCount() < band_)
   {
     GDALClose(dataset);
+    load_failed_.store(true, std::memory_order_release);
     return false;
   }
   auto band = dataset->GetRasterBand(band_);
@@ -100,6 +116,7 @@ bool GggsTile::loadPixels()
                     width_, height_, GDT_Float32, 0, 0) != CE_None)
   {
     GDALClose(dataset);
+    load_failed_.store(true, std::memory_order_release);
     return false;
   }
   GDALClose(dataset);
@@ -179,6 +196,13 @@ void GggsTile::setBand(int band)
   if(band < 1 || band > band_count_ || band == band_)
     return;
   band_ = band;
+  // [camp#194] An explicit band switch is a genuine retry: the new band may be
+  // readable where the old one was not (e.g. a band the file never carried), so
+  // clear the sticky failure marker before the reload. Cleared HERE rather than
+  // in resetPixels(), which is also the LOD release path — a tile released as a
+  // stale finer-level backdrop is re-read with identical parameters, so its
+  // failure must survive that.
+  load_failed_.store(false, std::memory_order_release);
   // [camp#103] The clear body is shared with the LOD level-switch path.
   resetPixels();
 }

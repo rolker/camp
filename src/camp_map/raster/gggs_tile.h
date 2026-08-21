@@ -38,8 +38,33 @@ public:
   /// Read the selected band (`band()`, 1-indexed) as Float32 and compute the data
   /// range. Safe to call off the GUI thread (pure GDAL `RasterIO`, no GL). No-op
   /// if the tile is invalid or pixels are already loaded. Returns true if pixels
-  /// are present after the call.
+  /// are present after the call. A failure latches loadFailed() (see below).
   bool loadPixels();
+
+  /// [camp#194] STICKY load-failure marker: true once a `loadPixels()` attempt
+  /// has failed for the tile's current band (the file vanished / was truncated
+  /// after the metadata scan, the band went away, `RasterIO` errored). The
+  /// constructor's cheap metadata read makes valid() true without touching
+  /// pixels, so a tile can pass the scan and still be permanently unreadable;
+  /// without this marker pixelsLoaded() stays false forever and the layer's
+  /// hasUnloadedVisibleTiles() predicate never goes quiet — wedging both the
+  /// pan/zoom re-kick guard and tilesReady()'s finer-than-selection release
+  /// gate for the rest of the session, while the worker re-`RasterIO`s the
+  /// dead tile on every kick. The layer excludes failed tiles from that
+  /// predicate and from the worker's retry pass, and surfaces the count via
+  /// setStatus() so the operator sees a partial layer instead of a silently
+  /// incomplete one.
+  ///
+  /// Sticky for the tile's current band: cleared ONLY by setBand(), which is an
+  /// explicit operator retry with different read parameters. An automatic
+  /// re-kick never clears it (that is exactly the retry storm this prevents).
+  ///
+  /// [camp#102] Atomic with the same ACQUIRE/RELEASE discipline as
+  /// pixelsLoaded(): stored by the load worker, read from the GUI thread.
+  bool loadFailed() const
+  {
+    return load_failed_.load(std::memory_order_acquire);
+  }
 
   /// [camp#108] Number of raster bands in the GeoTIFF (>= 1 for a valid tile).
   /// Read from GDAL in the constructor.
@@ -50,7 +75,10 @@ public:
 
   /// [camp#108] Select which 1-indexed band `loadPixels()` reads. Clears any
   /// loaded CPU pixels + range so the next loadPixels() re-reads the new band,
-  /// re-queries that band's NoData, and marks the tile not-loaded. Does NOT touch
+  /// re-queries that band's NoData, and marks the tile not-loaded. [camp#194]
+  /// Also clears loadFailed(): a band switch is an explicit operator retry with
+  /// different read parameters, so the previous band's failure must not keep the
+  /// tile permanently excluded from the loader. Does NOT touch
   /// the GL texture — releasing/recreating it is the layer's responsibility (it
   /// owns the GL context). No-op if @p band is out of [1, bandCount()].
   void setBand(int band);
@@ -152,6 +180,11 @@ private:
   // rescan() re-kick (range already valid → paint's crossed-range gate is open)
   // can't race the worker's mid-write.
   std::atomic<bool> pixels_loaded_{false};   // set once loadPixels() has run
+  // [camp#194] Sticky "this tile can never be read" marker (see loadFailed()).
+  // Same cross-thread discipline as pixels_loaded_: RELEASE-stored by the load
+  // worker on every loadPixels() failure path, ACQUIRE-loaded on the GUI thread
+  // by the layer's re-kick predicate / status fold. Cleared only by setBand().
+  std::atomic<bool> load_failed_{false};
   double data_min_ = 1.0, data_max_ = 0.0;   // crossed => no valid samples
   std::vector<float> data_;                  // row-major, height_ * width_
   std::unique_ptr<QOpenGLTexture> texture_;

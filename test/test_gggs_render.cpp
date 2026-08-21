@@ -19,6 +19,7 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFile>
 #include <QGeoCoordinate>
 #include <QGraphicsView>
 #include <QImage>
@@ -903,6 +904,73 @@ TEST(GggsRenderTest, ZoomOutRetainsFinerBackdropUntilCoarseLoads)
   EXPECT_EQ(layer->pixelsLoadedCount(0), 1);
   EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
     "finer backdrop not released after the coarse visible set completed";
+}
+
+// [camp#194] A tile that passes the constructor's cheap metadata scan but is
+// permanently UNREADABLE (file truncated/removed after the scan) must not wedge
+// the loader's release gate. GggsTile latches a sticky loadFailed() marker,
+// which hasUnloadedVisibleTiles() excludes; without it that predicate stays
+// true forever, so tilesReady()'s load-before-release gate never opens and the
+// finer-than-selection zoom-out backdrop stays resident (and excluded from the
+// auto-range fold) for the rest of the session, while the worker re-RasterIOs
+// the dead tile on every kick. The ceiling semantics widen this from "a failing
+// tile AT the selection" to "any failing tile at any level <= the selection".
+TEST(GggsRenderTest, UnreadableTileDoesNotWedgeTheReleaseGate)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // A two-level NATIVE ladder at three disjoint regions: one fine tile (the
+  // zoom-out backdrop), one readable coarse tile, one coarse tile that will be
+  // destroyed after the metadata scan.
+  const double fine_geo[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const double coarse_geo[6] = {-71.410, 0.0001, 0.0, 43.010, 0.0, -0.0001};
+  const double broken_geo[6] = {-71.420, 0.0001, 0.0, 43.020, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, fine_geo, samples, "13_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, coarse_geo, samples, "0_0_0.tif").isEmpty());
+  const QString broken = writeTile(dir, w, h, broken_geo, samples, "0_0_1.tif");
+  ASSERT_FALSE(broken.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->availableLevels(), (std::vector<int>{0, 13}));
+
+  // Destroy the third tile AFTER the scan: its extent/level are already held
+  // (valid() was true), but loadPixels() can never read it — the exact shape of
+  // a tile deleted/rewritten by a producer under a live layer.
+  {
+    QFile file(broken);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    ASSERT_TRUE(file.resize(0));
+  }
+
+  // Load ONLY the fine tile (fine selection + a viewport over its region), so
+  // there is a finer-than-selection backdrop to release after the zoom-out.
+  const QPointF fine_lo = web_mercator::geoToMap(QGeoCoordinate(42.998, -71.400));
+  const QPointF fine_hi = web_mercator::geoToMap(QGeoCoordinate(43.000, -71.398));
+  layer->setLodForTest(13, QRectF(fine_lo, fine_hi).normalized());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+  ASSERT_EQ(layer->pixelsLoadedCount(0), 0);
+
+  // Zoom OUT over the whole extent: the readable coarse tile loads, the broken
+  // one fails terminally. The release gate must still open.
+  layer->setLodForTest(0, layer->sceneBounds());
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(0), 1) << "the readable coarse tile never loaded";
+  EXPECT_FALSE(layer->hasUnloadedVisibleTiles(layer->sceneBounds())) <<
+    "a permanently unreadable tile still counts as 'still loading' — the "
+    "re-kick guard and the release gate are wedged for the session";
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 0) <<
+    "finer-than-selection backdrop never released — the unreadable tile held "
+    "tilesReady()'s load-before-release gate shut";
+  // The operator must be able to see the layer is incomplete rather than
+  // settled-and-clear.
+  EXPECT_TRUE(layer->status().contains("failed")) <<
+    "unreadable tiles are not surfaced in the layer status: " <<
+    layer->status().toStdString();
 }
 
 // [camp#103 field verify / camp#194] The zoom-IN mid-transition render: with
