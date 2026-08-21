@@ -46,20 +46,28 @@ namespace
 // Write a north-up WGS84 GeoTIFF tile so GggsTile::valid() is true and its extent
 // comes from the geotransform. lon0/lat0 place the NW corner, so successive tiles
 // can be given disjoint extents (to observe the layer extent grow on rescan).
+// [camp#194 review round 3] `value` is the constant sample written to every
+// pixel (so the tile's data range is exactly [value, value] — the seam the
+// aggregate-range regression tests assert on), and `n` the raster size, whose
+// pixel size is scaled to keep the tile's geographic extent fixed: a rewrite at
+// a different `n` therefore changes the FILE SIZE (an unambiguous
+// fileChangedOnDisk() signal, independent of mtime granularity) without moving
+// the tile.
 QString writeTile(const QTemporaryDir& dir, const QString& name,
-                  double lon0, double lat0)
+                  double lon0, double lat0, uint16_t value = 8000, int n = 16)
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
-  const int w = 16, h = 16;
-  const double geo[6] = {lon0, 0.0001, 0.0, lat0, 0.0, -0.0001};
+  const int w = n, h = n;
+  const double pixel = 0.0001 * 16.0 / n;
+  const double geo[6] = {lon0, pixel, 0.0, lat0, 0.0, -pixel};
   const QString path = dir.filePath(name);
   GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GTiff");
   GDALDataset* ds = driver->Create(path.toUtf8().constData(), w, h, 1, GDT_UInt16, nullptr);
   ds->SetGeoTransform(const_cast<double*>(geo));
   GDALRasterBand* band = ds->GetRasterBand(1);
   band->SetNoDataValue(0);
-  std::vector<uint16_t> samples(static_cast<size_t>(w) * h, 8000);
+  std::vector<uint16_t> samples(static_cast<size_t>(w) * h, value);
   const CPLErr err = band->RasterIO(GF_Write, 0, 0, w, h, samples.data(),
                                     w, h, GDT_UInt16, 0, 0);
   GDALClose(ds);
@@ -282,6 +290,70 @@ TEST(GggsRescanTest, TransientFailureOnUnchangedFileRetriesOnRescan)
   // Nothing failed and nothing changed: back to a no-op (no Rescan churn on a
   // healthy store).
   EXPECT_FALSE(layer->rescan());
+}
+
+// [camp#194 review round 3] refreshFromFile() drops a tile's range and can
+// REPLACE an already-loaded tile's data, but tilesReady()'s fold only ever
+// WIDENS the layer aggregate — so without an explicit invalidation the old
+// file's extremes stay in the Auto colormap range forever. On a bathymetry
+// display that is a wrong range the operator reads as real depth. rescan()
+// therefore recomputes the aggregate from the resident set after a refresh.
+TEST(GggsRescanTest, RefreshRecomputesAutoRangeInsteadOfWidening)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  // Sole tile, constant 8000 -> aggregate range [8000, 8000].
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00, 8000).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+  ASSERT_FLOAT_EQ(layer->dataRange().first, 8000.0f);
+  ASSERT_FLOAT_EQ(layer->dataRange().second, 8000.0f);
+
+  // The producer replaces it with a disjoint, LOWER-valued grid (a different
+  // raster size so the swap is unambiguous at mtime granularity).
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00, 100, 32).isEmpty());
+
+  EXPECT_TRUE(layer->rescan());
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 1);
+  EXPECT_FLOAT_EQ(layer->dataRange().second, 100.0f) <<
+    "the replaced tile's old maximum survived in the layer aggregate — Auto "
+    "shows a colormap range no resident pixel occupies";
+  EXPECT_FLOAT_EQ(layer->dataRange().first, 100.0f);
+  EXPECT_FLOAT_EQ(layer->rangeHi(), 100.0f);
+  EXPECT_FLOAT_EQ(layer->rangeLo(), 100.0f);
+}
+
+// [camp#194 review round 3] The recompute must NOT disturb an operator's Manual
+// range override: it is deliberately independent of the data extents (camp#142).
+TEST(GggsRescanTest, RefreshPreservesManualRangeOverride)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00, 8000).isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  layer->waitForLoad();
+
+  layer->setRangeOverride(0.0f, 50.0f);
+  ASSERT_EQ(layer->rangeMode(), marine_colormap::RangeMode::Manual);
+
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00, 100, 32).isEmpty());
+  EXPECT_TRUE(layer->rescan());
+  layer->waitForLoad();
+
+  EXPECT_EQ(layer->rangeMode(), marine_colormap::RangeMode::Manual) <<
+    "the post-refresh recompute dropped the operator's Manual range override";
+  EXPECT_FLOAT_EQ(layer->rangeLo(), 0.0f);
+  EXPECT_FLOAT_EQ(layer->rangeHi(), 50.0f);
+  // The underlying data extents still tracked the replacement.
+  EXPECT_FLOAT_EQ(layer->dataRange().second, 100.0f);
 }
 
 int main(int argc, char** argv)

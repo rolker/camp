@@ -365,6 +365,33 @@ bool GggsTileLayer::rescan()
     }
     if(renderer_.hasContext())
       renderer_.doneCurrent();
+
+    // [camp#194 review round 3] refreshFromFile() DROPPED each refreshed tile's
+    // pixels and range, and the replacement file may carry an entirely different
+    // one. tilesReady()'s fold only ever WIDENS the aggregate, so without an
+    // explicit invalidation the departed file's extremes would stay in
+    // data_min_/data_max_ for the rest of the session: replace the sole [1, 10]
+    // tile with a [100, 110] one and Auto renders [1, 110]; replace it with an
+    // all-NoData tile and the layer draws blank against a stale, non-crossed
+    // range with a clear status. On a bathymetry display that is a wrong
+    // colormap range the operator reads as real depth. Recompute the aggregate
+    // from the CURRENT resident set instead (the refreshed tiles contribute
+    // nothing until their pixels re-load, then re-widen it through tilesReady()).
+    // update_auto() is a no-op while the operator holds a Manual override, so a
+    // pinned range survives the recompute untouched (camp#142).
+    // If the recompute leaves the aggregate CROSSED (every resident tile was
+    // refreshed, or the replacements are all-NoData) update_auto() is skipped —
+    // as in tilesReady() and applyBand(), the resolved Auto bounds simply hold
+    // their last values. Nothing is drawn against them: renderImage() bails on a
+    // crossed aggregate and tilesReady() sets the "(no data)" status, so the
+    // operator sees an explicitly empty layer rather than a plausible-looking
+    // wrong one.
+    // NOTE camp#138 tracks the same only-widens class of staleness for
+    // SonarLiveCacheLayer; that layer is deliberately NOT touched here.
+    foldDataRange(true);
+    if(data_min_ <= data_max_)
+      range_model_.update_auto(float(data_min_), float(data_max_));
+    cached_image_ = QImage();
   }
   else if(!changed.empty())
     qWarning("GggsTileLayer: %d changed tile(s) not refreshed — no current GL "
@@ -545,11 +572,21 @@ int GggsTileLayer::pixelsLoadedCount(int level) const
   return count;
 }
 
-void GggsTileLayer::tilesReady()
+void GggsTileLayer::foldDataRange(bool reset)
 {
-  // [camp#102] GUI thread, after the worker's join. Fold each loaded tile's range
-  // into the layer auto-range incrementally (the range is unknown until a tile's
-  // pixels load — an all-NoData tile reports a crossed range and is skipped).
+  // [camp#102] Fold each loaded tile's range into the layer auto-range (the
+  // range is unknown until a tile's pixels load — an all-NoData tile reports a
+  // crossed range and is skipped).
+  // [camp#194 review round 3] `reset` picks the two modes (see the header):
+  // false = the incremental widening fold tilesReady() has always done;
+  // true = discard the accumulated aggregate first and recompute it from the
+  // CURRENT resident set, for callers that made a tile's contribution stale
+  // (rescan()'s refreshFromFile()).
+  if(reset)
+  {
+    data_min_ = 1.0;
+    data_max_ = 0.0;
+  }
   bool first_range = (data_min_ > data_max_);
   for(auto& tile : tiles_)
   {
@@ -574,6 +611,15 @@ void GggsTileLayer::tilesReady()
     if(first_range || tile->dataMax() > data_max_) data_max_ = tile->dataMax();
     first_range = false;
   }
+}
+
+void GggsTileLayer::tilesReady()
+{
+  // [camp#102] GUI thread, after the worker's join. Fold the freshly-loaded
+  // tiles' ranges into the layer auto-range INCREMENTALLY (widening only — see
+  // foldDataRange(): a tile that already contributed keeps its contribution
+  // across a level switch, deliberately).
+  foldDataRange(false);
   // [camp#103/#194] Once the composited picture's visible set has fully
   // loaded (hasUnloadedVisibleTiles tests every level <= the selection —
   // the same ceiling the loader uses), release the tiles at levels FINER

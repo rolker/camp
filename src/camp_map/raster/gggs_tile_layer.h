@@ -259,6 +259,22 @@ private:
   /// resets the layer auto-range, invalidates the cached image, re-kicks the async
   /// load, and repaints. No-op if @p band is out of range or unchanged.
   void applyBand(int band);
+  /// [camp#102/#194] Fold the loaded tiles' data ranges into the layer aggregate
+  /// data_min_/data_max_ (current band only, levels <= the selection; all-NoData
+  /// and failed tiles contribute nothing).
+  ///
+  /// @p reset selects the two modes. FALSE (tilesReady()'s steady-state fold) is
+  /// INCREMENTAL: it starts from the existing aggregate and only ever WIDENS it,
+  /// which is deliberate — a finer tile that contributed while it was <= an
+  /// earlier selection keeps its contribution across a level switch, and the
+  /// MEAN fold guarantees overview values ⊆ the fine range (ADR-0013).
+  /// [camp#194 review round 3] TRUE discards the aggregate first and recomputes
+  /// it from the CURRENT resident set — required by any caller that made an
+  /// already-folded contribution STALE, which widening alone can never undo
+  /// (rescan()'s refreshFromFile() replacing a loaded tile's file). Callers that
+  /// reset are responsible for pushing the result to range_model_ (a no-op under
+  /// a Manual override, which the recompute must never disturb).
+  void foldDataRange(bool reset);
   void loadDirectory(const QString& directory);
   /// [camp#103/#194] Recompute available_levels_ (dedup ascending) and
   /// scene_bounds_ (union of every NATIVE tile's extent, at any level — a
