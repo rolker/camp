@@ -379,7 +379,24 @@ void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
   // pre-first-paint) disables the level filter and a null @p viewport disables
   // the spatial filter, preserving the pre-LOD load-everything behavior
   // exactly.
+  //
+  // [camp#194 review] Read coarse levels FIRST. tiles_ is in directory scan
+  // order (alphabetical: fine native files sort before coarse ones, and
+  // overviews/ is scanned last), which would queue the coarse fill behind
+  // large fine reads on a freshly exposed region — on a slow/NFS store the
+  // region trickles in at fine resolution with no coarse backdrop. A stable
+  // ascending-by-level pass restores coarse-first progressive refinement.
+  // Sorting here is off the GUI hot path (worker thread), and tiles_ cannot
+  // be mutated while this worker runs (every mutator aborts + joins first),
+  // so the raw pointers are safe.
+  std::vector<GggsTile*> order;
+  order.reserve(tiles_.size());
   for(auto& tile : tiles_)
+    order.push_back(tile.get());
+  std::stable_sort(order.begin(), order.end(),
+                   [](const GggsTile* a, const GggsTile* b)
+                   { return a->level() < b->level(); });
+  for(auto* tile : order)
   {
     {
       QMutexLocker lock(&abort_flag_mutex_);
