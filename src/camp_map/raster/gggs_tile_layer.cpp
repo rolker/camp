@@ -519,7 +519,10 @@ void GggsTileLayer::tilesReady()
   // than the selection: they are the zoom-OUT transition backdrop, kept
   // drawing on top (see itemsIntersecting) until the coarser selection's
   // visible tiles are complete — the zoom-out mirror of camp#103's
-  // field-verified zoom-in timing, so neither direction ever blanks.
+  // field-verified zoom-in timing, so a LEVEL SWITCH never blanks a region
+  // that has coverage at both levels. (The coarse-zoom blank of a region
+  // whose only native level is finer than the new selection is a separate,
+  // documented limitation of the residency rule — ADR-0013 "Render".)
   // Levels <= the selection are never released: under multi-level
   // compositing they are a permanent part of the picture, not a transient
   // backdrop. Only when no worker is running: this mutates tiles the worker
@@ -534,15 +537,33 @@ void GggsTileLayer::tilesReady()
     bool have_context = false, context_tried = false;
     for(auto& tile : tiles_)
     {
+      // NOTE: this comparison carries NO -1 guard of its own, unlike every
+      // other selected_level_ site — it relies entirely on the enclosing
+      // `selected_level_ != -1` gate. With -1 (no selection) every tile would
+      // satisfy `level() > -1` and the whole resident store would be released.
+      // Do not relax the outer gate without adding the guard here. (Since
+      // camp#194 loadDirectory()/rescan() also reject tiles whose level parses
+      // to -1, so a real tile can never carry the sentinel.)
       if(tile->level() <= selected_level_ || !tile->pixelsLoaded())
         continue;
       if(!context_tried)
       {
         context_tried = true;
         have_context = renderer_.hasContext() && renderer_.makeCurrent();
+        // [camp#194] resetPixels()/releaseGL() pairing invariant (gggs_tile.h):
+        // a CPU-only clear on a tile that already uploaded its texture leaves a
+        // stale texture shadowing any re-load (texture() returns the old one and
+        // never consumes the new data_). With NO context yet (hasContext() ==
+        // false) no tile can have a texture, so the CPU half alone IS the
+        // complete release. But if a context EXISTS and makeCurrent() FAILED,
+        // textures may well exist and we cannot free them — so skip the release
+        // entirely rather than breaking the pairing. Leaving the finer level
+        // resident is harmless (it is drawn under the compositing rules and
+        // released at the next successful pass), and the renderer has latched
+        // its GL-failed flag anyway, so nothing is being rendered meanwhile.
+        if(renderer_.hasContext() && !have_context)
+          break;
       }
-      // resetPixels()/releaseGL() pairing invariant (gggs_tile.h); with no GL
-      // context yet there are no textures, so the CPU half alone is complete.
       if(have_context)
         tile->releaseGL();
       tile->resetPixels();
