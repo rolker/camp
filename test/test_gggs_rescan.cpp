@@ -31,6 +31,7 @@
 #include <gdal_priv.h>
 
 #include <QApplication>
+#include <QFile>
 #include <QTemporaryDir>
 
 #include "map/map.h"
@@ -163,6 +164,62 @@ TEST(GggsRescanTest, RescanIgnoresCompanionTiles)
 
   EXPECT_FALSE(layer->rescan());                  // companions are not new tiles
   EXPECT_EQ(layer->sceneBounds(), bounds_before); // extent untouched
+}
+
+// [camp#194 review] A latched load failure must not be permanent. GggsTile
+// latches loadFailed() so a dead tile stops wedging the loader — but the causes
+// are not necessarily permanent (a transient NFS error; a producer replacing the
+// file: uma's `enc_updater` rewrites the chart layer on a cron cycle,
+// `overview_pyramid` does rename-aside directory swaps, both potentially under a
+// running CAMP). Without a same-band retry path the repaired tile stays blank
+// until CAMP restarts: rescan()'s known-path dedup skips the path, the load
+// worker skips loadFailed() tiles, and a one-band store never calls setBand().
+// rescan() therefore detects a CHANGED file (size/mtime) at a known path and
+// refreshes the tile — metadata re-read, failure cleared, pixels re-read.
+TEST(GggsRescanTest, RepairedTileRecoversWithoutRestart)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  ASSERT_FALSE(writeTile(dir, "13_0_0.tif", -71.40, 43.00).isEmpty());
+  const QString repaired_path = writeTile(dir, "13_0_1.tif", -71.39, 43.00);
+  ASSERT_FALSE(repaired_path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  // Truncate the second tile AFTER the metadata scan: it passed valid(), but its
+  // pixels can never be read — loadPixels() latches the sticky failure.
+  {
+    QFile file(repaired_path);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    ASSERT_TRUE(file.resize(0));
+  }
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+  ASSERT_TRUE(layer->status().contains("failed")) << layer->status().toStdString();
+
+  // The latch holds against an ordinary re-kick — that is its purpose (no retry
+  // storm on a dead tile).
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(13), 1);
+
+  // The producer now writes a good tile back at the SAME path.
+  ASSERT_FALSE(writeTile(dir, "13_0_1.tif", -71.39, 43.00).isEmpty());
+
+  EXPECT_TRUE(layer->rescan()) <<
+    "rescan() did not notice the replaced file — a repaired tile stays blank "
+    "until CAMP restarts";
+  layer->waitForLoad();
+  EXPECT_EQ(layer->pixelsLoadedCount(13), 2) <<
+    "the repaired tile's pixels were not re-read: the sticky load failure "
+    "survived the file swap";
+  EXPECT_FALSE(layer->status().contains("failed")) <<
+    "the layer still reports a failed tile after the repair: " <<
+    layer->status().toStdString();
+
+  // Nothing changed since the refresh re-stat'ed the file: back to a no-op.
+  EXPECT_FALSE(layer->rescan());
 }
 
 int main(int argc, char** argv)

@@ -255,9 +255,26 @@ bool GggsTileLayer::rescan()
   // aborting it here (whole-tile granularity, never re-kicked because there is
   // nothing to add) would strand those tiles at pixelsLoaded()==false forever —
   // a silently half-blank layer with no recovery, even though status reads loaded.
+  // [camp#194 review] Same read-only first pass collects the tiles whose FILE
+  // CHANGED under us (size/mtime differ from the stat taken at their last
+  // metadata read). A tile whose loadPixels() failed is otherwise latched for
+  // the session — rescan()'s known-path dedup skips its path, the worker skips
+  // loadFailed() tiles, and a single-band store never calls setBand() — so a
+  // producer that REPAIRS the tile (uma `enc_updater`'s cron rewrite of the
+  // chart layer, `overview_pyramid`'s rename-aside swap, or an NFS blip that
+  // simply passes) would leave the region blank until CAMP restarts. Detecting
+  // the swap here gives the operator a same-band retry through the existing
+  // Rescan affordance. Not limited to failed tiles: a rewritten tile that DID
+  // load is also stale (it is still serving the old file's pixels), and the
+  // refresh re-reads it.
   QSet<QString> known;
+  std::vector<GggsTile*> changed;
   for(const auto& tile : tiles_)
+  {
     known.insert(tile->path());
+    if(tile->fileChangedOnDisk())
+      changed.push_back(tile.get());
+  }
 
   QDir dir(directory_);
   const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
@@ -290,8 +307,8 @@ bool GggsTileLayer::rescan()
     new_tiles.push_back(std::move(tile));
   }
 
-  if(new_tiles.empty())
-    return false;   // nothing new — leave any in-flight load running untouched
+  if(new_tiles.empty() && changed.empty())
+    return false;   // nothing new/changed — leave any in-flight load untouched
 
   // [camp#102] Now that there IS something to add, abort + join any in-flight load
   // before mutating tiles_ (the worker captures `this` and iterates tiles_, so a
@@ -308,6 +325,37 @@ bool GggsTileLayer::rescan()
     abort_flag_mutex_.unlock();
     future_watcher_.waitForFinished();
   }
+
+  // [camp#194 review] Refresh the swapped-under-us tiles: release each one's GL
+  // texture under this layer's context FIRST (the resetPixels() pairing
+  // INVARIANT — a CPU-only clear would leave the old texture shadowing the
+  // re-read pixels), then re-read the metadata + clear any latched failure so
+  // the kick below re-reads the current file. Context handling mirrors
+  // applyBand()/tilesReady(): no context yet (hasContext() == false) means no
+  // tile can hold a texture, so the CPU half alone is the complete release; a
+  // context that EXISTS but fails makeCurrent() means textures may exist and
+  // cannot be freed, so skip the refresh entirely rather than break the pairing
+  // (the renderer has latched its GL-failed flag and is drawing nothing anyway;
+  // the next Rescan retries, and fileChangedOnDisk() still reports true because
+  // no re-stat happened).
+  const bool refresh_ok = !changed.empty() &&
+    (!renderer_.hasContext() || renderer_.makeCurrent());
+  if(refresh_ok)
+  {
+    for(auto* tile : changed)
+    {
+      if(renderer_.hasContext())
+        tile->releaseGL();
+      if(!tile->refreshFromFile())
+        qWarning("GggsTileLayer: '%s' changed on disk but cannot be re-read",
+                 qUtf8Printable(tile->path()));
+    }
+    if(renderer_.hasContext())
+      renderer_.doneCurrent();
+  }
+  else if(!changed.empty())
+    qWarning("GggsTileLayer: %d changed tile(s) not refreshed — no current GL "
+             "context to release their textures under", int(changed.size()));
 
   for(auto& tile : new_tiles)
   {

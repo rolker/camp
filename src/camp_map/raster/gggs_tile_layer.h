@@ -205,6 +205,13 @@ public:
   /// pixel load if the layer is already loaded. A half-written tile that fails to
   /// open degrades to valid()==false and is skipped — never crashes. Returns true
   /// if any tile was added; safe to call repeatedly / when nothing changed.
+  /// [camp#194 review] ALSO refreshes tiles whose file was REPLACED at the same
+  /// path (GggsTile::fileChangedOnDisk(): size/mtime differ from the last
+  /// metadata read) — re-reading their metadata and clearing any latched
+  /// GggsTile::loadFailed(), so a tile repaired by a producer (uma
+  /// `enc_updater`'s cron chart-layer rewrite, `overview_pyramid`'s
+  /// rename-aside swap) or by a transient I/O error clearing recovers without
+  /// restarting CAMP. Such a refresh also returns true.
   /// [camp#104] Wired to the "Rescan" context-menu action — the manual stopgap
   /// for the live pickup lost with the retired GggsStoreLayer QFileSystemWatcher
   /// (ADR-0005); a per-layer watcher is a follow-up.

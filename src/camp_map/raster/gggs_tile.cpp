@@ -3,6 +3,7 @@
 
 #include <gdal_priv.h>
 
+#include <QDateTime>
 #include <QFileInfo>
 #include <QOpenGLTexture>
 #include <algorithm>
@@ -24,6 +25,33 @@ GggsTile::GggsTile(const QString& path):
   // is set even for a tile that fails to open (-1 only on a non-value name).
   level_(tileLevel(QFileInfo(path).fileName()))
 {
+  readMetadata();
+}
+
+void GggsTile::readMetadata()
+{
+  // [camp#194 review] Re-runnable metadata read (constructor + refreshFromFile).
+  // Zero the dimensions/band count first so a failed re-read leaves valid() ==
+  // false (and loadPixels() re-latching the failure) rather than reporting the
+  // PREVIOUS file's shape. The geographic extent members are deliberately NOT
+  // zeroed: they are the layer's scene-bounds/spatial-filter input for every
+  // tile regardless of valid(), and a GGGS tile's extent is fixed by its
+  // `<level>_<row>_<col>` grid cell, so keeping the last known extent is both
+  // correct and stops a failed re-read from collapsing the layer's footprint.
+  width_ = 0;
+  height_ = 0;
+  band_count_ = 0;
+
+  // [camp#194 review] Record the file identity the change detector compares
+  // against. Taken BEFORE the read so a producer swapping the file mid-read is
+  // seen as changed by the next rescan (the stat then predates the bytes we
+  // actually got) rather than missed.
+  const QFileInfo info(path_);
+  const bool exists = info.exists() && info.isFile();
+  file_size_ = exists ? info.size() : -1;
+  file_mtime_ms_ = exists ? info.lastModified().toMSecsSinceEpoch() : -1;
+
+  const QString& path = path_;
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
 
@@ -67,6 +95,35 @@ GggsTile::GggsTile(const QString& path):
   // dataMax stay at the crossed sentinel until loadPixels() runs.
   width_ = width;
   height_ = height;
+}
+
+bool GggsTile::fileChangedOnDisk() const
+{
+  // [camp#194 review] Cheap stat compare — see the header contract. A file that
+  // vanished reports changed (-1/-1 vs the recorded stat), so a tile removed and
+  // rewritten by a producer swap is refreshed rather than left latched-failed.
+  const QFileInfo info(path_);
+  const bool exists = info.exists() && info.isFile();
+  const qint64 size = exists ? info.size() : -1;
+  const qint64 mtime = exists ? info.lastModified().toMSecsSinceEpoch() : -1;
+  return size != file_size_ || mtime != file_mtime_ms_;
+}
+
+bool GggsTile::refreshFromFile()
+{
+  // [camp#194 review] The explicit same-band retry for a REPLACED file: drop the
+  // stale pixels/range, clear the sticky failure (the premise of the failure —
+  // the bytes at this path — has changed), and re-read the metadata so the
+  // extent/dimensions follow the new file. Ordering: clear the failure BEFORE
+  // the re-read, so a re-read that itself fails leaves valid() false and the
+  // next loadPixels() re-latches honestly.
+  // The caller must have aborted + joined the load worker first (it mutates
+  // state the worker reads) and released the GL texture under a current context
+  // (the resetPixels() pairing INVARIANT) — GggsTileLayer::rescan() does both.
+  resetPixels();
+  load_failed_.store(false, std::memory_order_release);
+  readMetadata();
+  return valid();
 }
 
 bool GggsTile::loadPixels()

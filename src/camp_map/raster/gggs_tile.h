@@ -55,9 +55,20 @@ public:
   /// setStatus() so the operator sees a partial layer instead of a silently
   /// incomplete one.
   ///
-  /// Sticky for the tile's current band: cleared ONLY by setBand(), which is an
-  /// explicit operator retry with different read parameters. An automatic
-  /// re-kick never clears it (that is exactly the retry storm this prevents).
+  /// Sticky for the tile's current band and the file as it stood when the
+  /// failure happened: an automatic re-kick never clears it (that is exactly
+  /// the retry storm this prevents). It IS cleared by the two explicit retry
+  /// paths, which both change the read's premise:
+  ///  - setBand() — different read parameters (a band the old file lacked);
+  ///  - refreshFromFile() — a DIFFERENT file at the same path, detected by
+  ///    fileChangedOnDisk() during the layer's rescan(). A latched failure is
+  ///    not necessarily permanent: a transient NFS error, or a producer
+  ///    replacing the tile (uma's `enc_updater` rewrites the chart layer on a
+  ///    cron cycle; `overview_pyramid` does rename-aside directory swaps, both
+  ///    potentially under a running CAMP). Without that path a repaired tile
+  ///    would stay blank until CAMP restarts — rescan()'s known-path dedup
+  ///    skips the path and the worker skips loadFailed() tiles, and a one-band
+  ///    store never calls setBand().
   ///
   /// [camp#102] Atomic with the same ACQUIRE/RELEASE discipline as
   /// pixelsLoaded(): stored by the load worker, read from the GUI thread.
@@ -65,6 +76,32 @@ public:
   {
     return load_failed_.load(std::memory_order_acquire);
   }
+
+  /// [camp#194 review] True if the file at path() no longer matches the size +
+  /// modification time recorded by the last metadata read (constructor or
+  /// refreshFromFile()) — i.e. a producer replaced/rewrote/removed this exact
+  /// path. A cheap stat, called from the GUI thread by the layer's rescan();
+  /// a missing file reports changed (size/mtime -1) so a vanished-then-restored
+  /// tile is picked up. Resolution is the filesystem's mtime granularity, so a
+  /// same-size rewrite within the same millisecond can be missed — the operator
+  /// can Rescan again, and the far commoner cases (size change, or a swap
+  /// seconds/minutes later) are caught.
+  bool fileChangedOnDisk() const;
+
+  /// [camp#194 review] Re-read the file's metadata (geotransform / dimensions /
+  /// band count / stat) and clear both the loaded pixels and any latched
+  /// loadFailed(), so the next loadPixels() reads the CURRENT file. The explicit
+  /// same-band retry path for a repaired tile (see loadFailed()); the layer
+  /// calls it from rescan() for tiles whose fileChangedOnDisk() is true.
+  /// Returns valid() — false if the replacement can't be opened / has no
+  /// geotransform, in which case the tile keeps its (now zeroed) metadata and
+  /// the next loadPixels() re-latches the failure. The selected band() is
+  /// preserved; if the replacement carries fewer bands, loadPixels() latches the
+  /// failure again rather than silently switching band. Does NOT touch the GL
+  /// texture — same INVARIANT as resetPixels(): the caller must pair it with
+  /// releaseGL() under a current context, or a stale texture would shadow the
+  /// re-read pixels.
+  bool refreshFromFile();
 
   /// [camp#108] Number of raster bands in the GeoTIFF (>= 1 for a valid tile).
   /// Read from GDAL in the constructor.
@@ -163,7 +200,20 @@ public:
   void releaseGL();
 
 private:
+  /// [camp#194 review] Shared body of the constructor and refreshFromFile():
+  /// stat the file (size + mtime, for fileChangedOnDisk()) and read the
+  /// geotransform-derived extent + dimensions + band count. Resets the
+  /// dimensions/band count first, so a failed re-read leaves valid() false
+  /// rather than the previous file's shape; the geographic extent is kept (see
+  /// the rationale in the definition).
+  void readMetadata();
+
   QString path_;
+  // [camp#194 review] Identity stat of the file as of the last readMetadata();
+  // -1/-1 when it did not exist. Compared by fileChangedOnDisk() to detect a
+  // producer swapping the tile under a live layer.
+  qint64 file_size_ = -1;
+  qint64 file_mtime_ms_ = -1;
   int width_ = 0;
   int height_ = 0;
   int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
