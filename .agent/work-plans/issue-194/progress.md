@@ -116,3 +116,16 @@ the same render path and are worth plan-task's awareness (not duplicates):
       layer class, `SonarLiveCacheLayer`, not `GggsTileLayer`).
 - [ ] If direction 2 is chosen, flag the cross-repo dependency on
       `unh_marine_autonomy` ADR-0010 D9's pyramid-exclusion rationale.
+
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-20 00:00 +00:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-194/plan.md` at `b036a06`
+**Branch**: feature/issue-194 at `b036a06`
+**Phases**: single
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
