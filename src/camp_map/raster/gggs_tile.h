@@ -63,6 +63,17 @@ public:
   /// cached value per cursor move instead of re-running the parse (camp#180).
   int level() const { return level_; }
 
+  /// [camp#194] True for a tile loaded from the derived `overviews/` sidecar
+  /// (uma ADR-0011) rather than the store's main directory. An overview tile
+  /// is padded to its (coarse) GGGS grid cell, so the layer's scene-bounds
+  /// union excludes it; NATIVE tiles — at any level, since a region-disjoint
+  /// ENC ladder (uma ADR-0010 D7) puts several native levels in the main
+  /// directory — are the true data footprint. Set once by the layer while
+  /// scanning (loadDirectory()); default false (rescan() only scans the main
+  /// directory, so its tiles are native).
+  bool isOverview() const { return is_overview_; }
+  void setOverview(bool overview) { is_overview_ = overview; }
+
   /// [camp#103] Drop the loaded CPU pixels + range and mark the tile not-loaded,
   /// so a later loadPixels() re-reads from scratch — the CPU half of releasing a
   /// tile when the LOD switches away from its level. Does NOT touch the GL
@@ -130,6 +141,7 @@ private:
   int band_count_ = 0;   // [camp#108] GDAL raster-band count (0 until valid)
   int band_ = 1;         // [camp#108] selected 1-indexed band loadPixels() reads
   int level_ = -1;       // [camp#103/#180] level from the filename (-1 unknown)
+  bool is_overview_ = false;   // [camp#194] from the overviews/ sidecar
   double geo_transform_[6] = {0.0};
   double min_lon_ = 0.0, max_lon_ = 0.0, min_lat_ = 0.0, max_lat_ = 0.0;
   bool has_nodata_ = false;

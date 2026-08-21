@@ -228,11 +228,12 @@ private:
   /// load, and repaints. No-op if @p band is out of range or unchanged.
   void applyBand(int band);
   void loadDirectory(const QString& directory);
-  /// [camp#103] Recompute available_levels_ (dedup ascending) and scene_bounds_
-  /// (union of FINEST-level tile extents only — overview tiles are padded to
-  /// their coarse GGGS grid cell, so uniting them would balloon the extent far
-  /// beyond the data footprint) from tiles_. Called after any tiles_ mutation
-  /// (loadDirectory, rescan).
+  /// [camp#103/#194] Recompute available_levels_ (dedup ascending) and
+  /// scene_bounds_ (union of every NATIVE tile's extent, at any level — a
+  /// region-disjoint native ladder needs every level's footprint; overview
+  /// sidecar tiles are padded to their coarse GGGS grid cell, so uniting them
+  /// would balloon the extent far beyond the data footprint) from tiles_.
+  /// Called after any tiles_ mutation (loadDirectory, rescan).
   void rebuildLevelIndex();
   /// [camp#103] items() body with an optional scene-space clip: a non-null
   /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
@@ -266,7 +267,7 @@ private:
   int band_ = 1;               // [camp#108] selected 1-indexed band (persisted)
   bool smooth_interpolation_ = false;   // [camp#132] blit hint only (persisted)
   std::vector<std::unique_ptr<GggsTile>> tiles_;
-  QRectF scene_bounds_;        // union of FINEST-level tile extents (see loadDirectory)
+  QRectF scene_bounds_;        // union of NATIVE tile extents (see rebuildLevelIndex)
 
   // [camp#103 / ADR-0013] LOD selection state (GUI thread only — the worker gets
   // value copies at kick time, see loadTilesWorker). selected_level_ == -1 =

@@ -138,8 +138,9 @@ void GggsTileLayer::loadDirectory(const QString& directory)
   // All tiles share tiles_; their filename-parsed level() distinguishes them.
   const QDir fine_dir(directory);
   const QDir overview_dir(directory + "/overviews");
-  for(const QDir& dir : {fine_dir, overview_dir})
+  for(const bool overview : {false, true})
   {
+    const QDir& dir = overview ? overview_dir : fine_dir;
     if(!dir.exists())
       continue;
     const QStringList files = dir.entryList(QStringList() << "*.tif" << "*.tiff",
@@ -158,6 +159,10 @@ void GggsTileLayer::loadDirectory(const QString& directory)
       auto tile = std::make_unique<GggsTile>(dir.filePath(name));
       if(!tile->valid())
         continue;
+      // [camp#194] Tag sidecar provenance: overview tiles are padded to their
+      // coarse GGGS grid cell, so rebuildLevelIndex() excludes them from the
+      // scene-bounds union; native tiles at ANY level are the true footprint.
+      tile->setOverview(overview);
       tiles_.push_back(std::move(tile));
     }
   }
@@ -168,12 +173,19 @@ void GggsTileLayer::rebuildLevelIndex()
 {
   // [camp#103] Deduplicated ascending level list + the layer extent.
   //
-  // scene_bounds_ unions FINEST-level tile extents only, NOT all tiles: an
-  // overview tile is padded to its (coarse) GGGS grid cell, so the L0 apex
-  // spans a whole 8-degree grid — uniting it would balloon boundingRect /
-  // fit-to-extent far beyond the data footprint. The finest level present is
-  // the true footprint; every coarser level covers the same data padded with
-  // NoData, and the renderer clips coarse tiles to the bounding rect anyway.
+  // [camp#194] scene_bounds_ unions every NATIVE (non-overview) tile's extent,
+  // at ANY level — not the finest level only. A region-disjoint native ladder
+  // (ENC chart store, uma ADR-0010 D7: one native level per compilation
+  // scale, each covering only its own sub-region) needs every level's
+  // footprint in the union, or the regions outside the finest level's
+  // coverage sit outside boundingRect() and can never paint (QGraphicsView
+  // culls there regardless of any render-side fix). Overview-sidecar tiles
+  // stay excluded: they are padded to their (coarse) GGGS grid cell — the L0
+  // apex spans a whole 8-degree grid — so uniting them would balloon
+  // boundingRect/fit-to-extent far beyond the data footprint (the hazard the
+  // previous finest-level-only union guarded against). For the legacy
+  // single-native-level store + overviews/ sidecar the two unions are
+  // identical.
   available_levels_.clear();
   for(const auto& tile : tiles_)
   {
@@ -185,8 +197,22 @@ void GggsTileLayer::rebuildLevelIndex()
   scene_bounds_ = QRectF();
   if(available_levels_.empty())
     return;
-  const int finest = available_levels_.back();
   bool first_extent = true;
+  for(const auto& tile : tiles_)
+  {
+    if(tile->isOverview())
+      continue;
+    const QRectF tile_rect = tileSceneRect(*tile);
+    scene_bounds_ = first_extent ? tile_rect : scene_bounds_.united(tile_rect);
+    first_extent = false;
+  }
+  if(!first_extent)
+    return;
+  // Degenerate store: overview tiles only, no native tile at all. Fall back
+  // to the finest level present so the layer keeps an extent (matching the
+  // old finest-level-only behavior for this case) instead of a null
+  // boundingRect that would silently blank the layer.
+  const int finest = available_levels_.back();
   for(const auto& tile : tiles_)
   {
     if(tile->level() != finest)
@@ -272,7 +298,7 @@ bool GggsTileLayer::rescan()
   }
   // [camp#103] Wholesale re-index: a rescan can add tiles at a new (finer)
   // level, which both extends available_levels_ and re-bases scene_bounds_
-  // (finest-level union — see rebuildLevelIndex). The item pos is DERIVED
+  // (native-tile union — see rebuildLevelIndex). The item pos is DERIVED
   // state of scene_bounds_, so re-anchor unconditionally: a west/north
   // extension (or a finest-level re-base) moves the NW corner, and keeping
   // the old pos would leave the added footprint outside boundingRect() —
