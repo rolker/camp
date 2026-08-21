@@ -386,3 +386,89 @@ under operator review).
 **Verification:** `./ui_ws/build.sh camp` clean; `./ui_ws/test.sh camp` —
 237 tests, 0 failures, 1 skipped (the pre-existing GL-gated skip). Pre-commit
 hooks ran on every commit; no `--no-verify`. Not pushed.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-21 13:57 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-194 at `3d569e2`
+**PR**: #196
+**Addressed**: Copilot review round 2 on head `2b45163` (the PR's "suppressed comments" — no `## Integrated Review` / `## Local Review (Pre-Push)` entry existed for them, so the three findings are recorded verbatim below; the host verified all three against the code before dispatch)
+**Commits**: `b0e4615`, `1973441`, `3d569e2`
+
+### Actions
+- [x] (MUST-FIX) Failed-tile exclusion over-releases finer coverage: `hasUnloadedVisibleTiles()` skips `loadFailed()` tiles, so `tilesReady()`'s release gate treats a failed selected tile as complete and releases the resident finer tiles that are the only usable coverage over that footprint — in a nested store a coarse RasterIO failure during zoom-out blanks previously-visible fine data. Release is now footprint-aware: a finer tile intersecting any failed tile at a level `<=` the selection is retained; failed tiles stay out of the automatic retry — `src/camp_map/raster/gggs_tile_layer.cpp:531-588`, `gggs_tile_layer.h:191-206` (`b0e4615`)
+- [x] (MUST-FIX) Permanent latch is wrong for transient I/O errors: `GDALOpen`/`RasterIO` failures are not necessarily permanent (NFS blip; a producer replacing the file — uma `enc_updater`'s cron chart-layer rewrite, `overview_pyramid`'s rename-aside swap, both under a potentially-running CAMP), and nothing could clear the latch for a one-band store (rescan skips known paths, the worker skips failed tiles, `setBand()` never fires). `rescan()` now detects a changed file (size + mtime) at a known path and refreshes the tile — metadata re-read, latch cleared, pixels re-read — `src/camp_map/raster/gggs_tile.h:44-115,196-206`, `gggs_tile.cpp:18-60,101-133`, `gggs_tile_layer.cpp:258-283,329-357`, `gggs_tile_layer.h:206-215` (`1973441`)
+- [x] (DOC) ADR-0013 extent contract omitted the all-overview exception while `rebuildLevelIndex()` falls back to unioning the finest overview level when no native tile exists. Documented: overviews are excluded whenever native tiles are present; an overview-only store takes the finest-overview union instead — `docs/decisions/0013-lod-level-selection-demand-driven-load.md:186-200` (`3d569e2`)
+- [x] (Governance, self-initiated) plan.md synced with the round-3 additions (the recurring plan-drift flag) — `.agent/work-plans/issue-194/plan.md` Files to Change (this commit)
+
+### Notes
+
+**Finding 1 — footprint-aware release.** The release gate's precondition
+(`!hasUnloadedVisibleTiles(...)`) means the loader has *settled*, not that the
+footprint is *covered*: since round 2 that predicate deliberately ignores
+`loadFailed()` tiles, so a failed tile leaves a hole while satisfying the gate.
+`tilesReady()` now collects the scene rects of failed tiles at levels `<=` the
+selection and skips releasing any finer tile intersecting one. Deliberately
+conservative (a finer tile a second, readable coarse tile also covers is kept
+too): over-retention costs a little residency until the next successful pass,
+under-retention costs the operator their data. Explicitly *not* a coverage or
+eviction policy — a region with no coarse tile at all still releases and blanks
+per ADR-0013's documented residency rule; that family remains camp#195,
+untouched.
+
+Regression test `FailedCoarseTileKeepsFinerCoverageResident` (overlapping
+fixture, as the finding asked): two disjoint regions, each a fine tile inside a
+coarse tile; region 1's coarse tile is truncated after the metadata scan.
+After zoom-out, exactly the region-2 fine tile releases and `getElevation()`
+over region 1 still returns data — the operator-visible "did not blank"
+assertion. **Mutation-verified**: with the retention branch neutered
+(`if(over_hole && false)`) the test fails on both assertions (`1 vs 0` resident
+fine tiles; region 1 reads NaN).
+
+**Finding 2 — same-band retry.** `GggsTile`'s constructor body became
+`readMetadata()`, re-runnable, which also records the file-identity stat
+(`file_size_`/`file_mtime_ms_`). `fileChangedOnDisk()` compares that stat (a
+vanished file reports changed); `refreshFromFile()` drops pixels + range, clears
+the sticky `load_failed_`, and re-reads the metadata — clearing the latch
+*before* the re-read so a re-read that itself fails leaves `valid()` false and
+re-latches honestly on the next `loadPixels()`. The geographic extent is
+deliberately *not* zeroed on a failed re-read (a GGGS tile's extent is fixed by
+its grid cell, and the layer unions extents regardless of `valid()`, so
+collapsing it would shrink the layer footprint). `rescan()` collects changed
+tiles in the same read-only first pass that builds the known-path set, returns
+true when only changed tiles were found, and refreshes them after the
+abort+join — releasing each texture under the layer's context first, honoring
+the `resetPixels()`/`releaseGL()` pairing invariant with the same
+context-exists-but-`makeCurrent()`-failed skip used by `applyBand()`/
+`tilesReady()` (warned, retried by the next Rescan since no re-stat happened).
+The selected band is preserved across the refresh; a replacement with fewer
+bands re-latches rather than silently switching band. Detection resolution is
+the filesystem's mtime granularity — a same-size rewrite inside one millisecond
+can be missed, and the operator can Rescan again; documented on
+`fileChangedOnDisk()`.
+
+Regression test `RepairedTileRecoversWithoutRestart` (`test_gggs_rescan.cpp`):
+a tile truncated after the scan latches the failure and is reported in the
+layer status; a plain re-kick does *not* clear it (the latch's purpose); the
+producer rewrites the tile at the same path; `rescan()` returns true, the pixels
+re-read, and the status clears — with a trailing `EXPECT_FALSE(rescan())`
+pinning that the refresh re-stat'ed the file (no rescan loop). The existing
+`NoNewTilesIsNoOp` covers the false-positive direction (an untouched store still
+no-ops).
+
+**Not re-raised:** the cross-level residency / eviction-budget finding stays
+DEFERRED per the operator's decision, camp#195 is the named gate, and its scope
+is being reworked separately. No code, ADR, or camp#195 edits on that axis.
+
+**Verification:** `./ui_ws/build.sh camp` clean; `./ui_ws/test.sh camp` —
+**239 tests, 0 errors, 0 failures, 1 skipped** (the pre-existing GL-gated
+`RealStoreRendersWhenProvided` skip); up from 237, the two new regression tests.
+Pre-commit hooks ran on every commit; no `--no-verify`. Not pushed.
+
+### Next step
+
+Lifecycle: **Implementation** → **review-code** (re-review the fixes):
+
+    .agent/scripts/dispatch_subagent.sh --mode in-process --issue 194 --skill review-code
