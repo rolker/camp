@@ -858,6 +858,110 @@ TEST(GggsRenderTest, LevelSwitchBackdropRendersDuringTransition)
     "mid-transition render is blank — the coarse backdrop is not drawn";
 }
 
+// [camp#194] Region-disjoint native ladder, extent half: an ENC chart store
+// puts multiple NATIVE levels in the main directory (no overviews/ sidecar),
+// each covering only the sub-region compiled at that scale. sceneBounds()
+// must union EVERY native level's footprint — the old finest-level-only union
+// collapsed to the finest level's region alone, leaving the other regions
+// outside boundingRect() where QGraphicsView culls them (they could never
+// paint regardless of the render path).
+TEST(GggsRenderTest, DisjointNativeLadderExtentCoversAllRegions)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // Level 5 over a western region, level 8 over a disjoint eastern region
+  // (mirroring the Lewes-vs-Portsmouth split from the live repro).
+  const double geo_l5[6] = {-71.410, 0.0001, 0.0, 43.010, 0.0, -0.0001};
+  const double geo_l8[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const std::vector<uint16_t> samples(w * h, 5000);
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l5, samples, "5_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l8, samples, "8_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+  EXPECT_EQ(layer->availableLevels(), (std::vector<int>{5, 8}));
+
+  // Probe rects slightly INSET from each tile's nominal extent (the
+  // geotransform-derived extent can differ by an ulp from the literal
+  // corners, which would fail an exact-edge contains()).
+  auto sceneRect = [](double min_lat, double min_lon, double max_lat, double max_lon)
+  {
+    const QPointF lo = web_mercator::geoToMap(QGeoCoordinate(min_lat, min_lon));
+    const QPointF hi = web_mercator::geoToMap(QGeoCoordinate(max_lat, max_lon));
+    const QRectF r = QRectF(lo, hi).normalized();
+    return r.marginsRemoved(QMarginsF(r.width() * 0.05, r.height() * 0.05,
+                                      r.width() * 0.05, r.height() * 0.05));
+  };
+  const QRectF region_l5 = sceneRect(43.008, -71.410, 43.010, -71.408);
+  const QRectF region_l8 = sceneRect(42.998, -71.400, 43.000, -71.398);
+  // The finest-level-only union covered region_l8 alone; the native union
+  // must cover BOTH regions.
+  EXPECT_TRUE(layer->sceneBounds().contains(region_l8));
+  EXPECT_TRUE(layer->sceneBounds().contains(region_l5)) <<
+    "coarser native level's region excluded from sceneBounds() — it can "
+    "never paint (finest-level-only union regression)";
+}
+
+// [camp#194] Region-disjoint native ladder, render half — the direct symptom
+// regression guard ("only one band renders"): with the finest level selected,
+// a full-extent render must show opaque pixels in EVERY native level's
+// region, not just the selected level's. Under the old equality filter the
+// coarser level neither loaded nor rendered, so its region stayed blank at
+// every zoom. (GL-gated.)
+TEST(GggsRenderTest, DisjointNativeLadderRendersAllRegions)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const int w = 20, h = 20;
+  // Same disjoint layout as the extent test: L5 west, L8 east, with distinct
+  // values so the auto-range is real.
+  const double geo_l5[6] = {-71.410, 0.0001, 0.0, 43.010, 0.0, -0.0001};
+  const double geo_l8[6] = {-71.400, 0.0001, 0.0, 43.000, 0.0, -0.0001};
+  const std::vector<uint16_t> samples_l5(w * h, 20000);
+  const std::vector<uint16_t> samples_l8(w * h, 60000);
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l5, samples_l5, "5_0_0.tif").isEmpty());
+  ASSERT_FALSE(writeTile(dir, w, h, geo_l8, samples_l8, "8_0_0.tif").isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::raster::GggsTileLayer(map.topLevelLayers(), dir.path());
+  ASSERT_TRUE(layer->valid());
+
+  // Select the FINEST level (what any zoomed-in viewport would pick): the
+  // ceiling must still load + composite the coarser level's region.
+  layer->setLodForTest(8, QRectF());
+  layer->waitForLoad();
+  ASSERT_EQ(layer->pixelsLoadedCount(8), 1);
+  ASSERT_EQ(layer->pixelsLoadedCount(5), 1);
+
+  const QImage img = layer->renderImage(QSize(240, 240));
+  ASSERT_FALSE(img.isNull());
+  img.save("/tmp/gggs_disjoint_ladder.png");
+
+  // The L5 region occupies the western edge of the union extent, the L8
+  // region the eastern edge; splitting the image into thirds by column keeps
+  // the check independent of the vertical orientation.
+  int west_opaque = 0, east_opaque = 0;
+  for(int y = 0; y < img.height(); ++y)
+    for(int x = 0; x < img.width(); ++x)
+    {
+      if(img.pixelColor(x, y).alpha() == 0)
+        continue;
+      if(x < img.width() / 3)
+        ++west_opaque;
+      else if(x >= 2 * img.width() / 3)
+        ++east_opaque;
+    }
+  EXPECT_GT(east_opaque, 0) << "selected (finest) level's region is blank";
+  EXPECT_GT(west_opaque, 0) <<
+    "coarser native level's region is blank — only one band renders "
+    "(camp#194 symptom)";
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");
