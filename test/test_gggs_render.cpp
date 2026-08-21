@@ -1028,6 +1028,20 @@ TEST(GggsRenderTest, DisjointNativeLadderRendersAllRegions)
   ASSERT_EQ(layer->pixelsLoadedCount(8), 1);
   ASSERT_EQ(layer->pixelsLoadedCount(5), 1);
 
+  // [camp#194] Pin the AUTO-RANGE fold ceiling, not just the load ceiling:
+  // pixelsLoadedCount() above proves both levels' pixels arrived, but the
+  // colormap range is folded separately in tilesReady(). If that fold's gate
+  // silently reverted to an equality filter (selection only), only the L8 band
+  // would fold, the L5 band would render saturated/clipped against a
+  // 60000..60000 range, and every pixel assert below would still pass. Assert
+  // the range spans BOTH bands' values.
+  const QPair<float, float> range = layer->dataRange();
+  EXPECT_FLOAT_EQ(range.first, 20000.0f) <<
+    "auto-range min excludes the coarser native level's band — only the "
+    "selected level folded into the range (camp#194 fold-ceiling regression)";
+  EXPECT_FLOAT_EQ(range.second, 60000.0f) <<
+    "auto-range max excludes the finest native level's band";
+
   const QImage img = layer->renderImage(QSize(240, 240));
   ASSERT_FALSE(img.isNull());
   img.save("/tmp/gggs_disjoint_ladder.png");
