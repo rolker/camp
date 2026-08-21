@@ -155,3 +155,32 @@ The extent-union fix (finding area 1) is well-verified against source and correc
 - [ ] Redesign step 4 (or explicitly accept+document+test the zoom-out blank-transition behavior change) so the zoom-out progressive-refinement backdrop is preserved or its removal is a deliberate, tested decision.
 - [ ] Extend the `DemandDrivenLoadsOnlySelectedLevel` rewrite with a selection-below-max case that still asserts the `level > selected` exclusion.
 - [ ] File a tracked follow-up issue for `GggsTileLayer` residency/eviction bounds scoped to `reference`/`draft` stores (not deferred as an implicit "if it ever matters" note), given camp#153 precedent.
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-20 20:40 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+
+**Branch**: feature/issue-194 at `b708e49`
+**Build**: camp builds clean; full camp suite green (235 tests, 0 errors, 0 failures, 1 skipped — the opt-in `GGGS_TEST_STORE` real-store render).
+
+### Commits
+- `190deb7` plan: fold in plan-review findings for #194 (plan-first revision, committed before implementation)
+- `9f8780d` Union scene bounds over all native tiles, not the finest level only — `GggsTile::isOverview()` provenance tag + `rebuildLevelIndex()` native-union extent (the verified second bug), with an all-overview degenerate-store fallback
+- `dc26daa` Composite every level up to the LOD selection instead of selecting one — ceiling filter in `loadTilesWorker()`/`hasUnloadedVisibleTiles()`; `itemsIntersecting()` collapsed to one ascending pass over ALL resident tiles (no render-time level filter; the `-1` headless branch merged in); `tilesReady()` range fold over levels ≤ selection and release of only levels > selection, keeping the load-before-release gate. Behavior tests rewritten in the same commit so the suite stays green: `DemandDrivenLoadsLevelsUpToSelection`, `DemandDrivenCeilingExcludesFinerLevels` (mid-ladder), `LevelSwitchResidencyAcrossZoomInAndOut`, `ZoomOutRetainsFinerBackdropUntilCoarseLoads`
+- `da42e95` ADR-0013 amended to the compositing model (Multi-level compositing section supersedes progressive refinement; extent + auto-range sections amended; residency-bound note names `reference`/`draft` and references camp#195)
+- `b708e49` Regression tests: `DisjointNativeLadderExtentCoversAllRegions` + `DisjointNativeLadderRendersAllRegions` — the issue's acceptance-case symptom guards
+
+### Review findings addressed
+- **[must-fix] zoom-OUT backdrop regression**: resolved by redesign, not by accepting the behavior change — `itemsIntersecting()` draws the whole resident set (no `level <= selected` render filter), so still-resident finer tiles keep drawing (on top, ascending painter's order) after a zoom-out; `tilesReady()` keeps the `!hasUnloadedVisibleTiles()` gate so they release only once the coarser selection's visible set has loaded. Guarded by `ZoomOutRetainsFinerBackdropUntilCoarseLoads` (render-content assertion, not just residency) — **verified discriminating**: temporarily patching the rejected `level <= selected` render filter back in makes exactly this test fail (blank mid-transition render).
+- **[must-fix] mid-ladder ceiling test gap**: `DemandDrivenCeilingExcludesFinerLevels` selects level 7 of a native `{0, 7, 13}` ladder and asserts level 13 does NOT load — distinguishing the ceiling from a removed filter (eager whole-store-load regression).
+- **[suggestion, resolved] residency follow-up**: camp#195 referenced from the plan, the ADR-0013 residency note (which names `reference` and `draft`/`processed` explicitly as the classes to watch, `chart` as the non-risk), and the plan's Consequences.
+
+### Verification
+- `DisjointNativeLadderExtentCoversAllRegions` fails under the old finest-level-only union (observed while probe rects were exact-edge; now inset 5% for float tolerance and passing against the native union).
+- camp#102/#103 protections retained: `HeadlessDefaultsLoadEverything`, `UnloadedVisibleTilesTriggerRekick`, `LevelSwitchBackdropRendersDuringTransition` (zoom-in, comment updated) all pass unchanged.
+- Full suite: 235 tests, 0 failures.
+
+### Notes for review
+- Commit grouping: the two behavior-encoding tests were rewritten inside the compositing commit (`dc26daa`) rather than the tests commit so every commit on the branch builds and tests green.
+- `rebuildLevelIndex()` gained an all-overview degenerate-store fallback (finest-level union) so a store with an `overviews/` sidecar but no native tiles keeps an extent instead of a null boundingRect.
