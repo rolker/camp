@@ -203,3 +203,26 @@ The extent-union fix (finding area 1) is well-verified against source and correc
 - `3f0c7a8` Load coarse levels first in the demand-driven worker (finding 3)
 - `306d1ee` ADR-0013: scope the all-regions claim; note compositing overdraw (findings 1 + 4)
 - `635d51a` Pin paint()'s no-eager-release on level switch with a paint-driven test (finding 2)
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-20 20:58 -04:00
+**By**: Claude Code Agent (Claude Fable 5)
+**Verdict**: approved
+
+**Branch**: feature/issue-194 at `d8366d1`
+**Mode**: pre-push
+**Depth**: Standard (reason: Qt render-path behavior change on the operator map; two adversarial lenses)
+**Must-fix**: 1 | **Suggestions**: 3
+**Round**: 1 | **Ship**: recommended — all findings fixed in-session by the implementer (paint-driven test mutation-verified both directions); suite 236 green
+
+Static analysis: camp colcon test targets (green). Governance: ADR-0013 amended in-PR and corrected per Lens B; residency/overdraw family tracked on camp#195. Local model: skipped per operator guidance (--no-local).
+
+### Findings
+- [x] (must-fix, Lens B) ADR-0013 + mirrored code comment overclaimed "all regions at every zoom" — false for regions whose only native level is finer than the selection (coarse-zoom blank, intended tradeoff) — texts corrected, limitation stated — `docs/decisions/0013-...` + `gggs_tile_layer.cpp`
+- [x] (suggestion, Lens A) mid-transition residency asserts were vacuous (nothing between load and assert could release) — real paint()-driven level-switch test added, fixture reworked until mutation-discriminating — `test/test_gggs_render.cpp`
+- [x] (suggestion, Lens B) worker load order not coarse-first — ascending-by-level sorted view at kick time — `gggs_tile_layer.cpp`
+- [x] (suggestion, Lens B) per-frame overdraw multiplication untracked — ADR note added; mitigation family recorded on camp#195
+
+### False positives
+- (none)
