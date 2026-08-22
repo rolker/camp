@@ -167,3 +167,75 @@ machine", which is now an open question gating PR2.
 - [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. requiring an explicit configured frame pair (two vehicles, bizzy and izzy, can share one graph).
 - [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry. Uniform shift makes displayed land elevation tide-dependent; the asymmetry would open a ~28 m discontinuity at the shoreline in our ellipsoidal frame.
 - [ ] Schedule honesty: PR1 is achievable and verifiable by Monday; PR2 is writable but not safely verifiable before Tuesday (needs the owed ROC CAMP rebuild plus a live boat).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:17 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `32812ce`
+**Branch**: feature/issue-181 at `32812ce`
+**Phases**: three stacked PRs (PR1 = mechanism + manual anchor + colorbar fix + ADR; PR2 = `map_tide` anchor; PR3 = chart-datum source)
+
+**This entry supersedes the `## Plan Authored` entry earlier today at
+`b94a7d4` (which itself superseded `56ac199`).** Two operator corrections,
+both verified in-tree before adopting:
+
+1. **Retracted an incorrect schedule finding.** `b94a7d4` claimed the
+   tide-linked anchor "is not safely verifiable before Tuesday — it needs the
+   already-owed ROC CAMP rebuild and a live boat". Wrong. `marine_simulation/
+   launch/sim_robot_launch.py:338-358` brings up `mru_transform_node`
+   broadcasting `<ns>/map_tide`, and `asv_sim/config/environment.yaml`
+   carries a harmonic tide (NOAA Station 8423898, Fort Point NH) with
+   `speed_factor` documented as compressing a 12-hour cycle into ~12 s. The
+   same file gives `ellipsoid_to_mllw: -28.104` — within 7 cm of the measured
+   −28.038 m at the Isles of Shoals — so the sim is an oracle for **both**
+   anchor sources. PR2 is now targeted at Tuesday, sim-verified. The residual
+   field-side unknown narrows to whether `map_tide` survives the bridge to the
+   ROC box specifically.
+2. **A chart-datum anchor is wanted, not forbidden.** `b94a7d4` over-corrected
+   from the `56ac199` rejection and treated datum knowledge in CAMP as
+   off-limits. What was rejected was a *colormap-private* per-render PROJ query
+   on the GUI thread; what is wanted is a CAMP-level datum capability the
+   colormap merely consumes. CAMP already anticipates it — two comments
+   (`autonomousvehicleproject.h:86-87`, `projectview.cpp:213-215`) show two
+   differently-labelled depths "until the datum service (#288)" for camp#180's
+   readout, independent of this issue.
+
+The anchor is therefore now **source-agnostic**: a plain `optional<double>`
+written by pluggable sources, precedence chart datum > `map_tide` > manual >
+none. Default per S-98 Ed. 2.0.0 Appendix D (which the vision doc itself
+endorses): chart datum is the default, `map_tide` is an operator-selectable
+adjustment, off by default, with permanent on-screen indication while active.
+The vision tension is reconciled explicitly in the plan rather than left
+implicit — uma ADR-0010 D5 excludes a `chart_datum` **TF frame in the
+navigation loop**, and the vision says plainly that "D5 keeps models out of the
+navigation loop, not out of the system" and that a modelled tier is "entirely
+appropriate in camp". "`marine_colormap` should never know about tides, datums
+or drafts" stays honored untouched: the library receives a number.
+
+**New ground-truth finding that shaped Phase C: there is no datum service to
+call.** A workspace-wide grep finds no `.srv` mentioning datum at all, and
+uma#288's actual title is "world/: canonical updater-managed home for
+geospatial support data … ADR-0010 D3 amendment" — it decides where grids
+*live*, not who resolves them. The available capability is the ROS-free
+`marine_vertical_datum` library (`resolve_datum() -> optional<DatumResult>`
+with `chart_datum_z`, `datum_config.hpp:82-106`). Phase C scopes CAMP linking
+it directly, off the GUI thread and region-cached, rather than assuming a
+service exists.
+
+Carried forward unchanged from `b94a7d4`: the `BreakpointMap`-in-the-LUT-bake
+mechanism; the ROS-free `libcamp_map` boundary finding (ADR-0002,
+`CMakeLists.txt:239` — the layers derive from `map::Layer`, not
+`camp::ros::Layer`, so every source must push, never pull; this is also what
+structurally prevents the rejected design from recurring);
+`ColormapLegendWidget::setLut()` making the colorbar a real fix rather than a
+documented gap; all four surviving Plan Review must-fixes; and the uniform-shift
+decision with its ~28 m-discontinuity reasoning.
+
+### Open questions
+- [ ] Is `map_tide` visible to CAMP's TF buffer on the ROC machine? One `tf2_echo` there; sim covers everything else about PR2.
+- [ ] Confirm the D3 default — chart datum default with tide as a selectable adjustment (S-98 model), vs. tide as default since under-keel clearance is the live question among rocks. One-line change either way.
+- [ ] Phase C scope: does PR3 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or does that follow in a sibling PR?
+- [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. an explicit configured pair (bizzy and izzy can share one graph).
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
