@@ -12,9 +12,13 @@ https://github.com/rolker/camp/issues/181
   Mechanism correct, but it over-corrected — it treated datum knowledge in CAMP
   as forbidden, and it wrongly concluded the tide path could not be verified
   before Tuesday.
-- **This version** — anchor is **source-agnostic** with a stated precedence;
-  both a chart-datum source and a `map_tide` source are in scope; the tide path
-  is verifiable **now, in simulation**.
+- `32812ce` — second replan: source-agnostic anchor, both sources in scope,
+  tide path shown verifiable in simulation. Correct, but it left the default
+  open and proposed the chart-datum source last.
+- **This version** — operator has decided: **chart datum is the default**, on a
+  multi-platform-ambiguity argument that outranks the S-98 one. The tide source
+  becomes **platform-scoped**, and the PR order is **reversed** so the default
+  source is not the last thing built.
 
 ## What was actually rejected, and what is actually wanted
 
@@ -130,6 +134,20 @@ readout.
     means CAMP linking `marine_vertical_datum` directly as a project-level
     capability. Phase C scopes that honestly rather than assuming a callable
     service.
+- **camp already enumerates platforms — do not invent a parallel selector.**
+  `src/camp/platform_manager/platform_manager.cpp:25` subscribes to
+  **`/marine/platforms`** (`marine_interfaces::msg::PlatformList`), keying
+  platforms by name and building one `Platform` per entry. `Platform.msg`
+  carries **`platform_namespace`** alongside `name`, and
+  `platform.cpp:107-108` already reads it. camp also already has an
+  **active-platform** concept: `PlatformManager::currentPlatform` →
+  `AutonomousVehicleProject::updateActivePlatform` →
+  `activePlatform()` (`mainwindow.cpp:105`, `autonomousvehicleproject.h:160`).
+  So Roland's recollection is right — `/marine/platforms` support is partially
+  present today, and it is enough to scope the tide anchor off. **This also
+  dissolves the frame-auto-discovery open question**: `platform_namespace`
+  composes directly into `<platform_namespace>/map_tide`, so no
+  "unique frame ending in map_tide" heuristic is needed at all.
 - `marine_colormap::BreakpointMap` (`lookup.hpp:267`) clamps every degenerate
   input and never throws; a break outside the domain is documented as the
   *ordinary* case. `PaletteDomain::shoreline_position` (`palette.hpp:56`) is
@@ -164,27 +182,41 @@ shift matters *only* because it moves the break. So anchor the palette's
 identical to shifting the field and breaking at 0.0, with no texture rewrite and
 **no shader change**.
 
-**D3 — Anchor sources, precedence, and the default.** The anchor is a plain
-`std::optional<double>` from a pluggable source. Precedence when a layer's mode
-is "automatic":
+**D3 — Anchor sources: a fallback *order*, and separately a *default*.** These
+are two different things and conflating them is how a fallback silently becomes
+a policy. The anchor is a plain `std::optional<double>` written by a pluggable
+source.
+
+*Fallback order* (what happens when the active source yields nothing):
 
 | # | Source | Answers | Nature |
 |---|---|---|---|
-| 1 | **Chart datum** (`marine_vertical_datum`, Phase C) | *"Is this land or water on the chart? What do charted soundings say?"* | Spatially varying surface; **static in time** |
-| 2 | **`map_tide`** (Phase B) | *"How much water is over it right now?"* — the under-keel picture | Single measured scalar at the vessel; moves with the tide |
+| 1 | **Chart datum** (`marine_vertical_datum`, Phase C) | *"Is this land or water on the chart? What do charted soundings say?"* | Spatially varying surface; static in time; **a property of the location** |
+| 2 | **A platform's `map_tide`** (Phase B) | *"How much water is over it right now?"* — the under-keel picture | Single measured scalar at one vessel; moves with the tide; **a property of a vehicle** |
 | 3 | **Manual** operator value (Phase A) | Operator's own number, per region | Always available, zero dependencies |
 | 4 | **None** | — | Render unanchored + say so |
 
-**Chart datum is the default; `map_tide` is an operator-selectable adjustment,
-off by default, with permanent on-screen indication while active.** That is not
-an arbitrary pick — it is the S-98 Edition 2.0.0 Appendix D model the vision
-itself endorses: Water Level Adjustment is *"an operator-selectable function —
-off by default, with permanent on-screen indication while active"*. It is also
-the more defensible engineering choice: chart datum is a **surface**, correct
-across a wide display, and stable so colours do not drift over a survey day,
-whereas `map_tide` is one scalar (see D4). Both are offered as a selectable mode
-because they answer genuinely different questions, and for a nearshore survey
-among rocks the under-keel question is the live one.
+*Default active source*: **chart datum.** Not merely first in the chain — the
+mode a layer starts in. Switching to a platform's tide must be easy (a mode
+selector on the layer, one click), but it is a deliberate operator act, shown
+on screen while active.
+
+**The decisive reason is multi-platform ambiguity, and it is not visible in the
+code today.** `map_tide` is **per-platform** — the frame is `<ns>/map_tide`.
+With one platform on the graph "the tide" reads as unambiguous; with two it is
+not, and the display would have to decide *whose* tide it tracks. Chart datum
+has no such ambiguity: it is a property of the location, not of a vehicle. A
+display-wide reference that silently depends on which boat happens to be up is
+a latent correctness bug, not just an ergonomic wrinkle. This argument is
+independent of, and stronger than, the S-98 one.
+
+The **S-98 Ed. 2.0.0 Appendix D** reading (which the vision doc itself endorses)
+independently agrees and is worth keeping as corroboration: Water Level
+Adjustment is *"an operator-selectable function — off by default, with permanent
+on-screen indication while active"*. Two unrelated lines of reasoning landing on
+the same default is a good sign. A third: chart datum is a **surface**, correct
+across a wide display, and static, so colours do not drift over a survey day
+(D4).
 
 **D4 — `map_tide` is the measured-local tier and is one number.** It is not a
 surface. Over a display spanning Boston to the Isles of Shoals, one value is
@@ -206,9 +238,27 @@ pushes a value in. This is the specific thing that was rejected, and the design
 must be structurally incapable of it — which the ADR-0002 boundary already
 enforces, since `libcamp_map` cannot link PROJ.
 
-## Approach — three phases, three stacked PRs
+**D7 — The tide source is platform-scoped from day one.** The source is
+*"platform X's `map_tide`"*, never *"the `map_tide` frame"*, **even while only
+one platform exists**. A single-platform assumption baked in now is a rework
+later, and D3's whole rationale is that the ambiguity is real. The selector key
+is `Platform.msg::platform_namespace`, which composes directly into
+`<platform_namespace>/map_tide` — so the platform identity and the frame name
+are the same fact, not two things to keep in sync. The selector hangs off
+camp's **existing** `/marine/platforms` enumeration and its existing
+`activePlatform()` concept (see Ground truth); this plan adds **no** platform
+enumeration, no view-locking, and no new platform UI — that is Roland's
+not-yet-opened camp work and is explicitly out of scope. What is honest today:
+default the tide source to the **active platform**, fall back to the sole
+platform when exactly one is present, and when neither resolves, report
+*"no platform selected"* on screen rather than silently picking one. If a
+richer selector is wanted, it belongs in that unopened work, and this design
+will consume it without change because the key is already
+`platform_namespace`.
 
-### Phase A — anchoring mechanism + manual anchor (PR1; ROS-free, no boat, no grids)
+## Approach — three phases, stacked PRs (note the PR order is not the phase order)
+
+### Phase A — anchoring mechanism + manual anchor (**PR1**; ROS-free, no boat, no grids)
 
 Fixes the reported symptom on its own and is fully verifiable headlessly.
 
@@ -240,7 +290,7 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    *correct*, and `marine_colormap_widgets` needs no change. Add a readout label
    naming the active anchor **and its source** (S-98's "permanent indication").
 
-### Phase B — `map_tide` anchor (PR2; crosses the ROS boundary; sim-verifiable now)
+### Phase B — platform-scoped `map_tide` anchor (**PR3**; crosses the ROS boundary; sim-verifiable)
 
 5. **`src/camp_map/raster/shoreline_anchor.{h,cpp}` (new, ROS-free).** A small
    `QObject` holding `std::optional<double> value` + a source enum + a
@@ -253,17 +303,21 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    `QTimer`-driven, does `lookupTransform(map_frame, tide_frame,
    TimePointZero).translation.z`, writes the anchor holder. Copies
    `bathymetry_layer`'s guards: reject `map_frame == tide_frame`; never accept a
-   default 0.0; publish only past a 0.1 m threshold. Frames from `QSettings`
-   (`SeaSurface/map_frame`, `SeaSurface/tide_frame`), and when unset
-   auto-discovered from the buffer's frame list (a unique frame ending in
-   `map_tide` plus its sibling `map`) — the real frames are namespaced
-   (`bizzy/map_tide`, `<ns>/map_tide` in sim) and no operator will hand-edit
-   QSettings before a survey. Ambiguous or absent → no tide, reported honestly.
-7. **Per-layer anchor mode + status.** Mode selector (Auto / Chart datum / Tide
-   / Manual / None) with the D3 precedence under Auto. On `changed()` the layer
+   default 0.0; publish only past a 0.1 m threshold. **Frames are derived from
+   the selected platform, not discovered** (D7): the tracker is handed a
+   `platform_namespace` and builds `<ns>/map_tide` and `<ns>/map` from it. The
+   previous plan's "unique frame ending in `map_tide`" heuristic is **dropped** —
+   `/marine/platforms` already carries the authoritative namespace, and a
+   heuristic that guesses wrong with two vehicles up is exactly the ambiguity
+   D3 exists to remove. No platform selected → no tide, reported honestly.
+
+7. **Per-layer anchor mode + status.** Mode selector (Chart datum [default] /
+   Platform tide → *which platform* / Manual / None), with the D3 fallback order
+   applied beneath whichever mode is active. On `changed()` the layer
    records the value, drops `cached_image_`, requests a repaint. `GggsTileLayer`
    reports through **`updateStatus()`** — camp#195's single composer — as a new
-   *part* naming the active source, never a direct `setStatus()`. Nothing
+   *part* naming the active source **and, for tide, the platform**, never a
+   direct `setStatus()`. Nothing
    publishes model state from inside `paint()`: `renderImage()` only records the
    anchor it used; composition and `setStatus()` happen in the `changed()` slot,
    outside paint (`MapItem::setStatus` → `Map::updateDisplay` → `dataChanged`).
@@ -275,7 +329,7 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    modelled amplitude. A tide cycle that took half a day to observe on the water
    takes seconds here.
 
-### Phase C — chart-datum anchor (PR3; the capability CAMP wants anyway)
+### Phase C — chart-datum anchor (**PR2**; the default source, and the capability CAMP wants anyway)
 
 9. **`src/camp/chart_datum_provider.{h,cpp}` (new, in the `camp` app — not
    `libcamp_map`).** Links `marine_vertical_datum` directly (there is no service
@@ -294,11 +348,14 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
     readout change lands in PR3 or a sibling PR is an open question — the
     provider must at minimum be *shaped* to serve it.
 
-### Phase D — record the decisions (lands with PR1)
+### Phase D — record the decisions (lands with **PR1**)
 
 11. **`docs/decisions/0015-anchored-topo-bathy-lut.md`.** Records: the
     `BreakpointMap`-in-the-bake seam; the `shoreline_position` gate; the
-    source-agnostic anchor with D3's precedence and the S-98-derived default;
+    source-agnostic anchor with D3's fallback order and, separately, the
+    chart-datum **default** — recording the multi-platform-ambiguity argument as
+    the primary reason and S-98 Appendix D as corroboration; D7's
+    platform-scoped tide source;
     D1's deliberate departure from GeoZui4D; D4's scalar-vs-surface asymmetry;
     D5's fallback contract; D6's no-datum-in-the-render-path rule and the
     ADR-0002 boundary that enforces it. **Explicitly amends camp ADR-0008
@@ -318,18 +375,19 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
 | `docs/decisions/0015-anchored-topo-bathy-lut.md` (new) | D | ADR per step 11 |
 | `docs/decisions/0008-adopt-marine-colormap-lut-bake.md` | D | Note D#2's range-independence is amended by ADR-0015 |
 | `src/camp_map/raster/shoreline_anchor.h/.cpp` (new) | B | ROS-free anchor holder: value + source + `changed()` |
-| `src/camp_map/ros/sea_surface_tracker.h/.cpp` (new) | B | TF poller, frame auto-discovery, `#220` guards, 0.1 m threshold |
-| `src/camp_map/raster/gggs_tile_layer.h/.cpp` | B | Anchor mode + precedence; `changed()` slot invalidates cache; status part inside `updateStatus()` |
+| `src/camp_map/ros/sea_surface_tracker.h/.cpp` (new) | B | TF poller scoped to a `platform_namespace`, `#220` guards, 0.1 m threshold |
+| `src/camp_map/raster/gggs_tile_layer.h/.cpp` | B | Anchor mode + fallback order; `changed()` slot invalidates cache; status part (source + platform) inside `updateStatus()` |
 | `src/camp_map/raster/raster_layer.h/.cpp` | B | Same wiring; status composed outside `paint()` |
-| `src/camp/chart_datum_provider.h/.cpp` (new) | C | `marine_vertical_datum` off-thread, region-cached, pushes anchor |
+| `src/camp/chart_datum_provider.h/.cpp` (new) | C | `marine_vertical_datum` off-thread, region-cached, pushes anchor (the DEFAULT source) |
 | `src/camp/autonomousvehicleproject.{h,cpp}`, `src/camp/projectview.cpp` | C | Readout served from the provider; retire the two `until the datum service (#288)` comments |
 | `package.xml` | C | `<depend>marine_vertical_datum</depend>` |
 | `CMakeLists.txt` | A/B/C | New sources into `camp_map` / `camp_map_ros` / `CCOMAutonomousMissionPlanner`; new gtests |
 | `test/test_anchored_lut.cpp` (new) | A | Anchor lands at `shoreline_position`; anchor outside range / at a boundary / zero-width range; non-topo-bathy palette byte-identical to today |
 | `test/test_raster_gl_renderer.cpp` | A | Anchored vs unanchored LUT bytes; range change re-bakes |
 | `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings |
-| `test/test_shoreline_anchor.cpp` (new) | B | D3 precedence ordering; D5 never-0.0; threshold suppression; invalid→valid transition |
+| `test/test_shoreline_anchor.cpp` (new) | B | D3 fallback ordering AND that the default active source is chart datum; D5 never-0.0; threshold suppression; invalid→valid transition |
 | `test/test_chart_datum_provider.cpp` (new) | C | `nullopt` on missing grids; region cache hit/miss; never called from the GUI thread |
+| `src/camp/platform_manager/platform_manager.h` | B | Expose the selected platform's `platform_namespace` to the tracker (read-only accessor; no new enumeration) |
 
 ## Principles Self-Check
 
@@ -338,7 +396,7 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
 | Capture decisions, not just implementations | ADR-0015 records all six decisions and amends ADR-0008 rather than quietly contradicting it |
 | A change includes its consequences | Two stale code comments + ADR-0008's amended sentence land in PR1; the colorbar is fixed, not annotated; Phase C retires the two `#288` comments it makes obsolete |
 | Test what breaks | Anchor placement + four degenerate cases; precedence ordering; never-0.0; the unanchored path proven byte-identical; sim gives an end-to-end oracle for both sources |
-| Only what's needed | No shader change; no `marine_colormap_widgets` change; no invented ROS service; datum work deferred to its own PR |
+| Only what's needed | No shader change; no `marine_colormap_widgets` change; no invented ROS service; no new platform enumeration or view-locking — the existing `/marine/platforms` model is consumed as-is |
 | Never document from assumptions | Three findings changed the design: the ROS-free `libcamp_map` boundary, `setLut()` already existing, and there being no datum service at all |
 | Report the degraded state; never fail silently | D5 + the status naming the active anchor source (also S-98's "permanent indication") |
 
@@ -351,6 +409,7 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
 | camp ADR-0008 (LUT bake) | Yes — **amended** | Consequence #1 structurally enforced (anchored path never calls `bake_lut`); Decision #2's range-independence explicitly superseded |
 | camp ADR-0009 (range dialog / colorbar) | Yes | Fixed, not deferred: `setLut()` makes the colorbar exact under an anchor, plus an anchor+source readout |
 | camp ADR-0014 / camp#195 (status composition) | Yes | Status via `updateStatus()`; nothing published from `paint()` |
+| camp platform model (`/marine/platforms`, `activePlatform()`) | Yes | The tide source hangs off the existing enumeration and active-platform concept; no parallel selector, no view-locking, no new platform UI (Roland's unopened work) |
 | uma ADR-0010 D5 (no `chart_datum` TF frame) | Yes | Honored: no `chart_datum` frame is created or consumed. A datum *value* computed in an operator tool is outside D5's navigation-loop scope — see the reconciliation above |
 
 ## Consequences
@@ -362,6 +421,8 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
 | `libcamp_map` gains an anchor concept | `SonarLiveCacheLayer` inherits it via the shared renderer; no anchor source and no `shoreline_position` on its palettes, so it is unaffected | Yes — stated, no wiring |
 | An external→map push channel appears | ADR-0002's one-directional claim stays true only because the holder is ROS-free and PROJ-free; say so in ADR-0015 | Yes |
 | CAMP gains a datum capability | camp#180's cursor readout should consume it; the two `until the datum service (#288)` comments become stale | Yes — Phase C step 10 |
+| The tide source becomes platform-scoped | camp's `PlatformManager` needs a read-only accessor for the selected platform's namespace; a richer selector belongs to Roland's unopened `/marine/platforms` work and this design consumes it unchanged | Yes — stated, minimal touch |
+| Chart datum becomes the DEFAULT source | Grid provisioning on the machine that runs CAMP is back in scope — it was moot only while the datum source was out of scope | Yes — open question, gates PR2 |
 | Anchored LUT + `Linear` LUT filtering | Break smears over ~1 texel; anchor quantizes to `(hi−lo)/255`. Fine at nearshore spans | Yes — documented; `Nearest` deferred unless the break must be crisp |
 
 ## Documentation & Instruction Impact
@@ -390,46 +451,80 @@ documented `speed_factor` for accelerating it. A full tide cycle can be
 exercised in ~12 seconds on this host, with `ellipsoid_to_mllw: -28.104` as an
 oracle. No boat is required to verify Phase B.
 
+**Re-sequencing, stated plainly rather than shuffled silently.** With chart
+datum as the *default active* source (D3), building it last would have shipped a
+default that does not exist — every layer would fall through to tide, making the
+"default" fictional and the fallback the de-facto policy. So **PR2 and PR3 swap:
+the chart-datum source comes before the tide source.** The coordinator's
+suspicion is correct.
+
+That reordering does **not** change what ships for Tuesday, and the reason is
+worth stating because it is the load-bearing part: **PR1's manual anchor already
+delivers the default's semantics.** For a single-region survey the number the
+operator types *is* the chart datum (−28.038 m at the Isles of Shoals, and the
+sim's own `ellipsoid_to_mllw: -28.104` agrees to 7 cm). PR1 is chart-datum
+anchoring done by hand; PR2 is the same thing done automatically and spatially.
+So the default is honoured from PR1 onward, and neither PR2 nor PR3 is required
+for Tuesday.
+
 - **PR1 (Phase A + D)** — achievable and verifiable by Monday. ROS-free, tested
-  headlessly. Gives a working manual anchor: the reported symptom fixed, one
-  number per region.
-- **PR2 (Phase B)** — writable and **sim-verifiable before Tuesday**. Should be
-  attempted for the survey, not deferred.
-- **PR3 (Phase C)** — the chart-datum source. Larger (PROJ, grids, a threading
-  model, a shared readout consumer) and **not** a Tuesday item. Deferring it
-  costs nothing operationally: under D3 the layer falls through to the tide
-  anchor, which is the more relevant question for a nearshore survey anyway.
+  headlessly, zero dependencies. **This is the Tuesday deliverable**: the
+  reported symptom fixed, one number per region, and that number is the chart
+  datum.
+- **PR2 (Phase C — chart-datum source, the default)** — post-survey. Larger
+  (PROJ, grids, a threading model, a shared readout consumer) and it re-opens a
+  provisioning question that was moot while the datum source was out of scope:
+  the grids must exist on the machine that runs CAMP. Correctness here is worth
+  more than speed; rushing a spatially-varying vertical reference before a
+  survey among rocks is the wrong trade.
+- **PR3 (Phase B — platform-scoped tide)** — post-survey, and **sim-verifiable
+  in an evening** whenever it is picked up: `speed_factor: 3600.0` runs a
+  12-hour cycle in ~12 s against `mru_transform_node`'s `<ns>/map_tide`. If
+  circumstances change and exactly one of PR2/PR3 can land before Tuesday, **PR3
+  is the one that fits** — it needs no grids and no provisioning, only the sim.
+  That is a contingency, not the recommendation.
 - **Narrowed residual risk**: the one thing sim cannot settle is whether
   `map_tide` survives the bridge **to the ROC machine specifically**. `/tf` and
   `/tf_static` are bridged (`bizzyboat.yaml:312-313`) but this is unconfirmed on
   the operator box, and the ROC CAMP rebuild is separately owed. If it does not
   arrive there, PR1's manual anchor still works with zero dependencies — which
-  is the reason PR1 leads.
+  is the reason PR1 leads regardless of how PR2/PR3 are ordered.
 
 ## Open Questions
 
+- [ ] **Are the VDatum/geoid grids present on the machine that runs CAMP?**
+      Back in scope now that chart datum is the default (it was moot while the
+      datum source was out of scope). Gates PR2. The `world/datum/{geoid,vdatum}`
+      layout is confirmed on this dev host only.
 - [ ] **Is `map_tide` visible to CAMP's TF buffer on the ROC machine?** `/tf` is
       bridged (`bizzyboat.yaml:312`) but unconfirmed on the operator box. Needs
-      one `tf2_echo <prefix>/map <prefix>/map_tide` there. Sim covers everything
-      else about PR2, so this is the only field-side unknown.
-- [ ] **Confirm D3's default**: chart datum as the default with `map_tide` as an
-      operator-selectable adjustment (S-98 Appendix D's model). The alternative —
-      tide as default, since under-keel clearance is the live question among
-      rocks — is defensible and is a one-line change.
-- [ ] **Phase C scope**: does PR3 also convert camp#180's cursor readout to the
-      new provider (retiring both `#288` comments), or does the readout follow in
-      a sibling PR? The provider must be *shaped* to serve it either way.
-- [ ] **Frame auto-discovery policy**: "unique frame ending in `map_tide`" vs.
-      requiring an explicit configured pair. Auto-discovery is friendlier before a
-      survey; explicit is safer with two vehicles (`bizzy`, `izzy`) on one graph.
+      one `tf2_echo <ns>/map <ns>/map_tide` there. Sim covers everything else
+      about PR3, so this is the only field-side unknown for the tide path.
+- [ ] **Does the tide anchor's platform selector belong here or in Roland's
+      unopened `/marine/platforms` work?** This plan scopes it to "the active
+      platform, else the sole platform, else say none" using the existing
+      enumeration and a read-only namespace accessor. If a first-class selector
+      (or view-locking) is wanted, it belongs in that work and this design
+      consumes it unchanged — the key is already `platform_namespace`.
+- [ ] **Phase C scope**: does PR2 also convert camp#180's cursor readout to the
+      new provider (retiring both `until the datum service (#288)` comments), or
+      does the readout follow in a sibling PR? The provider must be *shaped* to
+      serve it either way.
 - [ ] **Confirm D1** — uniform shift rather than GeoZui4D's below-surface-only
       asymmetry. It makes displayed land elevation anchor-dependent; the
       alternative opens a ~28 m discontinuity at the shoreline in our frame.
 
+**Resolved since the last version**: the anchor default (chart datum, on D3's
+multi-platform argument) and frame auto-discovery (dissolved — `/marine/platforms`
+carries `platform_namespace`, so no heuristic is needed).
+
 ## Estimated Scope
 
-Three stacked PRs. **PR1 = Phase A + D** (mechanism, manual anchor, colorbar
-fix, ADR, stale comments) — self-contained, headlessly testable, the Tuesday
-deliverable. **PR2 = Phase B** (`map_tide` anchor, TF tracker, status wiring) —
-sim-verified, targeted at Tuesday. **PR3 = Phase C** (chart-datum source via
-`marine_vertical_datum`, shared with camp#180's readout) — post-survey.
+Three stacked PRs, **in this order**: **PR1 = Phase A + D** (mechanism, manual
+anchor, colorbar fix, ADR, stale comments) — self-contained, headlessly
+testable, the Tuesday deliverable and already chart-datum-anchoring by hand.
+**PR2 = Phase C** (chart-datum source via `marine_vertical_datum`, the default
+active source, shared with camp#180's readout) — brought forward from last in
+the previous plan, because a default built last is not a default. **PR3 = Phase
+B** (platform-scoped `map_tide` anchor, TF tracker, status wiring) — sim-verified
+whenever picked up.
