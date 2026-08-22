@@ -53,10 +53,15 @@ std::string canonicalName(const QString& stored)
 
 // The colormap context menus are built from palette_names(): pin the full exposed
 // registry so a palette add/rename/reorder is a deliberate, visible change.
-TEST(Colormap, RegistryIsTheFullSix)
+//
+// Grew from six to eight when marine_colormap#15 added the two topo-bathy ramps.
+// That is exactly the deliberate, visible change this test exists to surface:
+// both now appear in every scalar layer's Colormap menu.
+TEST(Colormap, RegistryIsTheFullSet)
 {
   const std::vector<std::string> expected = {
-    "grayscale", "bronze", "thermal", "viridis", "turbo", "quality"};
+    "grayscale", "bronze", "thermal", "viridis", "turbo", "quality",
+    "oleron", "hypsometric"};
   EXPECT_EQ(marine_colormap::palette_names(), expected);
 }
 
