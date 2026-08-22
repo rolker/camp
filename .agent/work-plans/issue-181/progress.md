@@ -112,3 +112,58 @@ bounded plan amendments (not a redesign) plus one pre-Monday provisioning check.
 - [ ] (suggestion) `web_mercator::mapToGeo()` already exists — drop the "confirm/add an inverse helper" hedge and the `web_mercator.h/.cpp` row from Files to Change — `plan.md:225`
 - [ ] (suggestion) The "new precedent" framing on `~/data/world/datum/` is not quite right: `enc_updater`'s `config/region_example.yaml:68,76` already carries exactly these two paths as config values. The precedent is operator-visible config, which QSettings matches — cite it rather than claiming no prior art — `plan.md:58-61, 277-282`
 - [ ] (suggestion) Minor: the LUT texture is 256×1 with `Linear` min/mag filtering, so a hard shoreline discontinuity smears across ~1 texel and the pivot quantizes to `(hi-lo)/255`. Fine at nearshore spans; note it, and consider `Nearest` LUT filtering if the break must be crisp — `plan.md:65-104`
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:06 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `b94a7d4`
+**Branch**: feature/issue-181 at `b94a7d4`
+**Phases**: two stacked PRs (PR1 = anchoring mechanism + manual anchor + colorbar fix + ADR; PR2 = tide-linked anchor via TF)
+
+**This entry supersedes the `## Plan Authored` entry of 2026-08-22 18:51 and
+the plan committed at `56ac199`.** That plan built a `chart_datum_service`
+querying VDatum once per render to compute a per-region chart-datum pivot. The
+operator directed a redesign at the run-issue checkpoint because it contradicts
+`docs/vision.md` on `feature/issue-12` of `rolker/marine_colormap` (PR mc#14,
+unmerged), which states that there is no `chart_datum` runtime frame (uma
+ADR-0010 D5), that datum conversion happens at import via
+`marine_vertical_datum`, and that breakpoints are constants in the chosen
+frame — express the field relative to `map_tide` and the shoreline break is
+0.0. The rewritten plan drops VDatum/PROJ/grids entirely and reads the anchor
+from the `map_tide` frame. The `BreakpointMap`-in-the-LUT-bake mechanism from
+the old plan survives unchanged; only the source of the anchor value changed,
+which deletes the GUI-thread PROJ stall, the `~`-expansion bug and the
+grid-provisioning gate along with it.
+
+Ground-truth corrections found while replanning, both of which changed the
+design:
+
+- `sea_surface_estimator` is a node inside `mru_transform`, not a missing
+  package. `/tf` is bridged to the operator station, so `map_tide` is
+  reachable from CAMP when the boat is up (unverified on the ROC machine).
+- **The handoff's claim that the raster layers can call TF is wrong.**
+  `RasterLayer`/`GggsTileLayer`/`RasterGlRenderer` live in `libcamp_map`,
+  declared ROS-free with a one-directional boundary (ADR-0002,
+  `CMakeLists.txt:239`), and derive from `map::Layer`, not `camp::ros::Layer`.
+  The anchor must be pushed in from `camp_map_ros` through a ROS-free holder,
+  not pulled by the layers.
+- `ColormapLegendWidget::setLut()` already exists, so the ADR-0009 colorbar
+  problem is a three-line fix (the colorbar becomes exact under an anchor)
+  rather than the "show a value, document the gap" mitigation the plan review
+  settled for.
+
+All four surviving Plan Review must-fixes are carried: status through
+`GggsTileLayer::updateStatus()`; no model updates inside `paint()`;
+Documentation Impact corrected (ADR-0008 D#2 amended plus two stale code
+comments land in this PR); the colorbar fixed. The provisioning must-fix is
+re-pointed from VDatum grids to "is `map_tide` actually visible on the ROC
+machine", which is now an open question gating PR2.
+
+### Open questions
+- [ ] Is `map_tide` visible to CAMP's own TF buffer on the ROC machine? Needs a `tf2_echo` before PR2 can be trusted; if not, PR1's manual anchor is the whole feature.
+- [ ] Confirm the PR1-first sequencing given Tuesday 2026-08-25, or whether PR2 should be attempted regardless of the verification gap.
+- [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. requiring an explicit configured frame pair (two vehicles, bizzy and izzy, can share one graph).
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry. Uniform shift makes displayed land elevation tide-dependent; the asymmetry would open a ~28 m discontinuity at the shoreline in our ellipsoidal frame.
+- [ ] Schedule honesty: PR1 is achievable and verifiable by Monday; PR2 is writable but not safely verifiable before Tuesday (needs the owed ROC CAMP rebuild plus a live boat).
