@@ -239,3 +239,82 @@ decision with its ~28 m-discontinuity reasoning.
 - [ ] Phase C scope: does PR3 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or does that follow in a sibling PR?
 - [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. an explicit configured pair (bizzy and izzy can share one graph).
 - [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:26 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `3a276f2`
+**Branch**: feature/issue-181 at `3a276f2`
+**Phases**: three stacked PRs — PR1 = Phase A+D (mechanism + manual anchor + colorbar fix + ADR); **PR2 = Phase C (chart-datum source, the default)**; PR3 = Phase B (platform-scoped tide)
+
+**Supersedes the `## Plan Authored` entry at `32812ce` earlier today.** The
+operator settled the anchor-default open question and the consequences reshaped
+the sequencing.
+
+**Decision: chart datum is the default; switching to a platform's tide is one
+click.** The decisive reason is one not visible in the code and now recorded in
+both the plan and the ADR: **`map_tide` is per-platform**. With one platform up
+"the tide" reads as unambiguous; with two, the display would have to decide
+*whose* tide it tracks. Chart datum is a property of the **location**, not of a
+vehicle, so it has no such ambiguity. A display-wide vertical reference that
+silently depends on which boat happens to be up is a latent correctness bug, not
+an ergonomic wrinkle. This argument is independent of — and stronger than — the
+S-98 Appendix D reasoning from the previous version, which is kept as
+corroboration (two unrelated lines of reasoning reaching the same default).
+
+The plan now **distinguishes the fallback *order* from the *default active
+source*** (D3), which the previous version conflated. Order stays chart datum >
+platform tide > manual > none; chart datum is additionally the mode a layer
+starts in.
+
+**New decision D7 — the tide source is platform-scoped from day one**, i.e.
+"platform X's `map_tide`", never "the `map_tide` frame", even while only one
+platform exists. Checked camp before designing a selector, and **Roland's
+recollection was right**: `/marine/platforms` support is already present.
+`platform_manager.cpp:25` subscribes to `/marine/platforms`
+(`marine_interfaces::msg::PlatformList`); `Platform.msg` carries
+`platform_namespace` and `platform.cpp:107-108` already reads it; and camp
+already has an active-platform concept (`PlatformManager::currentPlatform` →
+`AutonomousVehicleProject::updateActivePlatform` → `activePlatform()`,
+`mainwindow.cpp:105`). So the selector hangs off the existing enumeration with
+a read-only namespace accessor — **no parallel selector, no view-locking, no new
+platform UI**; that stays Roland's unopened work, and this design consumes a
+richer selector unchanged because the key is already `platform_namespace`.
+
+**This dissolved a prior open question**: the "unique frame ending in
+`map_tide`" auto-discovery heuristic is dropped outright. `platform_namespace`
+composes directly into `<platform_namespace>/map_tide`, so platform identity and
+frame name are the same fact. A heuristic that guesses wrong with two vehicles up
+is precisely the ambiguity the default exists to remove.
+
+**Re-sequencing — PR2 and PR3 swap.** With chart datum as the default, building
+it last would have shipped a default that does not exist: every layer would fall
+through to tide, making the "default" fictional and the fallback the de-facto
+policy. So the chart-datum source moves ahead of the tide source. **This does not
+change what ships for Tuesday**, and that is the load-bearing point: PR1's manual
+anchor already delivers the default's semantics, because for a single-region
+survey the number the operator types *is* the chart datum (−28.038 m at the
+Shoals; the sim's `ellipsoid_to_mllw: -28.104` agrees to 7 cm). PR1 is
+chart-datum anchoring done by hand; PR2 is the same thing done automatically and
+spatially. Neither PR2 nor PR3 is needed for Tuesday. Contingency recorded: if
+exactly one of them could land early, PR3 is the one that fits, needing only the
+sim and no grids — stated as a contingency, not the recommendation.
+
+**One open question reinstated**: VDatum/geoid grid provisioning on the machine
+that runs CAMP. It was dropped as moot when the datum source left scope; with
+chart datum as the default it gates PR2.
+
+Everything else carried forward: the `BreakpointMap`-in-the-LUT-bake mechanism;
+the ROS-free `libcamp_map` boundary (ADR-0002 — sources push, layers never
+pull); `ColormapLegendWidget::setLut()` as a real colorbar fix; there being no
+datum service to call (uma#288 is storage layout); the four surviving Plan Review
+must-fixes; and uniform-shift (D1) with its ~28 m-discontinuity reasoning.
+
+### Open questions
+- [ ] Are the VDatum/geoid grids present on the machine that runs CAMP? Reinstated; gates PR2 now that chart datum is the default.
+- [ ] Is `map_tide` visible to CAMP's TF buffer on the ROC machine? One `tf2_echo` there; sim covers everything else about PR3.
+- [ ] Does the tide anchor's platform selector belong here or in Roland's unopened `/marine/platforms` work? Scoped here today as "active platform, else sole platform, else say none".
+- [ ] Phase C scope: does PR2 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or a sibling PR?
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
