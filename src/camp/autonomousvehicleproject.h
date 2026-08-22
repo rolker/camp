@@ -83,8 +83,11 @@ public:
     // needs no bookkeeping and can't dangle) and consults only ENABLED
     // (Layers-tab-checked / isVisible()) stores, mirroring ADR-0003 §2's
     // enabled-layer contract for getDepth. Kept separate from getDepth() because
-    // store values are ellipsoidal heights, not chart-datum depths — distinct
-    // labels until the datum service (#288).
+    // store values are ellipsoidal heights, not chart-datum depths — hence the
+    // distinct labels. Reducing them to chart datum is not wired up yet; when it
+    // is, CAMP links the ROS-free marine_vertical_datum library (uma-ADR-0010 D6),
+    // which names CAMP as an intended consumer. Tracked by camp#181. There is no
+    // datum service and D6 says there should not be one.
     float getStoreElevation(QGeoCoordinate const &location) const;
     MissionItem *potentialParentItemFor(std::string const &childType);
 

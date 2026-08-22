@@ -211,9 +211,11 @@ void ProjectView::mouseMoveEvent(QMouseEvent *event)
 
     // [camp#180] GGGS store layers report ellipsoidal up-positive elevation, not
     // chart-datum depth. Query stores first (they take precedence) and label the
-    // value distinctly so the operator can tell the two datums apart until the
-    // datum service (#288). Both labels can appear when a store and a depth chart
-    // overlap the cursor.
+    // value distinctly so the operator can tell the two datums apart. Chart-datum
+    // reduction is not wired up yet; when it is, it comes from linking the
+    // ROS-free marine_vertical_datum library (uma-ADR-0010 D6), not from a datum
+    // service — D6 deliberately specifies a library. Tracked by camp#181. Both
+    // labels can appear when a store and a depth chart overlap the cursor.
     const float elevation = m_project->getStoreElevation(llMouse);
     if(!std::isnan(elevation))
         posText += " Elev: " + QString::number(elevation) + " (ellipsoid)";
