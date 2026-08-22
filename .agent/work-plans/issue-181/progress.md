@@ -63,3 +63,18 @@ issue: 181
   matches `shoreline_position`; degenerate cases — pivot outside the data
   range, pivot at/near a data-range boundary, zero-width range) alongside
   whatever `RangeModel`/dialog tests already exist (`test_range_persist`).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 18:51 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `56ac199`
+**Branch**: feature/issue-181 at `56ac199`
+**Phases**: single PR, internally sequenced (pure LUT-bake helper -> renderer wiring -> datum-service/fallback wiring -> ADR + follow-up issue)
+
+### Open questions
+- [ ] Polygon overrides / `lake_datum` deferred (VDatum-only) — confirm acceptable for Tuesday's survey area, or fast-follow if inland/estuarine fringe is in scope.
+- [ ] `~/data/world/datum/` QSettings-defaulted grid paths are a new precedent (no existing consumer defaults to this path) — confirm intended, or require explicit one-time settings entry.
+- [ ] `test_chart_datum_service.cpp` fixture approach (real small VDatum grid fixture vs. manual-exercise-only for the PROJ-dependent path) — decide during implementation; the nullopt-on-missing-grids path is unit-testable regardless.
+- [ ] Rebake-on-every-pan-tick cost is unmeasured — land the simple form, add a coarse-grid pivot-query threshold only if manual exercise shows visible cost.
