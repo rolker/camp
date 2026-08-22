@@ -4,310 +4,295 @@
 
 https://github.com/rolker/camp/issues/181
 
-## Scope decision (overrides Issue Review recommendation)
+## Replan notice — this supersedes the plan committed at `56ac199`
 
-The Issue Review recommended scoping to an interim constant per-layer pivot,
-decoupled from `unh_marine_autonomy#288`. **The operator explicitly chose full
-scope instead: automatic per-region chart-datum pivot**, at the run-issue
-checkpoint. This plan builds that. Where a piece of full scope cannot be
-verified in time for the 2026-08-25 survey, that is called out in Open
-Questions rather than silently narrowed.
+The previous plan built a `chart_datum_service` that queried VDatum **at
+runtime, per render**, to compute a per-region chart-datum pivot. The operator
+directed a redesign at the `/run-issue` checkpoint because that contradicts the
+project's colormap vision (`docs/vision.md` on `feature/issue-12` of
+`rolker/marine_colormap`, PR mc#14, unmerged). Verbatim from it:
 
-`unh_marine_autonomy#288` (relocating grid storage to `world/`) is **not** a
-blocker — the grids already live at their #288-decided location
-(`~/data/world/datum/{geoid,vdatum}/`, confirmed present on this dev host)
-regardless of whether #288's updater/materialization work has landed.
+- *"There is no `chart_datum` runtime frame, and that is a decision, not an
+  omission."* (uma ADR-0010 D5 removes it.)
+- *"Datum conversion happens **at import**, through the ROS-free
+  `marine_vertical_datum` library, not at runtime."*
+- *"Breakpoints are constants in the chosen frame. Express the field relative to
+  `map_tide` and the shoreline break is 0.0 ... permanently."*
+- *"The transform is where the tide-awareness lives, applied once, upstream."*
 
-## Context (confirmed this session)
+So: **no runtime datum service, no VDatum, no PROJ, no grids, no per-region
+query.** The anchor is the sea surface, read from the `map_tide` frame. The
+whole `chart_datum_service` step, the `~`-expansion bug, the grid-provisioning
+question and the GUI-thread PROJ stall are dropped as moot.
 
-- Root cause confirmed by reading `raster_layer.cpp`: `RangeModel::update_auto`
-  (called from `imageReady()` and `resetRangeToAuto()`) stretches the palette
-  linearly over `[data_min_, data_max_]` with no anchor. `oleron`/`hypsometric`
-  are already in the colormap picker (`raster_layer.cpp:535`,
-  `marine_colormap::palette_names()`) but nothing in camp ever reads
-  `Palette::domain()->shoreline_position`, so the baked shoreline color lands
-  wherever the data span happens to put it.
-- The anchoring primitive already exists and is already tested upstream:
-  `marine_colormap::BreakpointMap(lo, hi, breaks)` (`lookup.hpp`) maps a data
-  value onto normalized `[0,1]` through one or more anchored breaks, clamps
-  degenerate input, and never throws. `marine_colormap/test/test_lookup.cpp`
-  already covers its degenerate cases (break outside domain, at a boundary,
-  zero-width domain) — camp's tests do not need to re-prove that math, only
-  that camp wires it correctly.
-- The shared render path (`RasterGlRenderer`, ADR-0007) is the single seam:
-  `ensureLut()` bakes a 256×1 LUT from `marine_colormap::bake_lut(palette,
-  TransferParams{}, 256)`; the fragment shader linearly normalizes
-  `(v - u_min)/(u_max - u_min)` and samples the LUT. `RasterLayer`,
-  `GggsTileLayer`, and `SonarLiveCacheLayer` all share one `RasterGlRenderer`
-  instance per layer and this one `ensureLut()`.
-- The full-form pivot *source* already exists too:
-  `marine_vertical_datum::make_vdatum_query()` (ROS-free, PROJ-backed, built
-  once and reused per point) plus `marine_vertical_datum::resolve_datum()`
-  (`datum_config.hpp`), which layers VDatum → polygon overrides →
-  `lake_datum` param → **`nullopt`** with the exact precedence chart_datum_node
-  already uses in production. `resolve_datum()` returning `nullopt` for "no
-  in-datum data" is not a gap to work around — it is this library's designed
-  fallback signal, and it is what tonight's 3-of-80 ENC export failures hit.
-  CAMP's job is to handle that `nullopt` honestly (see Fallback below), not to
-  invent a fallback value.
-- `camp` already depends on `marine_autonomy` (the `unh_marine_autonomy`
-  metapackage), so `core_ws` is already an underlay for `ui_ws` — adding
-  `marine_vertical_datum` as a new `<depend>` is not a new layering
-  relationship.
-- Grids on this dev host: `~/data/world/datum/geoid/us_noaa_g2018u0.tif` +
-  `~/data/world/datum/vdatum/MENHMAgome23_8301_*.gtx`. No consumer in the
-  workspace currently defaults to this path — `import_geotiff`/`s102_import`
-  require explicit `--geoid`/`--vdatum-dir`. CAMP will be the first consumer
-  to default to it (Decision 4 below).
+The mechanism the old plan chose — `BreakpointMap` anchoring inside the LUT
+bake — survives unchanged and is still right. Only the **source of the anchor
+value** changes, and that change deletes most of the risk.
 
-## Approach
+## Ground truth (verified this session by reading source, not assumed)
 
-### 1. Pure pivot-bake helper (no GL, no I/O) — lands first, fully unit-testable
+- **`sea_surface_estimator` exists** — it is a node inside `mru_transform`, not
+  its own package: `layers/main/platforms_ws/src/mru_transform/mru_transform/nodes/sea_surface_estimator.cpp`.
+  It publishes `map → map_tide` with `sea_surface_frame` defaulting to
+  `map_tide`. That resolves the handoff's "could not find it" flag.
+- **The `map_tide` read pattern is settled**, in `bathymetry_layer.cpp:653-672`:
+  `lookupTransform(map_frame, map_tide_frame, TimePointZero).transform.translation.z`
+  is the sea-surface **ellipsoidal** height, because `map`'s z=0 is the WGS84
+  ellipsoid — the same datum the depth stores use. Its guard rails are worth
+  copying wholesale: refuse when `map_frame == map_tide_frame` (the #220
+  degenerate self-lookup that read a whole survey as LETHAL), never treat the
+  default 0.0 as a valid surface, and re-render only when the tide moves more
+  than `tide_invalidate_threshold` (0.1 m, chosen to clear ~±0.02 m estimator
+  jitter).
+- **`/tf` and `/tf_static` are bridged to the operator station** over udp_bridge
+  (`bizzyboat_project11/config/bizzyboat.yaml:312-313`), so `map_tide` is
+  reachable from CAMP at the ROC *when the boat is up*. Whether it is actually
+  present on the ROC machine on Tuesday is a verification item, not an
+  assumption — see Open Questions.
+- **CORRECTION to the handoff — the raster layers cannot call TF.** camp does
+  own a `tf2_ros::Buffer` (`src/camp/ros/node_thread.h`, `camp_map/ros/layer.cpp`),
+  but `RasterLayer`, `GggsTileLayer` and `RasterGlRenderer` all live in
+  **`libcamp_map`, which CMakeLists.txt:239 declares "pure Qt/GDAL (ROS-free)"**
+  with the boundary "verified one-directional: the src/camp_map core has zero
+  ROS includes" (ADR-0002). `GggsTileLayer`/`RasterLayer` derive from
+  `map::Layer`, **not** `camp::ros::Layer`, so they have no `node_`. A TF call
+  inside them would breach the layering AND make the existing headless GL tests
+  (`test_gggs_render.cpp`, `test_gggs_band_select.cpp`) host-dependent. The
+  anchor value must therefore be **pushed in** from the ROS side, not pulled.
+- `marine_colormap::BreakpointMap` (`lookup.hpp:267`) clamps every degenerate
+  input and never throws; a break outside the domain is documented as the
+  *ordinary* case. `PaletteDomain::shoreline_position` (`palette.hpp:56`) is
+  "metres, positive up", matching the stores' ellipsoidal up-positive heights —
+  so the anchor value is directly comparable with no sign flip. `oleron`/
+  `hypsometric` carry it; the other four palettes do not.
+- `ColormapLegendWidget::setLut()` **already exists**
+  (`colormap_legend_widget.hpp:65`) and overrides the linear palette sampling at
+  `colormap_legend_widget.cpp:185`. The colorbar correctness problem is
+  therefore a three-line *fix*, not a documented gap.
+- `web_mercator::mapToGeo()` already exists (`web_mercator.h:28`) — but under
+  this design nothing needs it.
 
-Add `src/camp_map/raster/pivoted_lut.{h,cpp}`:
+## Design decisions this plan makes explicitly
 
-```cpp
-// Bake `palette` into an n-entry RGBA8 LUT whose entry i corresponds to the
-// SAME linear position the shader's (v - lo)/(hi - lo) normalize would
-// produce for i/(n-1), but re-expressed through `pivot` so the palette's
-// shoreline_position lands at the pivot's data value instead of at whatever
-// t the raw span put it at. `pivot` absent => plain palette_sample(i/(n-1))
-// (today's behavior, unpivoted).
-std::vector<marine_colormap::Rgba8> bake_pivoted_lut(
-  const marine_colormap::Palette& palette,
-  float lo, float hi, std::optional<float> pivot_value, std::size_t n);
-```
+**D1 — Uniform shift, not GeoZui4D's asymmetry.** The vision quotes
+`gutm.cpp` shifting only submerged terrain and leaving emergent terrain at its
+datum-referenced elevation. **This PR does not implement that asymmetry, and the
+reason is our frame.** GeoZui4D's land branch works because its land heights are
+datum-referenced with 0 at the datum. Ours are **ellipsoidal**: land at the
+waterline near Portsmouth is ≈ −28 m. Keeping `h` for land and `h − S` for water
+would open a ~28 m discontinuity exactly at the shoreline — the opposite of what
+this issue asks for. A uniform shift makes 0.0 the shoreline everywhere and
+keeps the field continuous. Its cost is that a hill's *displayed* height moves
+with the tide by the tidal range (±~1.5 m out of tens of metres). Accepted, and
+recorded in the ADR; the asymmetry becomes correct only once the field carries
+orthometric land elevations, which is future work, not this PR.
 
-Implementation: when `pivot_value` and `palette.domain()->shoreline_position`
-are both present, build
-`marine_colormap::BreakpointMap(lo, hi, {{*pivot_value, *shoreline_position}})`
-and, for each `i`, take `data_value = lo + (hi - lo) * i/(n-1)`,
-`t = breakpoint_map.normalize(data_value)`, `palette.sample(t)`. This is
-exactly the "asymmetric effective lo/hi feeding the existing linear shader
-normalize" the Issue Review calls for: the shader's own normalize is
-untouched (still plain linear `(v-u_min)/(u_max-u_min)`); only which color
-each LUT slot holds changes. `bake_lut`'s `TransferParams` stays out of this
-path entirely — this helper calls `Palette::sample()` directly, so
-ADR-0008 Consequence #1 (`TransferParams` must stay identity) is structurally
-unbreakable here, not just honored by convention.
+**D2 — The shift is expressed as an anchor, not as arithmetic on the data.** A
+uniform shift is invisible to a linear ramp: `t = (v−lo)/(hi−lo)` is
+shift-invariant, so subtracting `S` from every texel would change nothing. The
+shift matters *only* because it moves the break. So the implementation anchors
+the palette's `shoreline_position` at the data value `S` in the unshifted
+ellipsoidal frame — mathematically identical to shifting the field and breaking
+at 0.0, with no texture rewrite and no shader change.
 
-When `pivot_value` is absent, or the active palette has no
-`shoreline_position` (grayscale/viridis/turbo/etc.), fall back to
-`marine_colormap::bake_lut(palette, TransferParams{}, n)` — byte-identical
-to today's `ensureLut()` output, so every non-topo-bathy palette (and every
-topo-bathy palette before a pivot resolves) is provably unaffected.
+**D3 — Measured-local tier only.** `map_tide` is a single scalar at the vessel,
+not a surface. Over a display spanning Boston to the Isles of Shoals one value
+is applied everywhere, so the anchor is wrong far from the boat by the spatial
+tide gradient (order tens of cm over ~50 km, and larger up an estuary). For a
+nearshore survey with the boat inside the view this is well inside the useful
+band; for a wide-area chart it is a known approximation. The vision's modelled
+global tier ("local costmap vs global costmap") is named as future work, not
+built here.
 
-Gate on `palette.domain()->shoreline_position` (not on a new "is this a depth
-layer" flag): pivoting only ever engages for `oleron`/`hypsometric`, on any
-of the three consumers. This also means a backscatter `GggsTileLayer` band
-switched to `oleron` would get pivoted too — that is consistent, not a bug:
-the palette declares the semantic, not the layer.
+**D4 — No tide source must never mean "anchor at 0.0".** Anchoring at 0.0 in
+the ellipsoidal frame puts the land/water break ~28 m into deep water — worse
+than today. With no tide the layer falls back to its manual anchor if the
+operator set one, else renders **unanchored** (byte-identical to today) and says
+so in its status.
 
-### 2. Wire the helper into `RasterGlRenderer`
+## Approach — sequenced so operator-visible correctness lands first
 
-- `RasterGlRenderer::setPivot(std::optional<float> value)` (mirrors
-  `setColormap`'s dirty-flag pattern) plus `pivot()` getter.
-- `ensureLut()` currently caches on `colormap_name_` alone
-  (`lut_dirty_`/`setColormap`). It must now also depend on `u_min`/`u_max`
-  (the pivot bake needs `lo`/`hi` to place breakpoints), so `lut_dirty_` also
-  flips when the incoming `data_min`/`data_max` passed into `renderToImage()`
-  differ from the last bake's. This is a real behavior change from today
-  (LUT was previously range-independent) — call it out explicitly in the
-  camp ADR's Consequences: LUT rebakes on every Auto-range update and every
-  Manual range edit, not just on colormap switch. 256-entry CPU bake is cheap
-  (confirm with a quick timing note in the PR, not a perf test) but this is
-  the honest place to flag it rather than let it surface as a surprise
-  regression in `review-code`.
-- `renderToImage()` passes `pivot_` into `ensureLut()`; no shader change.
+### Phase A — anchoring mechanism + manual anchor (ROS-free, no boat needed)
 
-### 3. Chart-datum pivot resolution (full scope)
+This phase alone fixes the reported symptom and is verifiable on the dev host.
 
-New `src/camp_map/raster/chart_datum_service.{h,cpp}`, a lazily-constructed
-process-wide singleton (mirrors the vdatum_query.hpp usage contract: "build
-the query ONCE ... do NOT rebuild per point"):
+1. **`src/camp_map/raster/pivoted_lut.{h,cpp}` (new).** Pure, no GL, no I/O:
+   ```cpp
+   std::vector<marine_colormap::Rgba8> bake_anchored_lut(
+     const marine_colormap::Palette& palette, float lo, float hi,
+     std::optional<float> anchor_value, std::size_t n);
+   ```
+   When `anchor_value` **and** `palette.domain()->shoreline_position` are both
+   present: build `BreakpointMap(lo, hi, {{*anchor_value, *shoreline_position}})`,
+   and for each `i` take `v = lo + (hi−lo)·i/(n−1)`, `t = map.normalize(v)`,
+   `palette.sample(t)`. Otherwise return
+   `bake_lut(palette, TransferParams{}, n)` verbatim. Calling `Palette::sample()`
+   directly rather than `bake_lut` makes ADR-0008 Consequence #1 (identity
+   `TransferParams`) structurally unbreakable on this path, not merely honored.
+2. **`RasterGlRenderer::setShorelineAnchor(std::optional<float>)`** + getter,
+   mirroring `setColormap`'s dirty-flag pattern. `ensureLut()` now depends on
+   `lo`/`hi` as well as the palette name, so it caches the last baked
+   `(name, lo, hi, anchor)` and re-bakes when any changes. The shader is
+   **untouched**.
+3. **Manual per-layer anchor** — the interim form the issue itself proposes
+   ("a per-layer constant pivot parameter ... user-set once per region"). Add an
+   anchor field to `ColormapRangeState` / the "Colormap range…" dialog, persisted
+   beside `range_min`/`range_max` under the layer's `settingsKey()`. Offered only
+   when the active palette has a `shoreline_position`. **This is the piece that
+   works on Tuesday with no boat, no TF and no network.**
+4. **Fix the colorbar (ADR-0009 must-fix, properly).** With an anchor active,
+   `colormap_range_dialog.cpp` calls
+   `legend->setLut(bake_anchored_lut(palette, lo, hi, anchor, 256))` instead of
+   `legend->setPalette(index)`. `setLut()` already overrides the linear sampling
+   at `colormap_legend_widget.cpp:185`, so the colorbar's colour↔value mapping
+   becomes *correct*, not merely annotated — and `marine_colormap_widgets` needs
+   no change. Also show the resolved anchor value as a label so the operator can
+   read what the break is pinned to.
 
-- Reads grid paths from `QSettings` (`ChartDatum/geoid_grid`,
-  `ChartDatum/vdatum_grid_dir`), defaulting to
-  `~/data/world/datum/geoid/us_noaa_g2018u0.tif` and
-  `~/data/world/datum/vdatum` — the #288-decided `world/` layout, confirmed
-  present on this dev host. No new provisioning step is needed for the
-  Tuesday survey; this only needs to exist on the operating machine's disk,
-  same as today's ENC corpus.
-- Calls `marine_vertical_datum::make_vdatum_query()` once, with a `diag`
-  callback wired to `qWarning` (setup-time problems only — missing grids,
-  bad pipeline — are logged once, not per point).
-- Exposes `std::optional<float> pivotAt(double lat, double lon) const`,
-  which calls the query fn, then `marine_vertical_datum::resolve_datum(lat,
-  lon, /*lake_datum*/{}, /*lake_datum_mhhw*/{}, vdatum_result, /*entries*/{})`
-  and returns `chart_datum_z` as `float`, or `nullopt` if either the query or
-  `resolve_datum` comes back empty (no grids, no coverage, or the factory
-  failed entirely — same code path either way, see Fallback below).
-- **Polygon overrides / `lake_datum` are deferred** (empty `entries`,
-  `nullopt` lake_datum passed for now) — see Open Questions. VDatum-only
-  coverage is exactly what the issue's motivating case (Isles of Shoals
-  harbor/coastal) needs; Massabesic-style lake overrides are a documented,
-  separate follow-up, not required for Tuesday's nearshore-rocks survey.
-- **Threading**: the returned `VDatumQueryFn` is explicitly *not*
-  concurrency-safe across copies sharing one PROJ context (per
-  `vdatum_query.hpp`). `chart_datum_service` must only ever be called from
-  the Qt GUI thread (where `paint()`/`renderImage()` already run) — never
-  from `RasterLayer`'s `QtConcurrent` load thread. State this constraint in
-  the header doc and enforce it by construction: `pivotAt()` is called from
-  `RasterLayer::renderImage()` / `GggsTileLayer`'s render path only, never
-  from `loadAndReprojectFile()`.
+### Phase B — tide-linked anchor (crosses the ROS boundary; separable)
 
-### 4. Per-layer wiring: representative point + fallback
+5. **`src/camp_map/raster/sea_surface_reference.{h,cpp}` (new, ROS-free).** A
+   small `QObject` holding `std::optional<double> height` + a `changed()` signal,
+   owned by the map (reachable via `parentMap()`), with **zero ROS includes** so
+   `libcamp_map`'s verified boundary and the headless GL tests stay intact. Tests
+   set the value directly.
+6. **`src/camp_map/ros/sea_surface_tracker.{h,cpp}` (new, in `camp_map_ros`).**
+   A `QTimer`-driven poller doing
+   `lookupTransform(map_frame, tide_frame, TimePointZero).translation.z` and
+   writing `SeaSurfaceReference`. Copies `bathymetry_layer`'s guards: reject
+   `map_frame == tide_frame` outright; never accept a default 0.0 as a surface;
+   only publish a change when it moves more than 0.1 m. Frame names come from
+   `QSettings` (`SeaSurface/map_frame`, `SeaSurface/tide_frame`) and, when unset,
+   are **auto-discovered** from the buffer's frame list — a unique frame whose
+   name ends in `map_tide` plus its sibling `map` — because the real frames are
+   namespaced (`bizzy/map_tide`) and no operator will hand-edit QSettings before
+   a survey. Ambiguous or absent → no tide, honestly reported.
+7. **Per-layer anchor source: `None | Manual | Tide`.** On
+   `SeaSurfaceReference::changed()`, a layer records the value in a member,
+   drops `cached_image_`, and requests a repaint. Tide falls back to Manual (if
+   set), then to None (D4).
+8. **Status, routed correctly.** `GggsTileLayer` reports through
+   `updateStatus()` — camp#195's single composer — as a new *part*
+   (`"shoreline unanchored - no tide reference"`), never via a direct
+   `setStatus()`. Nothing publishes model state from inside `paint()`:
+   `renderImage()` only records the anchor it used; composition and
+   `setStatus()` happen in the `changed()` slot, outside paint
+   (`MapItem::setStatus` → `Map::updateDisplay` → `emit dataChanged`).
 
-`RasterLayer::renderImage()` (and the equivalent in `GggsTileLayer`), before
-calling `renderer_.renderToImage()`:
+### Phase C — record the decision
 
-- Compute the lat/lon of the current render's Web-Mercator center
-  (`clip_bounds` center, converted via the existing `web_mercator` inverse —
-  confirm/add an inverse helper if `web_mercator.h` only has `geoToMap`
-  today) once per render.
-- `const auto pivot = chart_datum_service().pivotAt(lat, lon);`
-- `renderer_.setPivot(pivot);`
-- **Fallback — the required design element.** When `pivot` is `nullopt`:
-  the layer renders exactly as it does today — plain linear auto/manual
-  range, no anchor, whatever palette is selected — via step 1's "absent
-  pivot" branch. It does **not** pivot at 0, and it does **not** silently
-  claim correctness. The layer's existing `setStatus()` mechanism
-  (`map_item.h`, already used for `"(loading...)"` / `"(load failed)"`)
-  gets a new status string, e.g. `"(no chart datum for this view)"`, set/
-  cleared each render based on whether `pivot` resolved. This reuses an
-  existing, already-visible-to-the-operator affordance instead of adding new
-  UI, so it is in scope for Tuesday. A wrong pivot is the failure this issue
-  exists to remove; an honestly-labeled absence of one is not.
-- Only recompute/re-render when the pivot changes meaningfully (avoid
-  thrashing `ensureLut()` on sub-metre pan deltas): round the query point to
-  a coarse grid (e.g. ~100 m, matching "datum surfaces vary slowly") before
-  calling `pivotAt()`, or cache the last resolved pivot and skip the query
-  when the viewport center hasn't moved past that threshold. Land the
-  simplest form (recompute every render, no threshold) first and add the
-  threshold only if the PR's own manual exercise shows visible cost —
-  don't pre-optimize a path that's O(1) PROJ calls per repaint burst.
-
-### 5. Record the decision as a camp ADR
-
-`docs/decisions/0015-topo-bathy-pivoted-lut.md` (next free number after
-0014). Documents: the BreakpointMap-bake seam (step 1-2), the
-`palette.domain()->shoreline_position` gate, the `chart_datum_service`
-per-region resolution + its `nullopt` fallback contract, the GUI-thread-only
-constraint on the vdatum query, and the LUT-now-depends-on-range consequence.
-Cross-references ADR-0008 (Consequence #1 compliance) and ADR-0009 (states
-explicitly that this PR does **not** touch the range dialog — see step 6).
-
-### 6. ADR-0009 dialog: explicitly out of scope, follow-up filed
-
-The "Colormap range…" dialog and `ColormapRangeState` are **not** touched by
-this PR. The pivot is derived from the layer's geography, not from the
-operator-editable range, so there is no immediate conflict — a Manual
-range override still works exactly as before (it changes `lo`/`hi`, which
-step 2 already threads into the pivot bake as the `BreakpointMap` domain).
-What the dialog does **not** yet do is show the operator *where* the pivot
-landed (no shoreline handle/marker in `ColormapLegendWidget`). File a
-follow-up camp issue for that (surfacing the resolved pivot value and
-whether it's live/stale/absent in the range dialog) rather than scope-creep
-it into this PR.
+9. **`docs/decisions/0015-tide-anchored-topo-bathy-lut.md`.** Records the
+   `BreakpointMap`-in-the-bake seam, the `shoreline_position` gate, `map_tide`
+   as the anchor source with a pointer to uma ADR-0010 D5 for *why not*
+   `chart_datum`, D1's deliberate departure from GeoZui4D's asymmetry, D3's
+   single-scalar limitation, and D4's fallback contract. **Explicitly amends
+   camp ADR-0008 Decision #2**: the LUT is no longer range-independent.
+10. **Fix the now-stale comments in this PR**: `raster_gl_renderer.cpp:181-184`
+    (`ensureLut()`'s "the LUT carries only the palette ramp") and
+    `raster_gl_renderer.cpp:82-83` (the fragment-shader comment asserting the
+    same), plus a cross-reference note in ADR-0008.
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/pivoted_lut.h` (new) | `bake_pivoted_lut()` declaration |
-| `src/camp_map/raster/pivoted_lut.cpp` (new) | BreakpointMap-based bake + unpivoted fallback |
-| `src/camp_map/raster/raster_gl_renderer.h` | `setPivot()`/`pivot()`, pivot in dirty-tracking |
-| `src/camp_map/raster/raster_gl_renderer.cpp` | `ensureLut()` calls `bake_pivoted_lut()`; dirty on range change |
-| `src/camp_map/raster/chart_datum_service.h` (new) | Singleton accessor, `pivotAt(lat, lon)` |
-| `src/camp_map/raster/chart_datum_service.cpp` (new) | `make_vdatum_query` + `resolve_datum` wiring, QSettings grid paths |
-| `src/camp_map/raster/raster_layer.cpp` | Compute view-center lat/lon, call `pivotAt`, `setPivot`, fallback `setStatus` |
-| `src/camp_map/raster/gggs_tile_layer.cpp` | Same wiring as `raster_layer.cpp` |
-| `src/camp_map/map_view/web_mercator.h`/`.cpp` | Add inverse (mapToGeo) if not already present — confirm during implementation |
-| `package.xml` | `<depend>marine_vertical_datum</depend>` |
-| `CMakeLists.txt` | New sources + `ament_target_dependencies` entry; new gtests |
-| `test/test_pivoted_lut.cpp` (new) | Pivot placement + degenerate cases (pivot outside range, at boundary, zero-width range, non-topo-bathy palette unaffected) |
-| `test/test_chart_datum_service.cpp` (new) | `nullopt` on missing grids; resolved value shape (mockable via a test grid dir, or documents as a manual-exercise gap if PROJ fixtures aren't practical in gtest — decide during implementation) |
-| `test/test_raster_gl_renderer.cpp` | Extend: pivoted vs. unpivoted LUT bytes differ correctly; range-change triggers rebake |
-| `docs/decisions/0015-topo-bathy-pivoted-lut.md` (new) | ADR per step 5 |
+| `src/camp_map/raster/pivoted_lut.h/.cpp` (new) | `bake_anchored_lut()` — `BreakpointMap` bake + byte-identical unanchored fallback |
+| `src/camp_map/raster/raster_gl_renderer.h/.cpp` | `setShorelineAnchor()`; `ensureLut()` keyed on `(name, lo, hi, anchor)`; stale comments fixed |
+| `src/camp_map/raster/colormap_range_dialog.h/.cpp` | Manual anchor field + persistence; `legend->setLut(bake_anchored_lut(...))`; anchor readout label |
+| `src/camp_map/raster/sea_surface_reference.h/.cpp` (new) | ROS-free anchor holder + `changed()` signal |
+| `src/camp_map/ros/sea_surface_tracker.h/.cpp` (new) | TF poller, frame auto-discovery, `#220` guards, 0.1 m threshold |
+| `src/camp_map/raster/gggs_tile_layer.h/.cpp` | Anchor source; `changed()` slot invalidates cache; status part inside `updateStatus()` |
+| `src/camp_map/raster/raster_layer.h/.cpp` | Same wiring; status composed outside `paint()` |
+| `CMakeLists.txt` | New sources into `camp_map` / `camp_map_ros`; new gtests |
+| `test/test_anchored_lut.cpp` (new) | Anchor lands at `shoreline_position`; anchor outside range / at a boundary / zero-width range; non-topo-bathy palette byte-identical to today |
+| `test/test_sea_surface_reference.cpp` (new) | Threshold suppression, invalid→valid transition, fallback ordering Tide→Manual→None |
+| `test/test_raster_gl_renderer.cpp` | Anchored vs unanchored LUT bytes; range change re-bakes |
+| `test/test_range_persist.cpp` | Manual anchor round-trips through QSettings |
+| `docs/decisions/0015-tide-anchored-topo-bathy-lut.md` (new) | ADR per step 9 |
+| `docs/decisions/0008-adopt-marine-colormap-lut-bake.md` | Note that D#2's range-independence is amended by ADR-0015 |
 
 ## Principles Self-Check
 
 | Principle | Consideration |
 |---|---|
-| Capture decisions, not just implementations | New camp ADR-0015 (step 5), triggered explicitly by ADR-0008/0009 precedent |
-| A change includes its consequences | LUT-now-range-dependent perf note; ADR-0009 dialog explicitly scoped out with a follow-up filed, not silently dropped |
-| Test what breaks | Pivot placement + all four degenerate cases from the Issue Review's test action item; fallback path tested |
-| Only what's needed | Polygon/`lake_datum` overrides deferred (VDatum-only covers the motivating case); range-dialog pivot surfacing deferred to a follow-up issue |
-| Never document from assumptions | Grid paths, API shapes (`resolve_datum`, `VDatumQueryFn`, `BreakpointMap`) all verified by reading source, not inferred |
+| Capture decisions, not just implementations | ADR-0015, and it amends ADR-0008 rather than quietly contradicting it |
+| A change includes its consequences | The two stale code comments and ADR-0008's amended sentence land in this PR; the colorbar is fixed, not annotated |
+| Test what breaks | Anchor placement + four degenerate cases; the no-tide fallback ordering; the unanchored path proven byte-identical |
+| Only what's needed | No VDatum, no PROJ, no grids, no shader change, no `marine_colormap_widgets` change |
+| Never document from assumptions | The `libcamp_map`-is-ROS-free constraint and the `setLut()` opportunity both came from reading source and both changed the design |
+| Report the degraded state; never fail silently | D4: no tide anchors nothing and says so, rather than anchoring at a wrong 0.0 |
 
 ## ADR Compliance
 
 | ADR | Triggered | How addressed |
 |---|---|---|
-| camp ADR-0008 (marine_colormap LUT bake) | Yes | Consequence #1 (`bake_lut` TransferParams stays identity) is structurally enforced — the pivot path never calls `bake_lut`, it calls `Palette::sample()` directly through a `BreakpointMap`-remapped index |
-| camp ADR-0009 (colormap range dialog) | Yes (decision recorded) | Explicitly NOT touched by this PR (step 6); follow-up issue to be filed for pivot visibility in the dialog |
-| camp ADR-0007 (shared raster render path) | Yes | `ensureLut()`/`RasterGlRenderer` is the one shared seam modified; all three consumers (`RasterLayer`, `GggsTileLayer`, `SonarLiveCacheLayer`) inherit the fix uniformly via the palette-domain gate |
-| New camp ADR-0015 | This PR | Records the anchoring mechanism, the `nullopt` fallback contract, and the GUI-thread constraint |
+| camp ADR-0002 (ROS-free `libcamp_map`) | Yes — the crux | Anchor is pushed in via a ROS-free holder; all TF lives in `camp_map_ros`; GL tests stay hermetic |
+| camp ADR-0007 (shared render path) | Yes | One seam (`ensureLut()`); all three consumers inherit it, gated on `shoreline_position` so non-topo-bathy layers pay nothing |
+| camp ADR-0008 (LUT bake) | Yes — **amended** | Consequence #1 structurally enforced (never calls `bake_lut` on the anchored path); Decision #2's range-independence explicitly superseded |
+| camp ADR-0009 (range dialog / colorbar) | Yes | Fixed, not deferred: `setLut()` makes the colorbar exact under an anchor, plus an anchor readout |
+| uma ADR-0010 D5 (no `chart_datum` frame) | Yes | Obeyed — this is the whole reason for the replan |
+| camp ADR-0014 / camp#195 (status composition) | Yes | Status goes through `updateStatus()`; nothing published from `paint()` |
 
 ## Consequences
 
-| If we change... | Also update... | Included in plan? |
+| If we change... | Also update... | Included? |
 |---|---|---|
-| `ensureLut()` dirty-tracking (now range-dependent) | Perf note in ADR-0015; watch for repaint-storm cost | Yes — flagged in step 2/4, threshold deferred unless measured necessary |
-| `RasterGlRenderer` gains a pivot concept | `SonarLiveCacheLayer` inherits it for free via the shared renderer | Yes — no separate wiring needed there since it goes through the same `ensureLut()`; it simply never resolves a pivot unless someone points a `SonarLiveCacheLayer` at `oleron`/`hypsometric`, which is a legitimate (if unusual) operator choice |
-| New `marine_vertical_datum` dependency | `package.xml`, `CMakeLists.txt`, build docs if any list camp's deps | Yes |
-| Chart-datum resolution now touches the GUI thread per render | Threading constraint documented in `chart_datum_service.h` and ADR-0015 | Yes |
-| `ColormapRangeState`/dialog gains no pivot display | Follow-up camp issue | Yes — filed, not silently dropped |
+| `ensureLut()` becomes range-dependent | ADR-0008 D#2, `ensureLut()` comment, shader comment | Yes — all three in this PR |
+| A LUT re-bake now fires on every Auto-range update | Cost note in ADR-0015 (256-entry CPU bake, negligible; state it rather than let review find it) | Yes |
+| `libcamp_map` gains an anchor concept | `SonarLiveCacheLayer` inherits it via the shared renderer; it has no anchor source and its palettes have no `shoreline_position`, so it is unaffected | Yes — stated, no wiring needed |
+| A ROS→map push channel appears | ADR-0002's one-directional boundary claim stays true only because the holder is ROS-free — say so in ADR-0015 | Yes |
+| Anchored LUT + `Linear` LUT filtering | The break smears over ~1 texel and quantizes to `(hi−lo)/255`; fine at nearshore spans | Yes — documented; `Nearest` deferred unless the break must be crisp |
 
 ## Documentation & Instruction Impact
 
-- **Stale docs** (must land in this PR): None — no existing package README/API doc describes the pre-pivot LUT-bake behavior in prose (ADR-0008 itself documents the identity-TransferParams contract, which stays true; ADR-0015 is the new record, not a correction to an existing one).
-- **Agent-instruction candidates**: None — this is a project-repo (camp) implementation detail; no workspace-level pattern or pitfall surfaced that belongs in `.agent/knowledge/` or `AGENTS.md`.
+- **Stale docs (must land in this PR)**: camp ADR-0008 Decision #2 (LUT
+  range-independence — amended); `raster_gl_renderer.cpp:181-184`
+  (`ensureLut()` comment); `raster_gl_renderer.cpp:82-83` (fragment-shader
+  comment). The previous plan's "None" here was wrong.
+- **Agent-instruction candidates**: one — `.agents/README.md` for camp should
+  state the `libcamp_map`-is-ROS-free boundary as a *design constraint agents
+  hit when adding data sources to raster layers*, since two consecutive plans
+  for this issue assumed raster layers could reach the ROS node. Proposal only;
+  operator decides.
+
+## Schedule honesty (survey is Tuesday 2026-08-25; it is Saturday evening)
+
+- **Phase A is achievable and verifiable by Monday.** It is ROS-free, testable
+  headlessly on the dev host, and gives the operator a working manual anchor —
+  the reported symptom fixed, with the operator entering one number per region
+  (the issue's own "interim form").
+- **Phase B is not safely verifiable before Tuesday.** It needs the ROC CAMP
+  rebuild (already owed) *and* a live boat publishing `map_tide` to confirm the
+  frame is visible over the udp_bridge link. Writing it is cheap; *verifying* it
+  is not, and an unverified auto-anchor that silently picks a wrong frame is
+  worse than a manual one the operator typed. **Recommendation: land Phase A
+  first and treat Phase B as landing behind it — merged only if it can be
+  exercised against a live boat before Tuesday, otherwise immediately after the
+  survey.** Phase C's ADR covers both and lands with Phase A.
+- If only one thing ships, it should be Phase A. That is a deliberate sequencing
+  call, not a narrowing of scope.
 
 ## Open Questions
 
-- **Polygon overrides / `lake_datum`**: deferred to empty (VDatum-only). If
-  Tuesday's survey area has any inland/estuarine fringe where VDatum has no
-  coverage (plausible near rocks/shoreline), those spots render with the
-  fallback "(no chart datum for this view)" status rather than a pivot —
-  correct and honest, but the operator should know this is expected, not a
-  bug, going into the survey. Confirm acceptable before Tuesday, or scope in
-  a minimal polygon-config read as a fast-follow if the survey area is known
-  to need it.
-- **Grid-path defaults are new** (`chart_datum_service`'s `~/data/world/datum/`
-  QSettings defaults are the first hardcoded default to that path anywhere in
-  the workspace). Confirm this is the intended precedent versus requiring an
-  explicit one-time settings entry — leaning toward defaulting, since a
-  missing/wrong path degrades to the same honest "(no chart datum)" fallback
-  rather than a hard failure.
-- **`test_chart_datum_service.cpp` fixture approach**: whether a real (small)
-  VDatum grid fixture is practical to check into the test tree, or whether
-  the PROJ-dependent resolution path is validated only by manual exercise
-  against the real `~/data/world/datum/` grids (consistent with how ADR-0009
-  documents its own modal-dialog testing gap) — decide during implementation;
-  either way, the `nullopt`-on-missing-grids path IS unit-testable without
-  real grids (point at an empty/nonexistent directory) and must be covered.
-- **Rebake-on-every-pan-tick cost**: unmeasured. Plan takes the "land the
-  simple form, add a coarse-grid threshold only if the PR's manual exercise
-  shows visible cost" position (step 4) rather than guessing at a threshold
-  value up front.
+- [ ] **Is `map_tide` visible to CAMP on the ROC machine?** `/tf` is bridged
+      (`bizzyboat.yaml:312`), but this has never been confirmed from CAMP's own
+      TF buffer. Needs a `tf2_echo <prefix>/map <prefix>/map_tide` on the ROC
+      before Phase B can be trusted. If it is not visible, Phase B is inert and
+      Phase A's manual anchor is the whole feature.
+- [ ] **Confirm the Phase A / Phase B split is the sequencing the operator
+      wants** given Tuesday, or whether Phase B should be attempted regardless.
+- [ ] **Frame auto-discovery policy**: is "unique frame ending in `map_tide`" an
+      acceptable heuristic, or should CAMP require an explicit configured frame
+      pair? Auto-discovery is friendlier before a survey; explicit is safer with
+      two vehicles (`bizzy` and `izzy`) on one graph.
+- [ ] **D1 (uniform shift, no GeoZui4D asymmetry)** — confirm acceptable. It
+      makes displayed land elevation tide-dependent; the alternative opens a
+      ~28 m discontinuity at the shoreline in our ellipsoidal frame.
 
 ## Estimated Scope
 
-Single PR, sequenced internally so risk is separable within it:
-
-1. Step 1 (pure `bake_pivoted_lut`, fully unit-tested, no I/O, no GL) —
-   land and get this reviewed/verified first; it is the operator-visible
-   correctness core and has zero dependency on grid availability.
-2. Steps 2 (renderer wiring) + tests — still GL-only, no PROJ/I/O.
-3. Steps 3-4 (`chart_datum_service`, per-layer resolution, fallback status)
-   — the I/O-touching, harder-to-verify-in-CI part; riskiest for the
-   Tuesday timeline. If this slips, steps 1-2 alone are safe to ship (every
-   palette renders exactly as today, since no pivot source ever resolves) —
-   NOT a silent narrowing of scope, but a real fallback state the fallback
-   design in step 4 already handles correctly by construction.
-4. Steps 5-6 (ADR + follow-up issue) — documentation, land alongside 1-4.
-
-If steps 3-4 cannot be verified against real grids by Monday, say so at
-`review-code`/merge time rather than merging unverified I/O-touching code
-into a Tuesday survey path — this plan does not pre-decide that outcome.
+Two PRs, stacked. **PR1 = Phase A + Phase C** (anchoring mechanism, manual
+anchor, colorbar fix, ADR, stale-comment fixes) — self-contained, headlessly
+testable, shippable for Tuesday. **PR2 = Phase B** (tide-linked anchor, TF
+tracker, status wiring) — branches from PR1, gated on the `map_tide` visibility
+check above.
