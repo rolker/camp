@@ -36,6 +36,27 @@ namespace camp
 namespace raster
 {
 
+namespace
+{
+
+/// [camp#181 / ADR-0015 D6] The anchor spin's minimum, shown as "not set" via
+/// QDoubleSpinBox::setSpecialValueText(). It is the *absence* of an anchor made
+/// representable in a widget whose natural default is 0.0 — the one value D6
+/// forbids. Chosen far outside any plausible ellipsoidal height so no real anchor
+/// can collide with it.
+constexpr double kAnchorUnset = -1.0e6;
+
+/// The spin's value as an anchor: `std::nullopt` while it sits at "not set".
+std::optional<double> spin_value(const QDoubleSpinBox * spin)
+{
+  if (spin->value() <= kAnchorUnset) {
+    return std::nullopt;
+  }
+  return spin->value();
+}
+
+}  // namespace
+
 void showColormapRangeDialog(
   QWidget * parent, const QString & title, const ColormapRangeState & state,
   std::function<void(float, float)> on_range, std::function<void()> on_reset,
@@ -144,9 +165,21 @@ void showColormapRangeDialog(
 
     auto * manual_radio = new QRadioButton("Manual:", anchor_box);
     auto * anchor_spin = new QDoubleSpinBox(anchor_box);
-    anchor_spin->setRange(-1.0e6, 1.0e6);
+    // [camp#181 / ADR-0015 D6] The spin has a "not set" state that is STRUCTURALLY
+    // distinct from 0.0, and it is what an unconfigured Manual anchor reads. A
+    // QDoubleSpinBox's own default value is 0.0, and 0.0 is precisely the value D6
+    // forbids: anchor values are ellipsoidal heights, so 0.0 puts the land/sea
+    // break ~28 m into deep water at the Isles of Shoals — a plausible-looking
+    // display that is wrong in the direction that matters when the question is
+    // under-keel clearance among rocks. Making "unset" a separate state (rather
+    // than warning about 0.0, which reads as sea level in the readout) is what
+    // makes an accidental 0.0 anchor unreachable: 0.0 can only be applied by
+    // typing it. Qt renders specialValueText at the minimum in place of the
+    // number+suffix, and kAnchorUnset is far outside any plausible anchor.
+    anchor_spin->setRange(kAnchorUnset, 1.0e6);
     anchor_spin->setDecimals(3);
     anchor_spin->setSuffix(" m");
+    anchor_spin->setSpecialValueText("not set");
     auto * manual_row = new QHBoxLayout();
     manual_row->addWidget(manual_radio);
     manual_row->addWidget(anchor_spin);
@@ -163,13 +196,15 @@ void showColormapRangeDialog(
     layout->addWidget(anchor_box);
 
     // Seed BEFORE wiring so the setChecked() calls don't echo into the layer.
-    // Only Manual and None are selectable in PR1; a persisted manual value opens
-    // on Manual, otherwise None.
+    // A persisted manual value seeds the spin; its ABSENCE seeds "not set", never
+    // 0.0 (ADR-0015 D6) — so selecting Manual on a layer that has never had one
+    // applies no anchor at all rather than a silently-wrong sea-level break.
     if (state.manual_anchor) {
       manual_radio->setChecked(true);
       anchor_spin->setValue(*state.manual_anchor);
     } else {
       none_radio->setChecked(true);
+      anchor_spin->setValue(kAnchorUnset);   // reads "not set"
       anchor_spin->setEnabled(false);
     }
 
@@ -179,10 +214,15 @@ void showColormapRangeDialog(
       [legend, anchor_palette, manual_radio, anchor_spin, anchor_readout, on_anchor]() {
         const bool manual = manual_radio->isChecked();
         anchor_spin->setEnabled(manual);
+        // [ADR-0015 D6] A spin sitting at the "not set" sentinel yields NO value.
+        // Manual-with-nothing-entered therefore resolves to unanchored (and says
+        // so), which is the whole point: there is no path from one click to a 0.0
+        // anchor.
+        const std::optional<double> typed = spin_value(anchor_spin);
         std::optional<double> value;
         ShorelineAnchor::Source src = ShorelineAnchor::Source::None;
         if (manual) {
-          value = anchor_spin->value();
+          value = typed;
           src = ShorelineAnchor::Source::Manual;
         }
         if (anchor_palette && value) {
@@ -199,6 +239,9 @@ void showColormapRangeDialog(
           anchor_readout->setText(QString("Shoreline at %1 m (%2)")
                                     .arg(*value, 0, 'f', 3)
                                     .arg(ShorelineAnchor::sourceLabel(src)));
+        } else if (manual) {
+          // Never "shoreline 0.00 m" — an unset Manual is reported as what it is.
+          anchor_readout->setText("Unanchored - enter a manual value");
         } else {
           anchor_readout->setText("Unanchored");
         }
