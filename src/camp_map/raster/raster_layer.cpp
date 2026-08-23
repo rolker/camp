@@ -712,6 +712,14 @@ void RasterLayer::readSettings()
     range_model_.reset();
   // [camp#181 / ADR-0015] Restore the manual anchor (value before mode, so the
   // resolved anchor is correct at the single changed() emission).
+  //
+  // Deliberately NOT gated on is_scalar_ — the same reasoning as
+  // smooth_interpolation above: readSettings() can run before the file is opened,
+  // so is_scalar_ is not yet trustworthy here, and a file later re-opened as scalar
+  // should honour the stored preference. On an RGB chart the restored anchor is
+  // inert in both directions: the Rgba shader path bypasses the LUT entirely, and
+  // paletteSupportsAnchor() is false, so neither the status nor the dialog offers
+  // it.
   if(has_anchor)
   {
     shoreline_anchor_.setManual(anchor_value);
