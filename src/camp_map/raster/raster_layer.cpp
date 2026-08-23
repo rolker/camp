@@ -37,7 +37,7 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
   renderer_.setColormap("viridis");
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
   // [camp#181 / ADR-0015] Anchor holder: when the resolved anchor moves, drop the
-  // cached image, recompose the status OUTSIDE paint(), and repaint. The renderer
+  // cached image, recompose the status, and repaint. The renderer
   // is fed the resolved value at renderImage() time.
   connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
   {
@@ -516,7 +516,7 @@ void RasterLayer::setColormap(const std::string& name)
   // NEW palette carries a shoreline, so a palette switch can start or stop
   // anchoring. Recompose here or the status is stale: switching onto oleron would
   // show no anchor report at all, and switching off it would leave the previous
-  // one asserting an anchor that no longer bites. Composed outside paint().
+  // one asserting an anchor that no longer bites.
   updateStatus();
   update(boundingRect());
 }
@@ -572,8 +572,9 @@ void RasterLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
 void RasterLayer::updateStatus()
 {
   // [camp#181 / ADR-0015] Compose the load state with the shoreline-anchor part so
-  // neither clobbers the other, and so the anchor readout is composed OUTSIDE
-  // paint(). S-98's permanent indication: name the active anchor + source, and
+  // neither clobbers the other. Every part is read from live state at each call, so
+  // the composition is correct from whichever writer reaches it.
+  // S-98's permanent indication: name the active anchor + source, and
   // report a selected-but-unresolved source as unavailable rather than silently
   // applying nothing. The unanchored default (mode None) adds nothing.
   QStringList parts;

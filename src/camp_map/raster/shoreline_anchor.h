@@ -114,8 +114,12 @@ public:
 
 signals:
   /// Emitted when the resolved `(value, activeSource)` pair changes. The layer's
-  /// slot drops its cached image, re-feeds the renderer, recomposes its status
-  /// **outside paint()**, and requests a repaint.
+  /// slot drops its cached image, re-feeds the renderer, recomposes its status, and
+  /// requests a repaint. This slot is not a paint-time path — but note that
+  /// `updateStatus()` itself is NOT reached exclusively from outside `paint()`:
+  /// `GggsTileLayer::paint()` calls it via `scheduleEvictionIfNeeded()` when the
+  /// over-budget flag flips. That path predates this work (camp#195) and is not
+  /// changed here.
   void changed();
 
 private:

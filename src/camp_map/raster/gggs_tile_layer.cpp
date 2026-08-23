@@ -131,8 +131,14 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
           &GggsTileLayer::tilesReady);
   // [camp#181 / ADR-0015] The anchor holder is the source-agnostic seam (manual
   // today; chart datum / platform tide later). When the resolved anchor moves,
-  // drop the cached image, recompose the status OUTSIDE paint(), and repaint. The
-  // renderer is fed the resolved value at renderImage() time, not here.
+  // drop the cached image, recompose the status, and repaint. The renderer is fed
+  // the resolved value at renderImage() time, not here.
+  //
+  // This slot is not itself a paint-time path, but updateStatus() is NOT reachable
+  // only from outside paint(): paint() -> scheduleEvictionIfNeeded() -> updateStatus()
+  // fires whenever the over-budget flag flips. That path is pre-existing (camp#195)
+  // and untouched here; the anchor part is composed from live holder state, so it is
+  // correct on that path too.
   connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
   {
     cached_image_ = QImage();
@@ -1552,7 +1558,7 @@ void GggsTileLayer::setColormap(const std::string& name)
   // NEW palette carries a shoreline, so a palette switch can start or stop
   // anchoring. Recompose here or the status is stale: switching onto oleron would
   // show no anchor report at all, and switching off it would leave the previous
-  // one asserting an anchor that no longer bites. Composed outside paint().
+  // one asserting an anchor that no longer bites.
   updateStatus();
   update(boundingRect());
 }

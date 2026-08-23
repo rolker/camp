@@ -183,11 +183,11 @@ private:
 
   // [camp#181 / ADR-0015] Source-agnostic shoreline-anchor holder (manual source
   // only in PR1). Its changed() signal drops the cache, recomposes the status
-  // OUTSIDE paint(), and repaints (wired in the ctor). ROS-free (ADR-0002).
+  // and repaints (wired in the ctor). ROS-free (ADR-0002).
   ShorelineAnchor shoreline_anchor_;
   // [camp#181] The load-state half of the status ("loading..." / "load failed" /
   // ""), kept so updateStatus() can recompose it together with the anchor part
-  // without paint() ever publishing model state.
+  // instead of either half clobbering the other.
   QString load_status_;
 
   /// [camp#181] Compose the layer status from the load state + the shoreline-anchor
