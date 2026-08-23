@@ -428,3 +428,62 @@ Consciously handled without a code change:
 ### Not verified here
 
 - **No GUI eyeball.** Every fix is covered by headless tests or is a comment/doc change; the dialog's "not set" rendering, the out-of-range readout and the disabled upper radios have not been seen on screen. That is the standing operator-CAMP-rebuild debt for this issue, not a new gap.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-23 01:12 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-181 at `1d54b2d`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + amendment to an accepted ADR; ~1600 lines of code across 11 files; cross-repo dependency on a new marine_colormap entry point)
+**Must-fix**: 2 | **Suggestions**: 9
+**Round**: 2 | **Ship**: recommended — must-fix fell 7 -> 2, neither is a design question; both are precise mechanical fixes with an obvious test to add, so fix and push rather than spend another round
+
+All seven round-1 must-fixes verified genuinely fixed, not merely touched. The
+0.0 anchor is structurally unreachable: every path was walked (dialog seeding,
+the `kAnchorUnset` sentinel and `spin_value()`, both layers' `toDouble(&ok)` +
+`contains()` reads, `writeSettings()`'s `remove()` on absent, the holder's
+default, the renderer's `nullopt` bake) and none applies 0.0 without an operator
+typing it. A persisted `"nan"`/`"inf"` parses OK but is then caught by the
+non-finite guard, so that seam is covered twice. Opening the dialog verifiably
+pushes nothing: `ColormapLegendWidget::setLut()`/`setDomain()` do not emit, and
+every seeding call precedes its connect. `setColormap()` recomposes at both
+layers; the non-finite guard is present and tested at holder and renderer; the
+`bake_anchored_lut` symbol survives only as history in plan/progress/ADR prose.
+
+The two remaining must-fixes are both defects *introduced by the round-1 fix
+pass* rather than survivals: the degenerate-range fallback (`ed3ffaf`) is
+defeated by its own cache key, and the "None keeps the typed value" suggestion
+collides with persistence that infers the mode from the value's presence. Both
+were found independently by the lead reviewer and by a cold adversarial read;
+the persistence one by both adversarial lenses.
+
+`RasterGlRenderer::lutBakeCount()` is judged acceptable: a read-only monotonic
+counter, zero cost, documented as observability for a cache whose failure mode
+ADR-0015 D2 itself names as silent in both directions, and pixels genuinely
+cannot distinguish a re-bake from a cache hit on the unanchored path. Preferable
+to a friend declaration or a test-only build flag.
+
+Both deliberate deferrals were read before judging. The `is_scalar_` restore
+gate is sound as argued. The legend `lo()/hi()` divergence is sound in its
+crossed-extent half but over-broad in its degenerate half — see the suggestion.
+
+Local Adversarial skipped: the diff (~35k tokens src-only) exceeds the local
+model's 32k context; a 40960-token retry OOM-killed llama-server.
+Static analysis: camp's pre-commit set carries no C++ linter, so manual only —
+no added line over 100 columns, no whitespace findings.
+
+### Findings
+- [ ] (must-fix) `ensureLut()` serves the stale ANCHORED LUT once the range goes degenerate, defeating the fallback `ed3ffaf` added: `lut_anchor_` records the REQUESTED anchor, not the effective one, so when `anchored` flips false on `hi <= lo` the `(!anchored || ...)` short-circuit makes the cache hit against a BreakpointMap-warped texture. Key on the effective anchor (`anchored ? shoreline_anchor_ : std::nullopt`) both when storing and comparing; neither new renderer test covers a degenerate range — `src/camp_map/raster/raster_gl_renderer.cpp:213-218,247`
+- [ ] (must-fix) The anchor MODE is never persisted — `writeSettings()` stores the manual value whenever one exists and `readSettings()` infers `Manual` from key presence. Since the dialog now deliberately keeps the typed value when None is selected, "Manual -28.038 -> None" persists -28.038 and restores ANCHORED at -28.038 in Manual mode: an anchor nobody chose, the same class D6 guards, arriving via mode inference instead of via 0.0. Also makes a future ChartDatum/PlatformTide selection unrestorable. Persist the mode explicitly; add a Manual -> None -> restart round-trip test — `src/camp_map/raster/raster_layer.cpp:757-766,690-731`, `src/camp_map/raster/gggs_tile_layer.cpp:1931-1942,1878-1914`
+- [ ] (suggestion) Only `manual_radio` and `none_radio` carry `toggled` handlers. It works today only because Qt checks the incoming button before emitting the outgoing one's `toggled(false)`; wire all four (or one `QButtonGroup::buttonToggled` acting on the checked edge) so PR2/PR3 do not inherit an order-dependent seam — `src/camp_map/raster/colormap_range_dialog.cpp:299-308`
+- [ ] (suggestion) Arrow/wheel/Up-Down stepping the anchor spin does not emit `editingFinished`, so the colorbar and the S-98 readout keep describing the previous value while the spin shows a new one. Connect `valueChanged` to `repaint_anchor` only (dialog-local, no layer write, no QSettings) — `src/camp_map/raster/colormap_range_dialog.cpp:307`
+- [ ] (suggestion) The holder states no thread-affinity contract, though ADR-0015 D7 makes cross-boundary pushes its whole reason for existing. Its setters read-modify-write while `renderImage()` reads `value()` on the GUI thread; a PR3 executor thread calling `setPlatformTide()` directly would race while appearing to work (the queued `changed()` would still arrive). State the contract now, or make the setters slots — `src/camp_map/raster/shoreline_anchor.h:78-95`
+- [ ] (suggestion) Narrow the legend `lo()/hi()` deferral rather than keeping it whole: the crossed-extent half is sound (the map paints nothing), but the degenerate-domain +/-0.5 widening IS a state where the map paints and the legend disagrees — more so now that `ed3ffaf` renders that case unanchored while the legend still bakes anchored. A `setLut({})` when the domain came from the fallback path is ~3 lines, not camp#142 surgery — `src/camp_map/raster/colormap_range_dialog.cpp:82-92,256-263`
+- [ ] (suggestion) `setManual()` before `setMode()` can emit `changed()` against the old mode when a caller changes both, composing a status naming a mode already left before the second emission corrects it. No dialog interaction reaches it today, but it defeats the "single changed() emission" the `readSettings()` comment claims. Batch the pair — `src/camp_map/raster/raster_layer.cpp:565-568`, `src/camp_map/raster/gggs_tile_layer.cpp:1617-1620`
+- [ ] (suggestion) Comment contradiction from the round-1 comment-accuracy pass: the header says `setShorelineAnchor()` "Mirrors setColormap's dirty-flag pattern", the definition says "Not a dirty-flag toggle" — `src/camp_map/raster/raster_gl_renderer.h:77-88` vs `src/camp_map/raster/raster_gl_renderer.cpp:261-267`
+- [ ] (suggestion) `editingFinished` fires on plain focus-out and the spin rounds to 3 decimals. Harmless in PR1 (the spin is the only writer), but once PR2/PR3 can seed a datum-derived manual value, merely clicking into the spin and closing rewrites and re-persists it truncated — against the header's "inspecting a layer must not mutate it". Compare against the seeded `state.manual_anchor` before pushing, or raise the decimals — `src/camp_map/raster/colormap_range_dialog.cpp:182-183,307`
+- [ ] (suggestion) `ChangeCounter` uses the 3-argument `connect()` with a `this`-capturing lambda, so the connection outlives the counter. Inert as written; one reordering from writing into freed stack memory, and it will be reused as PR2/PR3 sources land — `test/test_shoreline_anchor.cpp:43-46`
+- [ ] (suggestion) Plan row still credits `test_shoreline_anchor.cpp` with covering "that the default active source is chart datum"; amendment 3 corrects the fact but the row is stale — `.agent/work-plans/issue-181/plan.md:437`
