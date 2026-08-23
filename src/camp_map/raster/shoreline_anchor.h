@@ -95,6 +95,18 @@ public:
   void setPlatformTide(std::optional<double> value);
   void setManual(std::optional<double> value);
 
+  /// Apply a manual value AND a mode as one change, emitting `changed()` at most
+  /// once. Calling `setManual()` then `setMode()` can emit against the state
+  /// half-applied — a `changed()` carrying the new value under the mode the
+  /// operator just left, composing a status that names a mode already abandoned
+  /// before the second emission corrects it. Both callers that change the pair
+  /// together (the range dialog's apply, and `readSettings()`'s restore) go
+  /// through here, so the "single changed() emission" their comments claim is
+  /// true rather than aspirational. Emission follows the same rules as the
+  /// separate setters: a real mode change always emits; a value-only change emits
+  /// only when the resolved `(value, activeSource)` pair moves.
+  void applyManualSelection(std::optional<double> manual, Source mode);
+
   /// The manual value as stored, independent of the active mode — the value the
   /// range dialog edits and the layer persists.
   std::optional<double> manualValue() const { return manual_; }

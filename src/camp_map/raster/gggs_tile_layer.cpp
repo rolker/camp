@@ -1617,8 +1617,7 @@ void GggsTileLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
   // for a later switch back rather than discarding it.
   if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
     return;
-  shoreline_anchor_.setManual(manual);
-  shoreline_anchor_.setMode(mode);
+  shoreline_anchor_.applyManualSelection(manual, mode);
   writeSettings();
 }
 

@@ -145,6 +145,23 @@ void ShorelineAnchor::setManual(std::optional<double> value)
     emit changed();
 }
 
+void ShorelineAnchor::applyManualSelection(std::optional<double> manual, Source mode)
+{
+  // The pair applied atomically: both fields move before anything is emitted, so
+  // no observer can see the new value under the old mode (or the reverse). The
+  // emission test is the union of the two setters' rules — see the header.
+  manual = finiteOrNullopt(manual);
+  if(manual == manual_ && mode == mode_)
+    return;
+  const std::optional<double> before = value();
+  const Source before_source = activeSource();
+  const Source before_mode = mode_;
+  manual_ = manual;
+  mode_ = mode;
+  if(mode_ != before_mode || value() != before || activeSource() != before_source)
+    emit changed();
+}
+
 QString ShorelineAnchor::sourceLabel(Source source)
 {
   switch(source)

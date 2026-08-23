@@ -225,3 +225,37 @@ TEST(ShorelineAnchorTest, SourceLabelsAreDistinctAndNonEmpty)
   EXPECT_NE(ShorelineAnchor::sourceLabel(Source::Manual),
             ShorelineAnchor::sourceLabel(Source::None));
 }
+
+// [camp#181 / ADR-0015] The pair setter. setManual() then setMode() emits twice —
+// once with the new value under the mode the operator just left — and the layer's
+// status is composed from whatever state that first emission finds. Both callers
+// that move the pair together go through applyManualSelection() instead, which is
+// what makes the "single changed() emission" their comments claim true.
+TEST(ShorelineAnchorTest, ApplyManualSelectionEmitsOnceForThePair)
+{
+  ShorelineAnchor anchor;
+  ChangeCounter counter(&anchor);
+
+  anchor.applyManualSelection(-28.038, Source::Manual);
+  EXPECT_EQ(counter.count(), 1) << "value + mode together is ONE change";
+  EXPECT_EQ(anchor.mode(), Source::Manual);
+  ASSERT_TRUE(anchor.value().has_value());
+  EXPECT_DOUBLE_EQ(*anchor.value(), -28.038);
+
+  // Re-applying the identical pair is free.
+  anchor.applyManualSelection(-28.038, Source::Manual);
+  EXPECT_EQ(counter.count(), 1);
+
+  // Selecting None while KEEPING the typed value is a real change (the resolved
+  // anchor goes away) and is still one emission.
+  anchor.applyManualSelection(-28.038, Source::None);
+  EXPECT_EQ(counter.count(), 2);
+  EXPECT_FALSE(anchor.value().has_value());
+  ASSERT_TRUE(anchor.manualValue().has_value())
+    << "None keeps the typed value for a switch back";
+
+  // Same non-finite contract as the separate setters.
+  anchor.applyManualSelection(std::numeric_limits<double>::quiet_NaN(), Source::Manual);
+  EXPECT_FALSE(anchor.manualValue().has_value());
+  EXPECT_FALSE(anchor.value().has_value()) << "D5/D6: a NaN push is an absence";
+}
