@@ -78,8 +78,10 @@ public:
   /// value (chart datum, a tide height, or an operator's manual number), or clear
   /// it. A non-finite anchor is treated as no anchor — storing one would make the
   /// LUT cache key never match again (NaN != NaN), re-baking and re-uploading the
-  /// texture every frame for no visible change. Mirrors setColormap's dirty-flag
-  /// pattern. The anchor only bites on a palette that declares a
+  /// texture every frame for no visible change. Not a dirty-flag toggle, unlike
+  /// setColormap(): ensureLut() compares the stored anchor against the one the
+  /// cached LUT was baked with, so storing the new value is itself the trigger.
+  /// The anchor only bites on a palette that declares a
   /// `shoreline_position` (oleron / hypsometric); on any other ramp
   /// `marine_colormap::bake_shoreline_anchored_lut()` falls back to the unanchored
   /// bake, so setting it is harmless. Because the anchored LUT is a function of
