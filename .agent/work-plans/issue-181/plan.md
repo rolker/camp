@@ -432,9 +432,9 @@ retrofitted-around-manual.
 | `package.xml` | C | `<depend>marine_vertical_datum</depend>` |
 | `CMakeLists.txt` | A/B/C | New sources into `camp_map` / `camp_map_ros` / `CCOMAutonomousMissionPlanner`; new gtests |
 | ~~`test/test_anchored_lut.cpp` (new)~~ | A | **Not in camp.** These cases are tested in `marine_colormap` beside the bake they cover; camp owns no copy of it to test |
-| `test/test_raster_gl_renderer.cpp` | A | The LUT cache key: an anchored LUT re-bakes on a range change and holds the anchor's colour across it; an **unanchored** one does NOT re-bake; anchor set/cleared re-bakes; non-finite anchor dropped at the seam |
-| `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings (both layers); an absent **or unparsable** key restores unanchored, never 0.0 |
-| `test/test_shoreline_anchor.cpp` (new) | A | D3 fallback ordering AND that the default active source is chart datum; D5 never-0.0; threshold suppression; invalid→valid transition |
+| `test/test_raster_gl_renderer.cpp` | A | The LUT cache key: an anchored LUT re-bakes on a range change and holds the anchor's colour across it; an **unanchored** one does NOT re-bake; anchor set/cleared re-bakes; non-finite anchor dropped at the seam; a **degenerate range** falls back to the plain ramp and is not served the cached anchored LUT (amendment 7) |
+| `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings (both layers); an absent **or unparsable** key restores unanchored, never 0.0; the anchor **mode** round-trips explicitly — None with a retained manual value restores unanchored, an unrecognized mode token restores unanchored, and a valueless ChartDatum selection survives (amendment 6) |
+| `test/test_shoreline_anchor.cpp` (new) | A | D3 fallback ordering AND the PR1 runtime default of `None` (amendment 3 — chart datum is the *policy* default and has no source yet); D5 never-0.0; no-op refresh emits nothing; non-finite pushes rejected; the batched `applyManualSelection()` pair; the persisted source-key round trip |
 | `test/test_chart_datum_provider.cpp` (new) | C | `nullopt` on missing grids; region cache hit/miss; never called from the GUI thread |
 | `src/camp/platform_manager/platform_manager.h` | B | Expose the selected platform's `platform_namespace` to the tracker (read-only accessor; no new enumeration) |
 
@@ -460,6 +460,26 @@ landed rather than what was first proposed:
    opening a dialog must not mutate the layer it inspects.
 5. **"Not set" is a first-class anchor state** (review finding): the spin box
    defaults there rather than to 0.0, which D6 forbids.
+6. **The anchor MODE is persisted explicitly, never inferred from the value**
+   (round-2 review finding). The dialog deliberately keeps a typed manual value
+   when the operator selects None, so inferring `Manual` from the value's presence
+   restored an anchor nobody chose — D6's failure mode reached through mode
+   inference rather than through 0.0. Both layers now write a
+   `shoreline_anchor_mode` token (`ShorelineAnchor::sourceKey()`); an absent or
+   unrecognized token restores `None`, and a ChartDatum/PlatformTide selection is
+   restorable for the first time. The `(value, mode)` pair is applied through the
+   new `ShorelineAnchor::applyManualSelection()` so it moves as one `changed()`.
+7. **A degenerate render range falls back to the unanchored ramp, and the cache
+   key follows it** (round-2 review finding). `ensureLut()` keys on the
+   *effective* anchor — `nullopt` whenever the bake fell back — so the fallback is
+   not defeated by a cache hit against the still-uploaded anchored texture.
+8. **The deferred legend `lo()/hi()` divergence was narrowed, not kept whole**
+   (round-2 review finding). The colorbar no longer bakes an anchored ramp over
+   the dialog's ±0.5 widening of a degenerate domain — the map renders that case
+   unanchored, so the bar now shows the plain ramp and the readout says why. The
+   crossed-extent half stays deferred to camp#142: it needs the legend to carry
+   the layer's resolved range separately from its handle domain, and the map
+   paints nothing there to disagree with.
 
 ## Principles Self-Check
 
