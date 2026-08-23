@@ -1849,8 +1849,13 @@ void GggsTileLayer::readSettings()
   // [camp#181 / ADR-0015] Persisted manual shoreline anchor. Present -> Manual mode
   // at that value; absent -> the unanchored None default (byte-identical to
   // pre-camp#181). Applied below, after the group is closed.
-  const bool has_anchor = settings.contains("shoreline_anchor");
-  const double anchor_value = settings.value("shoreline_anchor", 0.0).toDouble();
+  // The bool*ok overload is load-bearing: a corrupt/unparsable entry makes
+  // toDouble() return 0.0, and 0.0 is the one value ADR-0015 D6 forbids. Without
+  // the check a garbled key would restore as a Manual anchor at sea level.
+  bool anchor_ok = false;
+  const double anchor_value =
+    settings.value("shoreline_anchor").toDouble(&anchor_ok);
+  const bool has_anchor = settings.contains("shoreline_anchor") && anchor_ok;
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())

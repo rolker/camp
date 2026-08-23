@@ -676,8 +676,13 @@ void RasterLayer::readSettings()
   const float range_max = settings.value("range_max", 1.0).toFloat();
   // [camp#181 / ADR-0015] Persisted manual shoreline anchor (applied after the
   // group closes). Present -> Manual at that value; absent -> unanchored None.
-  const bool has_anchor = settings.contains("shoreline_anchor");
-  const double anchor_value = settings.value("shoreline_anchor", 0.0).toDouble();
+  // The bool*ok overload is load-bearing: a corrupt/unparsable entry makes
+  // toDouble() return 0.0, and 0.0 is the one value ADR-0015 D6 forbids. Without
+  // the check a garbled key would restore as a Manual anchor at sea level.
+  bool anchor_ok = false;
+  const double anchor_value =
+    settings.value("shoreline_anchor").toDouble(&anchor_ok);
+  const bool has_anchor = settings.contains("shoreline_anchor") && anchor_ok;
   settings.endGroup();
   settings.endGroup();
   // Apply the persisted ramp (re-bake + re-render if it differs); don't re-persist.
