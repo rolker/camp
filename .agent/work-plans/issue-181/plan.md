@@ -158,7 +158,7 @@ readout.
   normalized colour space**, NOT a data value — the earlier draft of this plan
   called it "metres, positive up", which is the doc comment on `natural_min`/
   `natural_max` (`palette.hpp:43-46`), not on `shoreline_position`. The
-  distinction matters because it is what `bake_anchored_lut()`'s two arguments
+  distinction matters because it is what the anchored bake's two arguments
   mean: `anchor_value` is a data value, `shoreline_position` is where it lands
   in the ramp. **The no-sign-flip claim is verified concretely, not assumed**:
   `hypsometric_domain()` (`topobathy_palettes.cpp:385-393`) sets
@@ -278,11 +278,15 @@ will consume it without change because the key is already
 
 Fixes the reported symptom on its own and is fully verifiable headlessly.
 
-1. **`src/camp_map/raster/anchored_lut.{h,cpp}` (new).** Pure; no GL, no I/O:
+1. **The anchored bake.** *As implemented (see the amendment note at the end of
+   this plan): this landed in `marine_colormap` as
+   `bake_shoreline_anchored_lut()`, NOT as a camp-private
+   `src/camp_map/raster/anchored_lut.{h,cpp}` as originally planned. camp calls
+   it and owns no copy.* The signature it ships with:
    ```cpp
-   std::vector<marine_colormap::Rgba8> bake_anchored_lut(
-     const marine_colormap::Palette& palette, float lo, float hi,
-     std::optional<float> anchor_value, std::size_t n);
+   std::vector<marine_colormap::Rgba8> bake_shoreline_anchored_lut(
+     const marine_colormap::Palette& pal, const marine_colormap::TransferParams& p,
+     float lo, float hi, std::optional<float> anchor_value, std::size_t n);
    ```
    With `anchor_value` **and** `palette.domain()->shoreline_position` both
    present: build `BreakpointMap(lo, hi, {{*anchor_value, *shoreline_position}})`,
@@ -300,7 +304,7 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    the palette has a `shoreline_position`.
 4. **Fix the colorbar (ADR-0009 must-fix, properly).** With an anchor active,
    `colormap_range_dialog.cpp` calls
-   `legend->setLut(bake_anchored_lut(palette, lo, hi, anchor, 256))` instead of
+   `legend->setLut(marine_colormap::bake_shoreline_anchored_lut(palette, {}, lo, hi, anchor, 256))` instead of
    `legend->setPalette(index)`. `setLut()` already overrides the linear sampling
    at `colormap_legend_widget.cpp:185`, so the colour↔value mapping becomes
    *correct*, and `marine_colormap_widgets` needs no change. Add a readout label
@@ -313,16 +317,21 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    directly. This is the single seam every source (tide, datum, manual) writes
    to — which is what makes the design source-agnostic rather than
    `map_tide`-shaped.
-6. **Per-layer anchor mode + status.** Mode selector (Chart datum [default] /
-   Platform tide → *which platform* / Manual / None), with the D3 fallback order
-   applied beneath whichever mode is active. On `changed()` the layer
-   records the value, drops `cached_image_`, requests a repaint. `GggsTileLayer`
-   reports through **`updateStatus()`** — camp#195's single composer — as a new
-   *part* naming the active source **and, for tide, the platform**, never a
-   direct `setStatus()`. Nothing
-   publishes model state from inside `paint()`: `renderImage()` only records the
-   anchor it used; composition and `setStatus()` happen in the `changed()` slot,
-   outside paint (`MapItem::setStatus` → `Map::updateDisplay` → `dataChanged`).
+6. **Per-layer anchor mode + status.** Mode selector (Chart datum / Platform tide
+   → *which platform* / Manual / None), with the D3 fallback order applied
+   beneath whichever mode is active. *As implemented: chart datum is the recorded
+   **policy** default, but the **runtime** default in PR1 is `None` — no source
+   resolves chart datum until PR2, and ADR-0015 D5 separates the two explicitly.
+   The upper two radios ship disabled and labelled unavailable.* On `changed()`
+   the layer records the value, drops `cached_image_`, requests a repaint.
+   `GggsTileLayer` reports through **`updateStatus()`** — camp#195's single
+   composer — as a new *part* naming the active source **and, for tide, the
+   platform**, never a direct `setStatus()`. `renderImage()` only records the
+   anchor it used; composition and `setStatus()` happen in the `changed()` slot.
+   *As implemented: `updateStatus()` is not reached exclusively from outside
+   `paint()` — `paint()` → `scheduleEvictionIfNeeded()` → `updateStatus()` is a
+   live pre-existing path (camp#195). Every part is read from live state at each
+   call, so the composition is correct from whichever writer reaches it.*
 
 **Why the seam is in PR1 and not with its first non-manual source** — the
 `3a276f2` Plan Review caught that the PR2↔PR3 reorder had stranded it: the
@@ -379,7 +388,7 @@ retrofitted-around-manual.
 
 ### Phase D — record the decisions (lands with **PR1**)
 
-11. **`docs/decisions/0015-anchored-topo-bathy-lut.md`.** Records: the
+11. **`docs/decisions/0015-anchored-shoreline-colormap.md`.** Records: the
     `BreakpointMap`-in-the-bake seam; the `shoreline_position` gate; the
     source-agnostic anchor with D3's fallback order and, separately, the
     chart-datum **default** — recording the multi-platform-ambiguity argument as
@@ -409,25 +418,48 @@ retrofitted-around-manual.
 
 | File | Phase | Change |
 |------|-------|--------|
-| `src/camp_map/raster/anchored_lut.h/.cpp` (new) | A | `bake_anchored_lut()` — `BreakpointMap` bake + byte-identical unanchored fallback |
+| `marine_colormap` (separate repo, issue #23) | A | `bake_shoreline_anchored_lut()` — `BreakpointMap` bake + byte-identical unanchored fallback. **Landed there, not as a camp-private `anchored_lut.{h,cpp}`** — see the amendment note below |
 | `src/camp_map/raster/raster_gl_renderer.h/.cpp` | A | `setShorelineAnchor()`; `ensureLut()` keyed on `(name, lo, hi, anchor)`; stale comments fixed |
-| `src/camp_map/raster/colormap_range_dialog.h/.cpp` | A | Manual anchor + persistence; `legend->setLut(...)`; anchor + source readout |
-| `docs/decisions/0015-anchored-topo-bathy-lut.md` (new) | D | ADR per step 11 |
+| `src/camp_map/raster/colormap_range_dialog.h/.cpp` | A | Manual anchor + persistence; `legend->setLut(...)`; anchor + source readout; radio seeded from the stored `anchor_mode` and **nothing pushed back on open**; a "not set" spin state distinct from 0.0 (D6) |
+| `docs/decisions/0015-anchored-shoreline-colormap.md` (new) | D | ADR per step 11 |
 | `docs/decisions/0008-adopt-marine-colormap-lut-bake.md` | D | Note D#2's range-independence is amended by ADR-0015 |
 | `src/camp_map/raster/shoreline_anchor.h/.cpp` (new) | A | ROS-free anchor holder: value + source + `changed()` |
 | `src/camp_map/ros/sea_surface_tracker.h/.cpp` (new) | B | TF poller scoped to a `platform_namespace`, `#220` guards, 0.1 m threshold |
 | `src/camp_map/raster/gggs_tile_layer.h/.cpp` | A | Anchor mode + fallback order; `changed()` slot invalidates cache; status part (source + platform) inside `updateStatus()` |
-| `src/camp_map/raster/raster_layer.h/.cpp` | A | Same wiring; status composed outside `paint()` |
+| `src/camp_map/raster/raster_layer.h/.cpp` | A | Same wiring; status recomposed from live state by every writer (load, anchor `changed()`, `setColormap()`) |
 | `src/camp/chart_datum_provider.h/.cpp` (new) | C | `marine_vertical_datum` off-thread, region-cached, pushes anchor (the DEFAULT source) |
 | `src/camp/autonomousvehicleproject.{h,cpp}`, `src/camp/projectview.cpp` | C | Readout served from the provider (the `#288` comments were already corrected by camp#203 / PR #204) |
 | `package.xml` | C | `<depend>marine_vertical_datum</depend>` |
 | `CMakeLists.txt` | A/B/C | New sources into `camp_map` / `camp_map_ros` / `CCOMAutonomousMissionPlanner`; new gtests |
-| `test/test_anchored_lut.cpp` (new) | A | Anchor lands at `shoreline_position`; anchor outside range / at a boundary / zero-width range; non-topo-bathy palette byte-identical to today |
-| `test/test_raster_gl_renderer.cpp` | A | Anchored vs unanchored LUT bytes; range change re-bakes |
-| `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings |
+| ~~`test/test_anchored_lut.cpp` (new)~~ | A | **Not in camp.** These cases are tested in `marine_colormap` beside the bake they cover; camp owns no copy of it to test |
+| `test/test_raster_gl_renderer.cpp` | A | The LUT cache key: an anchored LUT re-bakes on a range change and holds the anchor's colour across it; an **unanchored** one does NOT re-bake; anchor set/cleared re-bakes; non-finite anchor dropped at the seam |
+| `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings (both layers); an absent **or unparsable** key restores unanchored, never 0.0 |
 | `test/test_shoreline_anchor.cpp` (new) | A | D3 fallback ordering AND that the default active source is chart datum; D5 never-0.0; threshold suppression; invalid→valid transition |
 | `test/test_chart_datum_provider.cpp` (new) | C | `nullopt` on missing grids; region cache hit/miss; never called from the GUI thread |
 | `src/camp/platform_manager/platform_manager.h` | B | Expose the selected platform's `platform_namespace` to the tracker (read-only accessor; no new enumeration) |
+
+### Amendments during implementation
+
+Recorded per AGENTS.md's plan-first workflow, so the plan tracks what actually
+landed rather than what was first proposed:
+
+1. **The anchored bake moved to `marine_colormap`.** PR1 first carried a private
+   ~40-line `bake_anchored_lut()` in `src/camp_map/raster/anchored_lut.{h,cpp}`.
+   It was upstreamed to `marine_colormap` as `bake_shoreline_anchored_lut()`
+   (marine_colormap issue #23) and the camp copy deleted — the mechanism belongs
+   beside the palettes that declare `shoreline_position`, and rviz/rqt consumers
+   get it for free. ADR-0015 D1 records the reasoning. `test_anchored_lut.cpp`
+   went with it.
+2. **The ADR is `0015-anchored-shoreline-colormap.md`**, not
+   `0015-anchored-topo-bathy-lut.md`.
+3. **Chart datum is the recorded policy default, not the PR1 runtime default.**
+   No source resolves it until PR2, so the runtime default is `None` and the
+   chart-datum / platform-tide radios ship disabled and labelled unavailable
+   (ADR-0015 D5's policy-vs-runtime separation).
+4. **The dialog reads `anchor_mode` and does not write on open** (review finding):
+   opening a dialog must not mutate the layer it inspects.
+5. **"Not set" is a first-class anchor state** (review finding): the spin box
+   defaults there rather than to 0.0, which D6 forbids.
 
 ## Principles Self-Check
 
