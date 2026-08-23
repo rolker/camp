@@ -162,6 +162,26 @@ void ShorelineAnchor::applyManualSelection(std::optional<double> manual, Source 
     emit changed();
 }
 
+QString ShorelineAnchor::sourceKey(Source source)
+{
+  switch(source)
+  {
+    case Source::ChartDatum:   return QStringLiteral("chart_datum");
+    case Source::PlatformTide: return QStringLiteral("platform_tide");
+    case Source::Manual:       return QStringLiteral("manual");
+    case Source::None:         return QStringLiteral("none");
+  }
+  return QStringLiteral("none");
+}
+
+std::optional<ShorelineAnchor::Source> ShorelineAnchor::sourceFromKey(const QString & key)
+{
+  for(Source source : kPrecedence)
+    if(key == sourceKey(source))
+      return source;
+  return std::nullopt;
+}
+
 QString ShorelineAnchor::sourceLabel(Source source)
 {
   switch(source)

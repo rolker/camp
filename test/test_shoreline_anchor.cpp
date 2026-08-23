@@ -259,3 +259,24 @@ TEST(ShorelineAnchorTest, ApplyManualSelectionEmitsOnceForThePair)
   EXPECT_FALSE(anchor.manualValue().has_value());
   EXPECT_FALSE(anchor.value().has_value()) << "D5/D6: a NaN push is an absence";
 }
+
+// The persisted token is a stable name per source, decoupled from both the
+// operator-facing label and the enum's integer (whose order IS the D3 precedence,
+// so a reordering must not silently repoint a settings file at another source).
+TEST(ShorelineAnchorTest, SourceKeysRoundTripAndRejectUnknownTokens)
+{
+  for(Source source : {Source::ChartDatum, Source::PlatformTide, Source::Manual,
+                       Source::None})
+  {
+    const QString key = ShorelineAnchor::sourceKey(source);
+    EXPECT_FALSE(key.isEmpty());
+    const auto parsed = ShorelineAnchor::sourceFromKey(key);
+    ASSERT_TRUE(parsed.has_value()) << "key: " << key.toStdString();
+    EXPECT_EQ(*parsed, source);
+  }
+  EXPECT_FALSE(ShorelineAnchor::sourceFromKey(QString()).has_value())
+    << "an absent token is not a mode — the caller must fall back to None";
+  EXPECT_FALSE(ShorelineAnchor::sourceFromKey("tide_gauge_7").has_value());
+  EXPECT_FALSE(ShorelineAnchor::sourceFromKey("chart datum").has_value())
+    << "the operator-facing label is not the persisted key";
+}

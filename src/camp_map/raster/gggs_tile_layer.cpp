@@ -1884,6 +1884,19 @@ void GggsTileLayer::readSettings()
   const double anchor_value =
     settings.value("shoreline_anchor").toDouble(&anchor_ok);
   const bool has_anchor = settings.contains("shoreline_anchor") && anchor_ok;
+  // The MODE is persisted explicitly, never inferred from the value's presence.
+  // The dialog deliberately KEEPS a typed manual value when the operator selects
+  // None (so switching back restores it), so "Manual -28.038 -> None" leaves the
+  // value stored with no anchor selected; inferring Manual from it would restore
+  // an anchor nobody chose — the same class D6 guards against, arriving through
+  // mode inference instead of through 0.0. An absent or unrecognized token (a
+  // settings file written before this key existed, or a hand-edited one) restores
+  // as None for the same reason: unanchored is the only honest default, and it is
+  // also what makes a future ChartDatum/PlatformTide selection restorable at all.
+  const ShorelineAnchor::Source anchor_mode =
+    ShorelineAnchor::sourceFromKey(
+      settings.value("shoreline_anchor_mode").toString())
+      .value_or(ShorelineAnchor::Source::None);
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())
@@ -1899,19 +1912,10 @@ void GggsTileLayer::readSettings()
     range_model_.set_manual(range_min, range_max);
   else
     range_model_.reset();
-  // [camp#181 / ADR-0015] Restore the manual anchor: a stored value opens Manual,
-  // its absence leaves the unanchored None default. Set the value before the mode
-  // so the resolved anchor is correct at the single changed() emission.
-  if(has_anchor)
-  {
-    shoreline_anchor_.setManual(anchor_value);
-    shoreline_anchor_.setMode(ShorelineAnchor::Source::Manual);
-  }
-  else
-  {
-    shoreline_anchor_.setManual(std::nullopt);
-    shoreline_anchor_.setMode(ShorelineAnchor::Source::None);
-  }
+  // [camp#181 / ADR-0015] Restore the persisted (value, mode) pair as ONE change,
+  // so no observer sees the value paired with a mode it was not stored with.
+  shoreline_anchor_.applyManualSelection(
+    has_anchor ? std::optional<double>(anchor_value) : std::nullopt, anchor_mode);
 }
 
 void GggsTileLayer::writeSettings()
@@ -1930,11 +1934,14 @@ void GggsTileLayer::writeSettings()
   settings.setValue("range_min", range_model_.lo());
   settings.setValue("range_max", range_model_.hi());
   settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
-  // [camp#181 / ADR-0015] Persist the manual shoreline anchor beside the range so
-  // it survives a restart. Only the manual value is persisted (the sole PR1 source);
-  // its presence restores Manual mode, its absence restores the unanchored None
-  // default. Chart datum / platform tide are not persisted — they are resolved live
-  // by their sources in later PRs, never saved as a manual number.
+  // [camp#181 / ADR-0015] Persist the shoreline anchor's MODE and its manual value
+  // as two independent keys: the mode is what the operator chose, the value is what
+  // they typed, and selecting None deliberately KEEPS the typed value for a later
+  // switch back — so the value's presence cannot stand in for the mode. Chart datum
+  // and platform tide persist as a mode only; their values are resolved live by
+  // their sources in later PRs, never saved as a number.
+  settings.setValue("shoreline_anchor_mode",
+                    ShorelineAnchor::sourceKey(shoreline_anchor_.mode()));
   if(shoreline_anchor_.manualValue())
     settings.setValue("shoreline_anchor", *shoreline_anchor_.manualValue());
   else

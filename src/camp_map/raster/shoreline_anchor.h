@@ -123,6 +123,16 @@ public:
   /// (D5 / S-98's permanent indication) rather than silently applied.
   Source activeSource() const;
 
+  /// The stable token a source persists as in QSettings — deliberately NOT
+  /// `sourceLabel()`, whose words are operator-facing and may be reworded, and
+  /// NOT the enum's integer, which a reordering (the enum's order IS the D3
+  /// precedence) would silently repoint at a different source. `sourceFromKey()`
+  /// returns `std::nullopt` for an unrecognized or absent token, and callers must
+  /// treat that as `None` (unanchored): an anchor nobody can confirm was chosen
+  /// must never be inferred back into existence (D6).
+  static QString sourceKey(Source source);
+  static std::optional<Source> sourceFromKey(const QString & key);
+
   /// A short, operator-facing label for a source ("chart datum", "platform tide",
   /// "manual", "none"). Shared by the layer status and the range dialog readout so
   /// the two cannot drift.
