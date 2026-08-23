@@ -4,6 +4,7 @@
 #include "../map/layer.h"
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
+#include "shoreline_anchor.h"
 
 #include <marine_colormap/transfer.hpp>
 
@@ -11,7 +12,9 @@
 #include <QImage>
 #include <QRectF>
 #include <QSize>
+#include <QString>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -94,6 +97,16 @@ public:
   float rangeLo() const { return range_model_.lo(); }
   float rangeHi() const { return range_model_.hi(); }
 
+  /// [camp#181 / ADR-0015] Shoreline anchor (scalar charts whose palette carries a
+  /// shoreline). Sets mode + manual value, persists, invalidates the cached render,
+  /// and repaints via the holder's changed() slot. No-op if nothing changes.
+  void applyShorelineAnchor(ShorelineAnchor::Source mode, std::optional<double> manual);
+  ShorelineAnchor::Source shorelineAnchorMode() const { return shoreline_anchor_.mode(); }
+  std::optional<double> shorelineManualAnchor() const { return shoreline_anchor_.manualValue(); }
+  std::optional<double> resolvedShorelineAnchor() const { return shoreline_anchor_.value(); }
+  /// True when this is a scalar chart AND its palette declares a shoreline_position.
+  bool paletteSupportsAnchor() const;
+
   // [camp#134] RasterFieldSource: a single reprojected-chart item for the renderer.
   QStringList bands() const override;
   RasterBandMeta metadata(const QString& band) const override;
@@ -167,6 +180,20 @@ private:
   marine_colormap::RangeModel range_model_;
   bool has_nodata_ = false;
   float nodata_ = 0.0f;
+
+  // [camp#181 / ADR-0015] Source-agnostic shoreline-anchor holder (manual source
+  // only in PR1). Its changed() signal drops the cache, recomposes the status
+  // OUTSIDE paint(), and repaints (wired in the ctor). ROS-free (ADR-0002).
+  ShorelineAnchor shoreline_anchor_;
+  // [camp#181] The load-state half of the status ("loading..." / "load failed" /
+  // ""), kept so updateStatus() can recompose it together with the anchor part
+  // without paint() ever publishing model state.
+  QString load_status_;
+
+  /// [camp#181] Compose the layer status from the load state + the shoreline-anchor
+  /// part. Called from imageReady()/loadFile() (load state) and the anchor changed()
+  /// slot — never from paint().
+  void updateStatus();
 
   // [camp#103] Last render, keyed by FBO size AND viewport clip: zoom changes
   // the size, pan changes the clip, so both re-render (the FBO is viewport-sized,

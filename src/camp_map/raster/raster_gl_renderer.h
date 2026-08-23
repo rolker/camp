@@ -8,6 +8,7 @@
 #include <QRectF>
 #include <QSize>
 #include <memory>
+#include <optional>
 #include <string>
 
 class QOpenGLContext;
@@ -72,6 +73,17 @@ public:
   void setColormap(const std::string& name);
   const std::string& colormap() const { return colormap_name_; }
 
+  /// [camp#181 / ADR-0015] Pin the palette's shoreline break to an absolute data
+  /// value (chart datum, a tide height, or an operator's manual number), or clear
+  /// it. Mirrors setColormap's dirty-flag pattern. The anchor only bites on a
+  /// palette that declares a `shoreline_position` (oleron / hypsometric); on any
+  /// other ramp `bake_anchored_lut` falls back to the unanchored bake, so setting
+  /// it is harmless. Because the anchored LUT is a function of the render range,
+  /// ensureLut() re-bakes when the anchor OR the [lo, hi] it is baked against
+  /// changes — see ensureLut(). Re-baked on next render; shader untouched.
+  void setShorelineAnchor(std::optional<float> anchor);
+  std::optional<float> shorelineAnchor() const { return shoreline_anchor_; }
+
   /// Release the FBO / program / LUT. Safe to call with no context; the dtor
   /// makes the context current first and then destroys it.
   void releaseGL();
@@ -79,7 +91,14 @@ public:
 private:
   bool ensureGL();
   bool ensureProgram();
-  QOpenGLTexture* ensureLut();
+  /// [camp#181 / ADR-0015] Bake (or reuse) the LUT for the render range
+  /// [@p lo, @p hi]. The LUT is now range-DEPENDENT when an anchor is active
+  /// (ADR-0008 Decision #2, which asserted range-independence, is amended by
+  /// ADR-0015): it re-bakes when the palette name, the anchor, OR — while
+  /// anchored — [lo, hi] changes. When there is no active anchor the bake ignores
+  /// [lo, hi] and reduces to the old range-independent palette ramp, so an
+  /// unanchored layer does NOT re-bake on every Auto-range tick.
+  QOpenGLTexture* ensureLut(float lo, float hi);
 
   // Latitude tessellation per geographic item: longitude is linear in
   // Web-Mercator, latitude is the lone nonlinearity. 16 strips is sub-pixel over a
@@ -93,7 +112,15 @@ private:
   std::unique_ptr<QOpenGLTexture> lut_texture_;   // colormap LUT (256x1 RGBA)
 
   std::string colormap_name_{"grayscale"};   // [camp#141] marine_colormap palette
-  bool lut_dirty_ = true;
+  bool lut_dirty_ = true;                     // name changed (or never baked)
+  // [camp#181 / ADR-0015] The active shoreline anchor and the cache key of the
+  // LUT currently uploaded. lut_anchor_/lut_lo_/lut_hi_ record what the texture
+  // was baked against so ensureLut() can detect an anchor or range change; they
+  // are meaningful only while lut_dirty_ is false.
+  std::optional<float> shoreline_anchor_;
+  std::optional<float> lut_anchor_;
+  float lut_lo_ = 0.0f;
+  float lut_hi_ = 0.0f;
   bool gl_failed_ = false;
 };
 

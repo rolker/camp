@@ -1,5 +1,6 @@
 #include "raster_gl_renderer.h"
 
+#include "anchored_lut.h"
 #include "../map_view/web_mercator.h"
 
 #include <marine_colormap/colormap.hpp>
@@ -78,9 +79,14 @@ void main()
       discard;                                       // NaN NoData (1.20-portable)
     if(u_has_nodata != 0 && v == u_nodata)
       discard;                                        // finite sentinel
-    // Normalize over the TRUE data span (the per-band range step, kept in the
-    // shader — the baked LUT uses identity TransferParams, see ADR-0008), so sub-unit
-    // ranges still stretch across the colormap. The 1e-6 floor is ONLY a
+    // Normalize LINEARLY over the TRUE data span (the per-band range step, kept
+    // in the shader), so sub-unit ranges still stretch across the colormap. The
+    // LUT this feeds is USUALLY the plain palette ramp (identity TransferParams,
+    // ADR-0008) — but [camp#181 / ADR-0015] a topo-bathy layer with an active
+    // shoreline anchor pre-warps the LUT through a BreakpointMap in the bake
+    // (bake_anchored_lut), so entry i still corresponds to this same linear
+    // position i/(n-1) and the shader stays untouched. The LUT is therefore no
+    // longer range-independent when anchored (see ensureLut). The 1e-6 floor is ONLY a
     // divide-by-zero guard for a genuinely degenerate (zero-width) range — a true
     // span of 0 collapses to t=0 (a flat LUT value). The old 1.0 floor silently
     // crushed contrast for any span < 1.0 (harmless for large-range GGGS/sidescan
@@ -174,21 +180,36 @@ bool RasterGlRenderer::ensureProgram()
   return true;
 }
 
-QOpenGLTexture* RasterGlRenderer::ensureLut()
+QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
 {
-  // [camp#141] Bake the selected marine_colormap palette into a 256x1 RGBA LUT
-  // (re-baked when the ramp changes), sampled by the fragment shader as the colour
-  // transfer. TransferParams stays IDENTITY: the shader still owns range-normalize
-  // (per-band u_min/u_max over the true span) and the NaN/finite-NoData discard, so
-  // the LUT carries only the palette ramp — exactly what the old colorNormalized
-  // loop produced (see ADR-0008). An unknown name falls back to grayscale.
-  if(lut_texture_ && !lut_dirty_)
-    return lut_texture_.get();
+  // [camp#141] Bake the selected marine_colormap palette into a 256x1 RGBA LUT,
+  // sampled by the fragment shader as the colour transfer. An unknown name falls
+  // back to grayscale.
+  //
+  // [camp#181 / ADR-0015] The cache key is (name, lo, hi, anchor), NOT the name
+  // alone (camp ADR-0008 Decision #2's range-independence is amended here). Get it
+  // wrong and a stale LUT after a range change renders wrong colours silently — no
+  // crash, no log line. bake_anchored_lut() folds the anchor into a BreakpointMap
+  // in the bake, so the shader stays IDENTITY-normalized and untouched; on the
+  // unanchored path it returns exactly bake_lut(pal, {}, 256).
   const marine_colormap::Palette* palette = marine_colormap::find_palette(colormap_name_);
   if(!palette)
     palette = marine_colormap::find_palette("grayscale");
+
+  // [lo, hi] only affects the bake while an anchor is actually active AND the
+  // palette can carry a shoreline; otherwise the bake ignores them, so we keep
+  // them out of the cache key and an unanchored layer never re-bakes on an
+  // Auto-range tick (ADR-0015 cost note).
+  const bool anchored =
+    shoreline_anchor_.has_value() && palette_supports_anchor(*palette);
+  const bool cache_hit = lut_texture_ && !lut_dirty_ &&
+                         shoreline_anchor_ == lut_anchor_ &&
+                         (!anchored || (lo == lut_lo_ && hi == lut_hi_));
+  if(cache_hit)
+    return lut_texture_.get();
+
   const std::vector<marine_colormap::Rgba8> baked =
-    marine_colormap::bake_lut(*palette, marine_colormap::TransferParams{}, 256);
+    bake_anchored_lut(*palette, lo, hi, shoreline_anchor_, 256);
   std::vector<uchar> lut(256 * 4);
   for(int i = 0; i < 256; ++i)
   {
@@ -210,6 +231,9 @@ QOpenGLTexture* RasterGlRenderer::ensureLut()
   }
   lut_texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, lut.data());
   lut_dirty_ = false;
+  lut_anchor_ = shoreline_anchor_;
+  lut_lo_ = lo;
+  lut_hi_ = hi;
   return lut_texture_.get();
 }
 
@@ -219,6 +243,16 @@ void RasterGlRenderer::setColormap(const std::string& name)
     return;
   colormap_name_ = name;
   lut_dirty_ = true;
+}
+
+void RasterGlRenderer::setShorelineAnchor(std::optional<float> anchor)
+{
+  // [camp#181 / ADR-0015] Not a dirty-flag toggle: ensureLut() re-bakes when
+  // shoreline_anchor_ differs from lut_anchor_, so simply storing the new value
+  // is enough to trigger a re-bake on the next render. (Kept a plain setter so the
+  // layer can push the resolved anchor every render cheaply — an unchanged value
+  // hits the cache.)
+  shoreline_anchor_ = anchor;
 }
 
 QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
@@ -265,7 +299,10 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
     program_->setUniformValue("u_max", data_max);
     program_->setUniformValue("u_tex", 0);
     program_->setUniformValue("u_lut", 1);
-    QOpenGLTexture* lut = ensureLut();
+    // [camp#181 / ADR-0015] Bake keyed on (name, data_min, data_max, anchor): the
+    // same [u_min, u_max] the shader normalizes over is the range the anchored LUT
+    // is built against, so the two agree at every entry.
+    QOpenGLTexture* lut = ensureLut(data_min, data_max);
     if(lut)
       lut->bind(1);
 

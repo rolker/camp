@@ -16,10 +16,13 @@
 #define CAMP_MAP__RASTER__COLORMAP_RANGE_DIALOG_H_
 
 #include <functional>
+#include <optional>
+#include <string>
 
 #include <QString>
 
 #include "marine_colormap/transfer.hpp"
+#include "shoreline_anchor.h"
 
 class QWidget;
 
@@ -41,6 +44,15 @@ struct ColormapRangeState
   marine_colormap::RangeMode mode = marine_colormap::RangeMode::Auto;
   float lo = 0.0f;              ///< current resolved low bound (the active window)
   float hi = 1.0f;              ///< current resolved high bound
+
+  // [camp#181 / ADR-0015] Shoreline anchor. Populated only by the scalar layers
+  // whose palette can carry a shoreline (oleron / hypsometric). When
+  // `supports_anchor` is false the dialog shows no anchor control at all, so a
+  // sonar/general-purpose ramp is unaffected.
+  std::string palette_name;     ///< the ramp name — used to bake the anchored colorbar
+  bool supports_anchor = false; ///< palette declares a shoreline_position
+  ShorelineAnchor::Source anchor_mode = ShorelineAnchor::Source::None;
+  std::optional<double> manual_anchor;   ///< current manual anchor value, if set
 };
 
 /// Open a modal dialog hosting marine_colormap_widgets::ColormapLegendWidget plus
@@ -52,9 +64,18 @@ struct ColormapRangeState
 /// Auto range and fires `on_reset()`. Both fire **live** while the dialog is open
 /// so the map re-renders as the operator adjusts. The colorbar and spin boxes
 /// stay in sync with each other.
+/// [camp#181 / ADR-0015] When the layer's palette carries a shoreline
+/// (`state.supports_anchor`), the dialog also shows a "Shoreline anchor" control:
+/// Chart datum and Platform tide are listed in D3 order but shown **disabled and
+/// honestly labelled unavailable** (no source resolves them until PR2 / PR3);
+/// Manual (with a value) and None are operator-selectable. Selecting Manual repaints
+/// the colorbar through `bake_anchored_lut()` so the colour↔value mapping is exact
+/// under the anchor, and adds a readout naming the active anchor and its source.
+/// `on_anchor(mode, manual_value)` fires live as the operator changes it.
 void showColormapRangeDialog(
   QWidget * parent, const QString & title, const ColormapRangeState & state,
-  std::function<void(float, float)> on_range, std::function<void()> on_reset);
+  std::function<void(float, float)> on_range, std::function<void()> on_reset,
+  std::function<void(ShorelineAnchor::Source, std::optional<double>)> on_anchor = {});
 
 }  // namespace raster
 }  // namespace camp

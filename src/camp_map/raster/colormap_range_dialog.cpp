@@ -18,12 +18,16 @@
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QRadioButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
+#include "anchored_lut.h"
+#include "marine_colormap/palette.hpp"
 #include "marine_colormap_widgets/colormap_legend_widget.hpp"
 
 namespace camp
@@ -33,7 +37,8 @@ namespace raster
 
 void showColormapRangeDialog(
   QWidget * parent, const QString & title, const ColormapRangeState & state,
-  std::function<void(float, float)> on_range, std::function<void()> on_reset)
+  std::function<void(float, float)> on_range, std::function<void()> on_reset,
+  std::function<void(ShorelineAnchor::Source, std::optional<double>)> on_anchor)
 {
   QDialog dialog(parent);
   dialog.setWindowTitle(title);
@@ -114,6 +119,108 @@ void showColormapRangeDialog(
   };
   QObject::connect(min_spin, &QDoubleSpinBox::editingFinished, legend, pin_from_spins);
   QObject::connect(max_spin, &QDoubleSpinBox::editingFinished, legend, pin_from_spins);
+
+  // ---- [camp#181 / ADR-0015] Shoreline anchor --------------------------------
+  // Offered ONLY when the palette declares a shoreline (oleron / hypsometric).
+  // Chart datum and Platform tide are listed in D3 order but disabled and labelled
+  // unavailable — present and honestly reported, never faked or silently tried
+  // (no source resolves them until PR2 / PR3). Manual + None are operator-driven.
+  if (state.supports_anchor) {
+    const marine_colormap::Palette * anchor_palette =
+      marine_colormap::find_palette(state.palette_name);
+
+    auto * anchor_box = new QGroupBox("Shoreline anchor", &dialog);
+    auto * anchor_layout = new QVBoxLayout(anchor_box);
+    anchor_layout->addWidget(new QLabel(
+      "Pin the land/sea colour transition to a real water level.", anchor_box));
+
+    auto * chart_radio = new QRadioButton(
+      "Chart datum — automatic (available in a later update)", anchor_box);
+    auto * tide_radio = new QRadioButton(
+      "Platform tide — automatic (available in a later update)", anchor_box);
+    chart_radio->setEnabled(false);   // no source resolves these yet (PR2 / PR3)
+    tide_radio->setEnabled(false);
+
+    auto * manual_radio = new QRadioButton("Manual:", anchor_box);
+    auto * anchor_spin = new QDoubleSpinBox(anchor_box);
+    anchor_spin->setRange(-1.0e6, 1.0e6);
+    anchor_spin->setDecimals(3);
+    anchor_spin->setSuffix(" m");
+    auto * manual_row = new QHBoxLayout();
+    manual_row->addWidget(manual_radio);
+    manual_row->addWidget(anchor_spin);
+    manual_row->addStretch();
+
+    auto * none_radio = new QRadioButton("None (render unanchored)", anchor_box);
+    auto * anchor_readout = new QLabel(anchor_box);
+
+    anchor_layout->addWidget(chart_radio);
+    anchor_layout->addWidget(tide_radio);
+    anchor_layout->addLayout(manual_row);
+    anchor_layout->addWidget(none_radio);
+    anchor_layout->addWidget(anchor_readout);
+    layout->addWidget(anchor_box);
+
+    // Seed BEFORE wiring so the setChecked() calls don't echo into the layer.
+    // Only Manual and None are selectable in PR1; a persisted manual value opens
+    // on Manual, otherwise None.
+    if (state.manual_anchor) {
+      manual_radio->setChecked(true);
+      anchor_spin->setValue(*state.manual_anchor);
+    } else {
+      none_radio->setChecked(true);
+      anchor_spin->setEnabled(false);
+    }
+
+    // Repaint the colorbar exactly as the layer renders it (bake_anchored_lut over
+    // the resolved [lo, hi]) and push the mode+value to the layer. Fires live.
+    auto refresh_anchor =
+      [legend, anchor_palette, manual_radio, anchor_spin, anchor_readout, on_anchor]() {
+        const bool manual = manual_radio->isChecked();
+        anchor_spin->setEnabled(manual);
+        std::optional<double> value;
+        ShorelineAnchor::Source src = ShorelineAnchor::Source::None;
+        if (manual) {
+          value = anchor_spin->value();
+          src = ShorelineAnchor::Source::Manual;
+        }
+        if (anchor_palette && value) {
+          legend->setLut(bake_anchored_lut(
+            *anchor_palette, legend->lo(), legend->hi(),
+            static_cast<float>(*value), 256));
+        } else {
+          legend->setLut({});   // fall back to the plain palette ramp
+        }
+        // Readout naming the active anchor AND its source (S-98 permanent
+        // indication; D5 report-the-degraded-state).
+        if (value) {
+          anchor_readout->setText(QString("Shoreline at %1 m (%2)")
+                                    .arg(*value, 0, 'f', 3)
+                                    .arg(ShorelineAnchor::sourceLabel(src)));
+        } else {
+          anchor_readout->setText("Unanchored");
+        }
+        if (on_anchor)
+          on_anchor(src, value);
+      };
+
+    QObject::connect(manual_radio, &QRadioButton::toggled, &dialog,
+                     [refresh_anchor](bool) { refresh_anchor(); });
+    QObject::connect(none_radio, &QRadioButton::toggled, &dialog,
+                     [refresh_anchor](bool) { refresh_anchor(); });
+    QObject::connect(anchor_spin,
+                     QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dialog,
+                     [refresh_anchor](double) { refresh_anchor(); });
+    // A range change (drag / spin / reset) must re-bake the anchored colorbar over
+    // the new [lo, hi] — the anchored LUT is range-dependent (ADR-0015).
+    QObject::connect(
+      legend, &marine_colormap_widgets::ColormapLegendWidget::rangeChanged, &dialog,
+      [refresh_anchor](float, float) { refresh_anchor(); });
+
+    // Paint the colorbar + readout to match the seeded state (idempotent on the
+    // layer side, which no-ops an unchanged anchor).
+    refresh_anchor();
+  }
 
   auto * buttons = new QHBoxLayout();
   auto * reset_btn = new QPushButton("Reset to auto", &dialog);

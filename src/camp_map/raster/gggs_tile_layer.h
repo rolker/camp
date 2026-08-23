@@ -4,6 +4,7 @@
 #include "../map/layer.h"
 #include "raster_field_source.h"
 #include "raster_gl_renderer.h"
+#include "shoreline_anchor.h"
 #include "tile_residency.h"
 
 #include <marine_colormap/transfer.hpp>
@@ -14,6 +15,7 @@
 #include <QMutex>
 #include <QSize>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -123,6 +125,21 @@ public:
   marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
   float rangeLo() const { return range_model_.lo(); }   ///< current resolved low bound
   float rangeHi() const { return range_model_.hi(); }   ///< current resolved high bound
+
+  /// [camp#181 / ADR-0015] Set the shoreline-anchor mode + manual value, persist,
+  /// invalidate the cached render, and repaint (via the holder's changed() slot).
+  /// No-op if neither the mode nor the manual value actually changes. The manual
+  /// value is what the "Colormap range…" dialog edits; the mode selector lists all
+  /// four D3 sources but only Manual and None are runtime-satisfiable in PR1.
+  void applyShorelineAnchor(ShorelineAnchor::Source mode, std::optional<double> manual);
+  ShorelineAnchor::Source shorelineAnchorMode() const { return shoreline_anchor_.mode(); }
+  std::optional<double> shorelineManualAnchor() const { return shoreline_anchor_.manualValue(); }
+  /// The resolved anchor (mode + D3 fallback), or nullopt when unanchored. Exposed
+  /// for tests; nullopt is D5's "never 0.0".
+  std::optional<double> resolvedShorelineAnchor() const { return shoreline_anchor_.value(); }
+  /// True when the current palette declares a shoreline_position, i.e. anchoring
+  /// does something. Gates the dialog's anchor control and the status part.
+  bool paletteSupportsAnchor() const;
 
   /// [camp#108] Select which 1-indexed band the layer renders, then persist it.
   /// Delegates the band switch to applyBand() and round-trips the selection to
@@ -435,6 +452,12 @@ private:
   // update_auto() in tilesReady(); Manual pins an operator override). Fed to the
   // renderer's u_min/u_max at render time, replacing the raw data_min_/data_max_.
   marine_colormap::RangeModel range_model_;
+
+  // [camp#181 / ADR-0015] Source-agnostic shoreline-anchor holder. In PR1 only its
+  // Manual source is written (from the range dialog / persistence); chart datum and
+  // platform tide push in from later PRs. Its changed() signal drives a cache drop +
+  // status recompose + repaint (wired in the ctor). ROS-free (ADR-0002).
+  ShorelineAnchor shoreline_anchor_;
 
   // [camp#102] Async pixel load mirroring RasterLayer (ADR-0003 §3): the cheap
   // extent list is built in loadDirectory(); the band reads are deferred to a

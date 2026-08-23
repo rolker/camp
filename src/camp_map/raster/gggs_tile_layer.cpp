@@ -3,6 +3,7 @@
 #include "gggs_tile.h"
 #include "gggs_tile_util.h"
 #include "lod_level_selector.h"
+#include "anchored_lut.h"
 #include "colormap_range_dialog.h"
 #include "viewport_clip.h"
 #include "../map_view/web_mercator.h"
@@ -128,6 +129,16 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   // thread when the async pixel load finishes.
   connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
           &GggsTileLayer::tilesReady);
+  // [camp#181 / ADR-0015] The anchor holder is the source-agnostic seam (manual
+  // today; chart datum / platform tide later). When the resolved anchor moves,
+  // drop the cached image, recompose the status OUTSIDE paint(), and repaint. The
+  // renderer is fed the resolved value at renderImage() time, not here.
+  connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
+  {
+    cached_image_ = QImage();
+    updateStatus();
+    update(boundingRect());
+  });
   // [camp#103] Scan via the CANONICALIZED directory_ (not the raw parameter):
   // rescan()'s known-path dedup compares against these initial tile paths, so
   // both scans must build paths from the same directory string — a raw
@@ -795,6 +806,24 @@ void GggsTileLayer::updateStatus()
   // [camp#195] The budget cannot be enforced at all — see evictIfOverBudget().
   if(eviction_blocked_)
     parts << "tile budget NOT enforced (GL context unavailable)";
+  // [camp#181 / ADR-0015] Shoreline anchor part — S-98's permanent indication:
+  // name the active anchor AND its source while active, and report a selected but
+  // unresolved source as unavailable rather than silently applying nothing. Only
+  // on a palette that can carry a shoreline; the unanchored default (mode None)
+  // stays silent (byte-identical to pre-camp#181).
+  if(const marine_colormap::Palette* pal =
+       marine_colormap::find_palette(renderer_.colormap());
+     pal && palette_supports_anchor(*pal))
+  {
+    const std::optional<double> resolved = shoreline_anchor_.value();
+    if(resolved)
+      parts << QString("shoreline %1 m (%2)")
+                 .arg(*resolved, 0, 'f', 2)
+                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.activeSource()));
+    else if(shoreline_anchor_.mode() != ShorelineAnchor::Source::None)
+      parts << QString("shoreline %1 unavailable")
+                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.mode()));
+  }
   setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
 }
 
@@ -1387,6 +1416,13 @@ QImage GggsTileLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<RasterFieldItem> draw = itemsIntersecting(clip_bounds);
+  // [camp#181 / ADR-0015] Push the resolved shoreline anchor (manual today) into
+  // the renderer before the draw. It bites only on a palette with a
+  // shoreline_position; on any other ramp bake_anchored_lut falls back to the plain
+  // bake, so this is safe unconditionally. An unchanged value hits the LUT cache.
+  const std::optional<double> anchor = shoreline_anchor_.value();
+  renderer_.setShorelineAnchor(
+    anchor ? std::optional<float>(static_cast<float>(*anchor)) : std::nullopt);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
   const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
@@ -1534,6 +1570,27 @@ void GggsTileLayer::resetRangeToAuto()
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
+}
+
+bool GggsTileLayer::paletteSupportsAnchor() const
+{
+  const marine_colormap::Palette* pal =
+    marine_colormap::find_palette(renderer_.colormap());
+  return pal && palette_supports_anchor(*pal);
+}
+
+void GggsTileLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
+                                         std::optional<double> manual)
+{
+  // [camp#181 / ADR-0015] Idempotent: the range dialog re-fires the current state
+  // on open, so only persist when something actually moves. The holder emits
+  // changed() (→ cache drop + status + repaint, wired in the ctor) only when the
+  // resolved anchor moves, so setting an unchanged value is free.
+  if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
+    return;
+  shoreline_anchor_.setManual(manual);
+  shoreline_anchor_.setMode(mode);
+  writeSettings();
 }
 
 int GggsTileLayer::bandCount() const
@@ -1702,10 +1759,17 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     state.mode = range_model_.mode();
     state.lo = range_model_.lo();
     state.hi = range_model_.hi();
+    // [camp#181 / ADR-0015] Anchor state for the dialog's shoreline control.
+    state.palette_name = renderer_.colormap();
+    state.supports_anchor = paletteSupportsAnchor();
+    state.anchor_mode = shoreline_anchor_.mode();
+    state.manual_anchor = shoreline_anchor_.manualValue();
     showColormapRangeDialog(
       nullptr, "Colormap range", state,
       [this](float lo, float hi) { setRangeOverride(lo, hi); },
-      [this]() { resetRangeToAuto(); });
+      [this]() { resetRangeToAuto(); },
+      [this](ShorelineAnchor::Source mode, std::optional<double> manual)
+      { applyShorelineAnchor(mode, manual); });
   });
 
   // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
@@ -1782,6 +1846,11 @@ void GggsTileLayer::readSettings()
   const float range_max = settings.value("range_max", 1.0).toFloat();
   // [camp#132] Persisted blit-smoothing opt-in (default OFF = Nearest).
   smooth_interpolation_ = settings.value("smooth_interpolation", false).toBool();
+  // [camp#181 / ADR-0015] Persisted manual shoreline anchor. Present -> Manual mode
+  // at that value; absent -> the unanchored None default (byte-identical to
+  // pre-camp#181). Applied below, after the group is closed.
+  const bool has_anchor = settings.contains("shoreline_anchor");
+  const double anchor_value = settings.value("shoreline_anchor", 0.0).toDouble();
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())
@@ -1797,6 +1866,19 @@ void GggsTileLayer::readSettings()
     range_model_.set_manual(range_min, range_max);
   else
     range_model_.reset();
+  // [camp#181 / ADR-0015] Restore the manual anchor: a stored value opens Manual,
+  // its absence leaves the unanchored None default. Set the value before the mode
+  // so the resolved anchor is correct at the single changed() emission.
+  if(has_anchor)
+  {
+    shoreline_anchor_.setManual(anchor_value);
+    shoreline_anchor_.setMode(ShorelineAnchor::Source::Manual);
+  }
+  else
+  {
+    shoreline_anchor_.setManual(std::nullopt);
+    shoreline_anchor_.setMode(ShorelineAnchor::Source::None);
+  }
 }
 
 void GggsTileLayer::writeSettings()
@@ -1815,6 +1897,15 @@ void GggsTileLayer::writeSettings()
   settings.setValue("range_min", range_model_.lo());
   settings.setValue("range_max", range_model_.hi());
   settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
+  // [camp#181 / ADR-0015] Persist the manual shoreline anchor beside the range so
+  // it survives a restart. Only the manual value is persisted (the sole PR1 source);
+  // its presence restores Manual mode, its absence restores the unanchored None
+  // default. Chart datum / platform tide are not persisted — they are resolved live
+  // by their sources in later PRs, never saved as a manual number.
+  if(shoreline_anchor_.manualValue())
+    settings.setValue("shoreline_anchor", *shoreline_anchor_.manualValue());
+  else
+    settings.remove("shoreline_anchor");
   settings.endGroup();
   settings.endGroup();
 }
