@@ -264,9 +264,17 @@ void showColormapRangeDialog(
         // Readout naming the active anchor AND its source (S-98 permanent
         // indication; D5 report-the-degraded-state).
         if (value) {
-          anchor_readout->setText(QString("Shoreline at %1 m (%2)")
-                                    .arg(*value, 0, 'f', 3)
-                                    .arg(ShorelineAnchor::sourceLabel(mode)));
+          QString text = QString("Shoreline at %1 m (%2)")
+                           .arg(*value, 0, 'f', 3)
+                           .arg(ShorelineAnchor::sourceLabel(mode));
+          // An anchor outside the render range is ORDINARY, not an error (a survey
+          // line with no land in view has its break above hi) — but BreakpointMap
+          // clamps it to an endpoint and the ramp goes single-sided. Say so, rather
+          // than let the colorbar imply a land/sea break that is not on it.
+          if (*value < legend->lo() || *value > legend->hi()) {
+            text += " - outside the range; ramp is single-sided";
+          }
+          anchor_readout->setText(text);
         } else if (mode == ShorelineAnchor::Source::Manual) {
           // Never "shoreline 0.00 m" — an unset Manual is reported as what it is.
           anchor_readout->setText("Unanchored - enter a manual value");
@@ -292,9 +300,12 @@ void showColormapRangeDialog(
                      [apply_anchor](bool) { apply_anchor(); });
     QObject::connect(none_radio, &QRadioButton::toggled, &dialog,
                      [apply_anchor](bool) { apply_anchor(); });
-    QObject::connect(anchor_spin,
-                     QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dialog,
-                     [apply_anchor](double) { apply_anchor(); });
+    // editingFinished, not valueChanged: the range spins in this dialog already use
+    // it, and per-keystroke firing would repaint the map and rewrite QSettings on
+    // every digit typed — and would briefly apply half-typed anchors ("-2" on the
+    // way to "-28") as though the operator had chosen them.
+    QObject::connect(anchor_spin, &QDoubleSpinBox::editingFinished, &dialog,
+                     [apply_anchor]() { apply_anchor(); });
     // A range change (drag / spin / reset) must re-bake the anchored colorbar over
     // the new [lo, hi] — the anchored LUT is range-dependent (ADR-0015). This is a
     // DIALOG repaint only: the range change itself already went to the layer, which
