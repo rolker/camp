@@ -14,6 +14,7 @@
 
 #include "colormap_range_dialog.h"
 
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -315,11 +316,23 @@ void showColormapRangeDialog(
       };
 
     // Push the operator's change to the layer. Fires live, and ONLY from a real
-    // interaction — never from seeding.
-    auto apply_anchor = [repaint_anchor, current_anchor, on_anchor]() {
+    // interaction — never from seeding, and never for a pair the layer already
+    // holds. The last-pushed pair starts as the SEEDED state, which is what keeps
+    // an inspection from turning into a write: editingFinished fires on a plain
+    // focus-out, and the spin rounds to its 3 decimals, so merely clicking into
+    // the spin and closing would otherwise re-push (and re-persist) a truncated
+    // copy of a value the operator never touched.
+    auto last_pushed =
+      std::make_shared<std::pair<ShorelineAnchor::Source, std::optional<double>>>(
+        state.anchor_mode, state.manual_anchor);
+    auto apply_anchor = [repaint_anchor, current_anchor, on_anchor, last_pushed]() {
       repaint_anchor();
+      const auto [mode, typed] = current_anchor();
+      if (mode == last_pushed->first && typed == last_pushed->second) {
+        return;
+      }
+      *last_pushed = {mode, typed};
       if (on_anchor) {
-        const auto [mode, typed] = current_anchor();
         on_anchor(mode, typed);
       }
     };
@@ -349,6 +362,14 @@ void showColormapRangeDialog(
     // anchors ("-2" on the way to "-28") as though the operator had chosen them.
     QObject::connect(anchor_spin, &QDoubleSpinBox::editingFinished, &dialog,
                      [apply_anchor]() { apply_anchor(); });
+    // Stepping with the arrows, the wheel or Up/Down changes the value without ever
+    // emitting editingFinished, so the colorbar and the S-98 readout would keep
+    // describing the previous number while the spin shows a new one. Repaint the
+    // DIALOG on every value change — no layer write, no QSettings write; the push
+    // still waits for editingFinished.
+    QObject::connect(anchor_spin, qOverload<double>(&QDoubleSpinBox::valueChanged),
+                     &dialog,
+                     [repaint_anchor](double) { repaint_anchor(); });
     // A range change (drag / spin / reset) must re-bake the anchored colorbar over
     // the new [lo, hi] — the anchored LUT is range-dependent (ADR-0015). This is a
     // DIALOG repaint only: the range change itself already went to the layer, which
