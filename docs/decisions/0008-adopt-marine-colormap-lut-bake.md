@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Decision #2 amended by
+[ADR-0015](0015-anchored-shoreline-colormap.md) D8 (camp#181) — the LUT's
+range-independence holds on the unanchored path only.
 
 Implements CAMP issue [#141](https://github.com/rolker/camp/issues/141) — replace
 camp's internal `camp::map::ColorMap` (three hand-sampled ramps: Grayscale, Viridis,

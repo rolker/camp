@@ -129,6 +129,16 @@ told.
    routes through `Palette::sample()` with no `TransferParams` to get wrong, so
    double-application is structurally impossible there.
 
+9. **`SonarLiveCacheLayer` is out of scope for the anchor control.** All three
+   scalar raster layers offer the full `marine_colormap` registry — oleron
+   included — so an operator can select a topo-bathy ramp on the sonar live-cache
+   layer too, and there it renders unanchored with no control offered. That is a
+   deliberate exclusion, not an oversight: the layer paints live per-ping coverage
+   in the sonar's own value space, where a land/sea break has no meaning, and
+   giving it an anchor control would imply one does. It is recorded here because
+   the asymmetry is visible to the operator (the same ramp gets an anchor control
+   on two layers and not the third), and an undocumented asymmetry reads as a bug.
+
 ## Consequences
 
 - **ADR-0008 Decision #2 must be read with D8 above.** A cross-reference note is

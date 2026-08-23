@@ -191,9 +191,10 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   // [camp#181 / ADR-0015] The cache key is (name, lo, hi, anchor), NOT the name
   // alone (camp ADR-0008 Decision #2's range-independence is amended here). Get it
   // wrong and a stale LUT after a range change renders wrong colours silently — no
-  // crash, no log line. marine_colormap::bake_shoreline_anchored_lut() folds the anchor into a BreakpointMap
-  // in the bake, so the shader stays IDENTITY-normalized and untouched; on the
-  // unanchored path it returns exactly bake_lut(pal, {}, 256).
+  // crash, no log line. marine_colormap::bake_shoreline_anchored_lut() folds the
+  // anchor into a BreakpointMap in the bake, so the shader stays
+  // IDENTITY-normalized and untouched; on the unanchored path it returns exactly
+  // bake_lut(pal, {}, 256).
   const marine_colormap::Palette* palette = marine_colormap::find_palette(colormap_name_);
   if(!palette)
     palette = marine_colormap::find_palette("grayscale");

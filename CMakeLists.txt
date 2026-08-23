@@ -438,7 +438,10 @@ if(BUILD_TESTING)
     Qt5::Core
   )
 
-  # Anchored topo-bathy LUT (camp#181 / ADR-0015): the shoreline break pinned to
+  # Shoreline anchor holder (camp#181 / ADR-0015): the source-agnostic seam that
+  # resolves the land/sea break to an absolute data value — D3 fallback precedence,
+  # D6's "an absent anchor is never 0.0", and the changed() no-op contract. Qt-only
+  # (no GL, no ROS), so it runs everywhere.
   ament_add_gtest(test_shoreline_anchor
     test/test_shoreline_anchor.cpp
     src/camp_map/raster/shoreline_anchor.cpp
