@@ -202,8 +202,15 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   // palette can carry a shoreline; otherwise the bake ignores them, so we keep
   // them out of the cache key and an unanchored layer never re-bakes on an
   // Auto-range tick (ADR-0015 cost note).
-  const bool anchored =
-    shoreline_anchor_.has_value() && marine_colormap::has_shoreline(*palette);
+  // A degenerate (zero-width or crossed) range cannot carry an anchor: the shader
+  // collapses it to a single t and BreakpointMap has no domain to hinge on, so the
+  // anchored and unanchored bakes would paint OPPOSITE ends of the ramp — the
+  // palette's top colour unanchored, its bottom colour anchored — with no way for
+  // the operator to tell which they were looking at. Fall back to the plain ramp so
+  // the two agree, and let the status keep reporting the anchor as set (it will
+  // bite again the moment the range is real).
+  const bool anchored = shoreline_anchor_.has_value() &&
+                        marine_colormap::has_shoreline(*palette) && hi > lo;
   const bool cache_hit = lut_texture_ && !lut_dirty_ &&
                          shoreline_anchor_ == lut_anchor_ &&
                          (!anchored || (lo == lut_lo_ && hi == lut_hi_));
@@ -212,7 +219,9 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
 
   ++lut_bake_count_;   // see lutBakeCount(): the cache key's only observable
   const std::vector<marine_colormap::Rgba8> baked =
-    marine_colormap::bake_shoreline_anchored_lut(*palette, marine_colormap::TransferParams{}, lo, hi, shoreline_anchor_, 256);
+    marine_colormap::bake_shoreline_anchored_lut(
+      *palette, marine_colormap::TransferParams{}, lo, hi,
+      anchored ? shoreline_anchor_ : std::nullopt, 256);
   std::vector<uchar> lut(256 * 4);
   for(int i = 0; i < 256; ++i)
   {
