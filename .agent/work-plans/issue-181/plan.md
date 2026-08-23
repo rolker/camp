@@ -77,11 +77,14 @@ readout.
 - **`sea_surface_estimator` exists** — a node inside `mru_transform`
   (`platforms_ws/src/mru_transform/mru_transform/nodes/sea_surface_estimator.cpp`),
   not a missing package. `sea_surface_frame` defaults to `map_tide`.
-- **The `map_tide` read pattern is settled** in `bathymetry_layer.cpp:653-672`:
+- **The `map_tide` read pattern is settled** in **uma**
+  `core_ws/src/unh_marine_autonomy/.../bathymetry_layer.cpp:653-672`
+  (**a different repo from camp** — do not look for it in this tree):
   `lookupTransform(map_frame, map_tide_frame, TimePointZero).translation.z` is
   the sea-surface **ellipsoidal** height, because `map`'s z=0 is the WGS84
   ellipsoid — the same datum the stores use. Its guards are worth copying:
-  refuse `map_frame == map_tide_frame` (the #220 degenerate self-lookup that
+  refuse `map_frame == map_tide_frame` (the degenerate self-lookup of
+  **uma#220** — a uma issue, not camp#220 — that
   read a whole survey as LETHAL), never accept the default 0.0 as a surface,
   re-render only past `tide_invalidate_threshold` (0.1 m, sized to clear ~±0.02 m
   estimator jitter).
@@ -106,8 +109,9 @@ readout.
   cannot call TF.** camp owns a `tf2_ros::Buffer`
   (`src/camp/ros/node_thread.h`, `camp_map/ros/layer.cpp`), but `RasterLayer`,
   `GggsTileLayer` and `RasterGlRenderer` live in **`libcamp_map`, which
-  `CMakeLists.txt:239` declares "pure Qt/GDAL (ROS-free)"** with the boundary
+  `CMakeLists.txt:239` declares "pure Qt/GDAL (ROS-free)"**, with the boundary
   *"verified one-directional: the src/camp_map core has zero ROS includes"*
+  stated separately at `CMakeLists.txt:332`
   (ADR-0002). They derive from `map::Layer`, **not** `camp::ros::Layer`, so
   they have no `node_`. A TF or PROJ call inside them would breach the layering
   and make the headless GL tests (`test_gggs_render.cpp`,
@@ -150,10 +154,22 @@ readout.
   "unique frame ending in map_tide" heuristic is needed at all.
 - `marine_colormap::BreakpointMap` (`lookup.hpp:267`) clamps every degenerate
   input and never throws; a break outside the domain is documented as the
-  *ordinary* case. `PaletteDomain::shoreline_position` (`palette.hpp:56`) is
-  "metres, positive up", matching the stores' ellipsoidal up-positive heights,
-  so anchor values are directly comparable with **no sign flip**. Only
-  `oleron`/`hypsometric` carry it.
+  *ordinary* case. `PaletteDomain::shoreline_position` (`palette.hpp:53-56`) is a position **in
+  normalized colour space**, NOT a data value — the earlier draft of this plan
+  called it "metres, positive up", which is the doc comment on `natural_min`/
+  `natural_max` (`palette.hpp:43-46`), not on `shoreline_position`. The
+  distinction matters because it is what `bake_anchored_lut()`'s two arguments
+  mean: `anchor_value` is a data value, `shoreline_position` is where it lands
+  in the ramp. **The no-sign-flip claim is verified concretely, not assumed**:
+  `hypsometric_domain()` (`topobathy_palettes.cpp:385-393`) sets
+  `shoreline_position = 0.4f` with its own derivation written beside it,
+  `(0 - -6000) / 15000` over `natural_min=-6000 .. natural_max=+9000` — i.e. the
+  shoreline sits at **elevation zero on a positive-up metre scale**. That is the
+  same convention as the GGGS store values (camp#180: "ellipsoidal up-positive
+  elevation") and as `DatumResult::chart_datum_z` ("chart datum height rel.
+  ellipsoid (m)"), so anchor values are directly comparable with no sign flip.
+  `oleron_domain()` (`:377-383`) sets `0.5f` and deliberately carries no natural
+  range. Only these two palettes carry a shoreline at all.
 - `ColormapLegendWidget::setLut()` **already exists**
   (`colormap_legend_widget.hpp:65`) and overrides the linear palette sampling at
   `colormap_legend_widget.cpp:185`, so the colorbar is a real fix, not a
@@ -290,8 +306,6 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    *correct*, and `marine_colormap_widgets` needs no change. Add a readout label
    naming the active anchor **and its source** (S-98's "permanent indication").
 
-### Phase B — platform-scoped `map_tide` anchor (**PR3**; crosses the ROS boundary; sim-verifiable)
-
 5. **`src/camp_map/raster/shoreline_anchor.{h,cpp}` (new, ROS-free).** A small
    `QObject` holding `std::optional<double> value` + a source enum + a
    `changed()` signal, owned by the map. **Zero ROS includes**, so ADR-0002's
@@ -299,7 +313,31 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    directly. This is the single seam every source (tide, datum, manual) writes
    to — which is what makes the design source-agnostic rather than
    `map_tide`-shaped.
-6. **`src/camp_map/ros/sea_surface_tracker.{h,cpp}` (new, `camp_map_ros`).**
+6. **Per-layer anchor mode + status.** Mode selector (Chart datum [default] /
+   Platform tide → *which platform* / Manual / None), with the D3 fallback order
+   applied beneath whichever mode is active. On `changed()` the layer
+   records the value, drops `cached_image_`, requests a repaint. `GggsTileLayer`
+   reports through **`updateStatus()`** — camp#195's single composer — as a new
+   *part* naming the active source **and, for tide, the platform**, never a
+   direct `setStatus()`. Nothing
+   publishes model state from inside `paint()`: `renderImage()` only records the
+   anchor it used; composition and `setStatus()` happen in the `changed()` slot,
+   outside paint (`MapItem::setStatus` → `Map::updateDisplay` → `dataChanged`).
+
+**Why the seam is in PR1 and not with its first non-manual source** — the
+`3a276f2` Plan Review caught that the PR2↔PR3 reorder had stranded it: the
+holder (step 5) and the per-layer mode/status wiring (step 6) are what a source
+*pushes into*, so leaving them in the last PR would have made PR2's
+"chart datum is the default" inert on arrival — a default with nothing to
+activate. They move here, where the manual anchor already needs them. That also
+means the manual anchor is not a special case wired straight into the dialog: it
+is the **first source**, writing to the same holder the datum and tide sources
+will, which is what keeps the design source-agnostic rather than
+retrofitted-around-manual.
+
+### Phase B — platform-scoped `map_tide` anchor (**PR3**; crosses the ROS boundary; sim-verifiable)
+
+7. **`src/camp_map/ros/sea_surface_tracker.{h,cpp}` (new, `camp_map_ros`).**
    `QTimer`-driven, does `lookupTransform(map_frame, tide_frame,
    TimePointZero).translation.z`, writes the anchor holder. Copies
    `bathymetry_layer`'s guards: reject `map_frame == tide_frame`; never accept a
@@ -311,16 +349,6 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    heuristic that guesses wrong with two vehicles up is exactly the ambiguity
    D3 exists to remove. No platform selected → no tide, reported honestly.
 
-7. **Per-layer anchor mode + status.** Mode selector (Chart datum [default] /
-   Platform tide → *which platform* / Manual / None), with the D3 fallback order
-   applied beneath whichever mode is active. On `changed()` the layer
-   records the value, drops `cached_image_`, requests a repaint. `GggsTileLayer`
-   reports through **`updateStatus()`** — camp#195's single composer — as a new
-   *part* naming the active source **and, for tide, the platform**, never a
-   direct `setStatus()`. Nothing
-   publishes model state from inside `paint()`: `renderImage()` only records the
-   anchor it used; composition and `setStatus()` happen in the `changed()` slot,
-   outside paint (`MapItem::setStatus` → `Map::updateDisplay` → `dataChanged`).
 8. **Sim verification** (this is what makes PR2 shippable pre-Tuesday): run
    `sim_robot_launch.py` with `environment.tide.speed_factor: 3600.0` so a
    12-hour cycle runs in ~12 s, and confirm the shoreline break tracks
@@ -342,11 +370,12 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
    `resolve_datum()` returning `nullopt` is its designed "no coverage" signal and
    falls through the D3 precedence.
 10. **Serve camp#180's readout from the same provider.** This is what makes
-    Phase C a shared capability rather than a colormap-private one, and it
-    retires the two `until the datum service (#288)` comments at
-    `autonomousvehicleproject.h:86-87` and `projectview.cpp:213-215`. Whether the
-    readout change lands in PR3 or a sibling PR is an open question — the
-    provider must at minimum be *shaped* to serve it.
+    Phase C a shared capability rather than a colormap-private one. **The two
+    `until the datum service (#288)` comments are no longer part of this work** —
+    camp#203 / PR #204 corrected them on 2026-08-22, ahead of this plan, so the
+    only remaining task here is serving the readout itself. Whether that lands in
+    PR2 or a sibling PR is an open question — the provider must at minimum be
+    *shaped* to serve it.
 
 ### Phase D — record the decisions (lands with **PR1**)
 
@@ -360,6 +389,17 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
     D5's fallback contract; D6's no-datum-in-the-render-path rule and the
     ADR-0002 boundary that enforces it. **Explicitly amends camp ADR-0008
     Decision #2**: the LUT is no longer range-independent.
+
+    **Separate the recorded *policy* from when it is the live *runtime*
+    default** (Plan Review, `3a276f2`). The policy — chart datum is the
+    reference a layer starts in — is decided and recorded by this ADR at PR1.
+    The runtime reality arrives in stages: PR1 ships the mode ordering with only
+    Manual and None satisfiable, PR2 makes chart datum an actually-resolvable
+    source, PR3 adds platform tide. **There is therefore no runtime chart-datum
+    mode between PR1 and PR3**, and the ADR must say so plainly rather than
+    implying the default is live the moment it is written down. An ADR that
+    records an aspiration in the present tense is how a plan drifts from its
+    implementation.
 12. **Fix the now-stale comments in this PR**: `raster_gl_renderer.cpp:181-184`
     (`ensureLut()`'s "the LUT carries only the palette ramp") and
     `raster_gl_renderer.cpp:82-83` (the fragment-shader comment asserting the
@@ -374,18 +414,18 @@ Fixes the reported symptom on its own and is fully verifiable headlessly.
 | `src/camp_map/raster/colormap_range_dialog.h/.cpp` | A | Manual anchor + persistence; `legend->setLut(...)`; anchor + source readout |
 | `docs/decisions/0015-anchored-topo-bathy-lut.md` (new) | D | ADR per step 11 |
 | `docs/decisions/0008-adopt-marine-colormap-lut-bake.md` | D | Note D#2's range-independence is amended by ADR-0015 |
-| `src/camp_map/raster/shoreline_anchor.h/.cpp` (new) | B | ROS-free anchor holder: value + source + `changed()` |
+| `src/camp_map/raster/shoreline_anchor.h/.cpp` (new) | A | ROS-free anchor holder: value + source + `changed()` |
 | `src/camp_map/ros/sea_surface_tracker.h/.cpp` (new) | B | TF poller scoped to a `platform_namespace`, `#220` guards, 0.1 m threshold |
-| `src/camp_map/raster/gggs_tile_layer.h/.cpp` | B | Anchor mode + fallback order; `changed()` slot invalidates cache; status part (source + platform) inside `updateStatus()` |
-| `src/camp_map/raster/raster_layer.h/.cpp` | B | Same wiring; status composed outside `paint()` |
+| `src/camp_map/raster/gggs_tile_layer.h/.cpp` | A | Anchor mode + fallback order; `changed()` slot invalidates cache; status part (source + platform) inside `updateStatus()` |
+| `src/camp_map/raster/raster_layer.h/.cpp` | A | Same wiring; status composed outside `paint()` |
 | `src/camp/chart_datum_provider.h/.cpp` (new) | C | `marine_vertical_datum` off-thread, region-cached, pushes anchor (the DEFAULT source) |
-| `src/camp/autonomousvehicleproject.{h,cpp}`, `src/camp/projectview.cpp` | C | Readout served from the provider; retire the two `until the datum service (#288)` comments |
+| `src/camp/autonomousvehicleproject.{h,cpp}`, `src/camp/projectview.cpp` | C | Readout served from the provider (the `#288` comments were already corrected by camp#203 / PR #204) |
 | `package.xml` | C | `<depend>marine_vertical_datum</depend>` |
 | `CMakeLists.txt` | A/B/C | New sources into `camp_map` / `camp_map_ros` / `CCOMAutonomousMissionPlanner`; new gtests |
 | `test/test_anchored_lut.cpp` (new) | A | Anchor lands at `shoreline_position`; anchor outside range / at a boundary / zero-width range; non-topo-bathy palette byte-identical to today |
 | `test/test_raster_gl_renderer.cpp` | A | Anchored vs unanchored LUT bytes; range change re-bakes |
 | `test/test_range_persist.cpp` | A | Manual anchor round-trips through QSettings |
-| `test/test_shoreline_anchor.cpp` (new) | B | D3 fallback ordering AND that the default active source is chart datum; D5 never-0.0; threshold suppression; invalid→valid transition |
+| `test/test_shoreline_anchor.cpp` (new) | A | D3 fallback ordering AND that the default active source is chart datum; D5 never-0.0; threshold suppression; invalid→valid transition |
 | `test/test_chart_datum_provider.cpp` (new) | C | `nullopt` on missing grids; region cache hit/miss; never called from the GUI thread |
 | `src/camp/platform_manager/platform_manager.h` | B | Expose the selected platform's `platform_namespace` to the tracker (read-only accessor; no new enumeration) |
 
