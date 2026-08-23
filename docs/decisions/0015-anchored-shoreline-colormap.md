@@ -150,6 +150,10 @@ told.
   same baked table (`setLut()`), so the colour↔value mapping shown to the
   operator matches what is rendered. Before this, an anchored render would have
   been described by an unanchored legend — a worse failure than no legend.
+  Truthful includes agreeing about *not* anchoring: a degenerate render range
+  (zero-width or crossed) has no domain for the anchor to hinge on, so the render
+  falls back to the plain ramp and the legend follows it there, saying so in the
+  readout rather than drawing a land/sea break the map is not painting.
 - **Palette gate.** The anchor control is offered only for palettes declaring a
   `shoreline_position` (`oleron`, `hypsometric`). Anchoring a general-purpose
   ramp is a byte-identical no-op, so no existing layer's colours change.
