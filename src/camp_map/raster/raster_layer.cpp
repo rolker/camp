@@ -511,6 +511,12 @@ void RasterLayer::setColormap(const std::string& name)
   renderer_.setColormap(name);
   writeSettings();
   cached_image_ = QImage();
+  // [camp#181 / ADR-0015] The anchor part of the status is gated on whether the
+  // NEW palette carries a shoreline, so a palette switch can start or stop
+  // anchoring. Recompose here or the status is stale: switching onto oleron would
+  // show no anchor report at all, and switching off it would leave the previous
+  // one asserting an anchor that no longer bites. Composed outside paint().
+  updateStatus();
   update(boundingRect());
 }
 
