@@ -348,6 +348,61 @@ TEST(RasterGlRendererTest, UnanchoredLutDoesNotRebakeOnRangeChange)
   renderer.doneCurrent();
 }
 
+// [camp#181 / ADR-0015 D2] The degenerate-range fallback and its cache key. A
+// zero-width or crossed range cannot carry an anchor (the shader collapses it to a
+// single t and BreakpointMap has no domain to hinge on), so ensureLut() bakes the
+// plain ramp instead. That fallback is only real if the CACHE KEY follows it: the
+// key records the anchor actually baked, not the one requested, or the degenerate
+// render is served the still-cached anchored texture and paints the opposite end of
+// the ramp with nothing to tell the operator which they are looking at.
+TEST(RasterGlRendererTest, DegenerateRangeFallsBackAndDoesNotServeTheAnchoredLut)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+
+  ASSERT_NE(marine_colormap::find_palette("oleron"), nullptr);
+  const int n = 2;
+  const float kAnchor = -28.0f;
+  std::vector<float> data(n * n, kAnchor);
+  auto tex = makeScalarTexture(n, n, data);
+  const RasterFieldItem item = scalarItem(tex.get(), n, false, 0.0f);
+
+  renderer.setColormap("oleron");
+  renderer.setShorelineAnchor(kAnchor);
+
+  const QColor anchored = renderer.renderToImage({item}, QRectF(0, 0, n, n), -60.0f,
+                                                 20.0f, QSize(n, n)).pixelColor(0, 0);
+  const std::size_t after_anchored = renderer.lutBakeCount();
+  ASSERT_GT(after_anchored, 0u);
+
+  // Zero-width range: the anchor cannot apply, so this MUST re-bake unanchored.
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), 0.0f, 0.0f, QSize(n, n));
+  const std::size_t after_degenerate = renderer.lutBakeCount();
+  EXPECT_GT(after_degenerate, after_anchored)
+      << "a degenerate range must re-bake unanchored, not serve the anchored LUT";
+
+  // A crossed range is the layers' no-data sentinel and is equally unanchorable;
+  // having already fallen back, it is a cache hit (the effective anchor is nullopt
+  // for both, and [lo, hi] stays out of the key while unanchored).
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), 5.0f, -5.0f, QSize(n, n));
+  EXPECT_EQ(renderer.lutBakeCount(), after_degenerate)
+      << "consecutive degenerate ranges are all the same unanchored bake";
+
+  // And back: a real range restores the anchored bake, colour for colour.
+  const QColor restored = renderer.renderToImage({item}, QRectF(0, 0, n, n), -60.0f,
+                                                 20.0f, QSize(n, n)).pixelColor(0, 0);
+  EXPECT_GT(renderer.lutBakeCount(), after_degenerate)
+      << "returning to a real range must re-bake the anchored LUT";
+  EXPECT_EQ(restored.rgb(), anchored.rgb())
+      << "the anchored render must be identical before and after the fallback";
+
+  tex.reset();
+  renderer.doneCurrent();
+}
+
 // [camp#181 / ADR-0015] A non-finite anchor is not an anchor. Stored, it would make
 // the cache key never match again (NaN != NaN) — a bake plus a texture upload every
 // frame, with no visible symptom because the bake already falls back to the

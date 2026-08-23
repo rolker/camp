@@ -129,7 +129,9 @@ private:
   // [camp#181 / ADR-0015] The active shoreline anchor and the cache key of the
   // LUT currently uploaded. lut_anchor_/lut_lo_/lut_hi_ record what the texture
   // was baked against so ensureLut() can detect an anchor or range change; they
-  // are meaningful only while lut_dirty_ is false.
+  // are meaningful only while lut_dirty_ is false. lut_anchor_ holds the
+  // EFFECTIVE anchor (nullopt whenever the bake fell back to the plain ramp —
+  // no shoreline in the palette, or a degenerate range), not the requested one.
   std::optional<float> shoreline_anchor_;
   std::optional<float> lut_anchor_;
   float lut_lo_ = 0.0f;

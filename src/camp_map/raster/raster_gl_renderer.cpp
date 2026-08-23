@@ -212,8 +212,16 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   // bite again the moment the range is real).
   const bool anchored = shoreline_anchor_.has_value() &&
                         marine_colormap::has_shoreline(*palette) && hi > lo;
+  // The key carries the EFFECTIVE anchor — the one actually baked — not the
+  // requested one. Keying on the request instead would defeat the fallback above:
+  // going from a real range to a degenerate one leaves shoreline_anchor_ ==
+  // lut_anchor_ while `anchored` flips false, so the (!anchored || ...) clause
+  // short-circuits and the cache serves the BreakpointMap-warped texture the
+  // fallback exists to avoid.
+  const std::optional<float> effective_anchor =
+    anchored ? shoreline_anchor_ : std::nullopt;
   const bool cache_hit = lut_texture_ && !lut_dirty_ &&
-                         shoreline_anchor_ == lut_anchor_ &&
+                         effective_anchor == lut_anchor_ &&
                          (!anchored || (lo == lut_lo_ && hi == lut_hi_));
   if(cache_hit)
     return lut_texture_.get();
@@ -221,8 +229,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   ++lut_bake_count_;   // see lutBakeCount(): the cache key's only observable
   const std::vector<marine_colormap::Rgba8> baked =
     marine_colormap::bake_shoreline_anchored_lut(
-      *palette, marine_colormap::TransferParams{}, lo, hi,
-      anchored ? shoreline_anchor_ : std::nullopt, 256);
+      *palette, marine_colormap::TransferParams{}, lo, hi, effective_anchor, 256);
   std::vector<uchar> lut(256 * 4);
   for(int i = 0; i < 256; ++i)
   {
@@ -244,7 +251,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   }
   lut_texture_->setData(QOpenGLTexture::RGBA, QOpenGLTexture::UInt8, lut.data());
   lut_dirty_ = false;
-  lut_anchor_ = shoreline_anchor_;
+  lut_anchor_ = effective_anchor;
   lut_lo_ = lo;
   lut_hi_ = hi;
   return lut_texture_.get();
