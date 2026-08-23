@@ -17,6 +17,8 @@
 #include <optional>
 #include <utility>
 
+#include <QAbstractButton>
+#include <QButtonGroup>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -322,14 +324,29 @@ void showColormapRangeDialog(
       }
     };
 
-    QObject::connect(manual_radio, &QRadioButton::toggled, &dialog,
-                     [apply_anchor](bool) { apply_anchor(); });
-    QObject::connect(none_radio, &QRadioButton::toggled, &dialog,
-                     [apply_anchor](bool) { apply_anchor(); });
-    // editingFinished, not valueChanged: the range spins in this dialog already use
-    // it, and per-keystroke firing would repaint the map and rewrite QSettings on
-    // every digit typed — and would briefly apply half-typed anchors ("-2" on the
-    // way to "-28") as though the operator had chosen them.
+    // All four radios are wired, not just the operator-selectable pair. Qt happens
+    // to check the incoming button before emitting the outgoing one's
+    // toggled(false), so reading current_anchor() from either edge is correct
+    // today — but that is an emission-order detail, not a contract, and PR2/PR3
+    // enable the upper two radios. A QButtonGroup gives one handler for the whole
+    // set, acting on the checked edge only (buttonToggled fires twice per change).
+    auto * anchor_group = new QButtonGroup(anchor_box);
+    anchor_group->addButton(chart_radio);
+    anchor_group->addButton(tide_radio);
+    anchor_group->addButton(manual_radio);
+    anchor_group->addButton(none_radio);
+    QObject::connect(anchor_group,
+                     qOverload<QAbstractButton *, bool>(&QButtonGroup::buttonToggled),
+                     &dialog,
+                     [apply_anchor](QAbstractButton *, bool checked) {
+                       if (checked) {
+                         apply_anchor();
+                       }
+                     });
+    // editingFinished, not valueChanged, for the PUSH: the range spins in this
+    // dialog already use it, and per-keystroke firing would repaint the map and
+    // rewrite QSettings on every digit typed — and would briefly apply half-typed
+    // anchors ("-2" on the way to "-28") as though the operator had chosen them.
     QObject::connect(anchor_spin, &QDoubleSpinBox::editingFinished, &dialog,
                      [apply_anchor]() { apply_anchor(); });
     // A range change (drag / spin / reset) must re-bake the anchored colorbar over
