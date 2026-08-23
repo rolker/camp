@@ -163,6 +163,18 @@ coverage of the Map model's insert/remove/reorder paths).
   the Stores tab persist as flat `GggsTileLayers/dirs`.
 - **CI + pre-commit are configured** — GitHub Actions runs the colcon build +
   gtest suite on PRs; pre-commit hooks guard formatting/config hygiene.
+- **There is no "datum service", and #288 is not one.** Vertical-datum
+  resolution lives in the ROS-free `marine_vertical_datum` library in `core_ws`
+  (`datum_config.hpp` → `resolve_datum()` returning a `DatumResult` with
+  `chart_datum_z`; `vdatum_query.hpp` → `make_vdatum_query()`). uma-ADR-0010 **D6**
+  specifies it as a *library*, not a service, and names CAMP as an intended
+  consumer ("CAMP (display-time chart-datum readouts, operator-side)"); the issue
+  that did propose a service, `mru_transform#7`, is closed and D6 records it as
+  subsumed. `ros2_agent_workspace#288` is about *where the grids live on disk*
+  (`world/`), not who resolves a datum. Older comments and the issue-180 work-plan
+  files say "until the datum service (#288)" — that shorthand is wrong on both
+  counts and has twice led agents to propose building a `chart_datum_service`.
+  When CAMP needs chart datum, it **links the library** (camp#181).
 
 ## Instructions for Use
 
