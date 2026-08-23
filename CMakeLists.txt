@@ -450,6 +450,16 @@ if(BUILD_TESTING)
     Qt5::Core
   )
 
+  # ShorelineAnchor seam (camp#181 / ADR-0015 D3+D5): fallback order, and the
+  # never-substitute-0.0 contract.
+  ament_add_gtest(test_shoreline_anchor
+    test/test_shoreline_anchor.cpp
+    src/camp_map/raster/shoreline_anchor.cpp
+  )
+  target_link_libraries(test_shoreline_anchor
+    Qt5::Core
+  )
+
   # Collision-monitor polygon converter unit tests
   ament_add_gtest(test_collision_monitor_converter
     test/test_collision_monitor_converter.cpp
