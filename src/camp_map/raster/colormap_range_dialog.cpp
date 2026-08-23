@@ -85,9 +85,19 @@ void showColormapRangeDialog(
     domain_min = state.lo;
     domain_max = state.hi;
   }
+  // [camp#181 / ADR-0015] Remember that the widening happened. The map renders a
+  // degenerate range UNANCHORED (RasterGlRenderer::ensureLut: a zero-width range
+  // has no domain for the BreakpointMap to hinge on), but the widened colorbar has
+  // a range and would happily bake an anchored ramp over it — the one remaining
+  // state where the map paints and the legend describes something else. Narrower
+  // than the deferred lo()/hi() divergence as a whole: the crossed-extent path
+  // still needs camp#142's separation of the render range from the handle domain,
+  // and the map paints nothing there to disagree with.
+  bool domain_widened = false;
   if (domain_min >= domain_max) {
     domain_min -= 0.5f;
     domain_max += 0.5f;
+    domain_widened = true;
   }
   legend->setDomain(domain_min, domain_max);
   layout->addWidget(legend);
@@ -246,14 +256,25 @@ void showColormapRangeDialog(
     // the resolved [lo, hi]) and update the readout. Touches the DIALOG only —
     // nothing is pushed to the layer from here, so it is safe to call on open.
     auto repaint_anchor =
-      [legend, anchor_palette, anchor_spin, anchor_readout, current_anchor]() {
+      [legend, anchor_palette, anchor_spin, anchor_readout, current_anchor,
+       domain_widened]() {
         const auto [mode, typed] = current_anchor();
         anchor_spin->setEnabled(mode == ShorelineAnchor::Source::Manual);
         // PR1 can only resolve Manual; the upper two sources have no provider yet
         // and are reported as unavailable rather than faked (D4 / D5).
         const std::optional<double> value =
           mode == ShorelineAnchor::Source::Manual ? typed : std::nullopt;
-        if (anchor_palette && value) {
+        // Bake the anchor into the colorbar only where the MAP can apply it. The
+        // map's range is the layer's resolved range: while the bar tracks Auto that
+        // is the data extent, which on the widened path is degenerate (see
+        // domain_widened above) and renders unanchored; once the operator pins a
+        // Manual range the map has a real range again and anchors, so the bar must
+        // follow it back. A Manual range typed as a single point is degenerate for
+        // both.
+        const bool anchorable_range =
+          legend->hi() > legend->lo() &&
+          !(domain_widened && legend->mode() != marine_colormap::RangeMode::Manual);
+        if (anchor_palette && value && anchorable_range) {
           legend->setLut(marine_colormap::bake_shoreline_anchored_lut(
             *anchor_palette, marine_colormap::TransferParams{},
             legend->lo(), legend->hi(),
@@ -267,11 +288,16 @@ void showColormapRangeDialog(
           QString text = QString("Shoreline at %1 m (%2)")
                            .arg(*value, 0, 'f', 3)
                            .arg(ShorelineAnchor::sourceLabel(mode));
-          // An anchor outside the render range is ORDINARY, not an error (a survey
-          // line with no land in view has its break above hi) — but BreakpointMap
-          // clamps it to an endpoint and the ramp goes single-sided. Say so, rather
-          // than let the colorbar imply a land/sea break that is not on it.
-          if (*value < legend->lo() || *value > legend->hi()) {
+          // Report the degraded states in the order they override each other: an
+          // unanchorable range means nothing is anchored at all, so it is said
+          // first. Otherwise, an anchor outside the render range is ORDINARY, not
+          // an error (a survey line with no land in view has its break above hi) —
+          // but BreakpointMap clamps it to an endpoint and the ramp goes
+          // single-sided. Say so, rather than let the colorbar imply a land/sea
+          // break that is not on it.
+          if (!anchorable_range) {
+            text += " - range too narrow to anchor; ramp is unanchored";
+          } else if (*value < legend->lo() || *value > legend->hi()) {
             text += " - outside the range; ramp is single-sided";
           }
           anchor_readout->setText(text);
