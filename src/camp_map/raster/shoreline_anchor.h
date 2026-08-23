@@ -35,6 +35,19 @@ namespace raster
 /// in from outside; the layers never pull. It also keeps the headless GL tests
 /// hermetic, since a test can set a value directly with no boat and no grids.
 ///
+/// **Thread affinity — GUI thread only.** Every source pushes *in* from
+/// somewhere else, so this must be said plainly: the holder is not thread-safe
+/// and all of `setChartDatum()` / `setPlatformTide()` / `setManual()` /
+/// `setMode()` / `applyManualSelection()` must be called on the thread that owns
+/// the object (the GUI thread — the layers read `value()` from `renderImage()`
+/// there). The setters read-modify-write and then emit, so a direct call from a
+/// worker thread races the render read while *appearing* to work: `changed()`
+/// would still be delivered queued to the layer's slot, hiding the torn read.
+/// A source living on another thread (Phase B's `map_tide` tracker, Phase C's
+/// datum provider) must therefore marshal — `QMetaObject::invokeMethod(anchor,
+/// ..., Qt::QueuedConnection)`, or a queued signal/slot connection into a
+/// wrapper — never call a setter directly.
+///
 /// **Why a holder and not a plain optional on the layer.** The manual anchor
 /// (Phase A / PR1) is deliberately not a dialog special case: it writes into the
 /// same holder that the chart-datum (Phase C) and platform-tide (Phase B) sources
