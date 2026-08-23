@@ -756,17 +756,45 @@ void GggsTileLayer::updateStatus()
   // assembled here from live state, so no writer can clobber another's message
   // (tilesReady() previously rewrote the status unconditionally, which would
   // have wiped the residency budget's over-budget report).
+  // [camp#181 / ADR-0015] The anchor part — S-98's permanent indication: name the
+  // active anchor AND its source while active, and report a selected but unresolved
+  // source as unavailable rather than silently applying nothing. Only on a palette
+  // that can carry a shoreline; the unanchored default (mode None) stays silent
+  // (byte-identical to pre-camp#181).
+  //
+  // Computed BEFORE the two early exits below, and appended on every path. "No
+  // tiles" and "nothing attempted yet" are states in which the anchor is still set,
+  // still persisted, and still applied to whatever loads next — the indication does
+  // not lapse because the tile set is momentarily empty.
+  QString anchor_part;
+  if(const marine_colormap::Palette* pal =
+       marine_colormap::find_palette(renderer_.colormap());
+     pal && marine_colormap::has_shoreline(*pal))
+  {
+    const std::optional<double> resolved = shoreline_anchor_.value();
+    if(resolved)
+      anchor_part = QString("shoreline %1 m (%2)")
+                      .arg(*resolved, 0, 'f', 2)
+                      .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.activeSource()));
+    else if(shoreline_anchor_.mode() != ShorelineAnchor::Source::None)
+      anchor_part = QString("shoreline %1 unavailable")
+                      .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.mode()));
+  }
+  QStringList parts;
   if(tiles_.empty())
   {
-    setStatus("(no tiles)");
+    parts << "no tiles";
+    if(!anchor_part.isEmpty())
+      parts << anchor_part;
+    setStatus("(" + parts.join("; ") + ")");
     return;
   }
   if(!load_started_)
   {
-    setStatus("");   // nothing attempted yet — not "no data"
+    // Nothing attempted yet — not "no data". Any anchor part still stands.
+    setStatus(anchor_part.isEmpty() ? QString() : "(" + anchor_part + ")");
     return;
   }
-  QStringList parts;
   // [camp#195] "loading..." is a PART, not an early return. During a pan the
   // loader is re-kicked at every step, so loading_ is true nearly all the time —
   // exactly when the residency reports below matter most. An early return here
@@ -812,24 +840,8 @@ void GggsTileLayer::updateStatus()
   // [camp#195] The budget cannot be enforced at all — see evictIfOverBudget().
   if(eviction_blocked_)
     parts << "tile budget NOT enforced (GL context unavailable)";
-  // [camp#181 / ADR-0015] Shoreline anchor part — S-98's permanent indication:
-  // name the active anchor AND its source while active, and report a selected but
-  // unresolved source as unavailable rather than silently applying nothing. Only
-  // on a palette that can carry a shoreline; the unanchored default (mode None)
-  // stays silent (byte-identical to pre-camp#181).
-  if(const marine_colormap::Palette* pal =
-       marine_colormap::find_palette(renderer_.colormap());
-     pal && marine_colormap::has_shoreline(*pal))
-  {
-    const std::optional<double> resolved = shoreline_anchor_.value();
-    if(resolved)
-      parts << QString("shoreline %1 m (%2)")
-                 .arg(*resolved, 0, 'f', 2)
-                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.activeSource()));
-    else if(shoreline_anchor_.mode() != ShorelineAnchor::Source::None)
-      parts << QString("shoreline %1 unavailable")
-                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.mode()));
-  }
+  if(!anchor_part.isEmpty())
+    parts << anchor_part;
   setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
 }
 
