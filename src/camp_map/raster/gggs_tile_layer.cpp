@@ -3,11 +3,11 @@
 #include "gggs_tile.h"
 #include "gggs_tile_util.h"
 #include "lod_level_selector.h"
-#include "anchored_lut.h"
 #include "colormap_range_dialog.h"
 #include "viewport_clip.h"
 #include "../map_view/web_mercator.h"
 
+#include <marine_colormap/colormap.hpp>
 #include <marine_colormap/palette.hpp>
 
 #include <QAction>
@@ -813,7 +813,7 @@ void GggsTileLayer::updateStatus()
   // stays silent (byte-identical to pre-camp#181).
   if(const marine_colormap::Palette* pal =
        marine_colormap::find_palette(renderer_.colormap());
-     pal && palette_supports_anchor(*pal))
+     pal && marine_colormap::has_shoreline(*pal))
   {
     const std::optional<double> resolved = shoreline_anchor_.value();
     if(resolved)
@@ -1576,7 +1576,7 @@ bool GggsTileLayer::paletteSupportsAnchor() const
 {
   const marine_colormap::Palette* pal =
     marine_colormap::find_palette(renderer_.colormap());
-  return pal && palette_supports_anchor(*pal);
+  return pal && marine_colormap::has_shoreline(*pal);
 }
 
 void GggsTileLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,

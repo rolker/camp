@@ -1,6 +1,5 @@
 #include "raster_gl_renderer.h"
 
-#include "anchored_lut.h"
 #include "../map_view/web_mercator.h"
 
 #include <marine_colormap/colormap.hpp>
@@ -189,7 +188,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   // [camp#181 / ADR-0015] The cache key is (name, lo, hi, anchor), NOT the name
   // alone (camp ADR-0008 Decision #2's range-independence is amended here). Get it
   // wrong and a stale LUT after a range change renders wrong colours silently — no
-  // crash, no log line. bake_anchored_lut() folds the anchor into a BreakpointMap
+  // crash, no log line. marine_colormap::bake_shoreline_anchored_lut() folds the anchor into a BreakpointMap
   // in the bake, so the shader stays IDENTITY-normalized and untouched; on the
   // unanchored path it returns exactly bake_lut(pal, {}, 256).
   const marine_colormap::Palette* palette = marine_colormap::find_palette(colormap_name_);
@@ -201,7 +200,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   // them out of the cache key and an unanchored layer never re-bakes on an
   // Auto-range tick (ADR-0015 cost note).
   const bool anchored =
-    shoreline_anchor_.has_value() && palette_supports_anchor(*palette);
+    shoreline_anchor_.has_value() && marine_colormap::has_shoreline(*palette);
   const bool cache_hit = lut_texture_ && !lut_dirty_ &&
                          shoreline_anchor_ == lut_anchor_ &&
                          (!anchored || (lo == lut_lo_ && hi == lut_hi_));
@@ -209,7 +208,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
     return lut_texture_.get();
 
   const std::vector<marine_colormap::Rgba8> baked =
-    bake_anchored_lut(*palette, lo, hi, shoreline_anchor_, 256);
+    marine_colormap::bake_shoreline_anchored_lut(*palette, marine_colormap::TransferParams{}, lo, hi, shoreline_anchor_, 256);
   std::vector<uchar> lut(256 * 4);
   for(int i = 0; i < 256; ++i)
   {

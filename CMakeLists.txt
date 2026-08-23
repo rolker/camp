@@ -264,7 +264,6 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_tree_view/map_tree_view.cpp
     src/camp_map/map_view/map_view.cpp
     src/camp_map/map_view/web_mercator.cpp
-    src/camp_map/raster/anchored_lut.cpp
     src/camp_map/raster/colormap_range_dialog.cpp
     src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
@@ -440,18 +439,6 @@ if(BUILD_TESTING)
   )
 
   # Anchored topo-bathy LUT (camp#181 / ADR-0015): the shoreline break pinned to
-  # an absolute data value, and the byte-identical unanchored fallback.
-  ament_add_gtest(test_anchored_lut
-    test/test_anchored_lut.cpp
-    src/camp_map/raster/anchored_lut.cpp
-  )
-  target_link_libraries(test_anchored_lut
-    marine_colormap::marine_colormap
-    Qt5::Core
-  )
-
-  # ShorelineAnchor seam (camp#181 / ADR-0015 D3+D5): fallback order, and the
-  # never-substitute-0.0 contract.
   ament_add_gtest(test_shoreline_anchor
     test/test_shoreline_anchor.cpp
     src/camp_map/raster/shoreline_anchor.cpp

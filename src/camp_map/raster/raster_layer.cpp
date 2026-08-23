@@ -2,9 +2,9 @@
 #include <gdal_priv.h>
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
-#include "anchored_lut.h"
 #include "colormap_range_dialog.h"
 #include "viewport_clip.h"
+#include <marine_colormap/colormap.hpp>
 #include <marine_colormap/palette.hpp>
 #include <QPainter>
 #include <QOpenGLTexture>
@@ -542,7 +542,7 @@ bool RasterLayer::paletteSupportsAnchor() const
     return false;
   const marine_colormap::Palette* pal =
     marine_colormap::find_palette(renderer_.colormap());
-  return pal && palette_supports_anchor(*pal);
+  return pal && marine_colormap::has_shoreline(*pal);
 }
 
 void RasterLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,

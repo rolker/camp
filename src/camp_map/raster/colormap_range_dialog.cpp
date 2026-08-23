@@ -26,8 +26,9 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
-#include "anchored_lut.h"
+#include "marine_colormap/colormap.hpp"
 #include "marine_colormap/palette.hpp"
+#include "marine_colormap/transfer.hpp"
 #include "marine_colormap_widgets/colormap_legend_widget.hpp"
 
 namespace camp
@@ -185,8 +186,9 @@ void showColormapRangeDialog(
           src = ShorelineAnchor::Source::Manual;
         }
         if (anchor_palette && value) {
-          legend->setLut(bake_anchored_lut(
-            *anchor_palette, legend->lo(), legend->hi(),
+          legend->setLut(marine_colormap::bake_shoreline_anchored_lut(
+            *anchor_palette, marine_colormap::TransferParams{},
+            legend->lo(), legend->hi(),
             static_cast<float>(*value), 256));
         } else {
           legend->setLut({});   // fall back to the plain palette ramp
