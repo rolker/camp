@@ -97,11 +97,16 @@ void ShorelineAnchor::setMode(Source mode)
 {
   if(mode == mode_)
     return;
-  const std::optional<double> before = value();
-  const Source before_source = activeSource();
   mode_ = mode;
-  if(value() != before || activeSource() != before_source)
-    emit changed();
+  // Unlike the value setters, a real mode change ALWAYS emits. The resolved
+  // (value, activeSource) pair is not the whole observable: the layer status names
+  // mode() when nothing resolves ("shoreline chart datum unavailable"), so
+  // switching from an unresolvable chart datum to an equally unresolvable platform
+  // tide moves nothing resolved yet must still redraw that line — otherwise the
+  // status keeps naming the source the operator just left. Mode changes are
+  // operator actions, so the extra repaint is rare and cheap; the value setters
+  // (which fire on every source refresh) keep their strict move test.
+  emit changed();
 }
 
 void ShorelineAnchor::setChartDatum(std::optional<double> value)

@@ -22,6 +22,8 @@
 // than pretending.
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <optional>
 
 #include <QObject>
@@ -167,6 +169,50 @@ TEST(ShorelineAnchorTest, InvalidToValidTransitionIsReported)
   EXPECT_GT(counter.count(), 0) << "invalid -> valid must emit changed()";
   ASSERT_TRUE(anchor.value().has_value());
   EXPECT_EQ(anchor.activeSource(), Source::ChartDatum);
+}
+
+// [camp#181 / ADR-0015 D5] A mode-only transition between two UNRESOLVABLE sources
+// moves nothing resolved — but the layer status names mode() in that state
+// ("shoreline chart datum unavailable"), so it must still reach the layers or the
+// readout keeps naming the source the operator just left.
+TEST(ShorelineAnchorTest, UnresolvableModeChangeStillReportsItself)
+{
+  ShorelineAnchor anchor;
+  anchor.setMode(Source::ChartDatum);        // no datum provider in PR1
+  ChangeCounter counter(&anchor);
+  ASSERT_FALSE(anchor.value().has_value());
+
+  anchor.setMode(Source::PlatformTide);      // no tide provider either
+  EXPECT_FALSE(anchor.value().has_value());
+  EXPECT_EQ(anchor.mode(), Source::PlatformTide);
+  EXPECT_GT(counter.count(), 0)
+    << "the status names mode(); a mode change must be reported even when the "
+       "resolved anchor does not move";
+}
+
+// [camp#181 / ADR-0015] A non-finite push is not an anchor. NaN != NaN would defeat
+// the holder's own no-op test (every identical re-push would emit changed()) and
+// the renderer's LUT cache key (a bake + texture upload every frame), and the bake
+// falls back to the unanchored ramp anyway — so the layer would claim an anchor it
+// is not applying. It is reported as an absence instead.
+TEST(ShorelineAnchorTest, NonFiniteValuesAreRejectedAsAbsent)
+{
+  ShorelineAnchor anchor;
+  anchor.setMode(Source::Manual);
+  anchor.setManual(std::numeric_limits<double>::quiet_NaN());
+  EXPECT_FALSE(anchor.manualValue().has_value());
+  EXPECT_FALSE(anchor.value().has_value()) << "a NaN anchor is no anchor, not 0.0";
+
+  anchor.setChartDatum(std::numeric_limits<double>::infinity());
+  EXPECT_FALSE(anchor.value().has_value());
+
+  // A finite value after a rejected one still lands, and identical re-pushes are
+  // still free (the equality the NaN would have broken).
+  anchor.setManual(-28.038);
+  ASSERT_TRUE(anchor.value().has_value());
+  ChangeCounter counter(&anchor);
+  anchor.setManual(-28.038);
+  EXPECT_EQ(counter.count(), 0) << "an identical refresh must not cost a repaint";
 }
 
 TEST(ShorelineAnchorTest, SourceLabelsAreDistinctAndNonEmpty)

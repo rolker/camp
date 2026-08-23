@@ -73,6 +73,10 @@ public:
   /// beneath it (a `ChartDatum` mode with no datum value falls to platform tide,
   /// then manual, then none). Runtime default is `None` in PR1 — see `Source`.
   Source mode() const { return mode_; }
+  /// Emits `changed()` on any real mode change, even one that leaves the resolved
+  /// `(value, activeSource)` pair untouched: the layer status names `mode()` when
+  /// nothing resolves, so switching between two unresolvable sources still changes
+  /// what the operator is shown.
   void setMode(Source mode);
 
   /// Push a value from each source. `std::nullopt` clears that source (e.g. the
