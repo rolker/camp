@@ -1418,8 +1418,9 @@ QImage GggsTileLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
   const QList<RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#181 / ADR-0015] Push the resolved shoreline anchor (manual today) into
   // the renderer before the draw. It bites only on a palette with a
-  // shoreline_position; on any other ramp bake_anchored_lut falls back to the plain
-  // bake, so this is safe unconditionally. An unchanged value hits the LUT cache.
+  // shoreline_position; on any other ramp marine_colormap's anchored bake falls
+  // back to the plain bake, so this is safe unconditionally. An unchanged value
+  // hits the LUT cache.
   const std::optional<double> anchor = shoreline_anchor_.value();
   renderer_.setShorelineAnchor(
     anchor ? std::optional<float>(static_cast<float>(*anchor)) : std::nullopt);

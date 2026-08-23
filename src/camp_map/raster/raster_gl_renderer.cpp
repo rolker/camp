@@ -85,9 +85,10 @@ void main()
     // LUT this feeds is USUALLY the plain palette ramp (identity TransferParams,
     // ADR-0008) — but [camp#181 / ADR-0015] a topo-bathy layer with an active
     // shoreline anchor pre-warps the LUT through a BreakpointMap in the bake
-    // (bake_anchored_lut), so entry i still corresponds to this same linear
-    // position i/(n-1) and the shader stays untouched. The LUT is therefore no
-    // longer range-independent when anchored (see ensureLut). The 1e-6 floor is ONLY a
+    // (marine_colormap::bake_shoreline_anchored_lut), so entry i still corresponds
+    // to this same linear position i/(n-1) and the shader stays untouched. The LUT
+    // is therefore no longer range-independent when anchored (see ensureLut). The
+    // 1e-6 floor is ONLY a
     // divide-by-zero guard for a genuinely degenerate (zero-width) range — a true
     // span of 0 collapses to t=0 (a flat LUT value). The old 1.0 floor silently
     // crushed contrast for any span < 1.0 (harmless for large-range GGGS/sidescan

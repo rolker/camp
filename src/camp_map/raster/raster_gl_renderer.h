@@ -78,10 +78,11 @@ public:
   /// it. A non-finite anchor is treated as no anchor — storing one would make the
   /// LUT cache key never match again (NaN != NaN), re-baking and re-uploading the
   /// texture every frame for no visible change. Mirrors setColormap's dirty-flag
-  /// pattern. The anchor only bites on a
-  /// palette that declares a `shoreline_position` (oleron / hypsometric); on any
-  /// other ramp `bake_anchored_lut` falls back to the unanchored bake, so setting
-  /// it is harmless. Because the anchored LUT is a function of the render range,
+  /// pattern. The anchor only bites on a palette that declares a
+  /// `shoreline_position` (oleron / hypsometric); on any other ramp
+  /// `marine_colormap::bake_shoreline_anchored_lut()` falls back to the unanchored
+  /// bake, so setting it is harmless. Because the anchored LUT is a function of
+  /// the render range,
   /// ensureLut() re-bakes when the anchor OR the [lo, hi] it is baked against
   /// changes — see ensureLut(). Re-baked on next render; shader untouched.
   void setShorelineAnchor(std::optional<float> anchor);

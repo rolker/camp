@@ -445,7 +445,8 @@ QImage RasterLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
   const QList<RasterFieldItem> draw = items();
   // [camp#181 / ADR-0015] Push the resolved shoreline anchor before the draw. It
   // bites only on a scalar chart whose palette has a shoreline_position; on any
-  // other ramp bake_anchored_lut falls back to the plain bake, so it is safe here.
+  // other ramp marine_colormap's anchored bake falls back to the plain bake, so it
+  // is safe here.
   const std::optional<double> anchor = shoreline_anchor_.value();
   renderer_.setShorelineAnchor(
     anchor ? std::optional<float>(static_cast<float>(*anchor)) : std::nullopt);
