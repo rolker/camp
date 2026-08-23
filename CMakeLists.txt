@@ -439,6 +439,17 @@ if(BUILD_TESTING)
     Qt5::Core
   )
 
+  # Anchored topo-bathy LUT (camp#181 / ADR-0015): the shoreline break pinned to
+  # an absolute data value, and the byte-identical unanchored fallback.
+  ament_add_gtest(test_anchored_lut
+    test/test_anchored_lut.cpp
+    src/camp_map/raster/anchored_lut.cpp
+  )
+  target_link_libraries(test_anchored_lut
+    marine_colormap::marine_colormap
+    Qt5::Core
+  )
+
   # Collision-monitor polygon converter unit tests
   ament_add_gtest(test_collision_monitor_converter
     test/test_collision_monitor_converter.cpp
