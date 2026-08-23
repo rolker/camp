@@ -15,6 +15,7 @@
 #include "shoreline_anchor.h"
 
 #include <array>
+#include <cmath>
 
 namespace camp
 {
@@ -39,6 +40,21 @@ std::size_t precedenceIndex(ShorelineAnchor::Source source)
     if(kPrecedence[i] == source)
       return i;
   return kPrecedence.size() - 1;  // unreachable; keeps the walk bounded
+}
+
+/// [camp#181 / ADR-0015] Drop a non-finite push. A NaN anchor is corrosive rather
+/// than merely wrong: NaN != NaN, so it defeats every equality the design rests on
+/// — the holder's "did the resolved anchor move?" test would emit changed() on
+/// every identical re-push (breaking the no-op-refresh contract the tests pin), and
+/// the renderer's LUT cache key would miss forever, re-baking and re-uploading the
+/// texture every frame. It is also not an anchor: the bake falls back to the
+/// unanchored ramp, so the layer would claim an anchor it is not applying. Treating
+/// non-finite as "no value" makes it a reported absence (D5/D6) instead.
+std::optional<double> finiteOrNullopt(std::optional<double> value)
+{
+  if(value && !std::isfinite(*value))
+    return std::nullopt;
+  return value;
 }
 
 }  // namespace
@@ -90,6 +106,7 @@ void ShorelineAnchor::setMode(Source mode)
 
 void ShorelineAnchor::setChartDatum(std::optional<double> value)
 {
+  value = finiteOrNullopt(value);
   if(value == chart_datum_)
     return;
   const std::optional<double> before = this->value();
@@ -101,6 +118,7 @@ void ShorelineAnchor::setChartDatum(std::optional<double> value)
 
 void ShorelineAnchor::setPlatformTide(std::optional<double> value)
 {
+  value = finiteOrNullopt(value);
   if(value == platform_tide_)
     return;
   const std::optional<double> before = this->value();
@@ -112,6 +130,7 @@ void ShorelineAnchor::setPlatformTide(std::optional<double> value)
 
 void ShorelineAnchor::setManual(std::optional<double> value)
 {
+  value = finiteOrNullopt(value);
   if(value == manual_)
     return;
   const std::optional<double> before = this->value();

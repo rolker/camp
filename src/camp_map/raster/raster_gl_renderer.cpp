@@ -1,5 +1,7 @@
 #include "raster_gl_renderer.h"
 
+#include <cmath>
+
 #include "../map_view/web_mercator.h"
 
 #include <marine_colormap/colormap.hpp>
@@ -251,6 +253,15 @@ void RasterGlRenderer::setShorelineAnchor(std::optional<float> anchor)
   // is enough to trigger a re-bake on the next render. (Kept a plain setter so the
   // layer can push the resolved anchor every render cheaply — an unchanged value
   // hits the cache.)
+  //
+  // A non-finite anchor is dropped here rather than stored. That is not defensive
+  // tidiness: NaN != NaN, so a stored NaN would make the cache-hit test below
+  // false FOREVER — a full bake plus a texture upload on every single frame, with
+  // no visible symptom, since bake_shoreline_anchored_lut() already falls back to
+  // the unanchored ramp for a non-finite anchor. The holder guards its own setters
+  // too; this is the seam's own guard, since the renderer is public API.
+  if(anchor && !std::isfinite(*anchor))
+    anchor = std::nullopt;
   shoreline_anchor_ = anchor;
 }
 

@@ -75,7 +75,10 @@ public:
 
   /// [camp#181 / ADR-0015] Pin the palette's shoreline break to an absolute data
   /// value (chart datum, a tide height, or an operator's manual number), or clear
-  /// it. Mirrors setColormap's dirty-flag pattern. The anchor only bites on a
+  /// it. A non-finite anchor is treated as no anchor — storing one would make the
+  /// LUT cache key never match again (NaN != NaN), re-baking and re-uploading the
+  /// texture every frame for no visible change. Mirrors setColormap's dirty-flag
+  /// pattern. The anchor only bites on a
   /// palette that declares a `shoreline_position` (oleron / hypsometric); on any
   /// other ramp `bake_anchored_lut` falls back to the unanchored bake, so setting
   /// it is harmless. Because the anchored LUT is a function of the render range,

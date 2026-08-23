@@ -79,6 +79,14 @@ public:
   /// datum provider reporting no coverage, or the tide tracker with no platform
   /// selected). Setters emit `changed()` only when the *resolved* anchor moves,
   /// so a source refreshing an identical value costs no repaint.
+  ///
+  /// A **non-finite** value clears the source, exactly as `std::nullopt` does. A
+  /// NaN would otherwise be corrosive rather than merely wrong: NaN != NaN, so it
+  /// defeats the "did the resolved anchor move?" equality (every identical
+  /// re-push would emit `changed()`) and the renderer's LUT cache key (a re-bake
+  /// plus a texture upload every frame). It is not an anchor either — the bake
+  /// falls back to the unanchored ramp — so reporting it as an absence is the
+  /// honest outcome (D5/D6).
   void setChartDatum(std::optional<double> value);
   void setPlatformTide(std::optional<double> value);
   void setManual(std::optional<double> value);
