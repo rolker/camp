@@ -37,15 +37,22 @@ namespace
 {
 
 // Counts changed() emissions. A direct connection needs no event loop.
+//
+// The connection is scoped to a QObject member that dies with the counter: the
+// 3-argument connect() would leave a lambda capturing `this` alive on the anchor
+// after the counter went out of scope, writing into freed stack memory the moment
+// a later emission found it. Inert only while every counter outlives its anchor —
+// and this fixture gets reused as PR2/PR3's sources land.
 class ChangeCounter
 {
 public:
   explicit ChangeCounter(ShorelineAnchor* anchor)
   {
-    QObject::connect(anchor, &ShorelineAnchor::changed, [this]() { ++count_; });
+    QObject::connect(anchor, &ShorelineAnchor::changed, &lifetime_, [this]() { ++count_; });
   }
   int count() const { return count_; }
 private:
+  QObject lifetime_;
   int count_ = 0;
 };
 
