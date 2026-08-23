@@ -487,3 +487,52 @@ no added line over 100 columns, no whitespace findings.
 - [x] (suggestion) `editingFinished` fires on plain focus-out and the spin rounds to 3 decimals. Harmless in PR1 (the spin is the only writer), but once PR2/PR3 can seed a datum-derived manual value, merely clicking into the spin and closing rewrites and re-persists it truncated — against the header's "inspecting a layer must not mutate it". Compare against the seeded `state.manual_anchor` before pushing, or raise the decimals — `src/camp_map/raster/colormap_range_dialog.cpp:182-183,307`
 - [x] (suggestion) `ChangeCounter` uses the 3-argument `connect()` with a `this`-capturing lambda, so the connection outlives the counter. Inert as written; one reordering from writing into freed stack memory, and it will be reused as PR2/PR3 sources land — `test/test_shoreline_anchor.cpp:43-46`
 - [x] (suggestion) Plan row still credits `test_shoreline_anchor.cpp` with covering "that the default active source is chart datum"; amendment 3 corrects the fact but the row is stale — `.agent/work-plans/issue-181/plan.md:437`
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-23 01:35 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-181 at `16d7fa2`
+**Addressed**: `## Local Review (Pre-Push)` (round 2, 2026-08-23 01:12 -04:00, branch at `1d54b2d`) — verdict changes-requested, ship recommended
+**Commits**: `b3fcb14`, `5abf149`, `a2e9b67`, `de78fc5`, `1b9a083`, `40bf9ff`, `c634df0`, `efa4ccb`, `5592123`, `03a5bd1`, `deeeaee`, `16d7fa2`
+
+All eleven findings actioned; none deferred. `./ui_ws/build.sh camp` clean and
+`./ui_ws/test.sh camp` reports **298 tests, 0 failures, 1 skipped** (the skip is
+the pre-existing `GggsRenderTest.RealStoreRendersWhenProvided`, which needs a real
+store) — up from the 291-test baseline, +7 new cases.
+
+Two of the fixes needed a wider change than the finding described, and both are
+recorded as plan amendments:
+
+- The mode-persistence fix could not be done with a settings key alone. The
+  `(value, mode)` pair is now applied through a new
+  `ShorelineAnchor::applyManualSelection()`, which also closes the separate
+  "`setManual()` before `setMode()` emits against the old mode" finding — the two
+  findings are the same defect (value and mode treated as separable) seen from
+  persistence and from emission.
+- The legend narrowing needed the condition evaluated at repaint time rather than
+  once at open. Blanking the anchored bake on the widened domain alone would have
+  left the colorbar unanchored *after* the operator pinned a Manual range, which
+  gives the map a real range again — the same divergence in the other direction.
+  The bar now follows whether the **map's** resolved range is anchorable.
+
+Not covered by tests: the range dialog has no test harness in camp (it is a free
+function building a modal `QDialog`), so the four dialog-side changes — the
+narrowed legend bake, the button group, the stepping repaint, and the no-op push
+guard — are verified by reading, not by a test. Building one is camp#142
+territory. The operator-visible half of PR1 still needs the GUI eyeball that was
+already owed.
+
+### Actions
+- [x] (must-fix) `ensureLut()` served the stale anchored LUT once the range went degenerate — keyed the cache on the EFFECTIVE anchor (`anchored ? shoreline_anchor_ : nullopt`) at both store and compare, and documented `lut_anchor_` as holding the effective value — `src/camp_map/raster/raster_gl_renderer.cpp:213-232,254`, `raster_gl_renderer.h:128-135`; new test `DegenerateRangeFallsBackAndDoesNotServeTheAnchoredLut` covers zero-width, crossed, and the return to a real range — `test/test_raster_gl_renderer.cpp:358`
+- [x] (must-fix) The anchor MODE is now persisted explicitly as a `shoreline_anchor_mode` token (`ShorelineAnchor::sourceKey()` / `sourceFromKey()`), never inferred from the value's presence. An absent or unrecognized token restores `None` — a settings file predating the key does NOT infer Manual, because an anchor nobody can confirm was chosen must not be restored (D6). A ChartDatum/PlatformTide selection is restorable for the first time — `src/camp_map/raster/raster_layer.cpp`, `gggs_tile_layer.cpp`, `shoreline_anchor.{h,cpp}`; three new tests per the finding (None-with-retained-value on both layers, unrecognized token, valueless ChartDatum round trip) — `test/test_range_persist.cpp`, `test/test_shoreline_anchor.cpp`
+- [x] (suggestion) All four anchor radios wired through one `QButtonGroup`, acting on the checked edge only — the correctness no longer rests on Qt's emission order, and PR2/PR3 inherit a whole set rather than a partial one — `src/camp_map/raster/colormap_range_dialog.cpp:326-350`
+- [x] (suggestion) The anchor spin now repaints the colorbar and readout on `valueChanged` (arrow / wheel / Up-Down stepping), dialog-only — no layer write, no QSettings write; the push still waits for `editingFinished` — `src/camp_map/raster/colormap_range_dialog.cpp:365-372`
+- [x] (suggestion) The holder's thread-affinity contract is stated: GUI thread only, setters read-modify-write then emit, and a cross-thread source (PR2/PR3) must marshal — with the reason it looks like it works when violated (the queued `changed()` still arrives) — `src/camp_map/raster/shoreline_anchor.h:40-52`
+- [x] (suggestion) Legend `lo()/hi()` deferral NARROWED, not deleted: the colorbar no longer bakes an anchored ramp over the ±0.5 widening of a degenerate domain (the map renders that case unanchored), and the readout says "range too narrow to anchor". The crossed-extent half stays deferred to camp#142 with the narrowing recorded against the original note — `src/camp_map/raster/colormap_range_dialog.cpp:93-101,267-280,288-296`; ADR-0015's "the colorbar becomes truthful" consequence updated to include agreeing about *not* anchoring
+- [x] (suggestion) `setManual()`/`setMode()` batched into `applyManualSelection()`, emitting `changed()` at most once for the pair, so no observer sees the new value under the mode just left. Both call sites that move the pair (the dialog apply and `readSettings()`) go through it, making the "single changed() emission" their comments claim true — `src/camp_map/raster/shoreline_anchor.cpp:148-164`; test `ApplyManualSelectionEmitsOnceForThePair`
+- [x] (suggestion) Header/definition comment contradiction resolved in favour of the definition: `setShorelineAnchor()` is NOT a dirty-flag toggle — `src/camp_map/raster/raster_gl_renderer.h:77-88`
+- [x] (suggestion) `editingFinished` on a plain focus-out no longer rewrites a truncated copy of a seeded value: `apply_anchor` compares against the last-pushed pair, seeded from `state`, and returns without calling `on_anchor` when nothing moved — `src/camp_map/raster/colormap_range_dialog.cpp:318-334`
+- [x] (suggestion) `ChangeCounter`'s connection scoped to a `QObject` member that dies with the counter, so it cannot outlive the captured stack frame — `test/test_shoreline_anchor.cpp:43-52`
+- [x] (suggestion) Stale plan row corrected (the runtime default is `None`, amendment 3) and all three test rows re-synced to what they now cover — `.agent/work-plans/issue-181/plan.md:436-438`
