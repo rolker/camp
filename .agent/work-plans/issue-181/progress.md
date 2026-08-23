@@ -318,3 +318,34 @@ must-fixes; and uniform-shift (D1) with its ~28 m-discontinuity reasoning.
 - [ ] Does the tide anchor's platform selector belong here or in Roland's unopened `/marine/platforms` work? Scoped here today as "active platform, else sole platform, else say none".
 - [ ] Phase C scope: does PR2 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or a sibling PR?
 - [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-08-23 00:05 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `3a276f2`
+**PR**: PR-less (`--issue` mode; branch `feature/issue-181`, camp gitcloud origin → field-mode)
+**Verdict**: changes-requested
+
+Independent review of the 4th plan iteration (author was Claude Sonnet; this
+reviewer is Claude Opus — genuinely independent, no self-review annotation,
+matching the prior Opus-on-Sonnet Plan Review precedent in this file). All five
+must-fixes from the `56ac199` Plan Review are carried forward and verified
+(status via `updateStatus()`, no model updates in `paint()`, `QDir::homePath()`
+expansion, ADR-0008 amendment + stale comments in Documentation Impact,
+pre-Monday provisioning check). Load-bearing source claims were checked against
+the tree and hold up: ADR-0008 Decision #2's LUT range-independence (the
+amendment target) is accurately quoted; `updateStatus()` is confirmed the camp#195
+status composer; `ColormapLegendWidget::setLut()`, `web_mercator::mapToGeo()`,
+the two `#288` comments, the `/marine/platforms` enumeration + `platform_namespace`,
+and the `bathymetry_layer` `map_tide` guards all exist as described. The headline
+must-fix is a sequencing defect the reorder introduced, not a redesign.
+
+### Findings
+- [ ] (must-fix) PR2↔PR3 reorder inverts a dependency: Phase C (PR2, chart-datum "default") is sequenced before Phase B (PR3), but the seam it pushes into — the ROS-free `shoreline_anchor` holder (step 5) and per-layer anchor-mode/fallback/status wiring (step 7) — is all Phase B. As written PR2 ships inert (nothing to push into, no mode to activate) until PR3, so the reorder doesn't achieve its own "a default built last is not a default" goal. Fix: pull the holder + minimal per-layer anchor-mode/status seam into PR1/PR2; keep only `sea_surface_tracker` + platform-scoping in PR3 — `plan.md:293-349`, `plan.md:457-459`
+- [ ] (must-fix) `bathymetry_layer.cpp:653-672` (the copied `map_tide` guard pattern) lives in `unh_marine_autonomy`/core_ws, NOT camp — verified the guards are real and accurate there, but the citation names no repo, so a camp implementer can't find it. Qualify it as cross-repo (uma); note `#220` is a uma issue — `plan.md:80-87`, `plan.md:306-312`
+- [ ] (suggestion) ADR-0014 glossed as "(status composition)" but it is GGGS viewport-scoped residency (camp#195); cite camp#195/`updateStatus()` directly — `plan.md:319-323`, `plan.md:411`
+- [ ] (suggestion) `shoreline_position` "metres, positive up" is asserted as if quoted but `palette.hpp:56`'s comment states neither unit nor sign; the "no sign flip" correctness crux rests on it — verify concretely or record as an assumption — `plan.md:151-160`
+- [ ] (suggestion) ADR-0015 should separate the recorded default *policy* (chart datum) from *when* it is the live runtime default (source at PR2, mode selector at PR3; no runtime chart-datum mode between PR1 and PR3) — `plan.md:199-219`, `plan.md:351-362`
+- [ ] (nit) "zero ROS includes" is at `CMakeLists.txt:332`; only "pure Qt/GDAL (ROS-free)" is at `:239` — the plan attributes both to `:239` — `plan.md:107-116`
