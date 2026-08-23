@@ -7,6 +7,7 @@
 #include <QList>
 #include <QRectF>
 #include <QSize>
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
@@ -88,6 +89,14 @@ public:
   void setShorelineAnchor(std::optional<float> anchor);
   std::optional<float> shorelineAnchor() const { return shoreline_anchor_; }
 
+  /// [camp#181 / ADR-0015] How many times the LUT has actually been baked (as
+  /// opposed to served from the cache). Observability for the cache key, which
+  /// ADR-0015 D2 calls out as the silent failure of this design: get it wrong and a
+  /// stale LUT renders wrong colours with no crash and no log line, or a
+  /// never-matching key re-bakes and re-uploads a texture every frame. Neither is
+  /// visible from the outside, so the tests count bakes.
+  std::size_t lutBakeCount() const { return lut_bake_count_; }
+
   /// Release the FBO / program / LUT. Safe to call with no context; the dtor
   /// makes the context current first and then destroys it.
   void releaseGL();
@@ -125,6 +134,7 @@ private:
   std::optional<float> lut_anchor_;
   float lut_lo_ = 0.0f;
   float lut_hi_ = 0.0f;
+  std::size_t lut_bake_count_ = 0;            // see lutBakeCount()
   bool gl_failed_ = false;
 };
 

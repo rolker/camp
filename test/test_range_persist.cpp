@@ -37,6 +37,7 @@
 #include "map/map.h"
 #include "map/layer_list.h"
 #include "raster/gggs_tile_layer.h"
+#include "raster/shoreline_anchor.h"
 #include "raster/raster_layer.h"
 #include "ros/live_coverage/sonar_live_cache_layer.h"
 
@@ -45,6 +46,7 @@ using camp::raster::GggsTileLayer;
 using camp::raster::RasterLayer;
 using camp::ros::live_coverage::SonarLiveCacheLayer;
 using marine_colormap::RangeMode;
+using Source = camp::raster::ShorelineAnchor::Source;
 
 namespace
 {
@@ -172,7 +174,89 @@ TEST(RangePersist, GggsAutoRoundTrips)
   }
 }
 
+// [camp#181 / ADR-0015] The manual shoreline anchor round-trips through QSettings,
+// and — the part that matters — its ABSENCE restores as unanchored None, never as
+// a 0.0 anchor. D6 forbids substituting 0.0 because anchor values are ellipsoidal
+// heights: 0.0 would put the land/sea break ~28 m into deep water at the Shoals.
+// GL-free: the anchor holder is pure data and renderImage() is never called.
+TEST(RangePersist, GggsShorelineAnchorRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::None);      // unanchored default
+    EXPECT_FALSE(layer->shorelineManualAnchor().has_value());
+    layer->applyShorelineAnchor(Source::Manual, -28.038);       // persists
+  }
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    layer->readSettings();
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::Manual)
+        << "a persisted manual anchor must restore its MODE, not just its value";
+    ASSERT_TRUE(layer->shorelineManualAnchor().has_value());
+    EXPECT_DOUBLE_EQ(*layer->shorelineManualAnchor(), -28.038);
+    ASSERT_TRUE(layer->resolvedShorelineAnchor().has_value());
+    EXPECT_DOUBLE_EQ(*layer->resolvedShorelineAnchor(), -28.038);
+  }
+}
+
+TEST(RangePersist, GggsAbsentShorelineAnchorRestoresUnanchoredNotZero)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    layer->writeSettings();   // never anchored -> the key is removed, not zeroed
+  }
+  {
+    auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+    layer->readSettings();
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::None);
+    EXPECT_FALSE(layer->resolvedShorelineAnchor().has_value())
+        << "ADR-0015 D6: an absent anchor is unanchored, never 0.0";
+  }
+}
+
+// [camp#181 / ADR-0015 D6] A corrupt/unparsable persisted key must NOT read back as
+// 0.0 — QSettings::toDouble()'s no-ok overload returns exactly that.
+TEST(RangePersist, GggsCorruptShorelineAnchorRestoresUnanchored)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir tileset;
+  ASSERT_TRUE(tileset.isValid());
+
+  auto* layer = new TestableGggsTileLayer(layers, tileset.path());
+  layer->writeSettings();   // establish the group so settingsKey() is known-good
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("shoreline_anchor", "not-a-number");
+    settings.endGroup();
+    settings.endGroup();
+  }
+  layer->readSettings();
+  EXPECT_EQ(layer->shorelineAnchorMode(), Source::None);
+  EXPECT_FALSE(layer->resolvedShorelineAnchor().has_value())
+      << "an unparsable anchor must fall back to unanchored, never to 0.0";
+}
+
 // ------------------------------ RasterLayer ----------------------------------
+
 
 TEST(RangePersist, RasterDefaultOverrideReset)
 {
@@ -358,6 +442,55 @@ TEST(RangePersist, LiveSmoothInterpolationRoundTrips)
     layer->readSettings();
     EXPECT_TRUE(layer->smoothInterpolation())
         << "persisted smooth opt-in must restore from the settingsKey() group";
+  }
+}
+
+// [camp#181 / ADR-0015] Same anchor round-trip on RasterLayer, whose settings group
+// is itemID() rather than settingsKey().
+TEST(RangePersist, RasterShorelineAnchorRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString file = dir.filePath("chart.tif");
+
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::None);
+    layer->applyShorelineAnchor(Source::Manual, -28.038);
+  }
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    layer->readSettings();
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::Manual);
+    ASSERT_TRUE(layer->shorelineManualAnchor().has_value());
+    EXPECT_DOUBLE_EQ(*layer->shorelineManualAnchor(), -28.038);
+  }
+}
+
+TEST(RangePersist, RasterAbsentShorelineAnchorRestoresUnanchoredNotZero)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString file = dir.filePath("chart.tif");
+
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    layer->writeSettings();
+  }
+  {
+    auto* layer = new TestableRasterLayer(layers, file);
+    layer->readSettings();
+    EXPECT_EQ(layer->shorelineAnchorMode(), Source::None);
+    EXPECT_FALSE(layer->resolvedShorelineAnchor().has_value())
+        << "ADR-0015 D6: an absent anchor is unanchored, never 0.0";
   }
 }
 

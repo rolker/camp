@@ -5,7 +5,10 @@
 //  - Scalar finite-sentinel discard (v == u_nodata),
 //  - colormap LUT bake (a valid scalar shades to the ramp colour),
 //  - Nearest sampling on the value texture (no blend across a NoData boundary),
-//  - the Rgba bypass path (RGBA8 sampled directly, LUT bypassed; a==0 discards).
+//  - the Rgba bypass path (RGBA8 sampled directly, LUT bypassed; a==0 discards),
+//  - [camp#181 / ADR-0015 D2] the LUT CACHE KEY: an anchored LUT re-bakes when the
+//    render range moves (and holds the anchor's colour across the move), while an
+//    unanchored one does NOT — plus the non-finite-anchor guard at the seam.
 //
 // Uses the renderer's own offscreen context (makeCurrent), a non-geographic item
 // (1:1 unit-per-pixel quad) so a texture cell maps straight to an output pixel.
@@ -14,9 +17,13 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <vector>
+
+#include <marine_colormap/palette.hpp>
 
 #include <QApplication>
 #include <QImage>
@@ -244,6 +251,117 @@ TEST(RasterGlRendererTest, ColormapRebakesLut)
   // (high red+green, low blue). They must differ.
   EXPECT_NE(gray.rgb(), viridis.rgb());
   EXPECT_LT(viridis.blue(), viridis.green());
+}
+
+// [camp#181 / ADR-0015 D2] The LUT cache key. ADR-0008 Decision #2 asserted the LUT
+// was range-INDEPENDENT; anchoring amends that, because the anchored bake warps the
+// ramp through a BreakpointMap over [lo, hi]. Getting the key wrong is silent in
+// both directions — a stale LUT renders wrong colours with no crash and no log
+// line, and a never-matching key re-bakes and re-uploads a texture every frame —
+// so these count bakes rather than eyeballing pixels.
+TEST(RasterGlRendererTest, AnchoredLutRebakesOnRangeChange)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+
+  // oleron declares a shoreline_position, so the anchor actually bites.
+  ASSERT_NE(marine_colormap::find_palette("oleron"), nullptr);
+  const int n = 2;
+  const float kAnchor = -28.0f;                 // an ellipsoidal height, not 0.0
+  std::vector<float> data(n * n, kAnchor);      // every cell sits ON the shoreline
+  auto tex = makeScalarTexture(n, n, data);
+  const RasterFieldItem item = scalarItem(tex.get(), n, false, 0.0f);
+
+  renderer.setColormap("oleron");
+  renderer.setShorelineAnchor(kAnchor);
+
+  const QColor wide = renderer.renderToImage({item}, QRectF(0, 0, n, n), -60.0f, 20.0f,
+                                             QSize(n, n)).pixelColor(0, 0);
+  const std::size_t after_first = renderer.lutBakeCount();
+  EXPECT_GT(after_first, 0u);
+
+  // Same anchor, same palette, DIFFERENT range: the anchored LUT is a function of
+  // [lo, hi], so it must re-bake.
+  const QColor narrow = renderer.renderToImage({item}, QRectF(0, 0, n, n), -40.0f, 5.0f,
+                                               QSize(n, n)).pixelColor(0, 0);
+  EXPECT_GT(renderer.lutBakeCount(), after_first)
+      << "an anchored LUT must re-bake when the render range moves";
+
+  // And the whole point of the re-bake: the anchor value keeps its shoreline colour
+  // no matter what the range does. A stale LUT would slide it.
+  EXPECT_LT(std::abs(wide.red()   - narrow.red()),   12);
+  EXPECT_LT(std::abs(wide.green() - narrow.green()), 12);
+  EXPECT_LT(std::abs(wide.blue()  - narrow.blue()),  12);
+
+  // Re-rendering with the SAME (palette, anchor, range) is a cache hit.
+  const std::size_t before_repeat = renderer.lutBakeCount();
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -40.0f, 5.0f, QSize(n, n));
+  EXPECT_EQ(renderer.lutBakeCount(), before_repeat)
+      << "an unchanged (palette, anchor, range) must hit the LUT cache";
+
+  tex.reset();
+  renderer.doneCurrent();
+}
+
+TEST(RasterGlRendererTest, UnanchoredLutDoesNotRebakeOnRangeChange)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+
+  const int n = 2;
+  std::vector<float> data(n * n, -28.0f);
+  auto tex = makeScalarTexture(n, n, data);
+  const RasterFieldItem item = scalarItem(tex.get(), n, false, 0.0f);
+
+  // No anchor: the bake reduces to the plain range-independent palette ramp, so
+  // [lo, hi] must stay OUT of the cache key. Auto range ticks on every fold, so a
+  // range-keyed cache here would re-bake and re-upload a texture continuously.
+  renderer.setColormap("oleron");
+  ASSERT_FALSE(renderer.shorelineAnchor().has_value());
+
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -60.0f, 20.0f, QSize(n, n));
+  const std::size_t after_first = renderer.lutBakeCount();
+  EXPECT_GT(after_first, 0u);
+
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -40.0f, 5.0f, QSize(n, n));
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -1.0f, 1.0f, QSize(n, n));
+  EXPECT_EQ(renderer.lutBakeCount(), after_first)
+      << "an UNANCHORED layer must not re-bake its LUT on a range change";
+
+  // Setting an anchor re-bakes; clearing it re-bakes back.
+  renderer.setShorelineAnchor(-28.0f);
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -1.0f, 1.0f, QSize(n, n));
+  const std::size_t after_anchor = renderer.lutBakeCount();
+  EXPECT_GT(after_anchor, after_first) << "an anchor appearing must re-bake";
+
+  renderer.setShorelineAnchor(std::nullopt);
+  renderer.renderToImage({item}, QRectF(0, 0, n, n), -1.0f, 1.0f, QSize(n, n));
+  EXPECT_GT(renderer.lutBakeCount(), after_anchor) << "an anchor clearing must re-bake";
+
+  tex.reset();
+  renderer.doneCurrent();
+}
+
+// [camp#181 / ADR-0015] A non-finite anchor is not an anchor. Stored, it would make
+// the cache key never match again (NaN != NaN) — a bake plus a texture upload every
+// frame, with no visible symptom because the bake already falls back to the
+// unanchored ramp.
+TEST(RasterGlRendererTest, NonFiniteAnchorIsDroppedAtTheSeam)
+{
+  RasterGlRenderer renderer;   // no GL needed: this is the setter's own contract
+  renderer.setShorelineAnchor(std::numeric_limits<float>::quiet_NaN());
+  EXPECT_FALSE(renderer.shorelineAnchor().has_value());
+  renderer.setShorelineAnchor(std::numeric_limits<float>::infinity());
+  EXPECT_FALSE(renderer.shorelineAnchor().has_value());
+  renderer.setShorelineAnchor(-28.0f);
+  ASSERT_TRUE(renderer.shorelineAnchor().has_value());
+  EXPECT_FLOAT_EQ(*renderer.shorelineAnchor(), -28.0f);
 }
 
 int main(int argc, char** argv)

@@ -210,6 +210,7 @@ QOpenGLTexture* RasterGlRenderer::ensureLut(float lo, float hi)
   if(cache_hit)
     return lut_texture_.get();
 
+  ++lut_bake_count_;   // see lutBakeCount(): the cache key's only observable
   const std::vector<marine_colormap::Rgba8> baked =
     marine_colormap::bake_shoreline_anchored_lut(*palette, marine_colormap::TransferParams{}, lo, hi, shoreline_anchor_, 256);
   std::vector<uchar> lut(256 * 4);
