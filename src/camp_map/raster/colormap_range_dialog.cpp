@@ -14,6 +14,9 @@
 
 #include "colormap_range_dialog.h"
 
+#include <optional>
+#include <utility>
+
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -196,35 +199,60 @@ void showColormapRangeDialog(
     layout->addWidget(anchor_box);
 
     // Seed BEFORE wiring so the setChecked() calls don't echo into the layer.
+    // The radio comes from the layer's STORED anchor_mode, never inferred from
+    // whether a manual value happens to exist: opening a dialog must not mutate
+    // the thing it is inspecting. Inferring the mode would open a ChartDatum layer
+    // on Manual (or on None) and, together with the unconditional fire below, would
+    // WRITE that misreading back the moment the dialog appeared. That is inert only
+    // while the upper two radios are disabled; it goes live with the chart-datum
+    // source (PR2).
+    switch (state.anchor_mode) {
+      case ShorelineAnchor::Source::ChartDatum:   chart_radio->setChecked(true); break;
+      case ShorelineAnchor::Source::PlatformTide: tide_radio->setChecked(true); break;
+      case ShorelineAnchor::Source::Manual:       manual_radio->setChecked(true); break;
+      case ShorelineAnchor::Source::None:         none_radio->setChecked(true); break;
+    }
     // A persisted manual value seeds the spin; its ABSENCE seeds "not set", never
     // 0.0 (ADR-0015 D6) — so selecting Manual on a layer that has never had one
     // applies no anchor at all rather than a silently-wrong sea-level break.
     if (state.manual_anchor) {
-      manual_radio->setChecked(true);
       anchor_spin->setValue(*state.manual_anchor);
     } else {
-      none_radio->setChecked(true);
       anchor_spin->setValue(kAnchorUnset);   // reads "not set"
-      anchor_spin->setEnabled(false);
     }
 
-    // Repaint the colorbar exactly as the layer renders it (bake_anchored_lut over
-    // the resolved [lo, hi]) and push the mode+value to the layer. Fires live.
-    auto refresh_anchor =
-      [legend, anchor_palette, manual_radio, anchor_spin, anchor_readout, on_anchor]() {
-        const bool manual = manual_radio->isChecked();
-        anchor_spin->setEnabled(manual);
+    // The widget state as an (mode, manual value) pair — the same shape the layer's
+    // holder stores. The mode is read from ALL FOUR radios, so a stored ChartDatum /
+    // PlatformTide selection survives a dialog visit untouched.
+    auto current_anchor =
+      [chart_radio, tide_radio, manual_radio, anchor_spin]() {
+        ShorelineAnchor::Source mode = ShorelineAnchor::Source::None;
+        if (chart_radio->isChecked()) {
+          mode = ShorelineAnchor::Source::ChartDatum;
+        } else if (tide_radio->isChecked()) {
+          mode = ShorelineAnchor::Source::PlatformTide;
+        } else if (manual_radio->isChecked()) {
+          mode = ShorelineAnchor::Source::Manual;
+        }
         // [ADR-0015 D6] A spin sitting at the "not set" sentinel yields NO value.
         // Manual-with-nothing-entered therefore resolves to unanchored (and says
         // so), which is the whole point: there is no path from one click to a 0.0
         // anchor.
-        const std::optional<double> typed = spin_value(anchor_spin);
-        std::optional<double> value;
-        ShorelineAnchor::Source src = ShorelineAnchor::Source::None;
-        if (manual) {
-          value = typed;
-          src = ShorelineAnchor::Source::Manual;
-        }
+        return std::pair<ShorelineAnchor::Source, std::optional<double>>(
+          mode, spin_value(anchor_spin));
+      };
+
+    // Repaint the colorbar exactly as the layer renders it (the anchored bake over
+    // the resolved [lo, hi]) and update the readout. Touches the DIALOG only —
+    // nothing is pushed to the layer from here, so it is safe to call on open.
+    auto repaint_anchor =
+      [legend, anchor_palette, anchor_spin, anchor_readout, current_anchor]() {
+        const auto [mode, typed] = current_anchor();
+        anchor_spin->setEnabled(mode == ShorelineAnchor::Source::Manual);
+        // PR1 can only resolve Manual; the upper two sources have no provider yet
+        // and are reported as unavailable rather than faked (D4 / D5).
+        const std::optional<double> value =
+          mode == ShorelineAnchor::Source::Manual ? typed : std::nullopt;
         if (anchor_palette && value) {
           legend->setLut(marine_colormap::bake_shoreline_anchored_lut(
             *anchor_palette, marine_colormap::TransferParams{},
@@ -238,33 +266,47 @@ void showColormapRangeDialog(
         if (value) {
           anchor_readout->setText(QString("Shoreline at %1 m (%2)")
                                     .arg(*value, 0, 'f', 3)
-                                    .arg(ShorelineAnchor::sourceLabel(src)));
-        } else if (manual) {
+                                    .arg(ShorelineAnchor::sourceLabel(mode)));
+        } else if (mode == ShorelineAnchor::Source::Manual) {
           // Never "shoreline 0.00 m" — an unset Manual is reported as what it is.
           anchor_readout->setText("Unanchored - enter a manual value");
+        } else if (mode != ShorelineAnchor::Source::None) {
+          anchor_readout->setText(QString("Unanchored - %1 unavailable")
+                                    .arg(ShorelineAnchor::sourceLabel(mode)));
         } else {
           anchor_readout->setText("Unanchored");
         }
-        if (on_anchor)
-          on_anchor(src, value);
       };
 
+    // Push the operator's change to the layer. Fires live, and ONLY from a real
+    // interaction — never from seeding.
+    auto apply_anchor = [repaint_anchor, current_anchor, on_anchor]() {
+      repaint_anchor();
+      if (on_anchor) {
+        const auto [mode, typed] = current_anchor();
+        on_anchor(mode, typed);
+      }
+    };
+
     QObject::connect(manual_radio, &QRadioButton::toggled, &dialog,
-                     [refresh_anchor](bool) { refresh_anchor(); });
+                     [apply_anchor](bool) { apply_anchor(); });
     QObject::connect(none_radio, &QRadioButton::toggled, &dialog,
-                     [refresh_anchor](bool) { refresh_anchor(); });
+                     [apply_anchor](bool) { apply_anchor(); });
     QObject::connect(anchor_spin,
                      QOverload<double>::of(&QDoubleSpinBox::valueChanged), &dialog,
-                     [refresh_anchor](double) { refresh_anchor(); });
+                     [apply_anchor](double) { apply_anchor(); });
     // A range change (drag / spin / reset) must re-bake the anchored colorbar over
-    // the new [lo, hi] — the anchored LUT is range-dependent (ADR-0015).
+    // the new [lo, hi] — the anchored LUT is range-dependent (ADR-0015). This is a
+    // DIALOG repaint only: the range change itself already went to the layer, which
+    // re-bakes its own LUT; re-pushing the anchor here would be a write the operator
+    // did not ask for.
     QObject::connect(
       legend, &marine_colormap_widgets::ColormapLegendWidget::rangeChanged, &dialog,
-      [refresh_anchor](float, float) { refresh_anchor(); });
+      [repaint_anchor](float, float) { repaint_anchor(); });
 
-    // Paint the colorbar + readout to match the seeded state (idempotent on the
-    // layer side, which no-ops an unchanged anchor).
-    refresh_anchor();
+    // Paint the colorbar + readout to match the SEEDED state. Deliberately
+    // repaint-only: opening the dialog must not write anything back to the layer.
+    repaint_anchor();
   }
 
   auto * buttons = new QHBoxLayout();

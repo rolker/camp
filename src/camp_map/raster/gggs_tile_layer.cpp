@@ -1588,10 +1588,14 @@ bool GggsTileLayer::paletteSupportsAnchor() const
 void GggsTileLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
                                          std::optional<double> manual)
 {
-  // [camp#181 / ADR-0015] Idempotent: the range dialog re-fires the current state
-  // on open, so only persist when something actually moves. The holder emits
-  // changed() (→ cache drop + status + repaint, wired in the ctor) only when the
-  // resolved anchor moves, so setting an unchanged value is free.
+  // [camp#181 / ADR-0015] Called only from a real operator change — the dialog
+  // seeds itself from state.anchor_mode and does NOT fire on open, so opening it
+  // cannot write anything back. The guard below stays as cheap insurance for any
+  // future caller that re-sends an unchanged pair. The holder emits changed()
+  // (→ cache drop + status + repaint, wired in the ctor) only when the resolved
+  // anchor moves, so setting an unchanged value is free. `manual` is the
+  // operator's typed value INDEPENDENT of the mode, so selecting None keeps it
+  // for a later switch back rather than discarding it.
   if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
     return;
   shoreline_anchor_.setManual(manual);

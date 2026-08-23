@@ -69,9 +69,12 @@ struct ColormapRangeState
 /// Chart datum and Platform tide are listed in D3 order but shown **disabled and
 /// honestly labelled unavailable** (no source resolves them until PR2 / PR3);
 /// Manual (with a value) and None are operator-selectable. Selecting Manual repaints
-/// the colorbar through `bake_anchored_lut()` so the colour↔value mapping is exact
-/// under the anchor, and adds a readout naming the active anchor and its source.
-/// `on_anchor(mode, manual_value)` fires live as the operator changes it.
+/// the colorbar through `marine_colormap::bake_shoreline_anchored_lut()` so the
+/// colour↔value mapping is exact under the anchor, and adds a readout naming the
+/// active anchor and its source.
+/// `on_anchor(mode, manual_value)` fires live as the operator changes it — and
+/// ONLY then. The radio is seeded from `state.anchor_mode` and nothing is pushed
+/// back on open: inspecting a layer must not mutate it.
 void showColormapRangeDialog(
   QWidget * parent, const QString & title, const ColormapRangeState & state,
   std::function<void(float, float)> on_range, std::function<void()> on_reset,
