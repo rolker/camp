@@ -383,3 +383,48 @@ must-fix is a sequencing defect the reorder introduced, not a redesign.
 - [x] (suggestion) Add "Decision #2 amended by ADR-0015 D8" to ADR-0008's Status line; workspace ADR-0012 puts substantive narrowing in the amending ADR, not inside the original Decision — `docs/decisions/0008-adopt-marine-colormap-lut-bake.md:75`
 - [x] (suggestion) Re-sync the work plan after the marine_colormap refactor: it still lists `anchored_lut.{h,cpp}`, `test_anchored_lut.cpp`, the old ADR filename, and "Chart datum [default]" — `.agent/work-plans/issue-181/plan.md:412,415,425`
 - [x] (suggestion) Truncated comment (`CMakeLists.txt:441`) and two added lines over the file's prevailing 100-col width (`raster_gl_renderer.cpp:191,211`)
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-23 00:53 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-181 at `7328fa1`
+**Addressed**: `## Local Review (Pre-Push)` (2026-08-23 00:19 -04:00, branch at `d83707c`) — 7 must-fix + 12 suggestions
+**Commits**: `c7ed6a0` `8abca8e` `5150150` `5fec142` `33a9ded` `64ad287` `81036da` `3770a1f` `c6afaf5` `57baeea` `60533aa` `ed3ffaf` `165fde9` `464c759` `55a33db`
+**Tests**: 291 tests, 0 errors, 0 failures, 1 skipped (baseline 281) — `./ui_ws/build.sh camp` + `./ui_ws/test.sh camp`
+
+### Actions
+
+Must-fix (all seven):
+
+- [x] A 0.0 anchor is now structurally unreachable, not merely warned about — `colormap_range_dialog.cpp` (`c7ed6a0`). "Not set" is a state of its own: the anchor spin carries a `kAnchorUnset` sentinel at its minimum that Qt renders as "not set", a layer with no persisted anchor seeds there rather than at 0.0, and `spin_value()` maps the sentinel to `std::nullopt`. Manual-with-nothing-entered therefore resolves to unanchored and says so ("Unanchored - enter a manual value"). 0.0 remains reachable only by an operator typing it. Chosen over a warning because "shoreline 0.00 m" reads as sea level — exactly the misreading D6 exists to prevent.
+- [x] Unparsable persisted anchor no longer reads back as 0.0 — `raster_layer.cpp`, `gggs_tile_layer.cpp` (`8abca8e`). `toDouble(&ok)`; a failed parse is treated as an absent key.
+- [x] `setColormap()` recomposes the status in both layers — (`5150150`). The anchor part is gated on whether the CURRENT palette carries a shoreline, so a palette switch silently started or stopped anchoring with no report.
+- [x] The dialog's anchor-mode seam, per the decided design — `colormap_range_dialog.{h,cpp}` (`5fec142`). The radio is seeded from `state.anchor_mode` (previously written by both layers and read nowhere), `current_anchor()` reads the mode back from all four radios, seeding goes through a repaint-only path that pushes nothing, and `on_anchor` fires only from real interactions. A range change repaints the dialog's colorbar but no longer re-pushes the anchor. The "the dialog re-fires the current state" comments in both layers — which the old idempotence argument rested on — were corrected.
+- [x] Non-finite guard at both seams — `shoreline_anchor.cpp`, `raster_gl_renderer.cpp` (`33a9ded`). NaN != NaN would break the holder's no-op-refresh contract and make the LUT cache key miss forever (a bake + texture upload every frame, invisible because the bake already falls back to the unanchored ramp).
+- [x] Six comments naming the deleted `bake_anchored_lut` — (`64ad287`, two of the six already corrected in `5fec142`). They now name `marine_colormap::bake_shoreline_anchored_lut()`.
+- [x] The two plan-promised tests — `test_raster_gl_renderer.cpp`, `test_range_persist.cpp` (`81036da`). Pixels cannot distinguish a re-bake from a cache hit on the unanchored path, where the bake genuinely is range-independent, so `RasterGlRenderer::lutBakeCount()` was added as the cache key's only observable. Covered: an anchored LUT re-bakes on a range change and holds the anchor's colour across it; the same (palette, anchor, range) hits the cache; an **unanchored** layer does NOT re-bake on a range change; an anchor appearing or clearing re-bakes. Persistence: mode + value round-trip on both layers, and an absent **or unparsable** key restores unanchored, never 0.0.
+
+Suggestions applied:
+
+- [x] Selecting None keeps the operator's typed manual value (folded into `5fec142` — the value is now passed independently of the mode).
+- [x] Anchor spin fires on `editingFinished`, matching the range spins beside it (`c6afaf5`).
+- [x] An anchor outside [lo, hi] is reported as such — ordinary, but the ramp goes single-sided (`c6afaf5`).
+- [x] `GggsTileLayer::updateStatus()`'s early returns no longer swallow the anchor part (`57baeea`); it is composed before them and appended on every path, still last so the message order is unchanged.
+- [x] The "composed strictly OUTSIDE paint()" assertions corrected (`3770a1f`). `paint()` → `scheduleEvictionIfNeeded()` → `updateStatus()` is live and **pre-existing (camp#195)**; it was not fixed here and is now named in the comments, which instead say what holds: every part is read from live state, so the composition is correct from whichever writer reaches it.
+- [x] A degenerate `lo == hi` range is treated as unanchored (`ed3ffaf`), so the anchored and unanchored paths stop painting opposite ends of the ramp.
+- [x] A mode-only transition between two unresolvable sources now emits `changed()` (`60533aa`) — the status names `mode()` in that state, so "chart datum unavailable" used to persist after switching to platform tide. Regression tests added for this and the non-finite guard.
+- [x] The `SonarLiveCacheLayer` exclusion recorded as ADR-0015 **D9** (`464c759`) rather than wired: the layer paints live per-ping coverage in the sonar's own value space, where a land/sea break has no meaning. Recorded because the asymmetry is operator-visible.
+- [x] ADR-0008's Status line now names the D8 amendment (`464c759`).
+- [x] Truncated `CMakeLists.txt` comment completed; the over-100-column added line rewrapped (`464c759`).
+- [x] `plan.md` re-synced to what landed (`55a33db`): the bake moved to `marine_colormap`, the ADR filename, policy-vs-runtime default, the dialog's read-only open, the "not set" state, and the test rows. An "Amendments during implementation" section records each change and why.
+
+Consciously handled without a code change:
+
+- [x] The legend bakes over `legend->lo()/hi()`, which diverges from the layer's render range on the crossed-extent and degenerate-domain fallback paths — `colormap_range_dialog.cpp:189` (deferred: both divergent paths are states in which the map paints nothing to disagree with — a crossed extent makes `renderImage()` return a null image, and the ±0.5 widening applies only where the domain is a point. Closing it properly means teaching the legend the layer's resolved range separately from its handle domain, which is camp#142 dialog surgery rather than anchor work.)
+- [x] `readSettings` restores a Manual anchor without checking `is_scalar_` — `raster_layer.cpp` (deferred: documented in `165fde9`, not changed. `readSettings()` can run before the file is opened, so `is_scalar_` is not yet trustworthy — the same reason `smooth_interpolation` is restored unconditionally directly above, and a file later re-opened as scalar should honour what was stored. The restored anchor is inert on an RGB chart: the Rgba shader path bypasses the LUT and `paletteSupportsAnchor()` is false, so neither the status nor the dialog claims an anchor.)
+
+### Not verified here
+
+- **No GUI eyeball.** Every fix is covered by headless tests or is a comment/doc change; the dialog's "not set" rendering, the out-of-range readout and the disabled upper radios have not been seen on screen. That is the standing operator-CAMP-rebuild debt for this issue, not a new gap.
