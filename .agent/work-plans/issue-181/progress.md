@@ -536,3 +536,81 @@ already owed.
 - [x] (suggestion) `editingFinished` on a plain focus-out no longer rewrites a truncated copy of a seeded value: `apply_anchor` compares against the last-pushed pair, seeded from `state`, and returns without calling `on_anchor` when nothing moved — `src/camp_map/raster/colormap_range_dialog.cpp:318-334`
 - [x] (suggestion) `ChangeCounter`'s connection scoped to a `QObject` member that dies with the counter, so it cannot outlive the captured stack frame — `test/test_shoreline_anchor.cpp:43-52`
 - [x] (suggestion) Stale plan row corrected (the runtime default is `None`, amendment 3) and all three test rows re-synced to what they now cover — `.agent/work-plans/issue-181/plan.md:436-438`
+
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-08-23 20:11 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #205 at `0028cdd`
+**Sources**: 3 (Copilot `COMMENTED` @ `0028cdd`, Local Review (Pre-Push) rounds 1 @ `d83707c` + 2 @ `1d54b2d`, CI rollup @ `0028cdd`)
+**Cross-source confirmations**: 0 at head SHA (see note)
+**CI**: all-pass — `build-and-test` success, `copilot-pull-request-reviewer` success
+
+Copilot's single review (Lite effort, 18/18 files, 1 inline + 1 suppressed
+comment, both the same defect) is against the current head, so no staleness
+question arises. It is factually correct and it is **new**: neither local round
+raised it. Verified against the code — `setMode()` (`shoreline_anchor.cpp:96-110`)
+emits `changed()` on **any** real mode change, and `applyManualSelection()`
+(`:148-163`) emits when `mode_ != before_mode` even if the resolved pair is
+untouched. That behaviour is deliberate (it is what round 1's "mode-only
+transition emits nothing" suggestion asked for, landed in `60533aa`) and is
+pinned by `ShorelineAnchorTest.UnresolvableModeChangeStillReportsItself`. The
+defect is therefore doc-side only: the emission contract was widened by the
+round-1 and round-2 fix passes and two doc blocks written in `850d235` still
+state the narrower pre-fix contract. `git log -L` confirms both predate the
+widening.
+
+Scope is wider than Copilot named. The same stale narrow claim appears at three
+further sites it did not flag (it reviewed only the two in the new header):
+`raster_layer.cpp:39`, `raster_layer.cpp:562`, `gggs_tile_layer.cpp:133`. The
+`:562` instance is the most misleading — it argues the local no-op guard is
+"cheap insurance" *because* the holder emits only on a resolved-anchor move.
+`shoreline_anchor.h:120` is correct as written (it is explicitly scoped to the
+value-only case) and needs no change.
+
+No runtime failure mode: over-emission costs a cache drop plus a repaint on an
+operator-initiated action, and the LUT cache key is keyed on the effective
+anchor, so a mode-only emission that moves nothing re-uses the cached LUT. The
+cost is to the **contract** — `shoreline_anchor.h` is the seam ADR-0015 D7 hands
+to PR2 (chart datum) and PR3 (platform tide), whose sources push across the ROS
+boundary and will be written against this header. A narrower documented contract
+invites a future source to assume `changed()` implies the value moved, or to
+"optimise" `setMode()` into the value setters' strict move test and silently
+reinstate the stale-status bug round 1 removed.
+
+**Cross-source note**: not a confirmation by ADR-0013's head-SHA rule (the local
+rounds sit at earlier SHAs), but it is the same *class* as round 2's
+`(suggestion)` "Comment contradiction from the round-1 comment-accuracy pass"
+(`raster_gl_renderer.h:77-88` vs `.cpp:261-267`, fixed in `efa4ccb`). Round 2's
+comment-accuracy sweep caught the sibling and missed this one — treat recurring
+doc-drift-behind-a-fix-pass as the standing weak spot on this branch, not as a
+one-off.
+
+Governance re-checked, nothing else raised: `shoreline_anchor.{h,cpp}` carry zero
+ROS includes (ADR-0002 holds); D6's "absent anchor is never 0.0" is intact — no
+path substitutes 0 for `nullopt`, the unparsable-key and non-finite guards both
+hold, and mode is persisted as a token rather than inferred; D2's cache key is
+the effective anchor at both store and compare. ADR-0015 itself does not restate
+the emission contract, so it needs no edit. The two disclosed limitations (chart
+datum / platform tide present-but-unavailable per D5; no GUI eyeball for the four
+dialog-side changes) are accepted scope and are not re-raised here.
+
+### Findings
+- [ ] (suggestion, Copilot + this triage) The documented `changed()` contract is
+      narrower than the implemented one: the class doc says the holder emits
+      "whenever the *resolved* anchor moves" and the signal doc says "Emitted when
+      the resolved `(value, activeSource)` pair changes", but a real mode change
+      always emits. State the union (a real mode change always emits; a value
+      change emits only when the resolved pair moves), matching the wording
+      already correct at `setMode()` and `applyManualSelection()` —
+      `src/camp_map/raster/shoreline_anchor.h:30-31,155`
+- [ ] (suggestion, this triage — same defect, sites Copilot did not flag) Three
+      layer-side comments repeat the narrow claim; `:562` additionally rests an
+      argument on it — `src/camp_map/raster/raster_layer.cpp:39,562`,
+      `src/camp_map/raster/gggs_tile_layer.cpp:133`
+
+### False positives
+- (none) Copilot raised one finding and it is valid; nothing in its review was
+  dismissed.
