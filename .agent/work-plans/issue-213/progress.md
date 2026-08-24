@@ -29,3 +29,25 @@ issue: 213
 - Queued `newPolygonData` events pending at destruction are safe (`~QObject` removes posted events for the receiver).
 - Destructor runs on the GUI thread (`map/layer.cpp:70` `deleteLater()`); the join is short for polygon-sized work, so no meaningful UI stall.
 - Static analysis: no C++ linter is configured in camp's pre-commit; ament_cpplint findings on these files are pre-existing house-style divergences, none introduced by this diff.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-08-24 19:22 -04:00
+**By**: Claude Code Agent (Claude Opus 5)
+
+**PR**: #214 at `1cbe25f`
+**Sources**: 2 (Copilot R1 @ `1cbe25f`, Local Review (Pre-Push) @ `c97153c`)
+**Cross-source confirmations**: 1
+**CI**: all-pass (build-and-test, copilot-pull-request-reviewer)
+
+### Findings
+- [ ] (cross-confirmed) `process_future_` is read/written from two threads without synchronization — the ROS executor thread calls `isRunning()` and assigns it in `polygonCallback`, while the GUI thread reads it in `~Polygon()`. That is a C++ data race (UB), and it leaves the launch window open: a callback already executing when `subscription_.reset()` returns can assign a NEW worker after the destructor captured/joined. Fix by mirroring `GridMap` (`grid_map.cpp:47-64`): add a `QMutex mutex_`, reset the subscription FIRST, then under the lock set `shutdown_` and copy `process_future_` into a local `pending`, and `waitForFinished()` on the copy OUTSIDE the lock. `polygonCallback` takes the same lock to check the gate and assign; `processPolygon`'s pre-emit re-check takes it too (no deadlock — the destructor releases the lock before joining) — `src/camp_map/ros/geometry/polygon.cpp:48`, `polygon.h:49`
+- [ ] (suggestion, pre-existing, Local Review) The constructed `rclcpp::QoS qos(10); qos.durability_volatile();` is never passed to `create_subscription` (plain depth `10` is used), so the configured QoS is silently discarded — `src/camp_map/ros/geometry/polygon.cpp:24`
+
+### Resolved this round
+- (must-fix, Local Review) Worker exception rethrown by `waitForFinished()` escaping the noexcept destructor -> `std::terminate`. Fixed in `1cbe25f`: `processPolygon` wraps the transform in try/catch and warns.
+- (must-fix, Local Review) `waitForFinished()` steal-and-run making the emit a direct call during teardown. Fixed in `1cbe25f`: `shutdown_` re-checked immediately before the emit.
+- (suggestion, Local Review) Comments overclaimed what `memory_order_relaxed` guarantees. Fixed in `1cbe25f`: wording softened to say the flag is advisory and the join is what synchronizes.
+
+### False positives
+- None. Copilot's single finding is valid and corroborates the pre-push review's own residual note.
