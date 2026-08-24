@@ -11,6 +11,8 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -127,9 +129,15 @@ TEST(SonarLiveCache, PatchApplyDequantize)
   EXPECT_FLOAT_EQ(band->data[northUpIndex(2, 2)], 2.0f);   // a plain base cell
   EXPECT_FLOAT_EQ(band->data[northUpIndex(0, 0)], 5.0f);   // the peak
 
-  // NoData cell: stored as the dequantized sentinel and excluded from the range.
-  EXPECT_FLOAT_EQ(band->data[northUpIndex(1, 1)], -327.68f);
+  // [camp#208] NoData cell: stored as NaN, not the dequantized producer sentinel,
+  // and excluded from the range. Bands each carry their own sentinel on the wire,
+  // but GeoTIFF holds ONE nodata value per dataset — writing three different ones
+  // kept only the last and made empty cells read back as real data on reload.
+  // Normalising to NaN makes that limit harmless. Consumers are unaffected: they
+  // guard with !isfinite(v) || v == nodata, and !isfinite catches NaN.
+  EXPECT_TRUE(std::isnan(band->data[northUpIndex(1, 1)]));
   EXPECT_TRUE(band->has_nodata);
+  EXPECT_TRUE(std::isnan(band->nodata));
   EXPECT_FLOAT_EQ(band->data_min, 2.0f);
   EXPECT_FLOAT_EQ(band->data_max, 5.0f);
 
@@ -325,7 +333,9 @@ TEST(SonarLiveCache, FoldChildPropagatesNoData)
   {
     if(v == 4.0f)
       ++written;
-    else if(pb->has_nodata && v == pb->nodata)
+    // [camp#208] The sentinel is NaN, so an equality test can never match it —
+    // count holes the way every consumer does, with the !isfinite guard.
+    else if(!std::isfinite(v) || (pb->has_nodata && v == pb->nodata))
       ++holes;
   }
   // (kEdge/2)^2 parent cells are in the child's quadrant; the all-NoData block is a
