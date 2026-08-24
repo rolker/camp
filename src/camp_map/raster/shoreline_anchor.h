@@ -28,7 +28,12 @@ namespace raster
 /// The single, source-agnostic seam every shoreline-anchor source writes into
 /// (camp#181, camp ADR-0015). A tiny **ROS-free** `QObject`: it holds one
 /// `std::optional<double>` per source, a selected mode, and emits `changed()`
-/// whenever the *resolved* anchor moves. Being ROS-free is load-bearing — it is
+/// on the **union** of two conditions: any real **mode** change, and any value
+/// change that moves the resolved `(value, activeSource)` pair. A mode change
+/// emits even when nothing resolves — selecting an unavailable source is a state
+/// the operator must SEE reported, which is why it is not optimised away (see
+/// `setMode()`, and `ShorelineAnchorTest.UnresolvableModeChangeStillReportsItself`
+/// which pins it). Being ROS-free is load-bearing — it is
 /// what keeps `libcamp_map`'s ADR-0002 boundary one-directional even though a
 /// later source (Phase B's `map_tide` tracker) lives across the ROS boundary and
 /// Phase C's chart-datum provider lives in the `camp` app: both **push** a value
@@ -152,7 +157,12 @@ public:
   static QString sourceLabel(Source source);
 
 signals:
-  /// Emitted when the resolved `(value, activeSource)` pair changes. The layer's
+  /// Emitted on a real mode change, OR when the resolved `(value, activeSource)`
+  /// pair changes. NOT only the latter: narrowing this to a strict resolved-pair
+  /// move would silently reinstate the stale-indication bug where selecting an
+  /// unavailable source left the previous source's label on screen. Sources added
+  /// later (chart datum, platform tide) must not assume `changed()` implies the
+  /// value moved. The layer's
   /// slot drops its cached image, re-feeds the renderer, recomposes its status, and
   /// requests a repaint. This slot is not a paint-time path — but note that
   /// `updateStatus()` itself is NOT reached exclusively from outside `paint()`:

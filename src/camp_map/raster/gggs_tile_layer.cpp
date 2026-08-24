@@ -130,8 +130,8 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
           &GggsTileLayer::tilesReady);
   // [camp#181 / ADR-0015] The anchor holder is the source-agnostic seam (manual
-  // today; chart datum / platform tide later). When the resolved anchor moves,
-  // drop the cached image, recompose the status, and repaint. The renderer is fed
+  // today; chart datum / platform tide later). On a mode change or a
+  // resolved-anchor move, drop the cached image, recompose the status, and repaint. The renderer is fed
   // the resolved value at renderImage() time, not here.
   //
   // This slot is not itself a paint-time path, but updateStatus() is NOT reachable

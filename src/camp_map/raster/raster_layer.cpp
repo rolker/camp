@@ -36,8 +36,8 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
   // [camp#63] Default scalar ramp is viridis (the renderer defaults to grayscale).
   renderer_.setColormap("viridis");
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
-  // [camp#181 / ADR-0015] Anchor holder: when the resolved anchor moves, drop the
-  // cached image, recompose the status, and repaint. The renderer
+  // [camp#181 / ADR-0015] Anchor holder: on a mode change or a resolved-anchor
+  // move, drop the cached image, recompose the status, and repaint. The renderer
   // is fed the resolved value at renderImage() time.
   connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
   {
@@ -558,8 +558,10 @@ void RasterLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
   // [camp#181 / ADR-0015] Called only from a real operator change — the dialog
   // seeds itself from state.anchor_mode and does NOT fire on open, so opening it
   // cannot write anything back. The guard below stays as cheap insurance for any
-  // future caller that re-sends an unchanged pair. The holder emits changed() only
-  // when the resolved anchor moves (→ cache drop + status + repaint, ctor-wired).
+  // future caller that re-sends an unchanged pair — note it earns its keep on its
+  // own terms, NOT because the holder de-duplicates: the holder emits changed() on
+  // any real mode change as well as on a resolved-anchor move (→ cache drop +
+  // status + repaint, ctor-wired), so an unchanged re-send would otherwise repaint.
   // `manual` is the operator's typed value INDEPENDENT of the mode, so selecting
   // None keeps it for a later switch back rather than discarding it.
   if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
