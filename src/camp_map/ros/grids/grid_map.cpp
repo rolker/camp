@@ -77,12 +77,30 @@ void GridMap::onProcessFinished()
     rendering_ = false;
 }
 
+QVariant GridMap::itemChange(GraphicsItemChange change, const QVariant& value)
+{
+  // [camp#208] Becoming visible is the only chance to draw a latched dataset that
+  // arrived while this layer was hidden — nothing will republish it.
+  if(change == ItemVisibleHasChanged && value.toBool())
+  {
+    QMutexLocker lock(&mutex_);
+    if(has_last_msg_)
+      requestRenderLocked();
+  }
+  return Layer::itemChange(change, value);
+}
+
 void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 {
   QMutexLocker lock(&mutex_);
   last_msg_ = data;       // [camp#63] keep the latest for colormap re-render
   has_last_msg_ = true;
-  requestRenderLocked();
+  // [camp#208] Keep the message (a re-render on show or on a colormap change
+  // needs it) but do NOT rasterise for a layer the operator has switched off.
+  // The render is the expensive half: a grid-sized ARGB image plus its pixmap,
+  // held for as long as the layer exists. itemChange() above repaints on show.
+  if(isVisible())
+    requestRenderLocked();
 }
 
 void GridMap::processGridMap(grid_map_msgs::msg::GridMap data, std::string colormap_name)
