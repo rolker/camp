@@ -79,6 +79,14 @@ const QVector<QRgb>& costmapColorTable()
 
 }  // namespace
 
+QVariant OccupancyGrid::itemChange(GraphicsItemChange change, const QVariant& value)
+{
+  // [camp#208] GUI thread: mirror visibility for the ROS callback to read.
+  if(change == ItemVisibleHasChanged)
+    visible_.store(value.toBool(), std::memory_order_relaxed);
+  return Layer::itemChange(change, value);
+}
+
 OccupancyGrid::~OccupancyGrid()
 {
   // [camp#209] Wait for the in-flight render before this object goes away — the
@@ -86,6 +94,10 @@ OccupancyGrid::~OccupancyGrid()
   // ~RasterLayer(); its absence here segfaulted camp when the layer was removed
   // from the Layers tab mid-render. The render window is wide (a 5000x5000 grid
   // is 25 million cells), so this is easy to hit, not a narrow race.
+  // [camp#209] Drop the subscription FIRST: otherwise an executor-thread callback
+  // can still fire while we wait and enqueue a fresh render into the object being
+  // destroyed.
+  subscription_.reset();
   process_future_.waitForFinished();
 }
 
@@ -96,7 +108,9 @@ void OccupancyGrid::occupancyGridCallback(const nav_msgs::msg::OccupancyGrid &gr
   // so an unchecked costmap was one of the largest consumers in the process — work
   // nobody asked to see. Costmaps republish on their own timer, so the display
   // refreshes on the next publish after the layer is re-enabled.
-  if(!isVisible())
+  // [camp#208] Read the mirrored flag, NOT isVisible(): this runs on the ROS
+  // executor thread and QGraphicsItem state belongs to the GUI thread.
+  if(!visible_.load(std::memory_order_relaxed))
     return;
 
   if(!process_future_.isRunning())

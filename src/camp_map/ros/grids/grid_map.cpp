@@ -38,6 +38,13 @@ GridMap::GridMap(MapItem* parent, Node* node, QString topic):
 
 GridMap::~GridMap()
 {
+  // [camp#209] Drop the subscription FIRST. shutdown_ alone was not enough: a
+  // callback arriving after it was set could still take the mutex and reach
+  // requestRenderLocked(), launching a NEW worker bound to `this` that the
+  // captured `pending` future below does not cover. Resetting the subscription
+  // stops callbacks at the source.
+  subscription_.reset();
+
   // Stop the worker from relaunching, then wait for the in-flight render so it
   // can't touch this object after destruction.
   QFuture<void> pending;
@@ -59,6 +66,10 @@ void GridMap::startRenderLocked()
 
 void GridMap::requestRenderLocked()
 {
+  // [camp#209] Never start work once teardown has begun — belt to the
+  // subscription reset in the destructor.
+  if(shutdown_)
+    return;
   if(rendering_)
     render_pending_ = true;   // coalesce; onProcessFinished() will pick it up
   else
@@ -81,11 +92,17 @@ QVariant GridMap::itemChange(GraphicsItemChange change, const QVariant& value)
 {
   // [camp#208] Becoming visible is the only chance to draw a latched dataset that
   // arrived while this layer was hidden — nothing will republish it.
-  if(change == ItemVisibleHasChanged && value.toBool())
+  if(change == ItemVisibleHasChanged)
   {
-    QMutexLocker lock(&mutex_);
-    if(has_last_msg_)
-      requestRenderLocked();
+    const bool shown = value.toBool();
+    // [camp#208] Mirror for the ROS callback thread — see visible_.
+    visible_.store(shown, std::memory_order_relaxed);
+    if(shown)
+    {
+      QMutexLocker lock(&mutex_);
+      if(has_last_msg_)
+        requestRenderLocked();
+    }
   }
   return Layer::itemChange(change, value);
 }
@@ -99,7 +116,8 @@ void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
   // needs it) but do NOT rasterise for a layer the operator has switched off.
   // The render is the expensive half: a grid-sized ARGB image plus its pixmap,
   // held for as long as the layer exists. itemChange() above repaints on show.
-  if(isVisible())
+  // [camp#208] visible_ not isVisible(): this is the ROS callback thread.
+  if(visible_.load(std::memory_order_relaxed))
     requestRenderLocked();
 }
 

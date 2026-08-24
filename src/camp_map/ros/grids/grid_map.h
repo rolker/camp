@@ -3,6 +3,8 @@
 
 #include "../layer.h"
 #include "grid_map_msgs/msg/grid_map.hpp"
+#include <atomic>
+
 #include <QtConcurrent>
 #include <QMutex>
 #include <QImage>
@@ -97,6 +99,10 @@ private:
   // Guards every member below — they are touched from the ROS callback thread
   // (gridMapCallback), the UI thread (setColormap / readSettings), and the
   // QtConcurrent worker (onProcessFinished).
+  /// [camp#208] Visibility mirrored from the GUI thread (itemChange) so
+  /// gridMapCallback can test it without touching GUI-owned QGraphicsItem state.
+  std::atomic<bool> visible_{false};
+
   QMutex mutex_;
   QFuture<void> process_future_;
   bool rendering_ = false;       // a worker is active
