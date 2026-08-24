@@ -33,19 +33,33 @@ Polygon::Polygon(MapItem* parent, Node* node, QString topic):
 
 Polygon::~Polygon()
 {
-  // [camp#213] Order matters: raise the gate, stop new callbacks at the source,
-  // then wait for the render already running. Resetting the subscription alone
-  // does not close the window — the executor can already be inside a callback.
-  // The flag is advisory (the join is what actually synchronizes), so relaxed
-  // ordering is sufficient.
-  shutdown_.store(true, std::memory_order_relaxed);
+  // [camp#213] Stop callbacks at the source FIRST. Raising the gate alone does
+  // not close the window: a callback that already passed the gate check can
+  // still assign a NEW worker bound to `this`, which the future captured below
+  // would not cover.
   subscription_.reset();
-  process_future_.waitForFinished();
+
+  // Then, under the lock, close the gate and take a copy of whatever render is
+  // in flight. Joining the copy OUTSIDE the lock is what makes this safe against
+  // the steal-and-run case: waitForFinished() may run the worker on this very
+  // thread, and that worker takes mutex_ before its pre-emit check. Mirrors
+  // GridMap::~GridMap().
+  QFuture<void> pending;
+  {
+    QMutexLocker lock(&mutex_);
+    shutdown_ = true;
+    pending = process_future_;
+  }
+  pending.waitForFinished();
 }
 
 void Polygon::polygonCallback(const geometry_msgs::msg::PolygonStamped::SharedPtr data)
 {
-  if(shutdown_.load(std::memory_order_relaxed))
+  // [camp#213] Check the gate and assign the future under one lock, so the
+  // destructor cannot observe a half-updated process_future_ and cannot be
+  // raced past between the check and the launch.
+  QMutexLocker lock(&mutex_);
+  if(shutdown_)
     return;
   if(!process_future_.isRunning())
   {
@@ -81,8 +95,12 @@ void Polygon::processPolygon(const geometry_msgs::msg::PolygonStamped::SharedPtr
   // [camp#213] waitForFinished() may steal a still-queued runnable and run it on
   // the GUI thread inside ~Polygon(). The emit would then be a direct call into
   // updatePolygon(), parenting a new item to a dying layer. Re-check the gate.
-  if(shutdown_.load(std::memory_order_relaxed))
-    return;
+  // Safe to lock here: the destructor releases mutex_ before it joins.
+  {
+    QMutexLocker lock(&mutex_);
+    if(shutdown_)
+      return;
+  }
 
   emit newPolygonData(polygon_data);
 }

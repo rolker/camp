@@ -4,8 +4,7 @@
 #include "../layer.h"
 #include "geometry_msgs/msg/polygon_stamped.hpp"
 #include <QtConcurrent>
-
-#include <atomic>
+#include <QMutex>
 
 namespace camp
 {
@@ -44,13 +43,22 @@ private slots:
 private:
   rclcpp::Subscription<geometry_msgs::msg::PolygonStamped>::SharedPtr subscription_;
 
+  /// [camp#213] Guards process_future_ and shutdown_, which are both touched
+  /// from the ROS executor thread (polygonCallback) and the GUI thread
+  /// (~Polygon). Without it the future is read and assigned concurrently, which
+  /// is a data race, and the gate below can be passed by a callback that then
+  /// launches a worker the destructor has already joined past. Mirrors the
+  /// handshake in GridMap (grids/grid_map.h).
+  QMutex mutex_;
+
   QFuture<void> process_future_;
 
   /// [camp#213] Set before teardown so a callback already dispatched when the
   /// destructor runs cannot start a fresh render. subscription_.reset() alone is
   /// not enough: rclcpp's executor holds its own strong reference across
   /// dispatch, so reset() neither cancels nor joins an in-flight callback.
-  std::atomic<bool> shutdown_{false};
+  /// Guarded by mutex_.
+  bool shutdown_ = false;
 
 };
 
