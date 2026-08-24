@@ -36,6 +36,13 @@ public:
   /// callback reads the atomic instead.
   std::atomic<bool> visible_{false};
 
+  /// [camp#209] Set before teardown so a callback already in flight when the
+  /// destructor runs cannot start a fresh render. subscription_.reset() alone is
+  /// not enough: rclcpp's executor holds its own strong reference across
+  /// dispatch, so reset() neither cancels nor joins an in-flight callback.
+  /// Mirrors the mutex_ + shutdown_ handshake GridMap already had.
+  std::atomic<bool> shutdown_{false};
+
   /// [camp#209] Joins the in-flight render worker before teardown. Without this,
   /// removing the layer while processOccupancyGrid() is running lets the worker
   /// write into a destroyed object (SIGSEGV). GridMap and RasterLayer already do

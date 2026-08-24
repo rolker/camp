@@ -31,6 +31,14 @@ OccupancyGrid::OccupancyGrid(MapItem* parent, Node* node, QString topic)
       std::bind(&OccupancyGrid::occupancyGridCallback, this, std::placeholders::_1));
 
   setStatus("[nav_msgs/msg/OccupancyGrid]");
+  // [camp#208] Seed the visibility mirror from real state. A QGraphicsItem is
+  // VISIBLE from construction, and setVisibleHelper() returns before
+  // itemChange() when the state is unchanged — so map::Layer::readSettings()'s
+  // setVisible(true) fires no event. Without this seed the mirror stays false
+  // for the whole life of any layer the operator never toggles, and the layer
+  // renders nothing while looking enabled. Parenting is complete here, so
+  // isVisible() is meaningful; this runs on the GUI thread.
+  visible_.store(isVisible(), std::memory_order_relaxed);
 }
 
 namespace
@@ -97,6 +105,7 @@ OccupancyGrid::~OccupancyGrid()
   // [camp#209] Drop the subscription FIRST: otherwise an executor-thread callback
   // can still fire while we wait and enqueue a fresh render into the object being
   // destroyed.
+  shutdown_.store(true, std::memory_order_relaxed);
   subscription_.reset();
   process_future_.waitForFinished();
 }
@@ -110,6 +119,8 @@ void OccupancyGrid::occupancyGridCallback(const nav_msgs::msg::OccupancyGrid &gr
   // refreshes on the next publish after the layer is re-enabled.
   // [camp#208] Read the mirrored flag, NOT isVisible(): this runs on the ROS
   // executor thread and QGraphicsItem state belongs to the GUI thread.
+  if(shutdown_.load(std::memory_order_relaxed))
+    return;
   if(!visible_.load(std::memory_order_relaxed))
     return;
 

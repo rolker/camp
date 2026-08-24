@@ -332,6 +332,21 @@ std::optional<SonarLiveTile> SonarLiveTile::loadFromGeoTiff(const std::string& p
     band.name = (desc && desc[0] != '\0') ? desc : ("band" + std::to_string(b));
     int has_nodata = 0;
     const double nodata = raster->GetNoDataValue(&has_nodata);
+    // [camp#208] Reject tiles written before the NaN contract. Those files were
+    // written with a per-band sentinel, and GeoTIFF keeps only ONE, so the bands
+    // that lost the slot have FINITE "empty" cells that pass every
+    // !isfinite || == nodata guard — they would fold into the range and the
+    // pyramid as real data, and the next write would stamp a NaN tag over the
+    // garbage, making the file look repaired while the pixels stayed wrong.
+    //
+    // There is no way to recover which cells were empty, so the tile is dropped
+    // rather than trusted. Its disk copy is simply not loaded; the reconciler
+    // re-requests it from the producer, which sends current data.
+    if(has_nodata != 0 && std::isfinite(nodata))
+    {
+      GDALClose(dataset);
+      return std::nullopt;
+    }
     band.has_nodata = has_nodata != 0;
     band.nodata = static_cast<float>(nodata);
     band.data.resize(cells);

@@ -33,6 +33,14 @@ GridMap::GridMap(MapItem* parent, Node* node, QString topic):
 
   subscription_ = node->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, qos, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
   setStatus("[grid_map_msgs/msg/GridMap]");
+  // [camp#208] Seed the visibility mirror from real state. A QGraphicsItem is
+  // VISIBLE from construction, and setVisibleHelper() returns before
+  // itemChange() when the state is unchanged — so map::Layer::readSettings()'s
+  // setVisible(true) fires no event. Without this seed the mirror stays false
+  // for the whole life of any layer the operator never toggles, and the layer
+  // renders nothing while looking enabled. Parenting is complete here, so
+  // isVisible() is meaningful; this runs on the GUI thread.
+  visible_.store(isVisible(), std::memory_order_relaxed);
 }
 
 
