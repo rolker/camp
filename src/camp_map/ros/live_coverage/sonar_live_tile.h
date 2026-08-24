@@ -26,8 +26,21 @@ namespace live_coverage
 /// [camp#121] One dequantized band of a live coverage tile, held in memory as
 /// Float32. The render path duplicates GggsTileLayer's, so the cell layout
 /// matches GggsTile: row-major, **north-up** (row 0 = north), `width*height`
-/// cells. NoData is the dequantized sentinel (`raw_nodata * scale + offset`);
-/// the duplicated shader discards cells exactly equal to it, as GggsTile's does.
+/// cells.
+///
+/// **NoData is NaN** (camp#208), not the dequantized producer sentinel. Bands
+/// each carry their own sentinel on the wire — quantization needs an in-range
+/// integer — but GeoTIFF's TIFFTAG_GDAL_NODATA holds ONE value per dataset, so
+/// writing three different ones kept only the last and made empty cells read
+/// back as real data on reload. Normalising every band to NaN makes that limit
+/// harmless, and matches what the world store already does
+/// (marine_bathymetry_store s102/convert.cpp writes SetNoDataValue(nan)).
+///
+/// Consequence for readers: an `== nodata` test can NEVER match, because NaN
+/// compares unequal to itself. Always guard with
+/// `!std::isfinite(v) || (has_nodata && v == nodata)` — the !isfinite clause is
+/// what catches NoData. The shader discards on `v != v` before its finite
+/// check, so the GPU path is covered too.
 struct SonarLiveBand
 {
   std::string name;          ///< "depth" | "uncertainty" | "backscatter" | ...

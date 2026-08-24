@@ -3,6 +3,8 @@
 
 #include "../layer.h"
 #include "grid_map_msgs/msg/grid_map.hpp"
+#include <atomic>
+
 #include <QtConcurrent>
 #include <QMutex>
 #include <QImage>
@@ -49,6 +51,14 @@ public:
   void setColormap(const std::string& name);
 
 protected:
+  /// [camp#208] Render only while the layer is actually shown, and catch the
+  /// hidden->shown transition. A GridMap dataset (an S-57 chart layer, say) is
+  /// latched: it arrives once and is never republished, so unlike a costmap this
+  /// layer cannot rely on the next message to repaint it. Skipping work while
+  /// hidden therefore REQUIRES re-rendering on the transition, or an unchecked
+  /// layer would come back permanently blank.
+  QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
+
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
   void writeSettings() override;
@@ -89,6 +99,10 @@ private:
   // Guards every member below — they are touched from the ROS callback thread
   // (gridMapCallback), the UI thread (setColormap / readSettings), and the
   // QtConcurrent worker (onProcessFinished).
+  /// [camp#208] Visibility mirrored from the GUI thread (itemChange) so
+  /// gridMapCallback can test it without touching GUI-owned QGraphicsItem state.
+  std::atomic<bool> visible_{false};
+
   QMutex mutex_;
   QFuture<void> process_future_;
   bool rendering_ = false;       // a worker is active

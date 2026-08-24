@@ -1044,6 +1044,13 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#208] Multi-band NoData must survive the GeoTIFF round trip, or empty
+  # cells come back drawable and a near-empty tile paints solid.
+  ament_add_gtest(test_sonar_live_tile_nodata
+    test/test_sonar_live_tile_nodata.cpp
+  )
+  target_link_libraries(test_sonar_live_tile_nodata camp_map_ros)
+
   # [camp#168] Spawned-source tracking clears on layer destruction so the live
   # coverage layer can be re-added after remove. White-box on the manager's
   # tracking seam; same offscreen harness (GL-free / ROS-free).

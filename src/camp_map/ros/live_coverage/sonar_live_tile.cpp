@@ -93,10 +93,28 @@ void SonarLiveTile::applyPatch(const marine_interfaces::msg::SonarVisualizationT
     if(vb.data.size() != cell_count * width_bytes)
       continue;   // declared window doesn't match the payload length
 
-    // Dequantized NoData sentinel: the shader discards cells exactly equal to it
-    // (same contract as GggsTile's per-band NoData), and untouched cells outside
-    // any received window keep it so they stay transparent.
-    const float nodata_value = static_cast<float>(vb.nodata * vb.scale + vb.offset);
+    // [camp#208] NoData is normalised to NaN, NOT kept as the dequantized
+    // producer sentinel. Bands each carry their own sentinel on the wire
+    // (quantization needs an in-range integer), but GeoTIFF's TIFFTAG_GDAL_NODATA
+    // stores ONE value per dataset — so writing three different per-band
+    // sentinels silently kept only the last and applied it to every band. On
+    // reload the other bands then had no recognised NoData, their empty cells
+    // read back as real data, and a mostly-empty tile painted solid over the
+    // chart (an 8x8 degree apex tile covering New England, in the case that
+    // found this).
+    //
+    // NaN sidesteps the one-value limit entirely: every band's sentinel is the
+    // same value, so the tag cannot be lossy, and NaN needs no tag at all to be
+    // recognised. This is also what the world store already does
+    // (marine_bathymetry_store s102/convert.cpp writes SetNoDataValue(nan)), so
+    // this brings the live cache into line with that convention rather than
+    // inventing a second one.
+    //
+    // Consumers are unaffected: every reader here guards with
+    // `!std::isfinite(v) || (has_nodata && v == nodata)`, and the !isfinite
+    // clause catches NaN — an `== nodata` test alone never would, since NaN
+    // compares unequal to itself.
+    const float nodata_value = std::numeric_limits<float>::quiet_NaN();
 
     SonarLiveBand& band = bands_[vb.name];
     if(band.data.empty())
@@ -314,6 +332,21 @@ std::optional<SonarLiveTile> SonarLiveTile::loadFromGeoTiff(const std::string& p
     band.name = (desc && desc[0] != '\0') ? desc : ("band" + std::to_string(b));
     int has_nodata = 0;
     const double nodata = raster->GetNoDataValue(&has_nodata);
+    // [camp#208] Reject tiles written before the NaN contract. Those files were
+    // written with a per-band sentinel, and GeoTIFF keeps only ONE, so the bands
+    // that lost the slot have FINITE "empty" cells that pass every
+    // !isfinite || == nodata guard — they would fold into the range and the
+    // pyramid as real data, and the next write would stamp a NaN tag over the
+    // garbage, making the file look repaired while the pixels stayed wrong.
+    //
+    // There is no way to recover which cells were empty, so the tile is dropped
+    // rather than trusted. Its disk copy is simply not loaded; the reconciler
+    // re-requests it from the producer, which sends current data.
+    if(has_nodata != 0 && std::isfinite(nodata))
+    {
+      GDALClose(dataset);
+      return std::nullopt;
+    }
     band.has_nodata = has_nodata != 0;
     band.nodata = static_cast<float>(nodata);
     band.data.resize(cells);
@@ -396,8 +429,11 @@ bool SonarLiveTile::writeToGeoTiff(const std::string& path) const
     const SonarLiveBand& band = it->second;
     GDALRasterBand* raster = out->GetRasterBand(band_index);
     raster->SetDescription(band.name.c_str());
+    // [camp#208] Always NaN, and the same for every band — see the normalisation
+    // comment in applyPatch(). Writing per-band sentinels here is what lost the
+    // transparency: GeoTIFF keeps only one.
     if(band.has_nodata)
-      raster->SetNoDataValue(static_cast<double>(band.nodata));
+      raster->SetNoDataValue(std::numeric_limits<double>::quiet_NaN());
     // Const buffer: GDAL's RasterIO takes a non-const void*, but GF_Write only
     // reads from it.
     std::vector<float> scratch(band.data);

@@ -33,11 +33,26 @@ GridMap::GridMap(MapItem* parent, Node* node, QString topic):
 
   subscription_ = node->node()->create_subscription<grid_map_msgs::msg::GridMap>(topic_, qos, std::bind(&GridMap::gridMapCallback, this, std::placeholders::_1));
   setStatus("[grid_map_msgs/msg/GridMap]");
+  // [camp#208] Seed the visibility mirror from real state. A QGraphicsItem is
+  // VISIBLE from construction, and setVisibleHelper() returns before
+  // itemChange() when the state is unchanged — so map::Layer::readSettings()'s
+  // setVisible(true) fires no event. Without this seed the mirror stays false
+  // for the whole life of any layer the operator never toggles, and the layer
+  // renders nothing while looking enabled. Parenting is complete here, so
+  // isVisible() is meaningful; this runs on the GUI thread.
+  visible_.store(isVisible(), std::memory_order_relaxed);
 }
 
 
 GridMap::~GridMap()
 {
+  // [camp#209] Drop the subscription FIRST. shutdown_ alone was not enough: a
+  // callback arriving after it was set could still take the mutex and reach
+  // requestRenderLocked(), launching a NEW worker bound to `this` that the
+  // captured `pending` future below does not cover. Resetting the subscription
+  // stops callbacks at the source.
+  subscription_.reset();
+
   // Stop the worker from relaunching, then wait for the in-flight render so it
   // can't touch this object after destruction.
   QFuture<void> pending;
@@ -59,6 +74,10 @@ void GridMap::startRenderLocked()
 
 void GridMap::requestRenderLocked()
 {
+  // [camp#209] Never start work once teardown has begun — belt to the
+  // subscription reset in the destructor.
+  if(shutdown_)
+    return;
   if(rendering_)
     render_pending_ = true;   // coalesce; onProcessFinished() will pick it up
   else
@@ -77,12 +96,37 @@ void GridMap::onProcessFinished()
     rendering_ = false;
 }
 
+QVariant GridMap::itemChange(GraphicsItemChange change, const QVariant& value)
+{
+  // [camp#208] Becoming visible is the only chance to draw a latched dataset that
+  // arrived while this layer was hidden — nothing will republish it.
+  if(change == ItemVisibleHasChanged)
+  {
+    const bool shown = value.toBool();
+    // [camp#208] Mirror for the ROS callback thread — see visible_.
+    visible_.store(shown, std::memory_order_relaxed);
+    if(shown)
+    {
+      QMutexLocker lock(&mutex_);
+      if(has_last_msg_)
+        requestRenderLocked();
+    }
+  }
+  return Layer::itemChange(change, value);
+}
+
 void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 {
   QMutexLocker lock(&mutex_);
   last_msg_ = data;       // [camp#63] keep the latest for colormap re-render
   has_last_msg_ = true;
-  requestRenderLocked();
+  // [camp#208] Keep the message (a re-render on show or on a colormap change
+  // needs it) but do NOT rasterise for a layer the operator has switched off.
+  // The render is the expensive half: a grid-sized ARGB image plus its pixmap,
+  // held for as long as the layer exists. itemChange() above repaints on show.
+  // [camp#208] visible_ not isVisible(): this is the ROS callback thread.
+  if(visible_.load(std::memory_order_relaxed))
+    requestRenderLocked();
 }
 
 void GridMap::processGridMap(grid_map_msgs::msg::GridMap data, std::string colormap_name)

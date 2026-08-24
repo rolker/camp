@@ -5,6 +5,8 @@
 #include "nav_msgs/msg/occupancy_grid.hpp"
 #include <QtConcurrent>
 
+#include <atomic>
+
 namespace camp
 {
 namespace ros
@@ -25,6 +27,30 @@ class OccupancyGrid: public Layer
   Q_INTERFACES(QGraphicsItem)
 public:
   OccupancyGrid(MapItem* parent, Node* node, QString topic);
+
+  /// [camp#208] Visibility as seen from the ROS callback thread.
+  ///
+  /// QGraphicsItem::isVisible() is GUI-thread-owned state, and
+  /// occupancyGridCallback runs on the ROS executor thread — reading it there is
+  /// a data race. itemChange() (GUI thread) mirrors it into this atomic, and the
+  /// callback reads the atomic instead.
+  std::atomic<bool> visible_{false};
+
+  /// [camp#209] Set before teardown so a callback already in flight when the
+  /// destructor runs cannot start a fresh render. subscription_.reset() alone is
+  /// not enough: rclcpp's executor holds its own strong reference across
+  /// dispatch, so reset() neither cancels nor joins an in-flight callback.
+  /// Mirrors the mutex_ + shutdown_ handshake GridMap already had.
+  std::atomic<bool> shutdown_{false};
+
+  /// [camp#209] Joins the in-flight render worker before teardown. Without this,
+  /// removing the layer while processOccupancyGrid() is running lets the worker
+  /// write into a destroyed object (SIGSEGV). GridMap and RasterLayer already do
+  /// this; OccupancyGrid was the one that did not.
+  ~OccupancyGrid() override;
+
+protected:
+  QVariant itemChange(GraphicsItemChange change, const QVariant& value) override;
 
 signals:
   void occupancyGridUpdated(const OccupancyGridData &data);
