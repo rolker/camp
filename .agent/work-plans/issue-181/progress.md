@@ -1,0 +1,616 @@
+---
+issue: 181
+---
+
+# Issue #181 — Depth layers: land/water-distinguishing topo-bathy colormap pivoted at chart datum
+
+## Issue Review
+**Status**: complete
+**When**: 2026-08-22 18:45 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5)
+
+**Issue**: #181
+**Comment**: (best-effort post follows this entry; not recorded inline)
+**Scope verdict**: needs-more-detail
+
+### Actions
+- [ ] Scope this PR to the **interim form only** (constant per-layer pivot
+  parameter). Given the Tuesday 2026-08-25 nearshore survey, do not let this
+  PR wait on `unh_marine_autonomy#288`'s per-point datum sampling — state
+  that explicitly in the plan so scope doesn't creep toward the full form.
+- [ ] Correct the "Fit with existing work" framing before planning: `camp::map::ColorMap`
+  (camp#63) was already retired and replaced by `marine_colormap` + LUT-bake per
+  camp ADR-0008 — camp#63 is stale/superseded, not the live facility. The actual
+  gap is narrower than "doesn't fit current per-layer ramp assumptions" suggests:
+  `marine_colormap` already ships `oleron`/`hypsometric` topo-bathy palettes with
+  `PaletteDomain::shoreline_position`, and both already appear in CAMP's colormap
+  picker menu (`raster_layer.cpp` iterates `marine_colormap::palette_names()`
+  unconditionally). That is very likely today's reported symptom: **the palettes
+  are selectable, but `RangeModel::update_auto(data_min_, data_max_)` stretches
+  them linearly over the visible data span with no anchor, so the baked shoreline
+  color lands wherever the data range happens to put it — not at chart datum.**
+  The plan should investigate/confirm this before assuming a new colormap
+  facility is needed.
+- [ ] Use `marine_colormap`'s `BreakpointMap` (`lookup.hpp`) to anchor the
+  palette's `shoreline_position` onto the pivot value, rather than inventing a
+  new anchoring scheme in CAMP. Confirm during planning that its output plugs
+  into the existing `RasterGlRenderer::ensureLut()` / `RangeModel` seam without
+  a new render path.
+- [ ] Any pivot implementation must preserve ADR-0008's Consequence #1:
+  `bake_lut`'s `TransferParams` **must stay identity** — the pivot has to be
+  expressed as which colors land in the 256-entry LUT (i.e., an asymmetric
+  effective lo/hi feeding the *existing* linear shader normalize), not as
+  gain/contrast baked into the texture. Flag this explicitly in the plan so it
+  isn't rediscovered mid-implementation.
+- [ ] Decide explicitly whether ADR-0009's "Colormap range…" dialog
+  (`colormap_range_dialog.{h,cpp}`, the `ColormapLegendWidget`) needs to surface
+  the pivot for topo-bathy layers, or whether that's out of scope / a follow-up.
+  The dialog and `RangeModel` currently model range as a single Auto/Manual
+  lo/hi with no pivot concept — leaving this unaddressed risks the dialog
+  silently fighting the new anchoring (e.g. a manual range override that no
+  longer keeps the shoreline pinned).
+- [ ] This is an architecturally significant decision (introduces a pivoted/
+  anchored normalize into the shared ADR-0007 scalar-layer render path used by
+  `RasterLayer`, `GggsTileLayer`, and `SonarLiveCacheLayer`). Per the "capture
+  decisions" principle and the existing camp ADR-0008/0009 precedent for this
+  exact code path, plan-task should record the anchoring mechanism as a new
+  camp ADR rather than only as an issue/PR.
+- [ ] Confirm whether `unh_marine_autonomy#288`'s pivot-source dependency is a
+  hard blocker for the *interim* form (it should not be — the issue already
+  frames a per-layer constant pivot as decoupled) and record that in the plan
+  so a reviewer doesn't misread this PR as blocked.
+- [ ] Add tests for the pivot placement itself (LUT color at the pivot value
+  matches `shoreline_position`; degenerate cases — pivot outside the data
+  range, pivot at/near a data-range boundary, zero-width range) alongside
+  whatever `RangeModel`/dialog tests already exist (`test_range_persist`).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 18:51 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `56ac199`
+**Branch**: feature/issue-181 at `56ac199`
+**Phases**: single PR, internally sequenced (pure LUT-bake helper -> renderer wiring -> datum-service/fallback wiring -> ADR + follow-up issue)
+
+### Open questions
+- [ ] Polygon overrides / `lake_datum` deferred (VDatum-only) — confirm acceptable for Tuesday's survey area, or fast-follow if inland/estuarine fringe is in scope.
+- [ ] `~/data/world/datum/` QSettings-defaulted grid paths are a new precedent (no existing consumer defaults to this path) — confirm intended, or require explicit one-time settings entry.
+- [ ] `test_chart_datum_service.cpp` fixture approach (real small VDatum grid fixture vs. manual-exercise-only for the PROJ-dependent path) — decide during implementation; the nullopt-on-missing-grids path is unit-testable regardless.
+- [ ] Rebake-on-every-pan-tick cost is unmeasured — land the simple form, add a coarse-grid pivot-query threshold only if manual exercise shows visible cost.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-08-22 18:56 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `56ac199`
+**PR**: PR-less (`--issue` mode; branch `feature/issue-181`)
+**Verdict**: changes-requested
+
+Scope is correct and not narrowed: the plan builds the operator-chosen FULL
+scope (automatic per-region chart-datum pivot via `resolve_datum()`), and its
+"steps 1-2 alone are shippable" fallback is an honest degradation, not a quiet
+retreat. ADR-0008 Consequence #1 is genuinely satisfied — the pivot path calls
+`Palette::sample()` through a `BreakpointMap`, never `bake_lut`'s
+`TransferParams` — and the `nullopt` fallback is specified as render-unpivoted
+everywhere it matters, with no code path that could pivot at 0. The threading
+claim matches `vdatum_query.hpp`'s documented contract. The must-fixes below are
+bounded plan amendments (not a redesign) plus one pre-Monday provisioning check.
+
+### Findings
+- [ ] (must-fix) `GggsTileLayer` fallback status must go through `updateStatus()`, not `setStatus()` — camp#195 made `updateStatus()` THE status composer precisely so writers cannot clobber each other (over-budget/failed-tile/loading reports); a direct per-render `setStatus()` reintroduces the clobber the ADR-0014-era work removed — `plan.md:170-180`
+- [ ] (must-fix) Do not call `setStatus()` from `renderImage()` (it runs inside `paint()`): `MapItem::setStatus` → `Map::updateDisplay` → `emit dataChanged`, i.e. a model/tree update re-entered from a scene paint. Record pivot state in a member during render; compose + publish outside paint — `plan.md:170-180`
+- [ ] (must-fix) QSettings defaults `~/data/world/datum/...` must be expanded via `QDir::homePath()`; a literal `~` handed to PROJ/`std::filesystem` silently finds no grids → permanent `nullopt` → the feature appears "honestly absent" on Tuesday while actually being misconfigured — `plan.md:126-131`
+- [ ] (must-fix) Documentation & Instruction Impact "None" is wrong. This PR makes stale: (a) `raster_gl_renderer.cpp`'s `ensureLut()` comment and the fragment-shader comment, both of which assert "the LUT carries only the palette ramp" / range-independence; (b) ADR-0008 Decision #2's same sentence. ADR-0015 must be recorded as amending ADR-0008 (LUT is now range-dependent), and the code comments updated in this PR — `plan.md:262-265`
+- [ ] (must-fix) Add a pre-Monday provisioning check to the plan: the claim "no new provisioning step is needed for the Tuesday survey" is verified only on this dev host. Confirm `world/datum/{geoid,vdatum}` grids AND an Isles-of-Shoals GGGS/S-102 store exist on the machine that will actually run CAMP, before treating full scope as deployable — `plan.md:129-131`
+- [ ] (suggestion) Gate the datum *query*, not just the bake, on `palette.domain()->shoreline_position`. Today every layer render would construct the PROJ singleton (recursive grid scan + pipeline compile, on the GUI thread) even for grayscale layers, and `test/test_gggs_render.cpp` / `test_gggs_band_select.cpp` call `renderImage()` directly — making the GL tests host-dependent. Gating removes the one-time GUI stall for every non-topo-bathy user and keeps tests hermetic — `plan.md:100-104, 166-169`
+- [ ] (suggestion) Bound the first-call cost explicitly: `make_vdatum_query()` is the expensive part (recursive `.gtx` scan + PROJ pipeline creation) and the plan puts it lazily on the GUI thread. camp#187 is the standing precedent for a GUI-thread load stalling CAMP in the field. Note the expected one-time cost in ADR-0015 or warm it at layer-add time — `plan.md:132-136`
+- [ ] (suggestion) The pan/repaint cost concern is overstated *and* under-bounded. Both consumers short-circuit on `cached_image_`, so `pivotAt()` fires only on cache misses, not every repaint — but a continuous pan misses every frame. A two-line "last rounded lat/lon → pivot" memo is cheaper than measuring; land it rather than deferring — `plan.md:181-188, 290-293`
+- [ ] (suggestion) ADR-0009 interaction is under-stated. `ColormapLegendWidget` samples the palette **linearly** (`colormap_legend_widget.cpp:197`) and `marine_colormap_widgets` has no breakpoint support, so with a pivot active the colorbar's colour↔value mapping is wrong, not merely missing a pivot marker. It is on-demand (modal dialog) so it is not always visible — but a survey operator reading it would mis-map colour to depth. Minimum in-scope mitigation: show the resolved pivot value (or "no chart datum") in the dialog, ~5 lines — `plan.md:200-211`
+- [ ] (suggestion) State the value-convention assumption explicitly: the pivot works because the stores hold **ellipsoidal, up-positive heights** (issue #181) and `PaletteDomain` is likewise "metres, positive up", so `chart_datum_z` is directly comparable. Any depth-positive-down source would need a sign flip. This is the crux of correctness and the plan never says it — `plan.md:65-104`
+- [ ] (suggestion) `web_mercator::mapToGeo()` already exists — drop the "confirm/add an inverse helper" hedge and the `web_mercator.h/.cpp` row from Files to Change — `plan.md:225`
+- [ ] (suggestion) The "new precedent" framing on `~/data/world/datum/` is not quite right: `enc_updater`'s `config/region_example.yaml:68,76` already carries exactly these two paths as config values. The precedent is operator-visible config, which QSettings matches — cite it rather than claiming no prior art — `plan.md:58-61, 277-282`
+- [ ] (suggestion) Minor: the LUT texture is 256×1 with `Linear` min/mag filtering, so a hard shoreline discontinuity smears across ~1 texel and the pivot quantizes to `(hi-lo)/255`. Fine at nearshore spans; note it, and consider `Nearest` LUT filtering if the break must be crisp — `plan.md:65-104`
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:06 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `b94a7d4`
+**Branch**: feature/issue-181 at `b94a7d4`
+**Phases**: two stacked PRs (PR1 = anchoring mechanism + manual anchor + colorbar fix + ADR; PR2 = tide-linked anchor via TF)
+
+**This entry supersedes the `## Plan Authored` entry of 2026-08-22 18:51 and
+the plan committed at `56ac199`.** That plan built a `chart_datum_service`
+querying VDatum once per render to compute a per-region chart-datum pivot. The
+operator directed a redesign at the run-issue checkpoint because it contradicts
+`docs/vision.md` on `feature/issue-12` of `rolker/marine_colormap` (PR mc#14,
+unmerged), which states that there is no `chart_datum` runtime frame (uma
+ADR-0010 D5), that datum conversion happens at import via
+`marine_vertical_datum`, and that breakpoints are constants in the chosen
+frame — express the field relative to `map_tide` and the shoreline break is
+0.0. The rewritten plan drops VDatum/PROJ/grids entirely and reads the anchor
+from the `map_tide` frame. The `BreakpointMap`-in-the-LUT-bake mechanism from
+the old plan survives unchanged; only the source of the anchor value changed,
+which deletes the GUI-thread PROJ stall, the `~`-expansion bug and the
+grid-provisioning gate along with it.
+
+Ground-truth corrections found while replanning, both of which changed the
+design:
+
+- `sea_surface_estimator` is a node inside `mru_transform`, not a missing
+  package. `/tf` is bridged to the operator station, so `map_tide` is
+  reachable from CAMP when the boat is up (unverified on the ROC machine).
+- **The handoff's claim that the raster layers can call TF is wrong.**
+  `RasterLayer`/`GggsTileLayer`/`RasterGlRenderer` live in `libcamp_map`,
+  declared ROS-free with a one-directional boundary (ADR-0002,
+  `CMakeLists.txt:239`), and derive from `map::Layer`, not `camp::ros::Layer`.
+  The anchor must be pushed in from `camp_map_ros` through a ROS-free holder,
+  not pulled by the layers.
+- `ColormapLegendWidget::setLut()` already exists, so the ADR-0009 colorbar
+  problem is a three-line fix (the colorbar becomes exact under an anchor)
+  rather than the "show a value, document the gap" mitigation the plan review
+  settled for.
+
+All four surviving Plan Review must-fixes are carried: status through
+`GggsTileLayer::updateStatus()`; no model updates inside `paint()`;
+Documentation Impact corrected (ADR-0008 D#2 amended plus two stale code
+comments land in this PR); the colorbar fixed. The provisioning must-fix is
+re-pointed from VDatum grids to "is `map_tide` actually visible on the ROC
+machine", which is now an open question gating PR2.
+
+### Open questions
+- [ ] Is `map_tide` visible to CAMP's own TF buffer on the ROC machine? Needs a `tf2_echo` before PR2 can be trusted; if not, PR1's manual anchor is the whole feature.
+- [ ] Confirm the PR1-first sequencing given Tuesday 2026-08-25, or whether PR2 should be attempted regardless of the verification gap.
+- [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. requiring an explicit configured frame pair (two vehicles, bizzy and izzy, can share one graph).
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry. Uniform shift makes displayed land elevation tide-dependent; the asymmetry would open a ~28 m discontinuity at the shoreline in our ellipsoidal frame.
+- [ ] Schedule honesty: PR1 is achievable and verifiable by Monday; PR2 is writable but not safely verifiable before Tuesday (needs the owed ROC CAMP rebuild plus a live boat).
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:17 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `32812ce`
+**Branch**: feature/issue-181 at `32812ce`
+**Phases**: three stacked PRs (PR1 = mechanism + manual anchor + colorbar fix + ADR; PR2 = `map_tide` anchor; PR3 = chart-datum source)
+
+**This entry supersedes the `## Plan Authored` entry earlier today at
+`b94a7d4` (which itself superseded `56ac199`).** Two operator corrections,
+both verified in-tree before adopting:
+
+1. **Retracted an incorrect schedule finding.** `b94a7d4` claimed the
+   tide-linked anchor "is not safely verifiable before Tuesday — it needs the
+   already-owed ROC CAMP rebuild and a live boat". Wrong. `marine_simulation/
+   launch/sim_robot_launch.py:338-358` brings up `mru_transform_node`
+   broadcasting `<ns>/map_tide`, and `asv_sim/config/environment.yaml`
+   carries a harmonic tide (NOAA Station 8423898, Fort Point NH) with
+   `speed_factor` documented as compressing a 12-hour cycle into ~12 s. The
+   same file gives `ellipsoid_to_mllw: -28.104` — within 7 cm of the measured
+   −28.038 m at the Isles of Shoals — so the sim is an oracle for **both**
+   anchor sources. PR2 is now targeted at Tuesday, sim-verified. The residual
+   field-side unknown narrows to whether `map_tide` survives the bridge to the
+   ROC box specifically.
+2. **A chart-datum anchor is wanted, not forbidden.** `b94a7d4` over-corrected
+   from the `56ac199` rejection and treated datum knowledge in CAMP as
+   off-limits. What was rejected was a *colormap-private* per-render PROJ query
+   on the GUI thread; what is wanted is a CAMP-level datum capability the
+   colormap merely consumes. CAMP already anticipates it — two comments
+   (`autonomousvehicleproject.h:86-87`, `projectview.cpp:213-215`) show two
+   differently-labelled depths "until the datum service (#288)" for camp#180's
+   readout, independent of this issue.
+
+The anchor is therefore now **source-agnostic**: a plain `optional<double>`
+written by pluggable sources, precedence chart datum > `map_tide` > manual >
+none. Default per S-98 Ed. 2.0.0 Appendix D (which the vision doc itself
+endorses): chart datum is the default, `map_tide` is an operator-selectable
+adjustment, off by default, with permanent on-screen indication while active.
+The vision tension is reconciled explicitly in the plan rather than left
+implicit — uma ADR-0010 D5 excludes a `chart_datum` **TF frame in the
+navigation loop**, and the vision says plainly that "D5 keeps models out of the
+navigation loop, not out of the system" and that a modelled tier is "entirely
+appropriate in camp". "`marine_colormap` should never know about tides, datums
+or drafts" stays honored untouched: the library receives a number.
+
+**New ground-truth finding that shaped Phase C: there is no datum service to
+call.** A workspace-wide grep finds no `.srv` mentioning datum at all, and
+uma#288's actual title is "world/: canonical updater-managed home for
+geospatial support data … ADR-0010 D3 amendment" — it decides where grids
+*live*, not who resolves them. The available capability is the ROS-free
+`marine_vertical_datum` library (`resolve_datum() -> optional<DatumResult>`
+with `chart_datum_z`, `datum_config.hpp:82-106`). Phase C scopes CAMP linking
+it directly, off the GUI thread and region-cached, rather than assuming a
+service exists.
+
+Carried forward unchanged from `b94a7d4`: the `BreakpointMap`-in-the-LUT-bake
+mechanism; the ROS-free `libcamp_map` boundary finding (ADR-0002,
+`CMakeLists.txt:239` — the layers derive from `map::Layer`, not
+`camp::ros::Layer`, so every source must push, never pull; this is also what
+structurally prevents the rejected design from recurring);
+`ColormapLegendWidget::setLut()` making the colorbar a real fix rather than a
+documented gap; all four surviving Plan Review must-fixes; and the uniform-shift
+decision with its ~28 m-discontinuity reasoning.
+
+### Open questions
+- [ ] Is `map_tide` visible to CAMP's TF buffer on the ROC machine? One `tf2_echo` there; sim covers everything else about PR2.
+- [ ] Confirm the D3 default — chart datum default with tide as a selectable adjustment (S-98 model), vs. tide as default since under-keel clearance is the live question among rocks. One-line change either way.
+- [ ] Phase C scope: does PR3 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or does that follow in a sibling PR?
+- [ ] Frame auto-discovery policy: "unique frame ending in `map_tide`" vs. an explicit configured pair (bizzy and izzy can share one graph).
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-22 19:26 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `3a276f2`
+**Branch**: feature/issue-181 at `3a276f2`
+**Phases**: three stacked PRs — PR1 = Phase A+D (mechanism + manual anchor + colorbar fix + ADR); **PR2 = Phase C (chart-datum source, the default)**; PR3 = Phase B (platform-scoped tide)
+
+**Supersedes the `## Plan Authored` entry at `32812ce` earlier today.** The
+operator settled the anchor-default open question and the consequences reshaped
+the sequencing.
+
+**Decision: chart datum is the default; switching to a platform's tide is one
+click.** The decisive reason is one not visible in the code and now recorded in
+both the plan and the ADR: **`map_tide` is per-platform**. With one platform up
+"the tide" reads as unambiguous; with two, the display would have to decide
+*whose* tide it tracks. Chart datum is a property of the **location**, not of a
+vehicle, so it has no such ambiguity. A display-wide vertical reference that
+silently depends on which boat happens to be up is a latent correctness bug, not
+an ergonomic wrinkle. This argument is independent of — and stronger than — the
+S-98 Appendix D reasoning from the previous version, which is kept as
+corroboration (two unrelated lines of reasoning reaching the same default).
+
+The plan now **distinguishes the fallback *order* from the *default active
+source*** (D3), which the previous version conflated. Order stays chart datum >
+platform tide > manual > none; chart datum is additionally the mode a layer
+starts in.
+
+**New decision D7 — the tide source is platform-scoped from day one**, i.e.
+"platform X's `map_tide`", never "the `map_tide` frame", even while only one
+platform exists. Checked camp before designing a selector, and **Roland's
+recollection was right**: `/marine/platforms` support is already present.
+`platform_manager.cpp:25` subscribes to `/marine/platforms`
+(`marine_interfaces::msg::PlatformList`); `Platform.msg` carries
+`platform_namespace` and `platform.cpp:107-108` already reads it; and camp
+already has an active-platform concept (`PlatformManager::currentPlatform` →
+`AutonomousVehicleProject::updateActivePlatform` → `activePlatform()`,
+`mainwindow.cpp:105`). So the selector hangs off the existing enumeration with
+a read-only namespace accessor — **no parallel selector, no view-locking, no new
+platform UI**; that stays Roland's unopened work, and this design consumes a
+richer selector unchanged because the key is already `platform_namespace`.
+
+**This dissolved a prior open question**: the "unique frame ending in
+`map_tide`" auto-discovery heuristic is dropped outright. `platform_namespace`
+composes directly into `<platform_namespace>/map_tide`, so platform identity and
+frame name are the same fact. A heuristic that guesses wrong with two vehicles up
+is precisely the ambiguity the default exists to remove.
+
+**Re-sequencing — PR2 and PR3 swap.** With chart datum as the default, building
+it last would have shipped a default that does not exist: every layer would fall
+through to tide, making the "default" fictional and the fallback the de-facto
+policy. So the chart-datum source moves ahead of the tide source. **This does not
+change what ships for Tuesday**, and that is the load-bearing point: PR1's manual
+anchor already delivers the default's semantics, because for a single-region
+survey the number the operator types *is* the chart datum (−28.038 m at the
+Shoals; the sim's `ellipsoid_to_mllw: -28.104` agrees to 7 cm). PR1 is
+chart-datum anchoring done by hand; PR2 is the same thing done automatically and
+spatially. Neither PR2 nor PR3 is needed for Tuesday. Contingency recorded: if
+exactly one of them could land early, PR3 is the one that fits, needing only the
+sim and no grids — stated as a contingency, not the recommendation.
+
+**One open question reinstated**: VDatum/geoid grid provisioning on the machine
+that runs CAMP. It was dropped as moot when the datum source left scope; with
+chart datum as the default it gates PR2.
+
+Everything else carried forward: the `BreakpointMap`-in-the-LUT-bake mechanism;
+the ROS-free `libcamp_map` boundary (ADR-0002 — sources push, layers never
+pull); `ColormapLegendWidget::setLut()` as a real colorbar fix; there being no
+datum service to call (uma#288 is storage layout); the four surviving Plan Review
+must-fixes; and uniform-shift (D1) with its ~28 m-discontinuity reasoning.
+
+### Open questions
+- [ ] Are the VDatum/geoid grids present on the machine that runs CAMP? Reinstated; gates PR2 now that chart datum is the default.
+- [ ] Is `map_tide` visible to CAMP's TF buffer on the ROC machine? One `tf2_echo` there; sim covers everything else about PR3.
+- [ ] Does the tide anchor's platform selector belong here or in Roland's unopened `/marine/platforms` work? Scoped here today as "active platform, else sole platform, else say none".
+- [ ] Phase C scope: does PR2 also convert camp#180's cursor readout to the new provider (retiring both `#288` comments), or a sibling PR?
+- [ ] Confirm D1 — uniform shift rather than GeoZui4D's below-surface-only asymmetry.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-08-23 00:05 +00:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-181/plan.md` at `3a276f2`
+**PR**: PR-less (`--issue` mode; branch `feature/issue-181`, camp gitcloud origin → field-mode)
+**Verdict**: changes-requested
+
+Independent review of the 4th plan iteration (author was Claude Sonnet; this
+reviewer is Claude Opus — genuinely independent, no self-review annotation,
+matching the prior Opus-on-Sonnet Plan Review precedent in this file). All five
+must-fixes from the `56ac199` Plan Review are carried forward and verified
+(status via `updateStatus()`, no model updates in `paint()`, `QDir::homePath()`
+expansion, ADR-0008 amendment + stale comments in Documentation Impact,
+pre-Monday provisioning check). Load-bearing source claims were checked against
+the tree and hold up: ADR-0008 Decision #2's LUT range-independence (the
+amendment target) is accurately quoted; `updateStatus()` is confirmed the camp#195
+status composer; `ColormapLegendWidget::setLut()`, `web_mercator::mapToGeo()`,
+the two `#288` comments, the `/marine/platforms` enumeration + `platform_namespace`,
+and the `bathymetry_layer` `map_tide` guards all exist as described. The headline
+must-fix is a sequencing defect the reorder introduced, not a redesign.
+
+### Findings
+- [ ] (must-fix) PR2↔PR3 reorder inverts a dependency: Phase C (PR2, chart-datum "default") is sequenced before Phase B (PR3), but the seam it pushes into — the ROS-free `shoreline_anchor` holder (step 5) and per-layer anchor-mode/fallback/status wiring (step 7) — is all Phase B. As written PR2 ships inert (nothing to push into, no mode to activate) until PR3, so the reorder doesn't achieve its own "a default built last is not a default" goal. Fix: pull the holder + minimal per-layer anchor-mode/status seam into PR1/PR2; keep only `sea_surface_tracker` + platform-scoping in PR3 — `plan.md:293-349`, `plan.md:457-459`
+- [ ] (must-fix) `bathymetry_layer.cpp:653-672` (the copied `map_tide` guard pattern) lives in `unh_marine_autonomy`/core_ws, NOT camp — verified the guards are real and accurate there, but the citation names no repo, so a camp implementer can't find it. Qualify it as cross-repo (uma); note `#220` is a uma issue — `plan.md:80-87`, `plan.md:306-312`
+- [ ] (suggestion) ADR-0014 glossed as "(status composition)" but it is GGGS viewport-scoped residency (camp#195); cite camp#195/`updateStatus()` directly — `plan.md:319-323`, `plan.md:411`
+- [ ] (suggestion) `shoreline_position` "metres, positive up" is asserted as if quoted but `palette.hpp:56`'s comment states neither unit nor sign; the "no sign flip" correctness crux rests on it — verify concretely or record as an assumption — `plan.md:151-160`
+- [ ] (suggestion) ADR-0015 should separate the recorded default *policy* (chart datum) from *when* it is the live runtime default (source at PR2, mode selector at PR3; no runtime chart-datum mode between PR1 and PR3) — `plan.md:199-219`, `plan.md:351-362`
+- [ ] (nit) "zero ROS includes" is at `CMakeLists.txt:332`; only "pure Qt/GDAL (ROS-free)" is at `:239` — the plan attributes both to `:239` — `plan.md:107-116`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-23 00:19 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-181 at `d83707c`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + amendment to an accepted ADR; ~1070 lines of code across 8 files; cross-repo dependency move into marine_colormap)
+**Must-fix**: 6 | **Suggestions**: 12
+**Round**: 1 | **Ship**: continue — 6 must-fixes at round 1, one of them a design question (the dialog's anchor-mode seam semantics) rather than a mechanical fix
+
+### Findings
+- [x] (must-fix) Clicking "Manual:" with nothing persisted applies an anchor of exactly 0.0 live and persists it — the one value ADR-0015 D6 forbids (spin box defaults to 0.0) — `src/camp_map/raster/colormap_range_dialog.cpp:146,173,180`
+- [x] (must-fix) Second 0.0 vector: a corrupt/unparsable persisted key yields `toDouble()` == 0.0 with `has_anchor` true, applied as a Manual anchor — use the `bool*ok` overload — `src/camp_map/raster/raster_layer.cpp:680`, `src/camp_map/raster/gggs_tile_layer.cpp:1852`
+- [x] (must-fix) `setColormap()` never calls `updateStatus()`, so a palette switch silently starts or stops anchoring with a stale/absent status — permanently stale on RasterLayer — `src/camp_map/raster/raster_layer.cpp:504`, `src/camp_map/raster/gggs_tile_layer.cpp:1543`
+- [x] (must-fix) The dialog never reads `state.anchor_mode` (dead field) and its seeding `refresh_anchor()` unconditionally fires `on_anchor`, clobbering a non-Manual mode and wiping the stored manual value merely by opening the dialog — `src/camp_map/raster/colormap_range_dialog.cpp:168,224`
+- [x] (must-fix) No non-finite guard at the seam: a NaN anchor defeats the LUT cache forever (re-bake + texture upload every frame) and makes every identical re-push emit `changed()`, breaking the no-op-refresh contract the tests pin — `src/camp_map/raster/shoreline_anchor.cpp:91,102,113`, `src/camp_map/raster/raster_gl_renderer.cpp:202`
+- [x] (must-fix) Six comments still name `bake_anchored_lut`, deleted in d83707c — `raster_gl_renderer.h:80`, `raster_gl_renderer.cpp:86`, `raster_layer.cpp:448`, `gggs_tile_layer.cpp:1421`, `colormap_range_dialog.h:72`, `colormap_range_dialog.cpp:176`
+- [x] (must-fix) The two plan-promised tests were not delivered: the `ensureLut` cache key (ADR-0015 D2's own silent-wrong-colours case) and the anchor QSettings round-trip; d83707c's message claims camp keeps the cache-key test — `test/test_raster_gl_renderer.cpp`, `test/test_range_persist.cpp`
+- [x] (suggestion) Choosing "None" discards the operator's typed manual value; keep it and let mode alone decide resolution — `src/camp_map/raster/raster_layer.cpp:556`, `src/camp_map/raster/gggs_tile_layer.cpp:1590`
+- [x] (suggestion) Anchor spin uses `valueChanged` (fires per keystroke → repaint + full `writeSettings()` each time) while the range spins in the same file use `editingFinished` — `src/camp_map/raster/colormap_range_dialog.cpp:213`
+- [x] (suggestion) An anchor outside `[lo, hi]` is reported as active with no "outside range" indication; BreakpointMap clamps it to an endpoint and the ramp goes single-sided — `src/camp_map/raster/raster_layer.cpp:574`, `src/camp_map/raster/gggs_tile_layer.cpp:820`
+- [x] (suggestion) `GggsTileLayer::updateStatus()` early-returns on `tiles_.empty()` / `!load_started_` before the anchor part is composed — a hole in the S-98 permanent-indication claim — `src/camp_map/raster/gggs_tile_layer.cpp:753`
+- [x] (suggestion) New comments assert the status is composed "OUTSIDE paint()", but `paint()` → `scheduleEvictionIfNeeded()` → `updateStatus()` is a live path (pre-existing camp#195, not introduced here) — `src/camp_map/raster/gggs_tile_layer.cpp:136,920,1494`
+- [x] (suggestion) A degenerate `lo == hi` range (reachable from the dialog) paints the palette's top colour unanchored and its bottom colour anchored — two opposite behaviours, neither indicated — `src/camp_map/raster/raster_gl_renderer.cpp:94`
+- [x] (suggestion) The legend bakes over `legend->lo()/hi()`, which diverges from the layer's render range on the crossed-extent and degenerate-domain fallback paths, so ADR-0015's "the colorbar becomes truthful" does not hold there — `src/camp_map/raster/colormap_range_dialog.cpp:189` (deferred: both divergent paths are states in which the map paints nothing to disagree with — a crossed extent makes `renderImage()` return a null image, and the degenerate-domain widening only applies where lo == hi. Closing it properly means teaching the legend the layer's resolved range separately from its handle domain, which is camp#142 dialog surgery, not anchor work.)
+- [x] (suggestion) A mode-only transition that does not move `(value, activeSource)` emits nothing, but the status text reads `mode()` — "chart datum unavailable" persists after switching to platform tide — `src/camp_map/raster/shoreline_anchor.cpp:206`
+- [x] (suggestion) `readSettings` restores a Manual anchor without checking `is_scalar_`, leaving an RGB chart with a live anchor the operator can neither see nor clear — `src/camp_map/raster/raster_layer.cpp:697` (deferred: documented, not changed. `readSettings()` can run before the file is opened so `is_scalar_` is not yet trustworthy there — the same reason `smooth_interpolation` is restored unconditionally directly above. The restored anchor is inert on an RGB chart: the Rgba shader path bypasses the LUT and `paletteSupportsAnchor()` is false, so nothing claims an anchor.)
+- [x] (suggestion) The sonar live-cache layer offers every palette (including oleron) but never populates `palette_name`/`supports_anchor`, so the same ramp gets an anchor control on two layers and not the third; wire it or record the exclusion in ADR-0015 — `src/camp_map/ros/live_coverage/sonar_live_cache_layer.cpp:1366`
+- [x] (suggestion) Add "Decision #2 amended by ADR-0015 D8" to ADR-0008's Status line; workspace ADR-0012 puts substantive narrowing in the amending ADR, not inside the original Decision — `docs/decisions/0008-adopt-marine-colormap-lut-bake.md:75`
+- [x] (suggestion) Re-sync the work plan after the marine_colormap refactor: it still lists `anchored_lut.{h,cpp}`, `test_anchored_lut.cpp`, the old ADR filename, and "Chart datum [default]" — `.agent/work-plans/issue-181/plan.md:412,415,425`
+- [x] (suggestion) Truncated comment (`CMakeLists.txt:441`) and two added lines over the file's prevailing 100-col width (`raster_gl_renderer.cpp:191,211`)
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-23 00:53 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-181 at `7328fa1`
+**Addressed**: `## Local Review (Pre-Push)` (2026-08-23 00:19 -04:00, branch at `d83707c`) — 7 must-fix + 12 suggestions
+**Commits**: `c7ed6a0` `8abca8e` `5150150` `5fec142` `33a9ded` `64ad287` `81036da` `3770a1f` `c6afaf5` `57baeea` `60533aa` `ed3ffaf` `165fde9` `464c759` `55a33db`
+**Tests**: 291 tests, 0 errors, 0 failures, 1 skipped (baseline 281) — `./ui_ws/build.sh camp` + `./ui_ws/test.sh camp`
+
+### Actions
+
+Must-fix (all seven):
+
+- [x] A 0.0 anchor is now structurally unreachable, not merely warned about — `colormap_range_dialog.cpp` (`c7ed6a0`). "Not set" is a state of its own: the anchor spin carries a `kAnchorUnset` sentinel at its minimum that Qt renders as "not set", a layer with no persisted anchor seeds there rather than at 0.0, and `spin_value()` maps the sentinel to `std::nullopt`. Manual-with-nothing-entered therefore resolves to unanchored and says so ("Unanchored - enter a manual value"). 0.0 remains reachable only by an operator typing it. Chosen over a warning because "shoreline 0.00 m" reads as sea level — exactly the misreading D6 exists to prevent.
+- [x] Unparsable persisted anchor no longer reads back as 0.0 — `raster_layer.cpp`, `gggs_tile_layer.cpp` (`8abca8e`). `toDouble(&ok)`; a failed parse is treated as an absent key.
+- [x] `setColormap()` recomposes the status in both layers — (`5150150`). The anchor part is gated on whether the CURRENT palette carries a shoreline, so a palette switch silently started or stopped anchoring with no report.
+- [x] The dialog's anchor-mode seam, per the decided design — `colormap_range_dialog.{h,cpp}` (`5fec142`). The radio is seeded from `state.anchor_mode` (previously written by both layers and read nowhere), `current_anchor()` reads the mode back from all four radios, seeding goes through a repaint-only path that pushes nothing, and `on_anchor` fires only from real interactions. A range change repaints the dialog's colorbar but no longer re-pushes the anchor. The "the dialog re-fires the current state" comments in both layers — which the old idempotence argument rested on — were corrected.
+- [x] Non-finite guard at both seams — `shoreline_anchor.cpp`, `raster_gl_renderer.cpp` (`33a9ded`). NaN != NaN would break the holder's no-op-refresh contract and make the LUT cache key miss forever (a bake + texture upload every frame, invisible because the bake already falls back to the unanchored ramp).
+- [x] Six comments naming the deleted `bake_anchored_lut` — (`64ad287`, two of the six already corrected in `5fec142`). They now name `marine_colormap::bake_shoreline_anchored_lut()`.
+- [x] The two plan-promised tests — `test_raster_gl_renderer.cpp`, `test_range_persist.cpp` (`81036da`). Pixels cannot distinguish a re-bake from a cache hit on the unanchored path, where the bake genuinely is range-independent, so `RasterGlRenderer::lutBakeCount()` was added as the cache key's only observable. Covered: an anchored LUT re-bakes on a range change and holds the anchor's colour across it; the same (palette, anchor, range) hits the cache; an **unanchored** layer does NOT re-bake on a range change; an anchor appearing or clearing re-bakes. Persistence: mode + value round-trip on both layers, and an absent **or unparsable** key restores unanchored, never 0.0.
+
+Suggestions applied:
+
+- [x] Selecting None keeps the operator's typed manual value (folded into `5fec142` — the value is now passed independently of the mode).
+- [x] Anchor spin fires on `editingFinished`, matching the range spins beside it (`c6afaf5`).
+- [x] An anchor outside [lo, hi] is reported as such — ordinary, but the ramp goes single-sided (`c6afaf5`).
+- [x] `GggsTileLayer::updateStatus()`'s early returns no longer swallow the anchor part (`57baeea`); it is composed before them and appended on every path, still last so the message order is unchanged.
+- [x] The "composed strictly OUTSIDE paint()" assertions corrected (`3770a1f`). `paint()` → `scheduleEvictionIfNeeded()` → `updateStatus()` is live and **pre-existing (camp#195)**; it was not fixed here and is now named in the comments, which instead say what holds: every part is read from live state, so the composition is correct from whichever writer reaches it.
+- [x] A degenerate `lo == hi` range is treated as unanchored (`ed3ffaf`), so the anchored and unanchored paths stop painting opposite ends of the ramp.
+- [x] A mode-only transition between two unresolvable sources now emits `changed()` (`60533aa`) — the status names `mode()` in that state, so "chart datum unavailable" used to persist after switching to platform tide. Regression tests added for this and the non-finite guard.
+- [x] The `SonarLiveCacheLayer` exclusion recorded as ADR-0015 **D9** (`464c759`) rather than wired: the layer paints live per-ping coverage in the sonar's own value space, where a land/sea break has no meaning. Recorded because the asymmetry is operator-visible.
+- [x] ADR-0008's Status line now names the D8 amendment (`464c759`).
+- [x] Truncated `CMakeLists.txt` comment completed; the over-100-column added line rewrapped (`464c759`).
+- [x] `plan.md` re-synced to what landed (`55a33db`): the bake moved to `marine_colormap`, the ADR filename, policy-vs-runtime default, the dialog's read-only open, the "not set" state, and the test rows. An "Amendments during implementation" section records each change and why.
+
+Consciously handled without a code change:
+
+- [x] The legend bakes over `legend->lo()/hi()`, which diverges from the layer's render range on the crossed-extent and degenerate-domain fallback paths — `colormap_range_dialog.cpp:189` (deferred: both divergent paths are states in which the map paints nothing to disagree with — a crossed extent makes `renderImage()` return a null image, and the ±0.5 widening applies only where the domain is a point. Closing it properly means teaching the legend the layer's resolved range separately from its handle domain, which is camp#142 dialog surgery rather than anchor work.) **[Round-2 update]** Narrowed, not kept whole: the degenerate half IS a state where the map paints (unanchored, since `ensureLut()` cannot hinge a BreakpointMap on a zero-width range) while the widened colorbar would bake anchored, so the dialog now shows the plain ramp there and says why. Only the crossed-extent half remains deferred to camp#142 — there the map paints nothing to disagree with.
+- [x] `readSettings` restores a Manual anchor without checking `is_scalar_` — `raster_layer.cpp` (deferred: documented in `165fde9`, not changed. `readSettings()` can run before the file is opened, so `is_scalar_` is not yet trustworthy — the same reason `smooth_interpolation` is restored unconditionally directly above, and a file later re-opened as scalar should honour what was stored. The restored anchor is inert on an RGB chart: the Rgba shader path bypasses the LUT and `paletteSupportsAnchor()` is false, so neither the status nor the dialog claims an anchor.)
+
+### Not verified here
+
+- **No GUI eyeball.** Every fix is covered by headless tests or is a comment/doc change; the dialog's "not set" rendering, the out-of-range readout and the disabled upper radios have not been seen on screen. That is the standing operator-CAMP-rebuild debt for this issue, not a new gap.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-23 01:12 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-181 at `1d54b2d`
+**Mode**: pre-push
+**Depth**: Deep (reason: new ADR + amendment to an accepted ADR; ~1600 lines of code across 11 files; cross-repo dependency on a new marine_colormap entry point)
+**Must-fix**: 2 | **Suggestions**: 9
+**Round**: 2 | **Ship**: recommended — must-fix fell 7 -> 2, neither is a design question; both are precise mechanical fixes with an obvious test to add, so fix and push rather than spend another round
+
+All seven round-1 must-fixes verified genuinely fixed, not merely touched. The
+0.0 anchor is structurally unreachable: every path was walked (dialog seeding,
+the `kAnchorUnset` sentinel and `spin_value()`, both layers' `toDouble(&ok)` +
+`contains()` reads, `writeSettings()`'s `remove()` on absent, the holder's
+default, the renderer's `nullopt` bake) and none applies 0.0 without an operator
+typing it. A persisted `"nan"`/`"inf"` parses OK but is then caught by the
+non-finite guard, so that seam is covered twice. Opening the dialog verifiably
+pushes nothing: `ColormapLegendWidget::setLut()`/`setDomain()` do not emit, and
+every seeding call precedes its connect. `setColormap()` recomposes at both
+layers; the non-finite guard is present and tested at holder and renderer; the
+`bake_anchored_lut` symbol survives only as history in plan/progress/ADR prose.
+
+The two remaining must-fixes are both defects *introduced by the round-1 fix
+pass* rather than survivals: the degenerate-range fallback (`ed3ffaf`) is
+defeated by its own cache key, and the "None keeps the typed value" suggestion
+collides with persistence that infers the mode from the value's presence. Both
+were found independently by the lead reviewer and by a cold adversarial read;
+the persistence one by both adversarial lenses.
+
+`RasterGlRenderer::lutBakeCount()` is judged acceptable: a read-only monotonic
+counter, zero cost, documented as observability for a cache whose failure mode
+ADR-0015 D2 itself names as silent in both directions, and pixels genuinely
+cannot distinguish a re-bake from a cache hit on the unanchored path. Preferable
+to a friend declaration or a test-only build flag.
+
+Both deliberate deferrals were read before judging. The `is_scalar_` restore
+gate is sound as argued. The legend `lo()/hi()` divergence is sound in its
+crossed-extent half but over-broad in its degenerate half — see the suggestion.
+
+Local Adversarial skipped: the diff (~35k tokens src-only) exceeds the local
+model's 32k context; a 40960-token retry OOM-killed llama-server.
+Static analysis: camp's pre-commit set carries no C++ linter, so manual only —
+no added line over 100 columns, no whitespace findings.
+
+### Findings
+- [x] (must-fix) `ensureLut()` serves the stale ANCHORED LUT once the range goes degenerate, defeating the fallback `ed3ffaf` added: `lut_anchor_` records the REQUESTED anchor, not the effective one, so when `anchored` flips false on `hi <= lo` the `(!anchored || ...)` short-circuit makes the cache hit against a BreakpointMap-warped texture. Key on the effective anchor (`anchored ? shoreline_anchor_ : std::nullopt`) both when storing and comparing; neither new renderer test covers a degenerate range — `src/camp_map/raster/raster_gl_renderer.cpp:213-218,247`
+- [x] (must-fix) The anchor MODE is never persisted — `writeSettings()` stores the manual value whenever one exists and `readSettings()` infers `Manual` from key presence. Since the dialog now deliberately keeps the typed value when None is selected, "Manual -28.038 -> None" persists -28.038 and restores ANCHORED at -28.038 in Manual mode: an anchor nobody chose, the same class D6 guards, arriving via mode inference instead of via 0.0. Also makes a future ChartDatum/PlatformTide selection unrestorable. Persist the mode explicitly; add a Manual -> None -> restart round-trip test — `src/camp_map/raster/raster_layer.cpp:757-766,690-731`, `src/camp_map/raster/gggs_tile_layer.cpp:1931-1942,1878-1914`
+- [x] (suggestion) Only `manual_radio` and `none_radio` carry `toggled` handlers. It works today only because Qt checks the incoming button before emitting the outgoing one's `toggled(false)`; wire all four (or one `QButtonGroup::buttonToggled` acting on the checked edge) so PR2/PR3 do not inherit an order-dependent seam — `src/camp_map/raster/colormap_range_dialog.cpp:299-308`
+- [x] (suggestion) Arrow/wheel/Up-Down stepping the anchor spin does not emit `editingFinished`, so the colorbar and the S-98 readout keep describing the previous value while the spin shows a new one. Connect `valueChanged` to `repaint_anchor` only (dialog-local, no layer write, no QSettings) — `src/camp_map/raster/colormap_range_dialog.cpp:307`
+- [x] (suggestion) The holder states no thread-affinity contract, though ADR-0015 D7 makes cross-boundary pushes its whole reason for existing. Its setters read-modify-write while `renderImage()` reads `value()` on the GUI thread; a PR3 executor thread calling `setPlatformTide()` directly would race while appearing to work (the queued `changed()` would still arrive). State the contract now, or make the setters slots — `src/camp_map/raster/shoreline_anchor.h:78-95`
+- [x] (suggestion) Narrow the legend `lo()/hi()` deferral rather than keeping it whole: the crossed-extent half is sound (the map paints nothing), but the degenerate-domain +/-0.5 widening IS a state where the map paints and the legend disagrees — more so now that `ed3ffaf` renders that case unanchored while the legend still bakes anchored. A `setLut({})` when the domain came from the fallback path is ~3 lines, not camp#142 surgery — `src/camp_map/raster/colormap_range_dialog.cpp:82-92,256-263`
+- [x] (suggestion) `setManual()` before `setMode()` can emit `changed()` against the old mode when a caller changes both, composing a status naming a mode already left before the second emission corrects it. No dialog interaction reaches it today, but it defeats the "single changed() emission" the `readSettings()` comment claims. Batch the pair — `src/camp_map/raster/raster_layer.cpp:565-568`, `src/camp_map/raster/gggs_tile_layer.cpp:1617-1620`
+- [x] (suggestion) Comment contradiction from the round-1 comment-accuracy pass: the header says `setShorelineAnchor()` "Mirrors setColormap's dirty-flag pattern", the definition says "Not a dirty-flag toggle" — `src/camp_map/raster/raster_gl_renderer.h:77-88` vs `src/camp_map/raster/raster_gl_renderer.cpp:261-267`
+- [x] (suggestion) `editingFinished` fires on plain focus-out and the spin rounds to 3 decimals. Harmless in PR1 (the spin is the only writer), but once PR2/PR3 can seed a datum-derived manual value, merely clicking into the spin and closing rewrites and re-persists it truncated — against the header's "inspecting a layer must not mutate it". Compare against the seeded `state.manual_anchor` before pushing, or raise the decimals — `src/camp_map/raster/colormap_range_dialog.cpp:182-183,307`
+- [x] (suggestion) `ChangeCounter` uses the 3-argument `connect()` with a `this`-capturing lambda, so the connection outlives the counter. Inert as written; one reordering from writing into freed stack memory, and it will be reused as PR2/PR3 sources land — `test/test_shoreline_anchor.cpp:43-46`
+- [x] (suggestion) Plan row still credits `test_shoreline_anchor.cpp` with covering "that the default active source is chart datum"; amendment 3 corrects the fact but the row is stale — `.agent/work-plans/issue-181/plan.md:437`
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-23 01:35 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-181 at `16d7fa2`
+**Addressed**: `## Local Review (Pre-Push)` (round 2, 2026-08-23 01:12 -04:00, branch at `1d54b2d`) — verdict changes-requested, ship recommended
+**Commits**: `b3fcb14`, `5abf149`, `a2e9b67`, `de78fc5`, `1b9a083`, `40bf9ff`, `c634df0`, `efa4ccb`, `5592123`, `03a5bd1`, `deeeaee`, `16d7fa2`
+
+All eleven findings actioned; none deferred. `./ui_ws/build.sh camp` clean and
+`./ui_ws/test.sh camp` reports **298 tests, 0 failures, 1 skipped** (the skip is
+the pre-existing `GggsRenderTest.RealStoreRendersWhenProvided`, which needs a real
+store) — up from the 291-test baseline, +7 new cases.
+
+Two of the fixes needed a wider change than the finding described, and both are
+recorded as plan amendments:
+
+- The mode-persistence fix could not be done with a settings key alone. The
+  `(value, mode)` pair is now applied through a new
+  `ShorelineAnchor::applyManualSelection()`, which also closes the separate
+  "`setManual()` before `setMode()` emits against the old mode" finding — the two
+  findings are the same defect (value and mode treated as separable) seen from
+  persistence and from emission.
+- The legend narrowing needed the condition evaluated at repaint time rather than
+  once at open. Blanking the anchored bake on the widened domain alone would have
+  left the colorbar unanchored *after* the operator pinned a Manual range, which
+  gives the map a real range again — the same divergence in the other direction.
+  The bar now follows whether the **map's** resolved range is anchorable.
+
+Not covered by tests: the range dialog has no test harness in camp (it is a free
+function building a modal `QDialog`), so the four dialog-side changes — the
+narrowed legend bake, the button group, the stepping repaint, and the no-op push
+guard — are verified by reading, not by a test. Building one is camp#142
+territory. The operator-visible half of PR1 still needs the GUI eyeball that was
+already owed.
+
+### Actions
+- [x] (must-fix) `ensureLut()` served the stale anchored LUT once the range went degenerate — keyed the cache on the EFFECTIVE anchor (`anchored ? shoreline_anchor_ : nullopt`) at both store and compare, and documented `lut_anchor_` as holding the effective value — `src/camp_map/raster/raster_gl_renderer.cpp:213-232,254`, `raster_gl_renderer.h:128-135`; new test `DegenerateRangeFallsBackAndDoesNotServeTheAnchoredLut` covers zero-width, crossed, and the return to a real range — `test/test_raster_gl_renderer.cpp:358`
+- [x] (must-fix) The anchor MODE is now persisted explicitly as a `shoreline_anchor_mode` token (`ShorelineAnchor::sourceKey()` / `sourceFromKey()`), never inferred from the value's presence. An absent or unrecognized token restores `None` — a settings file predating the key does NOT infer Manual, because an anchor nobody can confirm was chosen must not be restored (D6). A ChartDatum/PlatformTide selection is restorable for the first time — `src/camp_map/raster/raster_layer.cpp`, `gggs_tile_layer.cpp`, `shoreline_anchor.{h,cpp}`; three new tests per the finding (None-with-retained-value on both layers, unrecognized token, valueless ChartDatum round trip) — `test/test_range_persist.cpp`, `test/test_shoreline_anchor.cpp`
+- [x] (suggestion) All four anchor radios wired through one `QButtonGroup`, acting on the checked edge only — the correctness no longer rests on Qt's emission order, and PR2/PR3 inherit a whole set rather than a partial one — `src/camp_map/raster/colormap_range_dialog.cpp:326-350`
+- [x] (suggestion) The anchor spin now repaints the colorbar and readout on `valueChanged` (arrow / wheel / Up-Down stepping), dialog-only — no layer write, no QSettings write; the push still waits for `editingFinished` — `src/camp_map/raster/colormap_range_dialog.cpp:365-372`
+- [x] (suggestion) The holder's thread-affinity contract is stated: GUI thread only, setters read-modify-write then emit, and a cross-thread source (PR2/PR3) must marshal — with the reason it looks like it works when violated (the queued `changed()` still arrives) — `src/camp_map/raster/shoreline_anchor.h:40-52`
+- [x] (suggestion) Legend `lo()/hi()` deferral NARROWED, not deleted: the colorbar no longer bakes an anchored ramp over the ±0.5 widening of a degenerate domain (the map renders that case unanchored), and the readout says "range too narrow to anchor". The crossed-extent half stays deferred to camp#142 with the narrowing recorded against the original note — `src/camp_map/raster/colormap_range_dialog.cpp:93-101,267-280,288-296`; ADR-0015's "the colorbar becomes truthful" consequence updated to include agreeing about *not* anchoring
+- [x] (suggestion) `setManual()`/`setMode()` batched into `applyManualSelection()`, emitting `changed()` at most once for the pair, so no observer sees the new value under the mode just left. Both call sites that move the pair (the dialog apply and `readSettings()`) go through it, making the "single changed() emission" their comments claim true — `src/camp_map/raster/shoreline_anchor.cpp:148-164`; test `ApplyManualSelectionEmitsOnceForThePair`
+- [x] (suggestion) Header/definition comment contradiction resolved in favour of the definition: `setShorelineAnchor()` is NOT a dirty-flag toggle — `src/camp_map/raster/raster_gl_renderer.h:77-88`
+- [x] (suggestion) `editingFinished` on a plain focus-out no longer rewrites a truncated copy of a seeded value: `apply_anchor` compares against the last-pushed pair, seeded from `state`, and returns without calling `on_anchor` when nothing moved — `src/camp_map/raster/colormap_range_dialog.cpp:318-334`
+- [x] (suggestion) `ChangeCounter`'s connection scoped to a `QObject` member that dies with the counter, so it cannot outlive the captured stack frame — `test/test_shoreline_anchor.cpp:43-52`
+- [x] (suggestion) Stale plan row corrected (the runtime default is `None`, amendment 3) and all three test rows re-synced to what they now cover — `.agent/work-plans/issue-181/plan.md:436-438`
+
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-08-23 20:11 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #205 at `0028cdd`
+**Sources**: 3 (Copilot `COMMENTED` @ `0028cdd`, Local Review (Pre-Push) rounds 1 @ `d83707c` + 2 @ `1d54b2d`, CI rollup @ `0028cdd`)
+**Cross-source confirmations**: 0 at head SHA (see note)
+**CI**: all-pass — `build-and-test` success, `copilot-pull-request-reviewer` success
+
+Copilot's single review (Lite effort, 18/18 files, 1 inline + 1 suppressed
+comment, both the same defect) is against the current head, so no staleness
+question arises. It is factually correct and it is **new**: neither local round
+raised it. Verified against the code — `setMode()` (`shoreline_anchor.cpp:96-110`)
+emits `changed()` on **any** real mode change, and `applyManualSelection()`
+(`:148-163`) emits when `mode_ != before_mode` even if the resolved pair is
+untouched. That behaviour is deliberate (it is what round 1's "mode-only
+transition emits nothing" suggestion asked for, landed in `60533aa`) and is
+pinned by `ShorelineAnchorTest.UnresolvableModeChangeStillReportsItself`. The
+defect is therefore doc-side only: the emission contract was widened by the
+round-1 and round-2 fix passes and two doc blocks written in `850d235` still
+state the narrower pre-fix contract. `git log -L` confirms both predate the
+widening.
+
+Scope is wider than Copilot named. The same stale narrow claim appears at three
+further sites it did not flag (it reviewed only the two in the new header):
+`raster_layer.cpp:39`, `raster_layer.cpp:562`, `gggs_tile_layer.cpp:133`. The
+`:562` instance is the most misleading — it argues the local no-op guard is
+"cheap insurance" *because* the holder emits only on a resolved-anchor move.
+`shoreline_anchor.h:120` is correct as written (it is explicitly scoped to the
+value-only case) and needs no change.
+
+No runtime failure mode: over-emission costs a cache drop plus a repaint on an
+operator-initiated action, and the LUT cache key is keyed on the effective
+anchor, so a mode-only emission that moves nothing re-uses the cached LUT. The
+cost is to the **contract** — `shoreline_anchor.h` is the seam ADR-0015 D7 hands
+to PR2 (chart datum) and PR3 (platform tide), whose sources push across the ROS
+boundary and will be written against this header. A narrower documented contract
+invites a future source to assume `changed()` implies the value moved, or to
+"optimise" `setMode()` into the value setters' strict move test and silently
+reinstate the stale-status bug round 1 removed.
+
+**Cross-source note**: not a confirmation by ADR-0013's head-SHA rule (the local
+rounds sit at earlier SHAs), but it is the same *class* as round 2's
+`(suggestion)` "Comment contradiction from the round-1 comment-accuracy pass"
+(`raster_gl_renderer.h:77-88` vs `.cpp:261-267`, fixed in `efa4ccb`). Round 2's
+comment-accuracy sweep caught the sibling and missed this one — treat recurring
+doc-drift-behind-a-fix-pass as the standing weak spot on this branch, not as a
+one-off.
+
+Governance re-checked, nothing else raised: `shoreline_anchor.{h,cpp}` carry zero
+ROS includes (ADR-0002 holds); D6's "absent anchor is never 0.0" is intact — no
+path substitutes 0 for `nullopt`, the unparsable-key and non-finite guards both
+hold, and mode is persisted as a token rather than inferred; D2's cache key is
+the effective anchor at both store and compare. ADR-0015 itself does not restate
+the emission contract, so it needs no edit. The two disclosed limitations (chart
+datum / platform tide present-but-unavailable per D5; no GUI eyeball for the four
+dialog-side changes) are accepted scope and are not re-raised here.
+
+### Findings
+- [ ] (suggestion, Copilot + this triage) The documented `changed()` contract is
+      narrower than the implemented one: the class doc says the holder emits
+      "whenever the *resolved* anchor moves" and the signal doc says "Emitted when
+      the resolved `(value, activeSource)` pair changes", but a real mode change
+      always emits. State the union (a real mode change always emits; a value
+      change emits only when the resolved pair moves), matching the wording
+      already correct at `setMode()` and `applyManualSelection()` —
+      `src/camp_map/raster/shoreline_anchor.h:30-31,155`
+- [ ] (suggestion, this triage — same defect, sites Copilot did not flag) Three
+      layer-side comments repeat the narrow claim; `:562` additionally rests an
+      argument on it — `src/camp_map/raster/raster_layer.cpp:39,562`,
+      `src/camp_map/raster/gggs_tile_layer.cpp:133`
+
+### False positives
+- (none) Copilot raised one finding and it is valid; nothing in its review was
+  dismissed.

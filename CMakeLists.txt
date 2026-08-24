@@ -267,6 +267,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/raster/colormap_range_dialog.cpp
     src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
+    src/camp_map/raster/shoreline_anchor.cpp
     src/camp_map/raster/gggs_tile.cpp
     src/camp_map/raster/gggs_tile_layer.cpp
     src/camp_map/raster/gggs_store_source.cpp
@@ -434,6 +435,18 @@ if(BUILD_TESTING)
   )
   target_link_libraries(test_color_map
     marine_colormap::marine_colormap
+    Qt5::Core
+  )
+
+  # Shoreline anchor holder (camp#181 / ADR-0015): the source-agnostic seam that
+  # resolves the land/sea break to an absolute data value — D3 fallback precedence,
+  # D6's "an absent anchor is never 0.0", and the changed() no-op contract. Qt-only
+  # (no GL, no ROS), so it runs everywhere.
+  ament_add_gtest(test_shoreline_anchor
+    test/test_shoreline_anchor.cpp
+    src/camp_map/raster/shoreline_anchor.cpp
+  )
+  target_link_libraries(test_shoreline_anchor
     Qt5::Core
   )
 

@@ -4,6 +4,7 @@
 #include "../map_view/web_mercator.h"
 #include "colormap_range_dialog.h"
 #include "viewport_clip.h"
+#include <marine_colormap/colormap.hpp>
 #include <marine_colormap/palette.hpp>
 #include <QPainter>
 #include <QOpenGLTexture>
@@ -35,6 +36,15 @@ RasterLayer::RasterLayer(map::MapItem* parentItem, const QString& filename):
   // [camp#63] Default scalar ramp is viridis (the renderer defaults to grayscale).
   renderer_.setColormap("viridis");
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &RasterLayer::imageReady);
+  // [camp#181 / ADR-0015] Anchor holder: on a mode change or a resolved-anchor
+  // move, drop the cached image, recompose the status, and repaint. The renderer
+  // is fed the resolved value at renderImage() time.
+  connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
+  {
+    cached_image_ = QImage();
+    updateStatus();
+    update(boundingRect());
+  });
   // [#59 ADR-0003] Establish the scene extent + world transform synchronously,
   // before kicking off the async pixel load, so the layer knows where it is
   // (valid boundingRect/scenePos) immediately — fit-to-extent / zoom-on-open
@@ -163,7 +173,8 @@ void RasterLayer::loadFile(const QString& filename)
   abort_flag_ = false;   // re-arm for the new job
   abort_flag_mutex_.unlock();
 
-  setStatus("(loading...)");
+  load_status_ = "loading...";   // [camp#181] composed with the anchor part
+  updateStatus();
   future_watcher_.setFuture(QtConcurrent::run(this, &RasterLayer::loadAndReprojectFile, filename));
 }
 
@@ -336,7 +347,8 @@ void RasterLayer::imageReady()
   auto result = future_watcher_.result();
   if(!result.ok)              // failed/aborted load (null/unreprojectable dataset)
   {
-    setStatus("(load failed)");
+    load_status_ = "load failed";   // [camp#181] composed with the anchor part
+    updateStatus();
     return;
   }
   is_scalar_ = result.is_scalar;
@@ -413,7 +425,8 @@ void RasterLayer::imageReady()
 
   cached_image_ = QImage();
   update(boundingRect());
-  setStatus("");
+  load_status_ = "";              // [camp#181] loaded; anchor part (if any) remains
+  updateStatus();
 }
 
 QImage RasterLayer::renderImage(const QSize& size)
@@ -430,6 +443,13 @@ QImage RasterLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<RasterFieldItem> draw = items();
+  // [camp#181 / ADR-0015] Push the resolved shoreline anchor before the draw. It
+  // bites only on a scalar chart whose palette has a shoreline_position; on any
+  // other ramp marine_colormap's anchored bake falls back to the plain bake, so it
+  // is safe here.
+  const std::optional<double> anchor = shoreline_anchor_.value();
+  renderer_.setShorelineAnchor(
+    anchor ? std::optional<float>(static_cast<float>(*anchor)) : std::nullopt);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max. Scalar charts shade
   // through it; RGB charts bypass the LUT, so the range is a don't-care for them.
@@ -492,6 +512,12 @@ void RasterLayer::setColormap(const std::string& name)
   renderer_.setColormap(name);
   writeSettings();
   cached_image_ = QImage();
+  // [camp#181 / ADR-0015] The anchor part of the status is gated on whether the
+  // NEW palette carries a shoreline, so a palette switch can start or stop
+  // anchoring. Recompose here or the status is stale: switching onto oleron would
+  // show no anchor report at all, and switching off it would leave the previous
+  // one asserting an anchor that no longer bites.
+  updateStatus();
   update(boundingRect());
 }
 
@@ -515,6 +541,58 @@ void RasterLayer::resetRangeToAuto()
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
+}
+
+bool RasterLayer::paletteSupportsAnchor() const
+{
+  if(!is_scalar_)
+    return false;
+  const marine_colormap::Palette* pal =
+    marine_colormap::find_palette(renderer_.colormap());
+  return pal && marine_colormap::has_shoreline(*pal);
+}
+
+void RasterLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
+                                       std::optional<double> manual)
+{
+  // [camp#181 / ADR-0015] Called only from a real operator change — the dialog
+  // seeds itself from state.anchor_mode and does NOT fire on open, so opening it
+  // cannot write anything back. The guard below stays as cheap insurance for any
+  // future caller that re-sends an unchanged pair — note it earns its keep on its
+  // own terms, NOT because the holder de-duplicates: the holder emits changed() on
+  // any real mode change as well as on a resolved-anchor move (→ cache drop +
+  // status + repaint, ctor-wired), so an unchanged re-send would otherwise repaint.
+  // `manual` is the operator's typed value INDEPENDENT of the mode, so selecting
+  // None keeps it for a later switch back rather than discarding it.
+  if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
+    return;
+  shoreline_anchor_.applyManualSelection(manual, mode);
+  writeSettings();
+}
+
+void RasterLayer::updateStatus()
+{
+  // [camp#181 / ADR-0015] Compose the load state with the shoreline-anchor part so
+  // neither clobbers the other. Every part is read from live state at each call, so
+  // the composition is correct from whichever writer reaches it.
+  // S-98's permanent indication: name the active anchor + source, and
+  // report a selected-but-unresolved source as unavailable rather than silently
+  // applying nothing. The unanchored default (mode None) adds nothing.
+  QStringList parts;
+  if(!load_status_.isEmpty())
+    parts << load_status_;
+  if(paletteSupportsAnchor())
+  {
+    const std::optional<double> resolved = shoreline_anchor_.value();
+    if(resolved)
+      parts << QString("shoreline %1 m (%2)")
+                 .arg(*resolved, 0, 'f', 2)
+                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.activeSource()));
+    else if(shoreline_anchor_.mode() != ShorelineAnchor::Source::None)
+      parts << QString("shoreline %1 unavailable")
+                 .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.mode()));
+  }
+  setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
 }
 
 void RasterLayer::contextMenu(QMenu* menu)
@@ -556,10 +634,17 @@ void RasterLayer::contextMenu(QMenu* menu)
     state.mode = range_model_.mode();
     state.lo = range_model_.lo();
     state.hi = range_model_.hi();
+    // [camp#181 / ADR-0015] Anchor state for the dialog's shoreline control.
+    state.palette_name = renderer_.colormap();
+    state.supports_anchor = paletteSupportsAnchor();
+    state.anchor_mode = shoreline_anchor_.mode();
+    state.manual_anchor = shoreline_anchor_.manualValue();
     showColormapRangeDialog(
       nullptr, "Colormap range", state,
       [this](float lo, float hi) { setRangeOverride(lo, hi); },
-      [this]() { resetRangeToAuto(); });
+      [this]() { resetRangeToAuto(); },
+      [this](ShorelineAnchor::Source mode, std::optional<double> manual)
+      { applyShorelineAnchor(mode, manual); });
   });
 }
 
@@ -602,6 +687,28 @@ void RasterLayer::readSettings()
     settings.contains("range_min") && settings.contains("range_max");
   const float range_min = settings.value("range_min", 0.0).toFloat();
   const float range_max = settings.value("range_max", 1.0).toFloat();
+  // [camp#181 / ADR-0015] Persisted manual shoreline anchor (applied after the
+  // group closes). Present -> Manual at that value; absent -> unanchored None.
+  // The bool*ok overload is load-bearing: a corrupt/unparsable entry makes
+  // toDouble() return 0.0, and 0.0 is the one value ADR-0015 D6 forbids. Without
+  // the check a garbled key would restore as a Manual anchor at sea level.
+  bool anchor_ok = false;
+  const double anchor_value =
+    settings.value("shoreline_anchor").toDouble(&anchor_ok);
+  const bool has_anchor = settings.contains("shoreline_anchor") && anchor_ok;
+  // The MODE is persisted explicitly, never inferred from the value's presence.
+  // The dialog deliberately KEEPS a typed manual value when the operator selects
+  // None (so switching back restores it), so "Manual -28.038 -> None" leaves the
+  // value stored with no anchor selected; inferring Manual from it would restore
+  // an anchor nobody chose — the same class D6 guards against, arriving through
+  // mode inference instead of through 0.0. An absent or unrecognized token (a
+  // settings file written before this key existed, or a hand-edited one) restores
+  // as None for the same reason: unanchored is the only honest default, and it is
+  // also what makes a future ChartDatum/PlatformTide selection restorable at all.
+  const ShorelineAnchor::Source anchor_mode =
+    ShorelineAnchor::sourceFromKey(
+      settings.value("shoreline_anchor_mode").toString())
+      .value_or(ShorelineAnchor::Source::None);
   settings.endGroup();
   settings.endGroup();
   // Apply the persisted ramp (re-bake + re-render if it differs); don't re-persist.
@@ -617,6 +724,18 @@ void RasterLayer::readSettings()
     range_model_.set_manual(range_min, range_max);
   else
     range_model_.reset();
+  // [camp#181 / ADR-0015] Restore the persisted (value, mode) pair as ONE change,
+  // so no observer sees the value paired with a mode it was not stored with.
+  //
+  // Deliberately NOT gated on is_scalar_ — the same reasoning as
+  // smooth_interpolation above: readSettings() can run before the file is opened,
+  // so is_scalar_ is not yet trustworthy here, and a file later re-opened as scalar
+  // should honour the stored preference. On an RGB chart the restored anchor is
+  // inert in both directions: the Rgba shader path bypasses the LUT entirely, and
+  // paletteSupportsAnchor() is false, so neither the status nor the dialog offers
+  // it.
+  shoreline_anchor_.applyManualSelection(
+    has_anchor ? std::optional<double>(anchor_value) : std::nullopt, anchor_mode);
 }
 
 void RasterLayer::onRemovedFromMap()
@@ -644,6 +763,19 @@ void RasterLayer::writeSettings()
                                                                               : "auto");
   settings.setValue("range_min", range_model_.lo());
   settings.setValue("range_max", range_model_.hi());
+  // [camp#181 / ADR-0015] Persist the shoreline anchor's MODE and its manual value
+  // as two independent keys: the mode is what the operator chose, the value is what
+  // they typed, and selecting None deliberately KEEPS the typed value for a later
+  // switch back — so the value's presence cannot stand in for the mode. Chart datum
+  // and platform tide persist as a mode only; their values are resolved live by
+  // their sources in later PRs, never saved as a number.
+  // Both live under itemID(), the group this layer already uses.
+  settings.setValue("shoreline_anchor_mode",
+                    ShorelineAnchor::sourceKey(shoreline_anchor_.mode()));
+  if(shoreline_anchor_.manualValue())
+    settings.setValue("shoreline_anchor", *shoreline_anchor_.manualValue());
+  else
+    settings.remove("shoreline_anchor");
   settings.endGroup();
   settings.endGroup();
 }

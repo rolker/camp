@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. Decision #2 amended by
+[ADR-0015](0015-anchored-shoreline-colormap.md) D8 (camp#181) — the LUT's
+range-independence holds on the unanchored path only.
 
 Implements CAMP issue [#141](https://github.com/rolker/camp/issues/141) — replace
 camp's internal `camp::map::ColorMap` (three hand-sampled ramps: Grayscale, Viridis,
@@ -71,6 +73,16 @@ Two design questions had to be settled before adopting it:
    palette colour ramp — exactly what camp's `colorNormalized(i/255)` loop used to
    produce. (This is also why `bake_lut`'s own min/max/gain/contrast must stay
    identity: applying them here would double-apply the range the shader already owns.)
+
+   > **Amended by [ADR-0015](0015-anchored-shoreline-colormap.md) D8 (camp#181).**
+   > "The LUT carries *only* the palette colour ramp" — and with it the LUT's
+   > range-independence — **holds on the unanchored path only**. When a shoreline
+   > anchor is active the anchor is folded into the bake, so the table becomes a
+   > function of the range and the cache key must widen to
+   > `(palette name, lo, hi, anchor)`. The concern this decision exists to protect
+   > — identity `TransferParams`, so the shader's range is not double-applied — is
+   > preserved: the anchored path samples the palette directly and has no
+   > `TransferParams` to get wrong.
 
 3. **CPU path uses `Palette::sample(t)`.** `GridMap` replaces
    `colormap.colorNormalized(t)` with `find_palette(name)->sample(t)` quantized to a

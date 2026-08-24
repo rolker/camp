@@ -7,6 +7,7 @@
 #include "viewport_clip.h"
 #include "../map_view/web_mercator.h"
 
+#include <marine_colormap/colormap.hpp>
 #include <marine_colormap/palette.hpp>
 
 #include <QAction>
@@ -128,6 +129,22 @@ GggsTileLayer::GggsTileLayer(map::MapItem* parentItem, const QString& directory)
   // thread when the async pixel load finishes.
   connect(&future_watcher_, &QFutureWatcher<void>::finished, this,
           &GggsTileLayer::tilesReady);
+  // [camp#181 / ADR-0015] The anchor holder is the source-agnostic seam (manual
+  // today; chart datum / platform tide later). On a mode change or a
+  // resolved-anchor move, drop the cached image, recompose the status, and repaint. The renderer is fed
+  // the resolved value at renderImage() time, not here.
+  //
+  // This slot is not itself a paint-time path, but updateStatus() is NOT reachable
+  // only from outside paint(): paint() -> scheduleEvictionIfNeeded() -> updateStatus()
+  // fires whenever the over-budget flag flips. That path is pre-existing (camp#195)
+  // and untouched here; the anchor part is composed from live holder state, so it is
+  // correct on that path too.
+  connect(&shoreline_anchor_, &ShorelineAnchor::changed, this, [this]()
+  {
+    cached_image_ = QImage();
+    updateStatus();
+    update(boundingRect());
+  });
   // [camp#103] Scan via the CANONICALIZED directory_ (not the raw parameter):
   // rescan()'s known-path dedup compares against these initial tile paths, so
   // both scans must build paths from the same directory string — a raw
@@ -739,17 +756,45 @@ void GggsTileLayer::updateStatus()
   // assembled here from live state, so no writer can clobber another's message
   // (tilesReady() previously rewrote the status unconditionally, which would
   // have wiped the residency budget's over-budget report).
+  // [camp#181 / ADR-0015] The anchor part — S-98's permanent indication: name the
+  // active anchor AND its source while active, and report a selected but unresolved
+  // source as unavailable rather than silently applying nothing. Only on a palette
+  // that can carry a shoreline; the unanchored default (mode None) stays silent
+  // (byte-identical to pre-camp#181).
+  //
+  // Computed BEFORE the two early exits below, and appended on every path. "No
+  // tiles" and "nothing attempted yet" are states in which the anchor is still set,
+  // still persisted, and still applied to whatever loads next — the indication does
+  // not lapse because the tile set is momentarily empty.
+  QString anchor_part;
+  if(const marine_colormap::Palette* pal =
+       marine_colormap::find_palette(renderer_.colormap());
+     pal && marine_colormap::has_shoreline(*pal))
+  {
+    const std::optional<double> resolved = shoreline_anchor_.value();
+    if(resolved)
+      anchor_part = QString("shoreline %1 m (%2)")
+                      .arg(*resolved, 0, 'f', 2)
+                      .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.activeSource()));
+    else if(shoreline_anchor_.mode() != ShorelineAnchor::Source::None)
+      anchor_part = QString("shoreline %1 unavailable")
+                      .arg(ShorelineAnchor::sourceLabel(shoreline_anchor_.mode()));
+  }
+  QStringList parts;
   if(tiles_.empty())
   {
-    setStatus("(no tiles)");
+    parts << "no tiles";
+    if(!anchor_part.isEmpty())
+      parts << anchor_part;
+    setStatus("(" + parts.join("; ") + ")");
     return;
   }
   if(!load_started_)
   {
-    setStatus("");   // nothing attempted yet — not "no data"
+    // Nothing attempted yet — not "no data". Any anchor part still stands.
+    setStatus(anchor_part.isEmpty() ? QString() : "(" + anchor_part + ")");
     return;
   }
-  QStringList parts;
   // [camp#195] "loading..." is a PART, not an early return. During a pan the
   // loader is re-kicked at every step, so loading_ is true nearly all the time —
   // exactly when the residency reports below matter most. An early return here
@@ -795,6 +840,8 @@ void GggsTileLayer::updateStatus()
   // [camp#195] The budget cannot be enforced at all — see evictIfOverBudget().
   if(eviction_blocked_)
     parts << "tile budget NOT enforced (GL context unavailable)";
+  if(!anchor_part.isEmpty())
+    parts << anchor_part;
   setStatus(parts.isEmpty() ? QString() : "(" + parts.join("; ") + ")");
 }
 
@@ -1387,6 +1434,14 @@ QImage GggsTileLayer::renderImage(const QSize& size, const QRectF& clip_bounds)
   if(!renderer_.makeCurrent())
     return QImage();
   const QList<RasterFieldItem> draw = itemsIntersecting(clip_bounds);
+  // [camp#181 / ADR-0015] Push the resolved shoreline anchor (manual today) into
+  // the renderer before the draw. It bites only on a palette with a
+  // shoreline_position; on any other ramp marine_colormap's anchored bake falls
+  // back to the plain bake, so this is safe unconditionally. An unchanged value
+  // hits the LUT cache.
+  const std::optional<double> anchor = shoreline_anchor_.value();
+  renderer_.setShorelineAnchor(
+    anchor ? std::optional<float>(static_cast<float>(*anchor)) : std::nullopt);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
   const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
@@ -1511,6 +1566,12 @@ void GggsTileLayer::setColormap(const std::string& name)
   renderer_.setColormap(name);   // re-bakes the LUT on next render
   cached_image_ = QImage();      // force a re-render with the new ramp
   writeSettings();
+  // [camp#181 / ADR-0015] The anchor part of the status is gated on whether the
+  // NEW palette carries a shoreline, so a palette switch can start or stop
+  // anchoring. Recompose here or the status is stale: switching onto oleron would
+  // show no anchor report at all, and switching off it would leave the previous
+  // one asserting an anchor that no longer bites.
+  updateStatus();
   update(boundingRect());
 }
 
@@ -1534,6 +1595,30 @@ void GggsTileLayer::resetRangeToAuto()
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
+}
+
+bool GggsTileLayer::paletteSupportsAnchor() const
+{
+  const marine_colormap::Palette* pal =
+    marine_colormap::find_palette(renderer_.colormap());
+  return pal && marine_colormap::has_shoreline(*pal);
+}
+
+void GggsTileLayer::applyShorelineAnchor(ShorelineAnchor::Source mode,
+                                         std::optional<double> manual)
+{
+  // [camp#181 / ADR-0015] Called only from a real operator change — the dialog
+  // seeds itself from state.anchor_mode and does NOT fire on open, so opening it
+  // cannot write anything back. The guard below stays as cheap insurance for any
+  // future caller that re-sends an unchanged pair. The holder emits changed()
+  // (→ cache drop + status + repaint, wired in the ctor) only when the resolved
+  // anchor moves, so setting an unchanged value is free. `manual` is the
+  // operator's typed value INDEPENDENT of the mode, so selecting None keeps it
+  // for a later switch back rather than discarding it.
+  if(mode == shoreline_anchor_.mode() && manual == shoreline_anchor_.manualValue())
+    return;
+  shoreline_anchor_.applyManualSelection(manual, mode);
+  writeSettings();
 }
 
 int GggsTileLayer::bandCount() const
@@ -1702,10 +1787,17 @@ void GggsTileLayer::contextMenu(QMenu* menu)
     state.mode = range_model_.mode();
     state.lo = range_model_.lo();
     state.hi = range_model_.hi();
+    // [camp#181 / ADR-0015] Anchor state for the dialog's shoreline control.
+    state.palette_name = renderer_.colormap();
+    state.supports_anchor = paletteSupportsAnchor();
+    state.anchor_mode = shoreline_anchor_.mode();
+    state.manual_anchor = shoreline_anchor_.manualValue();
     showColormapRangeDialog(
       nullptr, "Colormap range", state,
       [this](float lo, float hi) { setRangeOverride(lo, hi); },
-      [this]() { resetRangeToAuto(); });
+      [this]() { resetRangeToAuto(); },
+      [this](ShorelineAnchor::Source mode, std::optional<double> manual)
+      { applyShorelineAnchor(mode, manual); });
   });
 
   // [camp#108] Band picker — only for multi-band tile-sets (bathy depth +
@@ -1782,6 +1874,29 @@ void GggsTileLayer::readSettings()
   const float range_max = settings.value("range_max", 1.0).toFloat();
   // [camp#132] Persisted blit-smoothing opt-in (default OFF = Nearest).
   smooth_interpolation_ = settings.value("smooth_interpolation", false).toBool();
+  // [camp#181 / ADR-0015] Persisted manual shoreline anchor. Present -> Manual mode
+  // at that value; absent -> the unanchored None default (byte-identical to
+  // pre-camp#181). Applied below, after the group is closed.
+  // The bool*ok overload is load-bearing: a corrupt/unparsable entry makes
+  // toDouble() return 0.0, and 0.0 is the one value ADR-0015 D6 forbids. Without
+  // the check a garbled key would restore as a Manual anchor at sea level.
+  bool anchor_ok = false;
+  const double anchor_value =
+    settings.value("shoreline_anchor").toDouble(&anchor_ok);
+  const bool has_anchor = settings.contains("shoreline_anchor") && anchor_ok;
+  // The MODE is persisted explicitly, never inferred from the value's presence.
+  // The dialog deliberately KEEPS a typed manual value when the operator selects
+  // None (so switching back restores it), so "Manual -28.038 -> None" leaves the
+  // value stored with no anchor selected; inferring Manual from it would restore
+  // an anchor nobody chose — the same class D6 guards against, arriving through
+  // mode inference instead of through 0.0. An absent or unrecognized token (a
+  // settings file written before this key existed, or a hand-edited one) restores
+  // as None for the same reason: unanchored is the only honest default, and it is
+  // also what makes a future ChartDatum/PlatformTide selection restorable at all.
+  const ShorelineAnchor::Source anchor_mode =
+    ShorelineAnchor::sourceFromKey(
+      settings.value("shoreline_anchor_mode").toString())
+      .value_or(ShorelineAnchor::Source::None);
   settings.endGroup();
   settings.endGroup();
   if(colormap != renderer_.colormap())
@@ -1797,6 +1912,10 @@ void GggsTileLayer::readSettings()
     range_model_.set_manual(range_min, range_max);
   else
     range_model_.reset();
+  // [camp#181 / ADR-0015] Restore the persisted (value, mode) pair as ONE change,
+  // so no observer sees the value paired with a mode it was not stored with.
+  shoreline_anchor_.applyManualSelection(
+    has_anchor ? std::optional<double>(anchor_value) : std::nullopt, anchor_mode);
 }
 
 void GggsTileLayer::writeSettings()
@@ -1815,6 +1934,18 @@ void GggsTileLayer::writeSettings()
   settings.setValue("range_min", range_model_.lo());
   settings.setValue("range_max", range_model_.hi());
   settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
+  // [camp#181 / ADR-0015] Persist the shoreline anchor's MODE and its manual value
+  // as two independent keys: the mode is what the operator chose, the value is what
+  // they typed, and selecting None deliberately KEEPS the typed value for a later
+  // switch back — so the value's presence cannot stand in for the mode. Chart datum
+  // and platform tide persist as a mode only; their values are resolved live by
+  // their sources in later PRs, never saved as a number.
+  settings.setValue("shoreline_anchor_mode",
+                    ShorelineAnchor::sourceKey(shoreline_anchor_.mode()));
+  if(shoreline_anchor_.manualValue())
+    settings.setValue("shoreline_anchor", *shoreline_anchor_.manualValue());
+  else
+    settings.remove("shoreline_anchor");
   settings.endGroup();
   settings.endGroup();
 }
