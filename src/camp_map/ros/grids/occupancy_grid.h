@@ -26,6 +26,12 @@ class OccupancyGrid: public Layer
 public:
   OccupancyGrid(MapItem* parent, Node* node, QString topic);
 
+  /// [camp#209] Joins the in-flight render worker before teardown. Without this,
+  /// removing the layer while processOccupancyGrid() is running lets the worker
+  /// write into a destroyed object (SIGSEGV). GridMap and RasterLayer already do
+  /// this; OccupancyGrid was the one that did not.
+  ~OccupancyGrid() override;
+
 signals:
   void occupancyGridUpdated(const OccupancyGridData &data);
 
