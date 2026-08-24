@@ -31,8 +31,22 @@ Polygon::Polygon(MapItem* parent, Node* node, QString topic):
   setStatus("[geometry_msgs/msg/PolygonStamped]");
 }
 
+Polygon::~Polygon()
+{
+  // [camp#213] Order matters: raise the gate, stop new callbacks at the source,
+  // then wait for the render already running. Resetting the subscription alone
+  // does not close the window — the executor can already be inside a callback.
+  // The flag is advisory (the join is what actually synchronizes), so relaxed
+  // ordering is sufficient.
+  shutdown_.store(true, std::memory_order_relaxed);
+  subscription_.reset();
+  process_future_.waitForFinished();
+}
+
 void Polygon::polygonCallback(const geometry_msgs::msg::PolygonStamped::SharedPtr data)
 {
+  if(shutdown_.load(std::memory_order_relaxed))
+    return;
   if(!process_future_.isRunning())
   {
     process_future_ = QtConcurrent::run(this, &Polygon::processPolygon, data);
@@ -42,12 +56,34 @@ void Polygon::polygonCallback(const geometry_msgs::msg::PolygonStamped::SharedPt
 void Polygon::processPolygon(const geometry_msgs::msg::PolygonStamped::SharedPtr data)
 {
   PolygonData polygon_data;
-  polygon_data.position = frameOriginInWebMercator(data->header);
+
+  // [camp#213] The destructor joins this worker, and a destructor is implicitly
+  // noexcept — an escaping exception would be std::terminate(), not a crash we
+  // could diagnose. frameOriginInWebMercator() throws tf2::TransformException on
+  // a TF cold start, which is routine, so it must never leave this function.
+  // Matches the guards in OccupancyGrid::processGrid() and GridMap::render().
+  try
+  {
+    polygon_data.position = frameOriginInWebMercator(data->header);
+  }
+  catch(const std::exception& e)
+  {
+    RCLCPP_WARN_STREAM(node_->node()->get_logger(),
+        "Failed to transform polygon origin: " << e.what());
+    return;
+  }
 
   for(const auto& point: data->polygon.points)
   {
     polygon_data.polygon << QPointF(point.x, point.y);
   }
+
+  // [camp#213] waitForFinished() may steal a still-queued runnable and run it on
+  // the GUI thread inside ~Polygon(). The emit would then be a direct call into
+  // updatePolygon(), parenting a new item to a dying layer. Re-check the gate.
+  if(shutdown_.load(std::memory_order_relaxed))
+    return;
+
   emit newPolygonData(polygon_data);
 }
 
