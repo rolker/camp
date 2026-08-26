@@ -145,6 +145,18 @@ add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 
 # [#217] Export the executable's dynamic symbols so backtrace_symbols_fd()
 # resolves function names instead of bare addresses. CMake-portable -rdynamic.
+#
+# Tradeoff, accepted deliberately: this puts every global symbol across CAMP's
+# ~100 translation units into .dynsym, with the executable first in the global
+# search scope — so a later-loaded Qt plugin / GDAL driver / ROS component that
+# happens to define a same-named symbol binds to CAMP's definition instead of
+# its own. Scoping it with a --dynamic-list would avoid that, at the cost of
+# maintaining the list; unresolvable backtraces were judged the worse problem
+# (#215). Revisit here if a plugin ever misbehaves in a way that smells like
+# symbol interposition.
+#
+# Guarded by the check_camp_exports test below — do not delete one without the
+# other.
 set_target_properties(CCOMAutonomousMissionPlanner PROPERTIES ENABLE_EXPORTS ON)
 
 
@@ -436,10 +448,12 @@ if(BUILD_TESTING)
 
   # Crash diagnostics (#217): death tests that raise real fatal signals and an
   # uncaught exception in forked children, asserting both the preserved exit
-  # status and a backtrace with RESOLVED SYMBOL NAMES. ENABLE_EXPORTS is set on
-  # this target too — without it backtrace_symbols_fd() emits bare addresses
-  # and the symbol assertion (the regression guard for the flag on the main
-  # executable) could not work here.
+  # status and a backtrace with RESOLVED SYMBOL NAMES.
+  #
+  # ENABLE_EXPORTS is set on this target too, independently of the main
+  # executable — so these tests do NOT guard the flag on
+  # CCOMAutonomousMissionPlanner. The check_camp_exports test below is what
+  # does that.
   ament_add_gtest(test_crash_handler
     test/test_crash_handler.cpp
     src/camp/crash_handler.cpp
@@ -451,6 +465,24 @@ if(BUILD_TESTING)
   ament_target_dependencies(test_crash_handler
     rclcpp
   )
+
+  # [#217] The actual ENABLE_EXPORTS regression guard: assert that the SHIPPED
+  # executable exports its own symbols. test_crash_handler sets the property on
+  # itself, so deleting it from CCOMAutonomousMissionPlanner would otherwise
+  # leave every test green while every field crash dump reverted to bare
+  # addresses.
+  find_program(READELF_EXECUTABLE NAMES readelf llvm-readelf)
+  if(READELF_EXECUTABLE)
+    add_test(NAME check_camp_exports
+      COMMAND ${CMAKE_COMMAND}
+        -DEXECUTABLE=$<TARGET_FILE:CCOMAutonomousMissionPlanner>
+        -DREADELF=${READELF_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_dynamic_symbols.cmake)
+  else()
+    message(WARNING
+      "readelf not found: the #217 ENABLE_EXPORTS regression guard "
+      "(check_camp_exports) will not run.")
+  endif()
 
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.

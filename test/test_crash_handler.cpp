@@ -10,6 +10,13 @@
 ///      — not merely non-empty output. Bare addresses are what you get when
 ///      ENABLE_EXPORTS is dropped from the target, and a non-empty assertion
 ///      would pass in that state while covering nothing.
+///
+/// Note what this file does NOT cover: the `ENABLE_EXPORTS` property on the
+/// *shipped* `CCOMAutonomousMissionPlanner` executable. These tests run against
+/// `test_crash_handler`, which sets that property on itself, so they stay green
+/// if the flag is dropped from the main target. The `check_camp_exports` CTest
+/// (CMakeLists.txt) is the guard for that; it runs `readelf` against the real
+/// binary.
 
 #include <gtest/gtest.h>
 
