@@ -311,14 +311,24 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
   // instead of the real fault. That is the deliberate trade: a wrong exit status
   // the operator can see beats a hang the supervisor never reports.
   //
-  // Note this is the raise() site, not the faulting instruction: if core dumps
-  // are ever enabled on a host (they are not today — CAMP is unpackaged, so
-  // apport drops the report, and `ulimit -c` is 0 by default) the core's
-  // faulting frame is this handler rather than the real fault. Returning
-  // instead would re-execute the faulting instruction and dump at the right
-  // place for the four synchronous faults, but not for SIGABRT, and it changes
-  // the death path for a diagnostics-only feature. Deliberately not done:
-  // the backtrace above is what this feature delivers, and it is unaffected.
+  // Note this is the raise() site, not the faulting instruction. Where a core IS
+  // written — and it is, on any host whose core ulimit is non-zero; measured
+  // `unlimited` on the dev workstation — that core's faulting frame is this
+  // handler rather than the real fault. That is a real cost, not a hypothetical
+  // one, and it is accepted for two reasons that do not depend on the ulimit:
+  //
+  //  - Returning instead of re-raising only works for a HARDWARE fault, where
+  //    the faulting instruction re-executes and traps again against the
+  //    now-restored SIG_DFL. For a signal that was DELIVERED rather than
+  //    faulted — kill(1), or the raise() inside abort() on the #207 path —
+  //    returning simply resumes the interrupted code. CAMP would survive a
+  //    SIGSEGV or SIGABRT in an undefined state instead of dying: strictly worse
+  //    than a core whose top frame is wrong.
+  //  - Doing it correctly therefore means branching on si_code in the death path
+  //    of a diagnostics-only feature.
+  //
+  // The backtrace above is what this feature delivers, it names the real fault
+  // site, and it is identical either way.
   ::raise(sig);
 }
 

@@ -166,13 +166,17 @@ coverage of the Map model's insert/remove/reorder paths).
   callback up. Every other crash class on all of those threads *is* reported: the
   handlers are process-wide. Closing the `camp_map` half means moving the crash
   handler out of the executable into an exported library — a follow-up, not a
-  #217 change. Don't
-  expect a core file by default: CAMP is a colcon-built (unpackaged) binary, so
-  apport discards the crash *report* — and `ulimit -c` is 0 on these hosts, so
-  nothing writes a core either. (Raising `ulimit -c` before launching does still
-  produce one: apport's unpackaged branch drops the report, not the core. That
-  is a useful local option on a dev box, not something to rely on in the field.)
-  Which is why these handlers exist.
+  #217 change. **No crash
+  report is filed**, ever: CAMP is a colcon-built (unpackaged) binary, and
+  apport's `likely_packaged()` branch discards the report for those. A **core
+  file** is a separate question — apport still runs its core-dump callback, so a
+  core is written whenever the crashing process's core ulimit is non-zero.
+  Measured on the dev workstation `deadpool` (2026-08-26): `ulimit -c` is
+  `unlimited` and cores land in `/var/lib/apport/coredump/`. **Check `ulimit -c`
+  on the host you are on** — it has not been measured on the operator station —
+  but note that even where a core exists it needs matching debug symbols and a
+  gdb session, while the launch log still shows only `process has died [pid N,
+  exit code -11]`. Which is why these handlers exist.
 - **Shutdown ordering:** `executor.spin()` only returns once `rclcpp::shutdown()`
   is called. Anything that `quit()`/`wait()`s the spin `QThread` (e.g.
   `~ROSLink`) must call `rclcpp::shutdown()` first or it deadlocks on

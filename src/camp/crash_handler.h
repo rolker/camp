@@ -4,13 +4,29 @@
 /// Crash diagnostics for CAMP (#217).
 ///
 /// CAMP is built by colcon, so it is not a packaged binary, and apport
-/// **discards the crash report** for unpackaged binaries
-/// (`/usr/share/apport/apport:1135-1142`). That branch still writes a core if
-/// the user has configured one — but `ulimit -c` is 0 by default, so in
-/// practice no core is written either, and the `ros2 launch` log records only
-/// `process has died [pid N, exit code -11]`.
-/// Fixing that means root-level administration of a field host, which is not
-/// available mid-deployment — so CAMP explains its own death instead.
+/// **discards the crash report** for unpackaged binaries: the
+/// `likely_packaged()` branch of `/usr/share/apport/apport` logs "executable
+/// does not belong to a package, ignoring" and returns without filing one.
+/// (Named by branch, not by line: the line number moves between releases. The
+/// installed version here is apport 2.28.3-0ubuntu0.1.)
+///
+/// **A core file may still be written — do not assume otherwise.** That same
+/// branch first invokes apport's core-dump callback, which writes a core
+/// whenever the crashing process's core ulimit is non-zero. Measured on the dev
+/// workstation `deadpool`, 2026-08-26: `ulimit -c` is `unlimited`,
+/// `/proc/sys/kernel/core_pattern` pipes to apport, and
+/// `/var/lib/apport/coredump/` holds cores written by this feature's own death
+/// tests. Check `ulimit -c` on the host in question rather than assuming either
+/// way — it has not been measured on the operator station.
+///
+/// None of that reaches an operator mid-deployment. No report is filed; a core,
+/// if one is written at all, lands in `/var/lib/apport/coredump/` under a name
+/// keyed by exe path, uid, boot id, pid and start time, and reading it needs
+/// matching debug symbols and a gdb session on the host. What the operator
+/// actually sees is the `ros2 launch` log, and it records only
+/// `process has died [pid N, exit code -11]`. Changing any of that means
+/// root-level administration of a field host, which is not available
+/// mid-deployment — so CAMP explains its own death instead.
 ///
 /// On a fatal signal or an uncaught exception these handlers write a backtrace
 /// to a crash file — **created at crash time, never pre-opened** — and then to
