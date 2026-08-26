@@ -39,10 +39,42 @@
 namespace
 {
 
+/// Per-run private directory for the crash files these tests write and read
+/// back.
+///
+/// NOT a predictable name in a world-writable /tmp: with
+/// `/tmp/camp_crash_test_<tag>_<pid>.log`, any local user could pre-fill the
+/// file so the content assertions below pass without the handler having written
+/// anything. `mkdtemp()` creates the directory 0700 and fails rather than reuse
+/// an existing one.
+struct TempDir
+{
+  std::string path;
+
+  TempDir()
+  {
+    char tmpl[] = "/tmp/camp_crash_test_XXXXXX";
+    const char* made = ::mkdtemp(tmpl);
+    path = (made != nullptr) ? made : std::string("/tmp");
+  }
+
+  ~TempDir()
+  {
+    if (path != "/tmp")
+      ::rmdir(path.c_str());
+  }
+};
+
+const TempDir& temp_dir()
+{
+  static TempDir dir;
+  return dir;
+}
+
 std::string temp_path(const char* tag)
 {
   std::ostringstream oss;
-  oss << "/tmp/camp_crash_test_" << tag << "_" << ::getpid() << ".log";
+  oss << temp_dir().path << "/" << tag << ".log";
   return oss.str();
 }
 
@@ -347,13 +379,21 @@ TEST(CrashHandler, NoCrashFileMeansNoFile)
   const std::string path = temp_path("nofile");
   ::remove(path.c_str());
 
-  camp_crash::install_crash_handlers(path);
+  // Installed in a FORKED CHILD, not in the gtest parent. install_crash_handlers
+  // sets std::set_terminate, five sigactions and SIGPIPE -> SIG_IGN
+  // process-wide; doing that in the parent and undoing it with a trailing reset
+  // leaves every later test one dropped line away from running against a
+  // half-installed process.
+  ASSERT_EXIT(
+    {
+      camp_crash::install_crash_handlers(path);
+      std::ifstream probe(path);
+      ::_exit(probe.good() ? 1 : 0);
+    },
+    ::testing::ExitedWithCode(0), "");
 
   std::ifstream probe(path);
   EXPECT_FALSE(probe.good()) << path << " was created without a crash";
-
-  // Leave the process without a stale crash path pointing at a temp file.
-  camp_crash::install_crash_handlers(-1);
 }
 
 TEST(CrashHandler, UnopenableCrashPathStillDumpsToStderr)
@@ -394,4 +434,61 @@ TEST(CrashHandler, CrashLogPathIsUnderTheRosLoggingDirectory)
   EXPECT_EQ(path.find("/tmp/camp_crash_test_logdir/"), 0u) << path;
   EXPECT_NE(path.find("camp_crash_"), std::string::npos) << path;
   EXPECT_NE(path.find(std::to_string(::getpid())), std::string::npos) << path;
+}
+
+namespace
+{
+
+/// Save/restore one environment variable across a test.
+class ScopedEnv
+{
+ public:
+  ScopedEnv(const char* name, const char* value): name_(name)
+  {
+    const char* old = ::getenv(name);
+    had_ = (old != nullptr);
+    if (had_)
+      old_ = old;
+    if (value == nullptr)
+      ::unsetenv(name);
+    else
+      ::setenv(name, value, 1);
+  }
+
+  ~ScopedEnv()
+  {
+    if (had_)
+      ::setenv(name_, old_.c_str(), 1);
+    else
+      ::unsetenv(name_);
+  }
+
+ private:
+  const char* name_;
+  bool had_ = false;
+  std::string old_;
+};
+
+} // namespace
+
+TEST(CrashHandler, CrashLogPathDegradesToEmptyRatherThanThrowing)
+{
+  // The other documented half of crash_log_path(): with nothing to resolve a
+  // log directory from, rclcpp::get_logging_directory() reports an error rather
+  // than a path, and this must come back as an empty string — never as an
+  // exception escaping into main() before CAMP has a window. Round 1 asked for
+  // this branch by name and only the fd == -1 half was covered.
+  ScopedEnv log_dir("ROS_LOG_DIR", nullptr);
+  ScopedEnv ros_home("ROS_HOME", nullptr);
+  ScopedEnv home("HOME", nullptr);
+
+  std::string path;
+  ASSERT_NO_THROW(path = camp_crash::crash_log_path());
+  EXPECT_TRUE(path.empty()) << "expected the degraded empty path, got " << path;
+
+  // Verified non-vacuous: with the catch removed, this reaches the assertion as
+  // rclcpp::exceptions::RCLError "rcutils_expand_user failed, at
+  // ./src/logging_dir.c:82". Note it is the CATCH branch this covers — the
+  // separate `dir.empty()` guard in crash_log_path() is belt-and-braces:
+  // rcl_logging_get_logging_directory either fails (throw) or yields a path.
 }
