@@ -163,3 +163,89 @@ amendments, not a re-plan.
 - [ ] Specify the `try/catch` around log-dir resolution so startup can never fail on it (finding 2).
 - [ ] Respecify the uncaught-exception death test to escape a `noexcept` boundary (finding 3).
 - [ ] Decide on the should-fix hardening items (handler re-entry guard + `sigaltstack`, `backtrace()` warm-up, single-stack terminate path, ENABLE_EXPORTS coverage in the test) and amend the plan inline per `plan-task`'s "During implementation" rules before implementation starts.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-26 01:04 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-217 at `40ab7c8`
+**Mode**: pre-push
+**Depth**: Deep (reason: signal handling / crash + shutdown path in a multi-threaded Qt+rclcpp app; 491 lines of new C++ across 6 files)
+**Must-fix**: 4 | **Suggestions**: 16
+**Round**: 1 | **Ship**: continue — three of the four must-fixes are genuine correctness concerns (lost artifact, lost stack, uncovered thread class), and two were cross-confirmed by both independent adversarial passes; they warrant a fix pass and a re-read rather than a ship.
+
+Specialists run: Static Analysis, Governance, Plan Drift, Claude Adversarial x2 (Lens A + Lens B).
+Copilot Adversarial: off (default). Local Adversarial: off (default).
+
+The shape of this change is right and the craft is high: the fd-injection design, the
+`write()`-only handler path, `backtrace_symbols_fd` over `backtrace_symbols`, the
+`SIG_DFL`-on-entry re-entry guard, the `backtrace()` warm-up, and the base-vs-per-run
+log-directory correction were all verified accurate against the installed Jazzy headers
+and glibc. Every row of the plan's `## Revisions` table is genuinely present in the code.
+Plan Drift and Governance found no must-fix. All four must-fixes below are in the
+handler's own failure paths — the places where a diagnostics feature quietly stops
+producing the diagnostic.
+
+### Findings
+- [ ] (must-fix) `emit()`/`emit_backtrace()` write stderr *before* the durable fd, so a blocked or broken stderr costs the crash file the feature exists to produce — under `ros2 launch` stderr is a pty/pipe to the launch parent, and in the #207 abort-on-close class that parent may already be gone (SIGPIPE kills the process before the file is written, and changes the exit status to 13) or not draining (the ~10-20 KB dump blocks in-handler forever, so CAMP hangs instead of dying and no "process has died" line is ever logged). Write `g_crash_fd` first, stderr second, and `::signal(SIGPIPE, SIG_IGN)` at install. Cross-confirmed by Claude Adversarial Lens A and Lens B independently — `src/camp/crash_handler.cpp:49-55,71-73`
+- [ ] (must-fix) `on_terminate` sets `g_already_dumped` and then runs the *allocating* exception introspection (`current_exception()` + `rethrow_exception`) **before** emitting the backtrace — so if that machinery faults under the heap corruption this exists to diagnose, the SIGSEGV handler sees the guard already set, suppresses all output, and the crash produces a truncated header line and **no stack at all**. Emit the backtrace first, then attempt the `what()` extraction. This is the Plan Review should-fix "order the terminate handler's output: write the backtrace first" — it was neither implemented nor recorded as declined in the plan's `## Revisions` table, which lists only the `already_dumped` half of that finding — `src/camp/crash_handler.cpp:113-148`
+- [ ] (must-fix) `sigaltstack()` is per-thread and is installed only on the main thread, so the stack-overflow SIGSEGV class that `crash_handler.cpp:35-37`, `crash_handler.h` and the new `.agents/README.md` bullet present as covered is still silent on every thread that runs ROS work — `ROSLink::node_thread_` (`src/camp/roslink.h:63`), the `MultiThreadedExecutor` workers and the `tf2_ros::TransformListener` thread (`src/camp/ros/node_thread.cpp:31,39,44`), all created after install, and `pthread_create(3)` explicitly does not inherit an alt stack. That is where a subscription-callback crash actually lands. Either install a per-thread alt stack at `NodeThread::start()` or scope the claim honestly in both the comment and the operator-facing bullet. Cross-confirmed by Lens A, Lens B and Plan Drift — `src/camp/crash_handler.cpp:198-210`, `.agents/README.md:146-159`
+- [ ] (must-fix) The `ENABLE_EXPORTS` regression guard that `test_crash_handler.cpp:9-12` and the CMake comment both claim ("the regression guard for the flag on the main executable") does not exist: `CMakeLists.txt:450` sets `ENABLE_EXPORTS` on `test_crash_handler` independently, so deleting line 148 from `CCOMAutonomousMissionPlanner` leaves every test green while the shipped binary reverts to bare addresses — the exact regression advertised as covered. Add a real check on the executable (a CTest running `readelf --dynsym $<TARGET_FILE:CCOMAutonomousMissionPlanner>`, or a CMake-time `get_target_property` assertion), or at minimum correct both comments so no future reader trusts a guard that is not there — `CMakeLists.txt:439-441,450`, `test/test_crash_handler.cpp:9-12`
+- [ ] (suggestion) `if (!g_already_dumped) { g_already_dumped = 1; ... }` is a non-atomic test-and-set; `volatile sig_atomic_t` prevents tearing but not a race, so two threads faulting in the same window both pass and shred two dumps together across ~5 `write()` calls each. `__atomic_test_and_set(..., __ATOMIC_ACQ_REL)` is lock-free and handler-safe on x86-64 — `src/camp/crash_handler.cpp:96-98,113-115`
+- [ ] (suggestion) The dump never says which thread produced it; on a multi-threaded crash the winner of the guard may be a secondary victim. One `emit()` of `gettid()` in the header line — `src/camp/crash_handler.cpp:99`
+- [ ] (suggestion) No `SA_SIGINFO`, so `si_addr`/`si_code` — the datum that separates a null `this->member` from a use-after-free from a wild write, often before anyone reads the stack — is discarded. Cross-confirmed by both lenses — `src/camp/crash_handler.cpp:214,216`
+- [ ] (suggestion) `backtrace()`/`backtrace_symbols_fd()` take glibc's loader locks (the warm-up correctly fixes the malloc/dlopen hazard but not this); a fault while another thread holds the loader lock during a GDAL/Qt-plugin `dlopen` deadlocks the handler, turning a silent death into a silent hang with no "process has died" line — strictly worse than today. `::alarm(5..10)` right after the `SIG_DFL` restore bounds it. Cross-confirmed by both lenses — `src/camp/crash_handler.cpp:70-73`
+- [ ] (suggestion) `open_crash_log_fd()` is called unconditionally at startup with `O_CREAT|O_TRUNC`, so every clean run leaves a zero-byte `camp_crash_<pid>.log` (the dominant population in `~/.ros/log`, which already holds 10k+ entries on the dev box) and an operator cannot tell "no crash" from "crashed before the first write"; and on a host with the stock `pid_max` a recycled pid silently truncates a real earlier crash report. Drop `O_TRUNC`/add `O_APPEND`, put a start timestamp in the name, or defer the `open()` into the handler (`open()` is async-signal-safe). Not in the plan's `## Consequences` table. Cross-confirmed by Governance, Lens A and Lens B — `src/camp/crash_handler.cpp:179-181`
+- [ ] (suggestion) All three death tests pass `""` as the `ASSERT_EXIT` matcher and then assert only against the file, so deleting every `::write(STDERR_FILENO, ...)` would leave the suite green — yet the stderr copy is the half the issue argues is most valuable (it lands beside "process has died" in the launch log). Passing `"CAMP caught SIGSEGV"` / `"CAMP std::terminate"` covers it for free — `test/test_crash_handler.cpp:99,121,139`
+- [ ] (suggestion) `open_crash_log_fd()` has zero coverage — the `catch → -1` degradation that is the header's central "must never keep CAMP from starting" promise, the `dir.empty()` branch, and the path composition are all untested, as is the `backtrace_fd == -1` stderr-only path. A `ROS_LOG_DIR=/nonexistent/x` case plus an `install_crash_handlers(-1)` death test with a non-empty matcher covers both — `test/test_crash_handler.cpp`
+- [ ] (suggestion) No test crashes on a non-main thread — which is where CAMP will actually crash, and what would have surfaced the sigaltstack gap above — `test/test_crash_handler.cpp`
+- [ ] (suggestion) `open_temp()`'s `EXPECT_GE(fd, 0)` runs inside the forked death-test child where gtest failures are invisible; on failure the test instead fails later against an empty dump, pointing the reader at the handler rather than at the unopenable path. The `/tmp/camp_crash_test_*_<pid>.log` name is also predictable and non-`O_EXCL` in a world-writable sticky directory. Open in the parent and assert there — `test/test_crash_handler.cpp:46-51`
+- [ ] (suggestion) `SIGSTKSZ` is `sysconf(_SC_SIGSTKSZ)` on glibc >= 2.34, so lines 201 and 206 are two independent runtime evaluations feeding the allocation size and the kernel's `ss_size`; capture it once in a local. The return values of `::sigaltstack()` and all five `::sigaction()` calls are also unchecked, so a rejected alt stack silently downgrades with no trace — `src/camp/crash_handler.cpp:201-208`
+- [ ] (suggestion) `SA_RESTART` is inert on five signals whose handler never returns normally, and implies the opposite; `SA_RESETHAND` would reset all five at delivery atomically and let the `::signal(sig, SIG_DFL)` line go. Also `on_fatal_signal` has C++ language linkage where `sa_handler` strictly wants C — `src/camp/crash_handler.cpp:94,216`
+- [ ] (suggestion) `::raise(sig)` means that if `systemd-coredump` is ever enabled the core is taken at the raise site with the faulting frame buried; for the four synchronous faults, simply returning after restoring `SIG_DFL` re-executes the faulting instruction and dumps at the real fault with the same exit status (SIGABRT still needs the raise). The comment's "any host-level core handling still applies" is only half true as written — `src/camp/crash_handler.cpp:106-108`
+- [ ] (suggestion) `O_CREAT` without `O_NOFOLLOW` at mode 0644 on a predictable pid-named path: `ROS_LOG_DIR`/`ROS_HOME` are environment-controlled, so if the log dir is ever pointed somewhere shared, a pre-planted symlink turns the `O_WRONLY|O_TRUNC` open into a file-destroying write. `O_NOFOLLOW` costs nothing; 0600 loses nothing operationally and the dump embeds full install paths — `src/camp/crash_handler.cpp:179-181`
+- [ ] (suggestion) `ENABLE_EXPORTS` puts every global symbol across CAMP's ~100 TUs into `.dynsym` with the executable first in the global search scope, so a later-loaded Qt plugin / GDAL driver / ROS component with a same-named symbol binds to CAMP's definition — a silent wrong-function call, indistinguishable from the unexplained #215 crashes. Verified necessary (CMake 3.28 emits `-Wl,--export-dynamic -rdynamic` only with the property set; camp's `cmake_minimum_required(3.5.1)` puts CMP0065 at NEW so nothing adds it by default), so keep it — but note the tradeoff next to the flag, or scope it with `--dynamic-list` — `CMakeLists.txt:146-148`
+- [ ] (suggestion) Install a stderr-only handler *before* `rclcpp::init()` as well — `rclcpp::init()` is itself a documented thrower, and if it escapes, `std::terminate` runs with the default handler and the crash is as silent as before. `install_crash_handlers()` is documented as re-callable and accepts `-1`, so this is two lines. The comment "before anything else can fault" is not accurate as written — `src/camp/main.cpp:12-23`
+- [ ] (suggestion) "apport discards crashes from unpackaged binaries **outright**" is slightly overstated: verified at `/usr/share/apport/apport:1135-1142`, the *report* is dropped but the same branch still writes a core if the user configured one. Under the default `ulimit -c 0` the conclusion holds, but as written a future reader concludes cores are impossible and skips a working local option — `.agents/README.md:157-159`, `src/camp/crash_handler.h:5-8`
+- [ ] (suggestion) The plan's ADR Compliance table cites "camp ADR-0001 (adopt ADRs...)"; camp's ADR-0001 is the TopicBridge/executor contract and camp has no meta-ADR — the adopt-ADRs decision is workspace ADR-0001. The judgement to decline an ADR is sound and consistent with camp's precedent (its ADRs are all cross-module contracts; this is a leaf utility with one caller), but the citation misidentifies the governing record — `.agent/work-plans/issue-217/plan.md` § ADR Compliance
+- [ ] (suggestion) Plan step 5 still says the test asserts "a non-empty backtrace", contradicting the later folded-in bullet requiring a resolved symbol name; the code follows the stronger one. One-line edit keeps the plan usable as review reference — `.agent/work-plans/issue-217/plan.md` § Approach step 5
+- [ ] (suggestion) Cosmetic: a stray double blank line after the `ENABLE_EXPORTS` block, and `crash_handler.cpp` inserted after `main.cpp` breaking the otherwise-alphabetical `SOURCES` list — `CMakeLists.txt:75,149-150`
+
+### Governance
+No must-fix governance findings. Principles: Pass across the board (one Watch on the
+every-run empty file). ADRs: worktree isolation, ROS 2 conventions, ADR-0013 progress
+vocabulary and ADR-0017 all compliant; the ADR decline is defensible against camp's own
+precedent. Every consequence the plan committed to is present in the diff. The
+`.agents/README.md` bullet's load-bearing claims (path, signals, mangling, pid
+correlation) were each verified accurate against the code; only the apport wording
+overstates. Camp's `.agents/README.md` carries no verified-parameter table and this
+change touches no parameter/topic/service, so that rule is N/A.
+
+Carry-forwards for push/merge, neither a diff defect: the PR body must carry the
+ADR-decline rationale the plan promises, and merge needs a full-scope `ci_local.sh`
+attestation per ADR-0018 (camp is a project repo).
+
+### Static Analysis
+cpplint and cppcheck on the three changed C++ files. No real findings. cpplint's
+header-guard style complaint is against camp's house convention (`GEOREFERENCED_H`,
+`MAINWINDOW_H`) and is dropped; cppcheck's `throwInNoexceptFunction` on
+`test_crash_handler.cpp:86` is the deliberate, documented `noexcept`-boundary throw.
+Note the `#pragma GCC diagnostic ignored "-Wterminate"` at that site names a warning
+group clang does not know — clang emits an ignorable `-Wunknown-warning-option` notice
+rather than an error, and camp does not build with `-Werror`, so it is not a
+portability defect; guarding it with `#if defined(__GNUC__) && !defined(__clang__)`
+would silence that notice.
+
+### Plan Adherence
+No drift. All six plan steps (including 2b) and all six Files-to-Change rows are
+implemented, and every row of the `## Revisions` table — sigaltstack + `SA_ONSTACK`,
+`SIG_DFL` on entry, the `backtrace()` warm-up, the `already_dumped` guard, `O_CLOEXEC`,
+the try/catch around `get_logging_directory()`, the `noexcept`-boundary throw, the
+resolved-symbol assertion, `SIGBUS`/`SIGFPE`/`SIGILL`, the mangled-output docs note,
+and the base-vs-per-run correction in both the code and the docs — is genuinely
+present. The implementation went beyond the plan in one place (the terminate test also
+pins the single-backtrace guard by asserting exactly one end marker). No scope creep.
+The one Plan Review item that reached neither the code nor the Revisions table is
+must-fix 2 above.
