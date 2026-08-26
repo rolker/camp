@@ -124,12 +124,27 @@ void on_terminate()
   if (!g_already_dumped)
   {
     g_already_dumped = 1;
-    emit("\n=== CAMP std::terminate ");
+
+    // ORDER IS LOAD-BEARING: backtrace first, exception introspection second.
+    //
+    // current_exception()/rethrow_exception() allocate and run the unwinder —
+    // exactly the machinery that can fault when the reason for terminating is
+    // the heap corruption this exists to diagnose. If it faults, the SIGSEGV
+    // handler finds g_already_dumped set (it must, or abort() would print a
+    // second useless stack), suppresses its output, and the crash produces a
+    // header line and NO STACK AT ALL. Emitting the stack first means the
+    // worst case degrades to "stack without a reason line" instead of
+    // "reason-less header without a stack".
+    emit("\n=== CAMP std::terminate — backtrace follows "
+         "(mangled; pipe through c++filt) ===\n");
+    emit_backtrace();
+    emit("=== end CAMP backtrace ===\n");
 
     // Name the active exception if there is one. This is the single most
     // useful line for the abort-on-close class (#207). Kept to write()+strlen
     // for symmetry with the signal path: if the reason for terminating is
     // heap corruption, allocating here would just fail a second time.
+    emit("=== CAMP terminate reason: ");
     if (std::exception_ptr active = std::current_exception())
     {
       try
@@ -138,25 +153,21 @@ void on_terminate()
       }
       catch (const std::exception& e)
       {
-        emit("(uncaught exception: ");
+        emit("uncaught exception: ");
         emit(e.what());
-        emit(")");
       }
       catch (...)
       {
-        emit("(uncaught non-std exception)");
+        emit("uncaught non-std exception");
       }
     }
     else
     {
       // e.g. "pure virtual method called", which reaches terminate with no
       // active exception.
-      emit("(no active exception)");
+      emit("no active exception");
     }
-
-    emit(" — backtrace follows (mangled; pipe through c++filt) ===\n");
-    emit_backtrace();
-    emit("=== end CAMP backtrace ===\n");
+    emit(" ===\n");
   }
 
   std::abort();
