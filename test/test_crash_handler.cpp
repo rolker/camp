@@ -20,7 +20,10 @@
 
 #include <gtest/gtest.h>
 
+#include <fcntl.h>
+#include <pthread.h>
 #include <signal.h>
+#include <string.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -216,6 +219,57 @@ TEST(CrashHandler, CrashOnANonMainThreadIsStillReported)
     << dump;
 
   ::remove(path.c_str());
+}
+
+/// Installed by the watchdog test to prove the bound does not depend on
+/// SIGALRM's disposition being untouched.
+extern "C" void camp_test_swallow_alarm(int /*sig*/)
+{
+}
+
+TEST(CrashHandler, ATerminateDumpThatCannotDrainIsKilledByTheWatchdog)
+{
+  // The anti-hang bound on the terminate path. emit()/emit_backtrace() can block
+  // indefinitely — on a glibc loader lock held by a thread inside dlopen() (the
+  // real hazard), or, as staged here, on a destination fd nobody drains. A hang
+  // is strictly worse than a crash: the supervisor never even logs "process has
+  // died".
+  //
+  // The child also BLOCKS SIGALRM and installs a handler that swallows it, so
+  // this fails unless arm_watchdog() restores SIG_DFL and unblocks the signal
+  // itself. A bare alarm() — which is what the signal path's comment used to
+  // claim was sufficient, on the grounds that SIG_DFL had been restored for the
+  // faulting signal — leaves this child hanging forever.
+  //
+  // Costs kWatchdogSeconds (10 s) by construction. Removing the bound does not
+  // make this test fail fast: it makes it hang until ctest's timeout.
+  ASSERT_EXIT(
+    {
+      int fds[2];
+      if (::pipe(fds) != 0)
+        ::_exit(2);
+
+      // Fill the pipe so the handler's first write() blocks. The read end stays
+      // open (same process) and nothing ever drains it.
+      const int flags = ::fcntl(fds[1], F_GETFL, 0);
+      ::fcntl(fds[1], F_SETFL, flags | O_NONBLOCK);
+      char block[4096];
+      ::memset(block, 0, sizeof(block));
+      while (::write(fds[1], block, sizeof(block)) > 0)
+      {
+      }
+      ::fcntl(fds[1], F_SETFL, flags);
+
+      ::signal(SIGALRM, &camp_test_swallow_alarm);
+      sigset_t alarm_only;
+      ::sigemptyset(&alarm_only);
+      ::sigaddset(&alarm_only, SIGALRM);
+      ::pthread_sigmask(SIG_BLOCK, &alarm_only, nullptr);
+
+      camp_crash::install_crash_handlers(fds[1]);
+      camp_test_throwing_frame();
+    },
+    ::testing::KilledBySignal(SIGALRM), "");
 }
 
 TEST(CrashHandler, NoCrashFileMeansNoFile)

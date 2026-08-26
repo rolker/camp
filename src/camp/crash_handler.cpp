@@ -3,6 +3,7 @@
 #include <execinfo.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/syscall.h>
@@ -177,6 +178,34 @@ void emit_backtrace()
   ::backtrace_symbols_fd(frames, count, STDERR_FILENO);
 }
 
+/// Seconds the dump is allowed to take before the process is killed anyway.
+constexpr unsigned int kWatchdogSeconds = 10;
+
+/// Bound the handler's own lifetime. Async-signal-safe.
+///
+/// `backtrace()` / `backtrace_symbols_fd()` take glibc's loader locks, and the
+/// durable `write()` can block on a pipe nobody is draining. If another thread
+/// is inside a GDAL or Qt-plugin `dlopen()` holding a loader lock, the dump
+/// deadlocks and a silent death becomes a silent HANG — strictly worse,
+/// because the supervisor never even logs "process has died".
+///
+/// The bound is only real if SIGALRM can actually terminate us, so this makes
+/// that true rather than assuming it. The signal handler's
+/// `signal(sig, SIG_DFL)` restores the *faulting* signal's disposition and says
+/// nothing about SIGALRM; `on_terminate()` restores nothing at all. So: put
+/// SIGALRM back on its default action (terminate the process) and unblock it in
+/// this thread's mask, then arm it. Every call here is on the POSIX
+/// async-signal-safe list.
+void arm_watchdog()
+{
+  ::signal(SIGALRM, SIG_DFL);
+  sigset_t alarm_only;
+  ::sigemptyset(&alarm_only);
+  ::sigaddset(&alarm_only, SIGALRM);
+  ::pthread_sigmask(SIG_UNBLOCK, &alarm_only, nullptr);
+  ::alarm(kWatchdogSeconds);
+}
+
 const char* signal_name(int sig)
 {
   switch (sig)
@@ -201,13 +230,8 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
   // process dies immediately instead of recursing.
   ::signal(sig, SIG_DFL);
 
-  // Bound the handler's own lifetime. backtrace()/backtrace_symbols_fd() take
-  // glibc's loader locks; if another thread is inside a GDAL or Qt-plugin
-  // dlopen() holding one, the handler deadlocks and a silent death becomes a
-  // silent HANG — strictly worse, because the supervisor never even logs
-  // "process has died". SIGALRM's default action terminates the process, and
-  // the alarm is set after SIG_DFL is restored so nothing intercepts it.
-  ::alarm(10);
+  // Bound the handler's own lifetime — see arm_watchdog().
+  arm_watchdog();
 
   if (claim_dump())
   {
@@ -245,7 +269,10 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
     emit("=== end CAMP backtrace ===\n");
   }
 
-  // Re-raise so the exit status is exactly what it would have been.
+  // Re-raise so the exit status is exactly what it would have been — unless the
+  // watchdog above fired first, in which case the process dies of SIGALRM (14)
+  // instead of the real fault. That is the deliberate trade: a wrong exit status
+  // the operator can see beats a hang the supervisor never reports.
   //
   // Note this is the raise() site, not the faulting instruction: if core dumps
   // are ever enabled on a host (they are not today — CAMP is unpackaged, so
@@ -260,6 +287,14 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
 
 void on_terminate()
 {
+  // The terminate path runs the SAME emit_backtrace() as the signal path and is
+  // exposed to the same loader-lock deadlock — but it is NOT downstream of the
+  // signal handler's watchdog: it reaches abort() (and hence on_fatal_signal)
+  // only *after* the dump it can hang in. Bound it here, at the top, or an
+  // uncaught exception thrown while another thread holds a loader lock hangs
+  // CAMP forever.
+  arm_watchdog();
+
   if (claim_dump())
   {
     open_crash_fd();
