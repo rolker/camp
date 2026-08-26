@@ -338,31 +338,31 @@ defect. Both remaining must-fix clusters are claims that outran the code, and on
 the Round-1 hardening introduced.
 
 ### Findings
-- [ ] (must-fix) `si_code` printed through the unsigned `emit_ulong()`, so every `abort()`-path dump prints `[si_code=18446744073709551610]` (SI_TKILL is -6) — the #207 abort-on-close class this feature targets; and `si_addr` is gated on the signal number rather than `si_code > 0`, so a raise()d SIGSEGV prints the `_kill` union member (uid<<32|pid) as a fault address. Both verified empirically; no test asserts on the line, so both ship invisible. Cross-confirmed by Lens A, Lens B and Plan Drift — `src/camp/crash_handler.cpp:206-211`
-- [ ] (must-fix) The `alarm(10)` anti-hang bound covers only the signal path: `on_terminate()` calls the same `emit_backtrace()` with no bound and reaches the alarm only later via `abort()`, downstream of the hazard. The mitigation is also weaker than its comment claims — line 182 restores `SIG_DFL` for `sig` only, never SIGALRM, so an intercepted or blocked SIGALRM voids it silently. Cross-confirmed by Lens A, Lens B and Governance — `src/camp/crash_handler.cpp:233-285,186-190`
-- [ ] (must-fix) Round-1 must-fix 3 is not closed as claimed: the header's own rule is "call this as the first statement of any thread CAMP starts itself", but `camp::ros::GraphThread` (`src/camp_map/ros/node.cpp:75`, live in the shipped app via `src/camp/mainwindow.cpp:134`) has an entry hook and does not call it, and the QtConcurrent pool workers running the GDAL/raster/tile work implicated in #215 are uncovered too. The gap enumeration names only rclcpp-internal threads. Cross-confirmed by Lens A and Lens B — `.agents/README.md:160-164`, `src/camp/crash_handler.h:84-92`
-- [ ] (must-fix) `CrashOnANonMainThreadIsStillReported`'s claim "this is the test that would have caught the alternate signal stack being main-thread-only" is false: the worker `raise()`s on a healthy stack, and `sigaltstack` only changes where the handler frame is pushed. Deleting `src/camp/ros/node_thread.cpp:24` — or the in-lambda call at line 187 — leaves it green, so the alt-stack half of Round-1 must-fix 3 ships with zero coverage. Third claimed-guard-that-isn't in this change. Cross-confirmed by Lens A and Lens B — `test/test_crash_handler.cpp:178-192`
-- [ ] (must-fix) The header summary still says the handlers write "to a pre-opened file" and orders the writes stderr-then-file; the Round-1 fixes inverted both, and the same header contradicts itself 18 lines later (`:35-38`, `:52`), as does `crash_handler.cpp:33,104-111`. This is the first file a future reader opens. Cross-confirmed by Governance and Plan Drift — `src/camp/crash_handler.h:15-19`
-- [ ] (must-fix) "`ulimit -c` is 0 by default / on these hosts" is contradicted where it can be checked: on this workstation `ulimit -c` is `unlimited` with `core_pattern` piping to apport, so a core is written here. The claim is load-bearing three times — an operator instruction, half the feature's justification, and the recorded basis for declining the raise-vs-return suggestion. Verify on the operator station and attribute it (host + date), or soften to "check `ulimit -c` first" — AGENTS.md § Documentation Accuracy forbids hand-typed measured values — `src/camp/crash_handler.h:9`, `.agents/README.md:166`
-- [ ] (suggestion) `install_thread_alt_stack()` reports nothing on either the allocation failure or the `sigaltstack()` failure, so a thread silently loses stack-overflow coverage; the Implementation entry's "every return checked, install-time failures reported on stderr" is only half earned (`signal(SIGPIPE)` is also unchecked). Cross-confirmed by Lens A and Plan Drift — `src/camp/crash_handler.cpp:311-336,362`
-- [ ] (suggestion) `SIGSTKSZ` is `sysconf(_SC_SIGSTKSZ)` on glibc >= 2.34 and can return -1, which `static_cast<size_t>` turns into `SIZE_MAX` (degrades silently to no alt stack); and 8 KB on older glibc is tight against this handler's own 1 KB frame buffer plus the unwinder. Clamp to `MINSIGSTKSZ` with a floor — `src/camp/crash_handler.cpp:319-321`
-- [ ] (suggestion) `check_camp_exports` is simply not registered when `readelf` is absent — a configure-time `message(WARNING)` nobody reads in colcon output, leaving a green run with the guard gone. Register a test that fails loudly, or FATAL_ERROR under CI. Cross-confirmed by Lens A and Governance — `CMakeLists.txt:456-465`
-- [ ] (suggestion) "an unbounded recursion inside a subscription callback still dies silently" overstates the gap: `MultiThreadedExecutor::spin()` runs one worker inline on the calling thread, which here is the ROS node thread and does have an alternate stack. "may die silently, depending on which worker picks up the callback" is true and less discouraging — `.agents/README.md:162-163`
-- [ ] (suggestion) "Must be called after `rclcpp::init()`" is contradicted by the only test of that function, which calls it with no `rclcpp::init()` in the binary and passes. Strike the precondition or fix the test. Cross-confirmed by Lens A and Lens B — `src/camp/crash_handler.h:51`, `test/test_crash_handler.cpp:244-256`
-- [ ] (suggestion) "before anything at all can fault" overclaims: static initialization for ~100 TUs plus Qt resource and GDAL driver registration has already run by the time `main()` starts. Scope the comment — `src/camp/main.cpp:12`
-- [ ] (suggestion) `install_crash_handlers(int)` overwrites `g_crash_fd` without closing a previously handler-opened fd; unreachable in `main.cpp`'s sequence, but the header advertises the call as re-callable — `src/camp/crash_handler.cpp:352-355`
-- [ ] (suggestion) In the hang case `alarm(10)` kills with SIGALRM (14), not the real fault, contradicting the file's own "the exit status is exactly what it would have been" two lines below. One clause; the tradeoff itself is right — `src/camp/crash_handler.cpp:190,220`
-- [ ] (suggestion) No release barrier between the path `memcpy` and `g_crash_path_valid = 1`; `volatile` orders the compiler, not another CPU. Theoretical (both installs precede thread creation) but this file is careful about exactly this class everywhere else — `src/camp/crash_handler.cpp:345-349`
-- [ ] (suggestion) `O_NOFOLLOW` rejects only a symlink at the final component; a pre-planted hardlink or a symlinked parent directory still lands the append (with full install paths) in someone else's file. An async-signal-safe `fstat` check of `st_nlink`/`st_uid`/`S_ISREG` after `open()` closes it — `src/camp/crash_handler.cpp:54-61`
-- [ ] (suggestion) Test temp paths are predictable `/tmp/camp_crash_test_<tag>_<pid>.log` in a world-writable directory: a local user can pre-fill the file so the content assertions pass without the handler writing anything. Use `mkdtemp()` per test — `test/test_crash_handler.cpp:39-44`
-- [ ] (suggestion) `NoCrashFileMeansNoFile` installs handlers (including `set_terminate` and `SIGPIPE`->`SIG_IGN`) in the parent gtest process rather than a forked child, and relies on a trailing reset that a future edit could skip — `test/test_crash_handler.cpp:201-216`
-- [ ] (suggestion) The `thread_local` alt-stack leak at thread exit is the correct choice (freeing would leave the kernel a dangling `ss_sp`), but nothing says so — a future reader will "fix" it into a `unique_ptr` and reintroduce a use-after-free reachable only from a signal handler — `src/camp/crash_handler.cpp:96,321,333`
-- [ ] (suggestion) `signal(SIGPIPE, SIG_IGN)` is process-wide, survives `execve()` into any future child, and silently overwrites whatever disposition Qt Network / GDAL-curl established; return value discarded. Nothing is broken today (no `QProcess`/`popen`/`system` in `src/`) — worth recording rather than rediscovering — `src/camp/crash_handler.cpp:362`
-- [ ] (suggestion) `crash_log_path()`'s `catch -> return {}` and `dir.empty()` branches are still untested, while the test's own comment claims it covers "the documented returns-empty-rather-than-throwing degradation". Round 1 asked for both by name; the `fd == -1` half is covered twice — `test/test_crash_handler.cpp:244-256`, `src/camp/crash_handler.cpp:300-306`
-- [ ] (suggestion) Stale plan prose the fix pass did not reach: "Both fds are opened once at startup, before any handler can fire" and "to stderr (fd 2) and to the pre-opened crash-file fd" — the plan now contradicts itself, since step 3 and the Revisions table state the corrected design — `.agent/work-plans/issue-217/plan.md:28-29,131`
-- [ ] (suggestion) apport line citations disagree with each other (`:1135-1142` in the header vs `:1136` in the plan) and with installed apport 2.28.3-0ubuntu0.1, where the branch is 1137-1144. Cite the version and the `likely_packaged()` branch by name; drop the range — `src/camp/crash_handler.h:8`, `.agent/work-plans/issue-217/plan.md:12`
-- [ ] (suggestion) The decline's "nothing on these hosts can collect the benefit" clause is undercut by the README correction made in the same commit range, which tells the reader that raising `ulimit -c` does produce a core and calls it a useful dev-box option. The decline still stands on SIGABRT asymmetry and death-path churn; the no-core-collectable argument should be softened — `.agent/work-plans/issue-217/plan.md:352-357`, `src/camp/crash_handler.cpp:222-229`
-- [ ] (suggestion) Undocumented in the plan: the `PATH_MAX` buffer silently drops an over-long crash path, and the `readelf` degradation above. Neither is wrong; neither is recorded — `src/camp/crash_handler.cpp:43,345-349`, `CMakeLists.txt:456-465`
+- [x] (must-fix) `si_code` printed through the unsigned `emit_ulong()`, so every `abort()`-path dump prints `[si_code=18446744073709551610]` (SI_TKILL is -6) — the #207 abort-on-close class this feature targets; and `si_addr` is gated on the signal number rather than `si_code > 0`, so a raise()d SIGSEGV prints the `_kill` union member (uid<<32|pid) as a fault address. Both verified empirically; no test asserts on the line, so both ship invisible. Cross-confirmed by Lens A, Lens B and Plan Drift — `src/camp/crash_handler.cpp:206-211`
+- [x] (must-fix) The `alarm(10)` anti-hang bound covers only the signal path: `on_terminate()` calls the same `emit_backtrace()` with no bound and reaches the alarm only later via `abort()`, downstream of the hazard. The mitigation is also weaker than its comment claims — line 182 restores `SIG_DFL` for `sig` only, never SIGALRM, so an intercepted or blocked SIGALRM voids it silently. Cross-confirmed by Lens A, Lens B and Governance — `src/camp/crash_handler.cpp:233-285,186-190`
+- [x] (must-fix) Round-1 must-fix 3 is not closed as claimed: the header's own rule is "call this as the first statement of any thread CAMP starts itself", but `camp::ros::GraphThread` (`src/camp_map/ros/node.cpp:75`, live in the shipped app via `src/camp/mainwindow.cpp:134`) has an entry hook and does not call it, and the QtConcurrent pool workers running the GDAL/raster/tile work implicated in #215 are uncovered too. The gap enumeration names only rclcpp-internal threads. Cross-confirmed by Lens A and Lens B — `.agents/README.md:160-164`, `src/camp/crash_handler.h:84-92`
+- [x] (must-fix) `CrashOnANonMainThreadIsStillReported`'s claim "this is the test that would have caught the alternate signal stack being main-thread-only" is false: the worker `raise()`s on a healthy stack, and `sigaltstack` only changes where the handler frame is pushed. Deleting `src/camp/ros/node_thread.cpp:24` — or the in-lambda call at line 187 — leaves it green, so the alt-stack half of Round-1 must-fix 3 ships with zero coverage. Third claimed-guard-that-isn't in this change. Cross-confirmed by Lens A and Lens B — `test/test_crash_handler.cpp:178-192`
+- [x] (must-fix) The header summary still says the handlers write "to a pre-opened file" and orders the writes stderr-then-file; the Round-1 fixes inverted both, and the same header contradicts itself 18 lines later (`:35-38`, `:52`), as does `crash_handler.cpp:33,104-111`. This is the first file a future reader opens. Cross-confirmed by Governance and Plan Drift — `src/camp/crash_handler.h:15-19`
+- [x] (must-fix) "`ulimit -c` is 0 by default / on these hosts" is contradicted where it can be checked: on this workstation `ulimit -c` is `unlimited` with `core_pattern` piping to apport, so a core is written here. The claim is load-bearing three times — an operator instruction, half the feature's justification, and the recorded basis for declining the raise-vs-return suggestion. Verify on the operator station and attribute it (host + date), or soften to "check `ulimit -c` first" — AGENTS.md § Documentation Accuracy forbids hand-typed measured values — `src/camp/crash_handler.h:9`, `.agents/README.md:166`
+- [x] (suggestion) `install_thread_alt_stack()` reports nothing on either the allocation failure or the `sigaltstack()` failure, so a thread silently loses stack-overflow coverage; the Implementation entry's "every return checked, install-time failures reported on stderr" is only half earned (`signal(SIGPIPE)` is also unchecked). Cross-confirmed by Lens A and Plan Drift — `src/camp/crash_handler.cpp:311-336,362`
+- [x] (suggestion) `SIGSTKSZ` is `sysconf(_SC_SIGSTKSZ)` on glibc >= 2.34 and can return -1, which `static_cast<size_t>` turns into `SIZE_MAX` (degrades silently to no alt stack); and 8 KB on older glibc is tight against this handler's own 1 KB frame buffer plus the unwinder. Clamp to `MINSIGSTKSZ` with a floor — `src/camp/crash_handler.cpp:319-321`
+- [x] (suggestion) `check_camp_exports` is simply not registered when `readelf` is absent — a configure-time `message(WARNING)` nobody reads in colcon output, leaving a green run with the guard gone. Register a test that fails loudly, or FATAL_ERROR under CI. Cross-confirmed by Lens A and Governance — `CMakeLists.txt:456-465`
+- [x] (suggestion) "an unbounded recursion inside a subscription callback still dies silently" overstates the gap: `MultiThreadedExecutor::spin()` runs one worker inline on the calling thread, which here is the ROS node thread and does have an alternate stack. "may die silently, depending on which worker picks up the callback" is true and less discouraging — `.agents/README.md:162-163`
+- [x] (suggestion) "Must be called after `rclcpp::init()`" is contradicted by the only test of that function, which calls it with no `rclcpp::init()` in the binary and passes. Strike the precondition or fix the test. Cross-confirmed by Lens A and Lens B — `src/camp/crash_handler.h:51`, `test/test_crash_handler.cpp:244-256`
+- [x] (suggestion) "before anything at all can fault" overclaims: static initialization for ~100 TUs plus Qt resource and GDAL driver registration has already run by the time `main()` starts. Scope the comment — `src/camp/main.cpp:12`
+- [x] (suggestion) `install_crash_handlers(int)` overwrites `g_crash_fd` without closing a previously handler-opened fd; unreachable in `main.cpp`'s sequence, but the header advertises the call as re-callable — `src/camp/crash_handler.cpp:352-355`
+- [x] (suggestion) In the hang case `alarm(10)` kills with SIGALRM (14), not the real fault, contradicting the file's own "the exit status is exactly what it would have been" two lines below. One clause; the tradeoff itself is right — `src/camp/crash_handler.cpp:190,220`
+- [x] (suggestion) No release barrier between the path `memcpy` and `g_crash_path_valid = 1`; `volatile` orders the compiler, not another CPU. Theoretical (both installs precede thread creation) but this file is careful about exactly this class everywhere else — `src/camp/crash_handler.cpp:345-349`
+- [x] (suggestion) `O_NOFOLLOW` rejects only a symlink at the final component; a pre-planted hardlink or a symlinked parent directory still lands the append (with full install paths) in someone else's file. An async-signal-safe `fstat` check of `st_nlink`/`st_uid`/`S_ISREG` after `open()` closes it — `src/camp/crash_handler.cpp:54-61`
+- [x] (suggestion) Test temp paths are predictable `/tmp/camp_crash_test_<tag>_<pid>.log` in a world-writable directory: a local user can pre-fill the file so the content assertions pass without the handler writing anything. Use `mkdtemp()` per test — `test/test_crash_handler.cpp:39-44`
+- [x] (suggestion) `NoCrashFileMeansNoFile` installs handlers (including `set_terminate` and `SIGPIPE`->`SIG_IGN`) in the parent gtest process rather than a forked child, and relies on a trailing reset that a future edit could skip — `test/test_crash_handler.cpp:201-216`
+- [x] (suggestion) The `thread_local` alt-stack leak at thread exit is the correct choice (freeing would leave the kernel a dangling `ss_sp`), but nothing says so — a future reader will "fix" it into a `unique_ptr` and reintroduce a use-after-free reachable only from a signal handler — `src/camp/crash_handler.cpp:96,321,333`
+- [x] (suggestion) `signal(SIGPIPE, SIG_IGN)` is process-wide, survives `execve()` into any future child, and silently overwrites whatever disposition Qt Network / GDAL-curl established; return value discarded. Nothing is broken today (no `QProcess`/`popen`/`system` in `src/`) — worth recording rather than rediscovering — `src/camp/crash_handler.cpp:362`
+- [x] (suggestion) `crash_log_path()`'s `catch -> return {}` and `dir.empty()` branches are still untested, while the test's own comment claims it covers "the documented returns-empty-rather-than-throwing degradation". Round 1 asked for both by name; the `fd == -1` half is covered twice — `test/test_crash_handler.cpp:244-256`, `src/camp/crash_handler.cpp:300-306`
+- [x] (suggestion) Stale plan prose the fix pass did not reach: "Both fds are opened once at startup, before any handler can fire" and "to stderr (fd 2) and to the pre-opened crash-file fd" — the plan now contradicts itself, since step 3 and the Revisions table state the corrected design — `.agent/work-plans/issue-217/plan.md:28-29,131`
+- [x] (suggestion) apport line citations disagree with each other (`:1135-1142` in the header vs `:1136` in the plan) and with installed apport 2.28.3-0ubuntu0.1, where the branch is 1137-1144. Cite the version and the `likely_packaged()` branch by name; drop the range — `src/camp/crash_handler.h:8`, `.agent/work-plans/issue-217/plan.md:12`
+- [x] (suggestion) The decline's "nothing on these hosts can collect the benefit" clause is undercut by the README correction made in the same commit range, which tells the reader that raising `ulimit -c` does produce a core and calls it a useful dev-box option. The decline still stands on SIGABRT asymmetry and death-path churn; the no-core-collectable argument should be softened — `.agent/work-plans/issue-217/plan.md:352-357`, `src/camp/crash_handler.cpp:222-229`
+- [x] (suggestion) Undocumented in the plan: the `PATH_MAX` buffer silently drops an over-long crash path, and the `readelf` degradation above. Neither is wrong; neither is recorded — `src/camp/crash_handler.cpp:43,345-349`, `CMakeLists.txt:456-465`
 
 ### Governance
 No must-fix governance findings. Principles Pass across the board with two Watches: the same
@@ -398,3 +398,142 @@ technical core is sound: returning would core at the true fault site but does no
 so adopting it means a per-signal branch in the death path of a diagnostics-only feature while the
 backtrace, the actual deliverable, is identical either way. Only the "no core is collectable" clause
 needs softening (suggestion above).
+
+## Implementation
+**Status**: complete
+**When**: 2026-08-26 06:35 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-217 at `1b77d60`
+**Addressed**: `## Local Review (Pre-Push)` (Round 2, 2026-08-26 01:31 -04:00, branch at `8d46d11`, entry committed as `4ba6909`) — 6 must-fixes and 19 suggestions
+**Commits**: `31379b6`, `cd3c51a`, `a1b6a37`, `d6ba558`, `2ce7a09`, `fd76132`, `eeb3496`, `0c01a9f`, `7f8ecaa`, `b898df3`, `1b77d60`
+
+### Verification
+
+`./ui_ws/build.sh camp` clean (no warnings). `./ui_ws/test.sh camp`:
+**306 tests, 0 errors, 0 failures, 1 skipped** — Round-2 baseline was 303; the
+three new cases are `StackOverflowOnANonMainThreadIsReported`,
+`ATerminateDumpThatCannotDrainIsKilledByTheWatchdog` and
+`CrashLogPathDegradesToEmptyRatherThanThrowing`, taking `test_crash_handler`
+from 8 gtest cases to 11. `check_camp_exports` runs and passes.
+`test_crash_handler` now takes 18 s: the watchdog test costs its own 10 s bound
+by construction.
+
+cppcheck and cpplint over the five changed C++ files produce **no new findings** —
+only the same three dispositions Round 2 recorded (the `constParameterCallback`
+on the `sa_sigaction` signature, the deliberate `noexcept`-boundary throw, and
+cpplint's house-convention brace/header-guard style).
+
+**Round 2's stated reason for continuing was "claims outrunning code".** So every
+claim in this entry was checked by experiment before it was written, and every
+new or changed test was watched to FAIL with its fix removed:
+
+| Test | Fix removed | Observed failure |
+|---|---|---|
+| `Sigsegv…` / `Sigabrt…` si_code assertions | `emit_long()` reverted to `emit_ulong()`, `si_addr` re-gated on the signal number | both fail; dump reads `[si_code=18446744073709551610 si_addr=0x3e8000f7924]` — and `0x3e8000f7924` is exactly `uid 1000 << 32 \| pid`, confirming the union-member misread |
+| `StackOverflowOnANonMainThreadIsReported` | `install_thread_alt_stack()` deleted from the worker | fails: "died but not with expected error", **stderr empty** — the silent-death class, reproduced |
+| (control for the above) | same removal, applied to `CrashOnANonMainThreadIsStillReported`'s worker too | that test stays **green**, confirming Round 2's finding that it was never the alt-stack guard |
+| `ATerminateDumpThatCannotDrainIsKilledByTheWatchdog` | `arm_watchdog()` removed from `on_terminate()` | hangs; killed at a 45 s external timeout (in-suite this is a ctest timeout, not a fast failure — inherent to testing a bound) |
+| same test | `arm_watchdog()` reduced to a bare `alarm()`, i.e. the Round-1 reasoning | also hangs — proving the `SIGALRM` `SIG_DFL` restore and unblock are load-bearing, not decoration |
+| `CrashLogPathDegradesToEmptyRatherThanThrowing` | the `try`/`catch` in `crash_log_path()` | fails with `rclcpp::exceptions::RCLError "rcutils_expand_user failed, at ./src/logging_dir.c:82"`, confirming it covers the catch branch (and not the separate `dir.empty()` guard, which is unreachable through this path — said so in the test) |
+
+Two further claims verified rather than asserted: the `check_camp_exports`
+script was run directly both with a real `readelf` (passes) and with
+`READELF_EXECUTABLE-NOTFOUND` (FATAL_ERROR, exit 1); and
+`backtrace_symbols_fd()`'s unresolved-frame format was measured with a
+standalone probe, with and without `-rdynamic`, before the ENABLE_EXPORTS
+alternative was declined on it.
+
+### The `ulimit -c` premise (must-fix 6)
+
+Measured on this workstation, `deadpool`, 2026-08-26: `ulimit -c` is
+`unlimited` (soft **and** hard), `/proc/sys/kernel/core_pattern` is
+`|/usr/share/apport/apport …`, and `/var/lib/apport/coredump/` **already held
+five cores written by this feature's own death tests** during the Round-1 pass.
+Reading `/usr/share/apport/apport` explains it: the `likely_packaged()` branch
+calls `write_coredump_callback()` *before* returning, and `write_user_coredump()`
+writes whenever the core ulimit is non-zero. Report and core are separate
+outcomes; the old text conflated them.
+
+So the claim was not softened into vagueness — it was replaced with what is
+true, attributed to host and date per AGENTS.md § Documentation Accuracy, plus
+an instruction to check `ulimit -c` on the host in question (it has **not** been
+measured on the operator station, and this entry does not claim it has). The
+feature's justification survives on the half that is unconditional: **no crash
+report is ever filed for an unpackaged binary**, and a core that needs matching
+debug symbols and a gdb session is not something an operator collects
+mid-deployment.
+
+The declined `::raise(sig)` suggestion was therefore re-argued from scratch on
+grounds that do not depend on any host's ulimit: returning from the handler
+works only for a *hardware* fault. For a signal that was **delivered** —
+`kill(1)`, or the `raise()` inside `abort()` on the #207 path — returning simply
+resumes the interrupted code, and CAMP would survive a SIGSEGV or SIGABRT in an
+undefined state. Doing it correctly means branching on `si_code` in the death
+path of a diagnostics-only feature, for a backtrace that is identical either
+way. Recorded in `crash_handler.cpp` and in the plan's Revisions section.
+
+### Fixed in code vs. narrowed in prose
+
+Must-fix 3 (the alt-stack gap) is the one finding closed by **correcting the
+documentation rather than the code**, and that is stated plainly rather than
+blurred. `camp::ros::GraphThread` and the QtConcurrent pool workers do have
+entry hooks, but both live in `camp_map` / `camp_map_ros`, and
+`src/camp/crash_handler.cpp` is compiled only into the executable and the test
+target (CMakeLists.txt:72,458) — never into those installed, exported libraries.
+A call from them would be an undefined symbol. Closing it means promoting the
+crash handler into a library and enlarging that library's public surface: a
+design decision this issue did not make and should not make in passing. The
+plan now carries it under a new `## Follow-ups` section, the header enumerates
+all three uncovered groups by name, and the residual exposure is stated
+exactly — *stack-overflow* SIGSEGV only, on those threads; every other crash
+class is reported, because the `sigaction()` handlers are process-wide.
+
+Every other finding was fixed in code.
+
+### Actions
+
+**Must-fix**
+
+- [x] `si_code` printed unsigned (`18446744073709551610`) and `si_addr` gated on the signal number — new async-signal-safe `emit_long()`; `si_addr` now requires `si_code > 0`; asserted in three tests (`31379b6`) — `src/camp/crash_handler.cpp`
+- [x] `on_terminate()` had no `alarm()` bound and the alarm's `SIG_DFL` reasoning was wrong — shared `arm_watchdog()` on both paths, restoring SIGALRM to `SIG_DFL` and unblocking it before arming (`cd3c51a`) — `src/camp/crash_handler.cpp`
+- [x] the alt-stack gap is wider than documented — enumerated honestly (rclcpp's spawned workers, `camp::ros::GraphThread`, every QtConcurrent worker) in the header, `crash_handler.cpp` and `.agents/README.md`; the code fix recorded as a follow-up with its blocking reason (`0c01a9f`) — `src/camp/crash_handler.h`, `.agents/README.md`
+- [x] the non-main-thread test could not fail — `StackOverflowOnANonMainThreadIsReported` exhausts a worker's stack for real, verified to fail with empty stderr when the alt stack is removed; the old test's comment now says what it actually covers (`a1b6a37`) — `test/test_crash_handler.cpp`
+- [x] `crash_handler.h:15-19` described the superseded pre-opened, stderr-first design — summary rewritten; the `rclcpp::init()` precondition its own test contradicts is struck (`eeb3496`) — `src/camp/crash_handler.h`
+- [x] the "`ulimit -c` is 0" premise is false where checkable — replaced with measured, attributed facts at all three sites plus the declined-suggestion rationale (`7f8ecaa`) — `src/camp/crash_handler.h`, `.agents/README.md`, `src/camp/crash_handler.cpp`, `plan.md`
+
+**Suggestions taken**
+
+- [x] `install_thread_alt_stack()` reported nothing on either failure; `signal(SIGPIPE)` unchecked — all three now report at install time, with the tid (`d6ba558`)
+- [x] `SIGSTKSZ` can be -1 → `SIZE_MAX`, and 8 KB is tight — treated as failable and floored at 64 KB (`d6ba558`)
+- [x] `check_camp_exports` silently unregistered without `readelf` — always registered; the script FATAL_ERRORs on `…-NOTFOUND`, verified both ways (`fd76132`)
+- [x] "still dies silently" overstated — now "may die silently, depending on which worker picks the callback up"; the inline `MultiThreadedExecutor` worker is named as covered (`0c01a9f`)
+- [x] "Must be called after `rclcpp::init()`" contradicted by its own test — struck and replaced with what the function actually reads (`eeb3496`)
+- [x] "before anything at all can fault" overclaimed — scoped to "as early as CAMP can reach", naming what has already run (`b898df3`)
+- [x] `install_crash_handlers(int)` overwrote `g_crash_fd` without closing a handler-opened fd — ownership tracked, only ours closed (`d6ba558`)
+- [x] the `alarm()`/exit-status clause contradicted itself — the SIGALRM case is now stated as the deliberate trade (`cd3c51a`)
+- [x] no release barrier between the path `memcpy` and `g_crash_path_valid` — release store paired with an acquire load (`d6ba558`)
+- [x] `O_NOFOLLOW` covers only the final component — `fstat()` after `open()` requires a regular, single-link, self-owned file (`d6ba558`)
+- [x] predictable world-writable test paths — one `mkdtemp()` directory (0700) per run, removed at exit (`2ce7a09`)
+- [x] `NoCrashFileMeansNoFile` installed handlers in the gtest parent — moved into a forked child; the parent only inspects the filesystem (`2ce7a09`)
+- [x] the deliberate `thread_local` alt-stack leak was unexplained — documented, with why a `unique_ptr` would reintroduce a signal-handler use-after-free (`d6ba558`)
+- [x] `signal(SIGPIPE, SIG_IGN)`'s process-wide, execve-inherited scope unrecorded — recorded next to the call, with the verified "nothing under `src/` spawns a child" basis (`d6ba558`)
+- [x] `crash_log_path()`'s catch branch untested while claimed covered — `CrashLogPathDegradesToEmptyRatherThanThrowing`, verified non-vacuous (`2ce7a09`)
+- [x] stale plan prose ("Both fds are opened once at startup", "the pre-opened crash-file fd") (`1b77d60`)
+- [x] apport line citations disagreed with each other and with the installed version — cited by branch name plus apport 2.28.3-0ubuntu0.1 throughout (`7f8ecaa`, `1b77d60`)
+- [x] the decline's "nothing on these hosts can collect the benefit" clause — dropped; the decline now rests on the delivered-vs-faulted signal argument (`7f8ecaa`, `1b77d60`)
+- [x] `PATH_MAX` truncation and the `readelf` degradation undocumented — both recorded in the plan's new "Undocumented behavior now recorded" section (`1b77d60`)
+
+**Carried forward from the reviewer's post-entry remark**
+
+- [x] raw addresses plus `/proc/self/maps` instead of `ENABLE_EXPORTS` — **recorded as a considered alternative and declined**, on a premise verified by direct experiment: `backtrace_symbols_fd()` already prints the object-relative offset for every frame it cannot name (`binary(+0x11bb) [0x5586…]`), which is exactly what `addr2line -e <binary>` consumes, so no maps dump is needed for offline resolution — while dropping `ENABLE_EXPORTS` would cost the inline readable names in the field log, which is the operator-facing point. `plan.md` § "Considered and declined"
+
+### Plan sync
+
+`.agent/work-plans/issue-217/plan.md` amended in the same pass (`1b77d60`):
+Context, step 3's `sigaltstack` and handler-hardening bullets, and Operator
+decision 1 now describe what is built; a third `## Revisions` table maps every
+Round-2 finding to where it was corrected; the `::raise(sig)` decline is
+re-argued; and two new sections record the undocumented behaviors, the declined
+`ENABLE_EXPORTS` alternative, and the two follow-ups (the `camp_map` alt-stack
+gap, and `docs/camp_user_manual.md`'s missing troubleshooting section).
