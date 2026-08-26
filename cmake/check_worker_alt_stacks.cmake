@@ -61,7 +61,14 @@ foreach(_file IN LISTS _sources)
       math(EXPR _entry_points "${_entry_points} + 1")
     endif()
     # A QThread subclass's entry point. Matches the definition, not the
-    # declaration in the header (headers are not globbed).
+    # declaration in the header.
+    #
+    # Known blind spot, stated rather than left to be discovered: only .cpp
+    # files are globbed, so a QThread subclass whose run() is defined INLINE in
+    # its header is not seen by this check. Nothing in CAMP does that today.
+    # Widening the glob to headers would also match every declaration, so the
+    # fix if one ever appears is to define run() in a .cpp — which is the house
+    # style anyway — not to loosen the pattern.
     if(_line MATCHES "^[A-Za-z_].*::run[ \t]*\\([ \t]*\\)")
       math(EXPR _entry_points "${_entry_points} + 1")
     endif()

@@ -43,6 +43,9 @@ set(_forbidden
   "librclcpp"    # ROS client library
   "librcl"       # rcl / rcutils / rcpputils
   "librmw"       # middleware
+  "librosidl"    # message type support
+  "libtf2"       # transforms
+  "libament"     # ament runtime
   "libgdal"      # GDAL
   "libmarine_"   # the workspace's own marine_* libraries
 )
