@@ -537,3 +537,23 @@ Round-2 finding to where it was corrected; the `::raise(sig)` decline is
 re-argued; and two new sections record the undocumented behaviors, the declined
 `ENABLE_EXPORTS` alternative, and the two follow-ups (the `camp_map` alt-stack
 gap, and `docs/camp_user_manual.md`'s missing troubleshooting section).
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-08-26 10:17 -04:00
+**By**: Claude Code Agent (Claude Opus 5 (1M context))
+**Verdict**: approved
+
+**Branch**: feature/issue-217 at `a691cf4`
+**Mode**: pre-push
+**Depth**: Deep (reason: signal handling + concurrency + a cross-library dependency boundary)
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 3 | **Ship**: recommended — the round's three findings were fixed in `a691cf4` before this entry; nothing outstanding blocks the push.
+
+Specialists run sequentially in-context (session policy: no subagent dispatch). Static analysis: cppcheck + the pre-commit hook set, no new findings. Copilot and local adversarial: off (default).
+
+### Findings
+- [x] (fixed) `check_crash_lib_deps` forbidden list omitted librosidl / libtf2 / libament — a type-support or transforms dependency would have passed the guard whose job is to catch exactly that — `cmake/check_crash_lib_deps.cmake`
+- [x] (fixed) `check_worker_alt_stacks` globs only .cpp, so an inline header `run()` escapes it — blind spot now stated on the script — `cmake/check_worker_alt_stacks.cmake`
+- [x] (fixed) ADR-0002 describes the library stack and ROS boundary; libcamp_crash now sits below camp_map — dated addendum added — `docs/decisions/0002-web-mercator-scene-and-layer-model.md`
+- [ ] (suggestion) `crash_handler.h` sits at the root of a PUBLIC include dir, so every camp_map consumer gets a generically-named header on its include path. No collision exists in this workspace; revisit if one ever does — `CMakeLists.txt`
