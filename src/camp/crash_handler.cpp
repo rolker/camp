@@ -6,7 +6,9 @@
 #include <pthread.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 #include <cstdio>
@@ -27,6 +29,11 @@ namespace
 /// itself (path form), read from signal handlers, hence `volatile
 /// sig_atomic_t` rather than plain int.
 volatile sig_atomic_t g_crash_fd = -1;
+
+/// Set when `g_crash_fd` was opened by `open_crash_fd()` rather than handed to
+/// us by a caller. A reinstall may close what we opened; it must never close a
+/// caller's fd, which we do not own.
+volatile sig_atomic_t g_crash_fd_owned = 0;
 
 /// Crash-log path, resolved at install time and opened only when a crash
 /// actually happens.
@@ -54,11 +61,32 @@ volatile sig_atomic_t g_crash_path_valid = 0;
 /// embeds full install paths, which nothing else needs to read.
 void open_crash_fd()
 {
-  if (g_crash_fd >= 0 || !g_crash_path_valid)
+  if (g_crash_fd >= 0 ||
+      !__atomic_load_n(&g_crash_path_valid, __ATOMIC_ACQUIRE))
     return;
-  g_crash_fd = ::open(g_crash_path,
-                      O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW,
-                      0600);
+
+  const int fd = ::open(g_crash_path,
+                        O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW,
+                        0600);
+  if (fd < 0)
+    return;
+
+  // O_NOFOLLOW rejects a symlink at the FINAL component only. A pre-planted
+  // hardlink, or a symlink anywhere in the parent path, still lands this append
+  // — which carries full install paths — in a file someone else chose. Confirm
+  // after the fact that what we hold is a plain, unshared file we own, and give
+  // up (stderr-only) rather than write if it is not. fstat/getuid/close are all
+  // on the async-signal-safe list.
+  struct stat st;
+  if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_nlink != 1 ||
+      st.st_uid != ::getuid())
+  {
+    ::close(fd);
+    return;
+  }
+
+  g_crash_fd = fd;
+  g_crash_fd_owned = 1;
 }
 
 /// Claimed by whichever handler emits first, via an atomic test-and-set.
@@ -94,6 +122,15 @@ bool claim_dump()
 /// on entry. Threads created inside rclcpp (the `MultiThreadedExecutor`
 /// workers, the `tf2_ros::TransformListener` thread) cannot be hooked and so
 /// have no alternate stack — see the scoping note in `crash_handler.h`.
+///
+/// **Deliberately leaked at thread exit** — do NOT "fix" this into a
+/// `unique_ptr` or give it a destructor. The kernel keeps the `ss_sp` pointer
+/// this hands it for the lifetime of the thread, and a `thread_local`
+/// destructor runs while the thread is still alive and still able to take a
+/// signal. Freeing there would leave the kernel a dangling alternate stack — a
+/// use-after-free reachable only from a signal handler, i.e. the least
+/// debuggable kind there is. The leak is one buffer per CAMP-started thread,
+/// reclaimed at process exit.
 thread_local char* t_alt_stack = nullptr;
 
 constexpr int kMaxFrames = 128;
@@ -378,12 +415,34 @@ void install_thread_alt_stack()
 
   // SIGSTKSZ is sysconf(_SC_SIGSTKSZ) on glibc >= 2.34, i.e. a function call
   // rather than a constant. Evaluate it once, so the allocation and the size
-  // handed to the kernel cannot disagree.
-  const size_t stack_size = static_cast<size_t>(SIGSTKSZ);
+  // handed to the kernel cannot disagree — and treat its -1 failure return as a
+  // failure: a bare cast to size_t turns it into SIZE_MAX, new[] then fails,
+  // and the thread silently loses stack-overflow coverage.
+  //
+  // Floor it too. The pre-2.34 constant was 8 KB, which is tight against this
+  // handler's own buffers (a 128-entry frame array plus backtrace_symbols_fd's
+  // formatting) and the unwinder that fills them. 64 KB is negligible per
+  // thread and always >= MINSIGSTKSZ.
+  constexpr size_t kMinAltStackBytes = 64u * 1024u;
+  const long reported = static_cast<long>(SIGSTKSZ);
+  size_t stack_size = (reported > 0) ? static_cast<size_t>(reported) : 0u;
+  if (stack_size < kMinAltStackBytes)
+    stack_size = kMinAltStackBytes;
+
+  // Install time, not handler time, so stderr formatting is safe here — and a
+  // thread that silently loses coverage is a crash class that quietly stops
+  // being reported, which is exactly what #217 exists to end.
+  const long tid = static_cast<long>(::syscall(SYS_gettid));
 
   t_alt_stack = new (std::nothrow) char[stack_size];
   if (t_alt_stack == nullptr)
+  {
+    ::fprintf(stderr,
+              "[camp #217] could not allocate a %zu-byte alternate signal stack "
+              "for thread %ld; a stack-overflow SIGSEGV on that thread will not "
+              "be reported\n", stack_size, tid);
     return;
+  }
 
   stack_t ss;
   ss.ss_sp = t_alt_stack;
@@ -391,8 +450,12 @@ void install_thread_alt_stack()
   ss.ss_flags = 0;
   if (::sigaltstack(&ss, nullptr) != 0)
   {
-    // Nothing to do about it from here, but don't leave the pointer looking
-    // like a live alternate stack: a later retry on this thread may succeed.
+    ::fprintf(stderr,
+              "[camp #217] sigaltstack() failed for thread %ld; a "
+              "stack-overflow SIGSEGV on that thread will not be reported\n",
+              tid);
+    // Don't leave the pointer looking like a live alternate stack: a later retry
+    // on this thread may succeed.
     delete[] t_alt_stack;
     t_alt_stack = nullptr;
   }
@@ -408,21 +471,43 @@ void install_crash_handlers(const std::string& crash_log_path)
   if (!crash_log_path.empty() && crash_log_path.size() < sizeof(g_crash_path))
   {
     ::memcpy(g_crash_path, crash_log_path.c_str(), crash_log_path.size() + 1);
-    g_crash_path_valid = 1;
+    // Release store, paired with the acquire load in open_crash_fd(): `volatile`
+    // orders the compiler, not another CPU, and a handler running on a second
+    // thread must never see this flag set over a half-copied path. Both installs
+    // happen before CAMP starts a thread today; this file is careful about
+    // exactly this class everywhere else.
+    __atomic_store_n(&g_crash_path_valid, 1, __ATOMIC_RELEASE);
   }
 }
 
 void install_crash_handlers(int backtrace_fd)
 {
+  // Close a crash file a handler opened under an earlier install. Never close a
+  // caller-supplied fd — we do not own it — which is what g_crash_fd_owned
+  // distinguishes. Unreachable in main()'s sequence today, but the header
+  // advertises this call as safe to repeat.
+  if (g_crash_fd_owned && g_crash_fd >= 0)
+    ::close(static_cast<int>(g_crash_fd));
+  g_crash_fd_owned = 0;
+
   g_crash_fd = backtrace_fd;
-  g_crash_path_valid = 0;
+  __atomic_store_n(&g_crash_path_valid, 0, __ATOMIC_RELEASE);
   __atomic_clear(&g_already_dumped, __ATOMIC_RELEASE);
 
   // Ignore SIGPIPE for the process. Without this, a write to a stderr pipe
   // whose reader has exited kills CAMP outright — changing the exit status the
   // supervisor sees from the real fault (-11) to 13, and truncating the dump
   // partway. CAMP writes nothing else to a pipe it needs SIGPIPE for.
-  ::signal(SIGPIPE, SIG_IGN);
+  //
+  // Scope, recorded so it is not rediscovered: this is process-wide, it survives
+  // execve() into any child CAMP might one day spawn, and it overwrites whatever
+  // disposition Qt Network or GDAL's curl established. Nothing under src/ spawns
+  // a child today (no QProcess, popen or system) and neither library depends on
+  // SIGPIPE killing the process, so it is safe as written.
+  if (::signal(SIGPIPE, SIG_IGN) == SIG_ERR)
+    ::fprintf(stderr,
+              "[camp #217] could not ignore SIGPIPE; a crash dump written to a "
+              "closed stderr pipe may kill CAMP mid-dump\n");
 
   // Force backtrace()'s lazy initialization now. Its first call may dlopen
   // libgcc and allocate — exactly what must not happen inside a handler
