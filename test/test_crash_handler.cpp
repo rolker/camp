@@ -24,10 +24,12 @@
 #include <unistd.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "crash_handler.h"
 
@@ -96,7 +98,10 @@ TEST(CrashHandler, SigsegvDumpsBacktraceAndPreservesExitStatus)
       camp_crash::install_crash_handlers(path);
       camp_test_crashing_frame(SIGSEGV);
     },
-    ::testing::KilledBySignal(SIGSEGV), "");
+    // The matcher is against the child's STDERR — the half that lands in the
+    // ros2 launch log next to "process has died". Asserting only against the
+    // file would leave deleting every write(STDERR_FILENO, ...) green.
+    ::testing::KilledBySignal(SIGSEGV), "CAMP caught SIGSEGV");
 
   const std::string dump = read_file(path);
   EXPECT_NE(dump.find("SIGSEGV"), std::string::npos) << dump;
@@ -119,7 +124,7 @@ TEST(CrashHandler, SigabrtDumpsBacktraceAndPreservesExitStatus)
       camp_crash::install_crash_handlers(path);
       camp_test_crashing_frame(SIGABRT);
     },
-    ::testing::KilledBySignal(SIGABRT), "");
+    ::testing::KilledBySignal(SIGABRT), "CAMP caught SIGABRT");
 
   const std::string dump = read_file(path);
   EXPECT_NE(dump.find("SIGABRT"), std::string::npos) << dump;
@@ -138,7 +143,7 @@ TEST(CrashHandler, UncaughtExceptionNamesItAndDumpsBacktrace)
       camp_crash::install_crash_handlers(path);
       camp_test_throwing_frame();
     },
-    ::testing::KilledBySignal(SIGABRT), "");
+    ::testing::KilledBySignal(SIGABRT), "CAMP std::terminate");
 
   const std::string dump = read_file(path);
   EXPECT_NE(dump.find("std::terminate"), std::string::npos) << dump;
@@ -156,4 +161,96 @@ TEST(CrashHandler, UncaughtExceptionNamesItAndDumpsBacktrace)
        "not holding\n" << dump;
 
   ::remove(path.c_str());
+}
+
+/// Distinct from `camp_test_crashing_frame` so the dump proves the backtrace
+/// came from the worker thread, not from the main one.
+void camp_test_thread_crashing_frame(int sig)
+{
+  ::raise(sig);
+}
+
+TEST(CrashHandler, CrashOnANonMainThreadIsStillReported)
+{
+  const std::string path = temp_path("thread");
+  ::remove(path.c_str());
+
+  // Where CAMP actually crashes: ROS callbacks run on the node thread and on
+  // the executor's workers, never on the thread that installed the handlers.
+  // sigaction() is process-wide, so this must work — and this is the test that
+  // would have caught the alternate signal stack being main-thread-only.
+  ASSERT_EXIT(
+    {
+      camp_crash::install_crash_handlers(path);
+      std::thread worker([]
+        {
+          camp_crash::install_thread_alt_stack();
+          camp_test_thread_crashing_frame(SIGSEGV);
+        });
+      worker.join();
+    },
+    ::testing::KilledBySignal(SIGSEGV), "CAMP caught SIGSEGV");
+
+  const std::string dump = read_file(path);
+  EXPECT_NE(dump.find("camp_test_thread_crashing_frame"), std::string::npos)
+    << dump;
+
+  ::remove(path.c_str());
+}
+
+TEST(CrashHandler, NoCrashFileMeansNoFile)
+{
+  // The zero-byte-file regression: installing the handlers must not create
+  // anything. An operator scanning ~/.ros/log has to be able to read the
+  // presence of a camp_crash_*.log as "this run crashed".
+  const std::string path = temp_path("nofile");
+  ::remove(path.c_str());
+
+  camp_crash::install_crash_handlers(path);
+
+  std::ifstream probe(path);
+  EXPECT_FALSE(probe.good()) << path << " was created without a crash";
+
+  // Leave the process without a stale crash path pointing at a temp file.
+  camp_crash::install_crash_handlers(-1);
+}
+
+TEST(CrashHandler, UnopenableCrashPathStillDumpsToStderr)
+{
+  // The degradation contract in crash_handler.h: a crash log that cannot be
+  // opened must cost the file, never the report. Covers the fd == -1 branch of
+  // emit()/emit_backtrace() as well.
+  ASSERT_EXIT(
+    {
+      camp_crash::install_crash_handlers(
+        std::string("/nonexistent-directory-camp217/crash.log"));
+      camp_test_crashing_frame(SIGSEGV);
+    },
+    ::testing::KilledBySignal(SIGSEGV), "CAMP caught SIGSEGV");
+}
+
+TEST(CrashHandler, EmptyCrashPathIsStderrOnly)
+{
+  // What main() gets when the ROS logging directory cannot be resolved, and
+  // what the pre-rclcpp::init() install pass uses.
+  ASSERT_EXIT(
+    {
+      camp_crash::install_crash_handlers(std::string());
+      camp_test_throwing_frame();
+    },
+    ::testing::KilledBySignal(SIGABRT), "CAMP std::terminate");
+}
+
+TEST(CrashHandler, CrashLogPathIsUnderTheRosLoggingDirectory)
+{
+  // crash_log_path() had no coverage at all, including the documented
+  // "returns empty rather than throwing" degradation.
+  ::setenv("ROS_LOG_DIR", "/tmp/camp_crash_test_logdir", 1);
+  const std::string path = camp_crash::crash_log_path();
+  ::unsetenv("ROS_LOG_DIR");
+
+  ASSERT_FALSE(path.empty()) << "crash_log_path() resolved nothing";
+  EXPECT_EQ(path.find("/tmp/camp_crash_test_logdir/"), 0u) << path;
+  EXPECT_NE(path.find("camp_crash_"), std::string::npos) << path;
+  EXPECT_NE(path.find(std::to_string(::getpid())), std::string::npos) << path;
 }
