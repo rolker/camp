@@ -162,9 +162,12 @@ coverage of the Map model's insert/remove/reorder paths).
   hook — so an unbounded recursion inside a subscription callback still dies
   silently, with no file and no stderr. Every other crash class on those
   threads *is* reported. Don't
-  expect a core file instead: CAMP is a colcon-built (unpackaged) binary and
-  apport discards crashes from unpackaged binaries outright, which is why these
-  handlers exist.
+  expect a core file by default: CAMP is a colcon-built (unpackaged) binary, so
+  apport discards the crash *report* — and `ulimit -c` is 0 on these hosts, so
+  nothing writes a core either. (Raising `ulimit -c` before launching does still
+  produce one: apport's unpackaged branch drops the report, not the core. That
+  is a useful local option on a dev box, not something to rely on in the field.)
+  Which is why these handlers exist.
 - **Shutdown ordering:** `executor.spin()` only returns once `rclcpp::shutdown()`
   is called. Anything that `quit()`/`wait()`s the spin `QThread` (e.g.
   `~ROSLink`) must call `rclcpp::shutdown()` first or it deadlocks on

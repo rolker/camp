@@ -69,10 +69,10 @@ set(SOURCES
     src/camp/avoid_area.cpp
     src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
+    src/camp/crash_handler.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
     src/camp/main.cpp
-    src/camp/crash_handler.cpp
     src/camp/mainwindow.cpp
     src/camp/collision_monitor/collision_monitor.cpp
     src/camp/collision_monitor/collision_monitor_manager.cpp
@@ -158,7 +158,6 @@ add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 # Guarded by the check_camp_exports test below — do not delete one without the
 # other.
 set_target_properties(CCOMAutonomousMissionPlanner PROPERTIES ENABLE_EXPORTS ON)
-
 
 target_include_directories(CCOMAutonomousMissionPlanner
     PRIVATE

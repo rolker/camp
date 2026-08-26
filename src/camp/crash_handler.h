@@ -4,9 +4,11 @@
 /// Crash diagnostics for CAMP (#217).
 ///
 /// CAMP is built by colcon, so it is not a packaged binary, and apport
-/// discards crashes from unpackaged binaries outright
-/// (`/usr/share/apport/apport:1136`). No core is ever written, and the
-/// `ros2 launch` log records only `process has died [pid N, exit code -11]`.
+/// **discards the crash report** for unpackaged binaries
+/// (`/usr/share/apport/apport:1135-1142`). That branch still writes a core if
+/// the user has configured one — but `ulimit -c` is 0 by default, so in
+/// practice no core is written either, and the `ros2 launch` log records only
+/// `process has died [pid N, exit code -11]`.
 /// Fixing that means root-level administration of a field host, which is not
 /// available mid-deployment — so CAMP explains its own death instead.
 ///
