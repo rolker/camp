@@ -2,6 +2,7 @@
 
 #include <execinfo.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/syscall.h>
@@ -21,9 +22,43 @@ namespace camp_crash
 namespace
 {
 
-/// Destination fds. Written once at install time, read from signal handlers,
-/// hence `volatile sig_atomic_t` rather than plain int.
+/// Durable destination fd. Written at install time (fd form) or by the handler
+/// itself (path form), read from signal handlers, hence `volatile
+/// sig_atomic_t` rather than plain int.
 volatile sig_atomic_t g_crash_fd = -1;
+
+/// Crash-log path, resolved at install time and opened only when a crash
+/// actually happens.
+///
+/// **The file is deliberately NOT pre-opened.** Pre-opening with
+/// `O_CREAT|O_TRUNC` left a zero-byte `camp_crash_<pid>.log` behind after every
+/// clean run — in a `~/.ros/log` that already holds 10k+ entries, that makes
+/// "no crash" indistinguishable from "crashed before the first write" and
+/// buries the real reports. Worse, on a host with the stock `pid_max` a
+/// recycled pid silently truncated an earlier genuine crash report.
+///
+/// Resolving the path needs rclcpp and allocates, so that still happens at
+/// install time; only the `open()` moves into the handler, and `open(2)` is on
+/// the async-signal-safe list.
+char g_crash_path[PATH_MAX] = {0};
+volatile sig_atomic_t g_crash_path_valid = 0;
+
+/// Open the crash log, once, from inside a handler. Async-signal-safe.
+///
+/// `O_APPEND` (never `O_TRUNC`): if a recycled pid lands on an existing file,
+/// appending keeps both reports where truncating destroyed the older one.
+/// `O_NOFOLLOW` + 0600: the path is derived from `$ROS_LOG_DIR`/`$ROS_HOME`,
+/// which are environment-controlled, so a pre-planted symlink in a shared log
+/// dir must not turn this into a write into someone else's file — and the dump
+/// embeds full install paths, which nothing else needs to read.
+void open_crash_fd()
+{
+  if (g_crash_fd >= 0 || !g_crash_path_valid)
+    return;
+  g_crash_fd = ::open(g_crash_path,
+                      O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW,
+                      0600);
+}
 
 /// Claimed by whichever handler emits first, via an atomic test-and-set.
 ///
@@ -156,6 +191,7 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
 
   if (claim_dump())
   {
+    open_crash_fd();
     emit("\n=== CAMP caught ");
     emit(signal_name(sig));
     emit(" on thread ");
@@ -198,6 +234,8 @@ void on_terminate()
 {
   if (claim_dump())
   {
+    open_crash_fd();
+
     // ORDER IS LOAD-BEARING: backtrace first, exception introspection second.
     //
     // current_exception()/rethrow_exception() allocate and run the unwinder —
@@ -248,7 +286,7 @@ void on_terminate()
 
 } // namespace
 
-int open_crash_log_fd()
+std::string crash_log_path()
 {
   std::string dir;
   try
@@ -261,20 +299,13 @@ int open_crash_log_fd()
   }
   catch (const std::exception&)
   {
-    return -1;
+    return std::string();
   }
 
   if (dir.empty())
-    return -1;
+    return std::string();
 
-  const std::string path =
-    dir + "/camp_crash_" + std::to_string(::getpid()) + ".log";
-
-  // O_CLOEXEC so the fd does not leak into any child process camp spawns.
-  const int fd = ::open(path.c_str(),
-                        O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC,
-                        0644);
-  return fd;  // -1 on failure is fine; the caller installs handlers anyway.
+  return dir + "/camp_crash_" + std::to_string(::getpid()) + ".log";
 }
 
 void install_thread_alt_stack()
@@ -304,9 +335,24 @@ void install_thread_alt_stack()
   }
 }
 
+void install_crash_handlers(const std::string& crash_log_path)
+{
+  install_crash_handlers(-1);
+
+  // The file is opened lazily, by the handler — see g_crash_path. An empty or
+  // over-long path is not an error: the handlers stay installed and write to
+  // stderr only.
+  if (!crash_log_path.empty() && crash_log_path.size() < sizeof(g_crash_path))
+  {
+    ::memcpy(g_crash_path, crash_log_path.c_str(), crash_log_path.size() + 1);
+    g_crash_path_valid = 1;
+  }
+}
+
 void install_crash_handlers(int backtrace_fd)
 {
   g_crash_fd = backtrace_fd;
+  g_crash_path_valid = 0;
   __atomic_clear(&g_already_dumped, __ATOMIC_RELEASE);
 
   // Ignore SIGPIPE for the process. Without this, a write to a stderr pipe

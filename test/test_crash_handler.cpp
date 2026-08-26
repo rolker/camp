@@ -20,7 +20,6 @@
 
 #include <gtest/gtest.h>
 
-#include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
 
@@ -48,13 +47,6 @@ std::string read_file(const std::string& path)
   std::ostringstream oss;
   oss << in.rdbuf();
   return oss.str();
-}
-
-int open_temp(const std::string& path)
-{
-  const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  EXPECT_GE(fd, 0) << "could not open " << path;
-  return fd;
 }
 
 } // namespace
@@ -97,10 +89,11 @@ void camp_test_throwing_frame() noexcept
 TEST(CrashHandler, SigsegvDumpsBacktraceAndPreservesExitStatus)
 {
   const std::string path = temp_path("segv");
+  ::remove(path.c_str());  // the handler creates it (O_APPEND, never O_TRUNC)
 
   ASSERT_EXIT(
     {
-      camp_crash::install_crash_handlers(open_temp(path));
+      camp_crash::install_crash_handlers(path);
       camp_test_crashing_frame(SIGSEGV);
     },
     ::testing::KilledBySignal(SIGSEGV), "");
@@ -119,10 +112,11 @@ TEST(CrashHandler, SigsegvDumpsBacktraceAndPreservesExitStatus)
 TEST(CrashHandler, SigabrtDumpsBacktraceAndPreservesExitStatus)
 {
   const std::string path = temp_path("abrt");
+  ::remove(path.c_str());  // the handler creates it (O_APPEND, never O_TRUNC)
 
   ASSERT_EXIT(
     {
-      camp_crash::install_crash_handlers(open_temp(path));
+      camp_crash::install_crash_handlers(path);
       camp_test_crashing_frame(SIGABRT);
     },
     ::testing::KilledBySignal(SIGABRT), "");
@@ -137,10 +131,11 @@ TEST(CrashHandler, SigabrtDumpsBacktraceAndPreservesExitStatus)
 TEST(CrashHandler, UncaughtExceptionNamesItAndDumpsBacktrace)
 {
   const std::string path = temp_path("throw");
+  ::remove(path.c_str());  // the handler creates it (O_APPEND, never O_TRUNC)
 
   ASSERT_EXIT(
     {
-      camp_crash::install_crash_handlers(open_temp(path));
+      camp_crash::install_crash_handlers(path);
       camp_test_throwing_frame();
     },
     ::testing::KilledBySignal(SIGABRT), "");

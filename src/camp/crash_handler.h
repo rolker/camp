@@ -20,15 +20,22 @@
 /// in rather than resolved internally, so the handlers can be installed and
 /// exercised by a test without `rclcpp::init()` or a `QApplication`.
 
+#include <string>
+
 namespace camp_crash
 {
 
-/// Resolve the crash-log path and open it.
+/// Resolve the crash-log path. Does **not** create the file.
 ///
-/// Returns a writable fd, or -1 if the log directory cannot be resolved or the
-/// file cannot be created. **-1 is not an error to act on**: the caller still
-/// installs the handlers, which then write to stderr only. A missing log
-/// directory must never keep CAMP from starting.
+/// Returns an empty string if the log directory cannot be resolved. **That is
+/// not an error to act on**: the caller still installs the handlers, which then
+/// write to stderr only. A missing log directory must never keep CAMP from
+/// starting.
+///
+/// The file is created by the handler, at crash time, not here. Pre-creating it
+/// left a zero-byte file behind after every clean run, which in a log directory
+/// holding thousands of entries makes a real crash report impossible to spot —
+/// and let a recycled pid truncate an earlier genuine report.
 ///
 /// The path is `<base ROS logging dir>/camp_crash_<pid>.log` — where the base
 /// dir is `$ROS_LOG_DIR`, else `$ROS_HOME/log`, else `~/.ros/log`. Note this
@@ -40,12 +47,21 @@ namespace camp_crash
 /// `process has died [pid N, ...]` line.
 ///
 /// Must be called after `rclcpp::init()`.
-int open_crash_log_fd();
+std::string crash_log_path();
 
-/// Install handlers for fatal signals and for `std::terminate`.
+/// Install handlers for fatal signals and for `std::terminate`, writing to
+/// stderr and to `crash_log_path` (from `crash_log_path()`, or any path a test
+/// picks). The file is created on the first crash, never before.
 ///
-/// `backtrace_fd` may be -1, in which case output goes to stderr only. Safe to
-/// call once, early in `main()`; calling it again simply reinstalls.
+/// An empty path installs the handlers stderr-only. Safe to call more than
+/// once; calling it again simply reinstalls.
+void install_crash_handlers(const std::string& crash_log_path);
+
+/// Overload writing to an already-open fd instead of a path — for callers that
+/// have no ROS logging directory, and for tests.
+///
+/// `backtrace_fd` may be -1, in which case output goes to stderr only. Calling
+/// this clears any path set by the overload above.
 ///
 /// The signal handlers themselves are **process-wide**: a SIGSEGV on any
 /// thread — including the ROS node thread and the executor's workers — is
