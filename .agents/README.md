@@ -157,11 +157,16 @@ coverage of the Map model's insert/remove/reorder paths).
   **One class is only partly covered:** a *stack-overflow* SIGSEGV needs a
   per-thread alternate signal stack (`sigaltstack(2)` is per-thread and is not
   inherited across `pthread_create`). CAMP installs one on the main thread and
-  on the ROS node thread, but the `MultiThreadedExecutor` workers and the
-  `tf2_ros::TransformListener` thread are created inside rclcpp with no entry
-  hook — so an unbounded recursion inside a subscription callback still dies
-  silently, with no file and no stderr. Every other crash class on those
-  threads *is* reported. Don't
+  on the ROS node thread (where `MultiThreadedExecutor::spin()` also runs one
+  worker inline). It does **not** on: rclcpp's *spawned* executor workers and
+  the `tf2_ros::TransformListener` thread (no entry hook), `camp::ros::GraphThread`
+  in `camp_map`, or any `QtConcurrent` worker — which is where the GDAL/raster/
+  tile work runs. So an unbounded recursion inside a subscription callback **may**
+  die silently with no file and no stderr, depending on which worker picks the
+  callback up. Every other crash class on all of those threads *is* reported: the
+  handlers are process-wide. Closing the `camp_map` half means moving the crash
+  handler out of the executable into an exported library — a follow-up, not a
+  #217 change. Don't
   expect a core file by default: CAMP is a colcon-built (unpackaged) binary, so
   apport discards the crash *report* — and `ulimit -c` is 0 on these hosts, so
   nothing writes a core either. (Raising `ulimit -c` before launching does still

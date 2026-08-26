@@ -118,10 +118,10 @@ bool claim_dump()
 /// `sigaltstack(2)` is a per-thread attribute and `pthread_create(3)`
 /// explicitly does not inherit it, so installing one on the main thread covers
 /// only the main thread. Hence `thread_local` plus the exported
-/// `install_thread_alt_stack()`, which every thread CAMP creates itself calls
-/// on entry. Threads created inside rclcpp (the `MultiThreadedExecutor`
-/// workers, the `tf2_ros::TransformListener` thread) cannot be hooked and so
-/// have no alternate stack — see the scoping note in `crash_handler.h`.
+/// `install_thread_alt_stack()`. The executable's own sources start exactly one
+/// thread and it calls that on entry; rclcpp's internal threads, camp_map's
+/// `GraphThread` and Qt's QtConcurrent pool do not — see the enumerated gap on
+/// `install_thread_alt_stack()` in `crash_handler.h`.
 ///
 /// **Deliberately leaked at thread exit** — do NOT "fix" this into a
 /// `unique_ptr` or give it a destructor. The kernel keeps the `ss_sp` pointer

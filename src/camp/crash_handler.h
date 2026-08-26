@@ -71,10 +71,11 @@ void install_crash_handlers(const std::string& crash_log_path);
 /// this clears any path set by the overload above.
 ///
 /// The signal handlers themselves are **process-wide**: a SIGSEGV on any
-/// thread — including the ROS node thread and the executor's workers — is
-/// caught and dumped. The one exception is the *stack-overflow* SIGSEGV, which
-/// needs a per-thread alternate signal stack; see
-/// `install_thread_alt_stack()`.
+/// thread — the ROS node thread, the executor's workers, a QtConcurrent worker
+/// — is caught and dumped. The one exception is the *stack-overflow* SIGSEGV,
+/// which needs a per-thread alternate signal stack, and which several of CAMP's
+/// threads do not have; see `install_thread_alt_stack()` for the enumerated
+/// gap.
 void install_crash_handlers(int backtrace_fd);
 
 /// Give the **calling thread** an alternate signal stack.
@@ -86,15 +87,39 @@ void install_crash_handlers(int backtrace_fd);
 /// because the kernel has no room left on the faulting stack to push a handler
 /// frame. Ordinary faults on such a thread are still reported normally.
 ///
-/// Call this as the first statement of any thread CAMP starts itself
-/// (`camp_ros::NodeThread::start()` does).
+/// Call this as the first statement of any thread started by the
+/// `CCOMAutonomousMissionPlanner` executable's own sources. Today that is
+/// exactly one thread — `camp_ros::NodeThread::start()`
+/// (`src/camp/ros/node_thread.cpp`) — which is also where
+/// `MultiThreadedExecutor::spin()` runs one worker inline, so that worker is
+/// covered too.
 ///
-/// **Known gap, deliberately not papered over:** threads created *inside*
-/// rclcpp — the `MultiThreadedExecutor` workers and the
-/// `tf2_ros::TransformListener` thread — offer no entry hook, so they have no
-/// alternate stack. An unbounded recursion inside a subscription callback
-/// running on an executor worker therefore still dies silently. Every other
-/// crash class on those threads is covered.
+/// **Known gap, deliberately not papered over and wider than the executable.**
+/// Threads with no alternate signal stack, and therefore no report for a
+/// *stack-overflow* SIGSEGV:
+///
+///  - rclcpp-internal threads: the `MultiThreadedExecutor`'s *spawned* workers
+///    (all but the inline one above) and the `tf2_ros::TransformListener`
+///    thread. Neither offers an entry hook. An unbounded recursion inside a
+///    subscription callback **may** die silently, depending on which worker
+///    picks the callback up.
+///  - `camp::ros::GraphThread` (`src/camp_map/ros/graph_thread.cpp`), live in
+///    the shipped app via `MainWindow`. It *does* have an entry hook —
+///    `run()` — and does not use it.
+///  - Qt's global thread pool: every `QtConcurrent::run()` worker, which is
+///    where the GDAL / raster / tile work implicated in #215 executes.
+///
+/// The last two are in the `camp_map` / `camp_map_ros` libraries, and this
+/// translation unit is compiled only into the executable and the test target
+/// (CMakeLists.txt:72,458) — not into those installed, exported libraries. So
+/// closing them means promoting the crash handler out of the executable and
+/// into a library, which changes that library's public surface: a design
+/// decision beyond #217's scope, recorded as a follow-up in the work plan
+/// rather than made in passing.
+///
+/// **Every other crash class on all of these threads is reported normally** —
+/// the `sigaction()` handlers are process-wide. What is missing is only the one
+/// class that cannot push a handler frame on its own stack.
 void install_thread_alt_stack();
 
 } // namespace camp_crash
