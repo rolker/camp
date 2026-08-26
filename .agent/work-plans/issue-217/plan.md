@@ -8,9 +8,15 @@ https://github.com/rolker/camp/issues/217
 
 `src/camp/main.cpp` is 43 lines with no signal or terminate handling. On
 2026-08-25 CAMP segfaulted five times on the operator station (#215) and left
-zero evidence: apport discards crashes from unpackaged (colcon-built) binaries
-at `/usr/share/apport/apport:1136`, so no core is ever written, and the
-`ros2 launch` log only records `process has died [pid N, exit code -11]`.
+zero evidence: apport's `likely_packaged()` branch discards the crash *report*
+for unpackaged (colcon-built) binaries, and the `ros2 launch` log only records
+`process has died [pid N, exit code -11]`. (Cited by branch, not line: the line
+number moves between apport releases; installed here is 2.28.3-0ubuntu0.1.) A
+**core** is a separate matter — apport still runs its core-dump callback, so one
+is written wherever the crashing process's core ulimit is non-zero; measured
+`unlimited` on the dev workstation `deadpool`, 2026-08-26, with cores landing in
+`/var/lib/apport/coredump/`. That does not help an operator: no report is filed,
+and reading a core needs matching debug symbols and a gdb session on the host.
 Fixing the host (`systemd-coredump`, `/etc/apport/settings`) is root-level
 field-host administration and is out of scope by workspace rule
 (AGENTS.md § Never). CAMP needs to explain its own death without host help.
@@ -25,8 +31,9 @@ exception reaching `std::terminate` (#207's abort-on-close path).
 1. **Backtrace destination — both stderr and a dedicated file.** stderr lands
    in the `ros2 launch` session log immediately next to the existing
    `process has died [pid N, exit code -11]` line. The file gives a durable,
-   greppable artifact independent of scrollback. Both fds are opened once at
-   startup, before any handler can fire.
+   greppable artifact independent of scrollback. The crash file's **path** is
+   resolved at install time; the file itself is created by the handler at crash
+   time (see step 2), and the durable write goes out before stderr (step 3).
 2. **No ADR.** Considered and declined: this adds diagnostics, it does not
    change CAMP's architecture or constrain future design (camp's ADRs 0002-
    0015 are all map/scene/raster architecture; a signal-handling utility is
@@ -104,13 +111,19 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      **The alternate stack is per-thread** (`sigaltstack(2)` is a per-thread
      attribute that `pthread_create(3)` does not inherit), so it is
      `thread_local` behind an exported `install_thread_alt_stack()` that
-     `camp_ros::NodeThread::start()` also calls. The rclcpp-internal threads
-     (`MultiThreadedExecutor` workers, the `tf2_ros::TransformListener`
-     thread) offer no entry hook and therefore have **no** alternate stack —
-     documented as a known gap in the header and in the `.agents/README.md`
-     bullet rather than left implied as covered. [Local Review Round 1
-     must-fix: the original single global stack covered only the main thread
-     while the docs claimed the class outright.]
+     `camp_ros::NodeThread::start()` also calls — the only thread the
+     executable's own sources start. Three groups have **no** alternate stack:
+     rclcpp's *spawned* executor workers and the `tf2_ros::TransformListener`
+     thread (no entry hook); `camp::ros::GraphThread` in `camp_map`; and every
+     `QtConcurrent` worker. The last two have entry hooks but live in the
+     `camp_map`/`camp_map_ros` libraries, which do not compile
+     `crash_handler.cpp` — closing them means promoting the crash handler into
+     an exported library, a design change beyond this issue (see Follow-ups).
+     The gap is enumerated in the header and in the `.agents/README.md` bullet
+     rather than left implied as covered. [Local Review Round 1 must-fix: the
+     original single global stack covered only the main thread while the docs
+     claimed the class outright. Round 2 must-fix: the enumeration named only
+     the rclcpp-internal threads.]
    - Cover `SIGSEGV` and `SIGABRT`; also install for **`SIGBUS`, `SIGFPE` and
      `SIGILL`**. They are the same class of fatal, silent death, the handler
      is identical, and adding them costs three lines. [Plan Review suggestion.]
@@ -127,8 +140,9 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      `install_crash_handlers()` so the handler path is already resolved.
      [Plan Review should-fix.]
    - `on_fatal_signal(int sig)`: async-signal-safe only. Write a fixed
-     signal-name preamble with `write()` (not `fprintf`/`iostream`) to stderr
-     (fd 2) and to the pre-opened crash-file fd; call
+     signal-name preamble with `write()` (not `fprintf`/`iostream`) to the
+     crash-file fd — opened by the handler on first use — and then to stderr
+     (fd 2); call
      `backtrace()` + `backtrace_symbols_fd()` (not `backtrace_symbols()`,
      which allocates — the issue specifically calls out heap corruption as
      the suspected #215 mechanism) writing to both fds; then
@@ -160,15 +174,22 @@ exception reaching `std::terminate` (#207's abort-on-close path).
    - Handler hardening carried in from Local Review Round 1: the
      `already_dumped` guard is an atomic `__atomic_test_and_set` (a plain
      test-and-set races between two faulting threads); `SA_SIGINFO` so
-     `si_code`/`si_addr` are reported; the faulting thread's `gettid()` in the
-     header line; `::alarm(10)` after the `SIG_DFL` restore, because
-     `backtrace()` takes glibc's loader locks and a fault while another thread
-     holds one in a GDAL/Qt-plugin `dlopen()` would turn a silent death into a
-     silent hang; `SA_RESETHAND` in place of the inert `SA_RESTART`; `extern
-     "C"` linkage on the handler; every `sigaction()`/`sigaltstack()` return
-     value checked. `::raise(sig)` is kept deliberately (a core, if one were
-     ever enabled, is taken at the raise site — but none is written on these
-     hosts) and the comment no longer implies otherwise.
+     `si_code`/`si_addr` are reported — `si_code` through a **signed** formatter
+     and `si_addr` only when `si_code > 0`, i.e. only when the kernel generated
+     the signal (Round 2 must-fix); the faulting thread's `gettid()` in the
+     header line; an `alarm()` watchdog on **both** the signal and the terminate
+     paths, because `backtrace()` takes glibc's loader locks and a fault while
+     another thread holds one in a GDAL/Qt-plugin `dlopen()` would turn a silent
+     death into a silent hang — armed by a shared `arm_watchdog()` that restores
+     SIGALRM to `SIG_DFL` and unblocks it first, since restoring the *faulting*
+     signal's disposition says nothing about SIGALRM (Round 2 must-fix);
+     `SA_RESETHAND` in place of the inert `SA_RESTART`; `extern "C"` linkage on
+     the handler; every `sigaction()`/`sigaltstack()` return value checked and
+     reported, with `SIGSTKSZ` treated as failable and floored at 64 KB; the
+     crash fd validated with `fstat()` after `open()` and closed on reinstall if
+     the handler opened it; a release/acquire pair on the crash-path flag.
+     `::raise(sig)` is kept deliberately — see the decline recorded under
+     Revisions.
    - `main.cpp` installs stderr-only handlers **before** `rclcpp::init()` as
      well: `rclcpp::init()` is itself a documented thrower, and an exception
      escaping it would otherwise reach `std::terminate` with the default
@@ -350,10 +371,88 @@ changes-requested), during the address-findings pass. Corrected in place per
 | suggestion — apport "discards outright" overstated | `.agents/README.md` bullet and `crash_handler.h` header comment (not a plan claim) |
 
 One Round-1 suggestion was **declined**: replacing `::raise(sig)` with a return
-from the handler so a core would be taken at the faulting instruction. No core
-is written on these hosts (`ulimit -c` 0), the change alters the death path of
-a diagnostics-only feature, and it does not apply to SIGABRT. The misleading
-half of the comment it flagged *was* corrected.
+from the handler so a core would be taken at the faulting instruction. The
+decline stands, but its recorded basis has been corrected (Round 2 must-fix 6 —
+the "no core is written" premise is false where it can be checked). The reasons
+that actually hold, and do not depend on any host's `ulimit -c`:
+
+- Returning only works for a **hardware fault**, where the faulting instruction
+  re-executes and traps again against the restored `SIG_DFL`. For a signal that
+  was *delivered* rather than faulted — `kill(1)`, or the `raise()` inside
+  `abort()` on the #207 path — returning resumes the interrupted code, and CAMP
+  survives a SIGSEGV or SIGABRT in an undefined state. That is strictly worse
+  than a core whose top frame is this handler.
+- Doing it correctly therefore means branching on `si_code` in the death path of
+  a diagnostics-only feature.
+- The backtrace is what this feature delivers, it names the real fault site, and
+  it is identical either way.
+
+The misleading half of the comment it flagged was corrected in Round 1, and the
+whole comment was re-argued on these grounds in Round 2.
+
+**Amended again after Local Review (Pre-Push) Round 2** (verdict:
+changes-requested; 6 must-fix, 18 suggestions), during the second
+address-findings pass. Round 2's stated reason for continuing was *claims
+outrunning code* — two Round-1 fixes recorded as closing a finding that did not,
+and a test advertised as a guard that could not fail. Every claim below was
+verified empirically before being written down, and every new or changed test
+was watched to fail with its fix removed.
+
+| Local Review Round 2 finding | Where corrected |
+|---|---|
+| must-fix 1 — `si_code` through the unsigned formatter (`18446744073709551610`); `si_addr` gated on the signal number, printing `uid<<32\|pid` as an address | Step 3 hardening bullet; `emit_long()` plus an `si_code > 0` gate; asserted in the SIGSEGV, SIGABRT and stack-overflow tests |
+| must-fix 2 — `on_terminate()` had no `alarm()` bound, and the alarm's `SIG_DFL` reasoning was wrong | Step 3 hardening bullet; shared `arm_watchdog()` on both paths, restoring and unblocking SIGALRM itself |
+| must-fix 3 — the alt-stack gap is wider than documented (`camp::ros::GraphThread` has an entry hook and does not call it; QtConcurrent workers uncovered) | Step 3 `sigaltstack` bullet, rewritten with the full enumeration and why the `camp_map` half is a follow-up rather than a #217 change |
+| must-fix 4 — the non-main-thread test raises on a healthy stack, so it does not cover the alt stack | Step 5 coverage bullet; new `StackOverflowOnANonMainThreadIsReported`, verified to fail (empty stderr) with the alt stack removed |
+| must-fix 5 — `crash_handler.h`'s summary still described the pre-opened, stderr-first design | Context decision 1 and step 3's preamble bullet; the header was rewritten |
+| must-fix 6 — the "`ulimit -c` is 0" premise is false where checkable | Context, and the `::raise(sig)` decline below; measured values attributed to host and date per AGENTS.md § Documentation Accuracy |
+| suggestions — unreported `install_thread_alt_stack()` failures; `SIGSTKSZ` -1 becoming `SIZE_MAX`; unchecked `signal(SIGPIPE)` and its process-wide scope; `g_crash_fd` overwritten without closing; missing release barrier; `O_NOFOLLOW` not sufficient alone; the deliberate `thread_local` leak | Step 3 hardening bullet |
+| suggestion — `check_camp_exports` silently unregistered when `readelf` is absent | Step 4; the test is now always registered and the script FATAL_ERRORs on a missing readelf |
+| suggestions — predictable `/tmp` test paths; `NoCrashFileMeansNoFile` installing handlers in the gtest parent; `crash_log_path()`'s catch branch uncovered while claimed | Step 5 coverage bullet |
+| suggestions — "must be called after `rclcpp::init()`" contradicted by its own test; "before anything at all can fault" overclaimed; the `alarm()`/exit-status clause; the README's "still dies silently" | Corrected at each site (header, `main.cpp`, `crash_handler.cpp`, `.agents/README.md`) |
+| suggestion — stale plan prose ("Both fds are opened once at startup", "the pre-opened crash-file fd") | Context decision 1 and step 3 |
+| suggestion — apport line citations disagreed with each other and with the installed version | Context, `crash_handler.h`, `.agents/README.md`: cited by branch name plus version |
+| suggestion — the decline's "nothing can collect the benefit" clause | Re-argued above on grounds independent of `ulimit -c` |
+
+### Undocumented behavior now recorded
+
+- `install_crash_handlers(const std::string&)` silently drops a crash path
+  longer than `PATH_MAX`; the handlers stay installed and degrade to
+  stderr-only. Deliberate — an over-long path must not keep CAMP from starting —
+  but it is silent, and a `$ROS_LOG_DIR` that long would be pathological.
+- `check_camp_exports` needs `readelf` or `llvm-readelf` on the build host. As
+  of Round 2 a host without either **fails** that test rather than skipping it.
+
+### Considered and declined: raw addresses plus `/proc/self/maps`
+
+Raised after Round 2's entry was written: since `backtrace_symbols_fd()` can
+only ever emit *mangled* names, dumping raw addresses plus `/proc/self/maps`
+would let an engineer resolve frames offline with `addr2line`, without
+`ENABLE_EXPORTS` and without exposing CAMP to symbol interposition.
+
+Declined, on a verified premise: `backtrace_symbols_fd()` **already** prints the
+object-relative offset for every frame it cannot name — `binary(+0x11bb)
+[0x5586...]` — and that `+0x11bb` is exactly what `addr2line -e <binary>`
+consumes. Confirmed by direct experiment, with and without `-rdynamic`. So the
+offline path this suggestion wants is available today and needs no maps dump,
+while dropping `ENABLE_EXPORTS` would cost the inline, readable names in the
+field log — which is the operator-facing point of the feature. The
+symbol-interposition tradeoff is recorded next to the flag in `CMakeLists.txt`
+and stays revisitable if a plugin ever misbehaves.
+
+## Follow-ups (not #217)
+
+- **Alternate signal stacks for `camp_map`'s threads.** `camp::ros::GraphThread`
+  and the QtConcurrent pool workers have entry hooks but cannot call
+  `camp_crash::install_thread_alt_stack()`, because `crash_handler.cpp` is
+  compiled only into the executable and the test target, never into the
+  installed `camp_map`/`camp_map_ros` libraries. Closing this means promoting
+  the crash handler into one of those libraries and adding it to that library's
+  public surface. Residual exposure until then: *stack-overflow* SIGSEGV only,
+  on those threads; every other crash class is reported.
+- **Operator manual.** `docs/camp_user_manual.md` has no troubleshooting
+  section; where to find `camp_crash_<pid>.log` and how to read it is operator
+  knowledge that belongs there.
 
 ## Estimated Scope
 
