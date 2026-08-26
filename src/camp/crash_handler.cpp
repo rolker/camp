@@ -4,8 +4,10 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <new>
@@ -23,14 +25,26 @@ namespace
 /// hence `volatile sig_atomic_t` rather than plain int.
 volatile sig_atomic_t g_crash_fd = -1;
 
-/// Set by whichever handler emits first.
+/// Claimed by whichever handler emits first, via an atomic test-and-set.
 ///
 /// The terminate path ends in `std::abort()`, which raises SIGABRT and
 /// re-enters the signal handler; without this guard every uncaught exception
 /// would print a second backtrace rooted in `abort()` itself, burying the
 /// useful one. The signal handler still re-raises when this is set — only the
 /// output is suppressed, never the exit status.
-volatile sig_atomic_t g_already_dumped = 0;
+///
+/// It must be an **atomic** test-and-set, not `if (!flag) flag = 1;`:
+/// `volatile` prevents tearing but not a race, so two threads faulting in the
+/// same window would both pass the test and interleave two dumps across ~5
+/// `write()` calls each. `__atomic_test_and_set` is lock-free and
+/// async-signal-safe.
+volatile unsigned char g_already_dumped = 0;
+
+/// Returns true for the first caller only.
+bool claim_dump()
+{
+  return !__atomic_test_and_set(&g_already_dumped, __ATOMIC_ACQ_REL);
+}
 
 /// Alternate signal stack — **per thread**. A stack-overflow SIGSEGV leaves no
 /// room to push a handler frame on the faulting stack, so without
@@ -79,6 +93,21 @@ void emit(const char* text)
   emit(text, ::strlen(text));
 }
 
+/// Async-signal-safe unsigned formatter (no snprintf: it is not on the
+/// async-signal-safe list and glibc's may take a lock).
+void emit_ulong(unsigned long value, int base)
+{
+  char buf[32];
+  char* p = buf + sizeof(buf);
+  const char* digits = "0123456789abcdef";
+  do
+  {
+    *--p = digits[value % static_cast<unsigned long>(base)];
+    value /= static_cast<unsigned long>(base);
+  } while (value != 0 && p > buf);
+  emit(p, static_cast<size_t>(buf + sizeof(buf) - p));
+}
+
 /// Backtrace to both destinations. `backtrace_symbols_fd` writes straight to
 /// an fd; `backtrace_symbols` would allocate, which is not safe here — heap
 /// corruption is a suspected cause of the crashes this exists to diagnose
@@ -106,34 +135,69 @@ const char* signal_name(int sig)
   }
 }
 
-void on_fatal_signal(int sig)
+/// C language linkage: `sa_sigaction` is a C function pointer, and a handler
+/// with C++ linkage is only conventionally compatible.
+extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
 {
   // FIRST statement, before anything that could itself fault: restore the
-  // default action. If this handler crashes — entirely possible when the heap
-  // is already corrupt — the process dies immediately instead of recursing.
+  // default action. SA_RESETHAND has already done this at delivery; the
+  // explicit call keeps the guarantee if the flag is ever dropped. If this
+  // handler crashes — entirely possible when the heap is already corrupt — the
+  // process dies immediately instead of recursing.
   ::signal(sig, SIG_DFL);
 
-  if (!g_already_dumped)
+  // Bound the handler's own lifetime. backtrace()/backtrace_symbols_fd() take
+  // glibc's loader locks; if another thread is inside a GDAL or Qt-plugin
+  // dlopen() holding one, the handler deadlocks and a silent death becomes a
+  // silent HANG — strictly worse, because the supervisor never even logs
+  // "process has died". SIGALRM's default action terminates the process, and
+  // the alarm is set after SIG_DFL is restored so nothing intercepts it.
+  ::alarm(10);
+
+  if (claim_dump())
   {
-    g_already_dumped = 1;
     emit("\n=== CAMP caught ");
     emit(signal_name(sig));
+    emit(" on thread ");
+    emit_ulong(static_cast<unsigned long>(::syscall(SYS_gettid)), 10);
+
+    // si_code / si_addr often identify the fault class before anyone reads the
+    // stack: a null `this->member` (addr near 0), a use-after-free, a wild
+    // write. SEGV_MAPERR=1 (unmapped), SEGV_ACCERR=2 (permissions).
+    if (info != nullptr)
+    {
+      emit(" [si_code=");
+      emit_ulong(static_cast<unsigned long>(info->si_code), 10);
+      if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL)
+      {
+        emit(" si_addr=0x");
+        emit_ulong(reinterpret_cast<unsigned long>(info->si_addr), 16);
+      }
+      emit("]");
+    }
+
     emit(" — backtrace follows (mangled; pipe through c++filt) ===\n");
     emit_backtrace();
     emit("=== end CAMP backtrace ===\n");
   }
 
-  // Re-raise so the exit status is exactly what it would have been, and any
-  // host-level core handling still applies.
+  // Re-raise so the exit status is exactly what it would have been.
+  //
+  // Note this is the raise() site, not the faulting instruction: if core dumps
+  // are ever enabled on a host (they are not today — CAMP is unpackaged, so
+  // apport drops the report, and `ulimit -c` is 0 by default) the core's
+  // faulting frame is this handler rather than the real fault. Returning
+  // instead would re-execute the faulting instruction and dump at the right
+  // place for the four synchronous faults, but not for SIGABRT, and it changes
+  // the death path for a diagnostics-only feature. Deliberately not done:
+  // the backtrace above is what this feature delivers, and it is unaffected.
   ::raise(sig);
 }
 
 void on_terminate()
 {
-  if (!g_already_dumped)
+  if (claim_dump())
   {
-    g_already_dumped = 1;
-
     // ORDER IS LOAD-BEARING: backtrace first, exception introspection second.
     //
     // current_exception()/rethrow_exception() allocate and run the unwinder —
@@ -218,13 +282,18 @@ void install_thread_alt_stack()
   if (t_alt_stack != nullptr)
     return;
 
-  t_alt_stack = new (std::nothrow) char[SIGSTKSZ];
+  // SIGSTKSZ is sysconf(_SC_SIGSTKSZ) on glibc >= 2.34, i.e. a function call
+  // rather than a constant. Evaluate it once, so the allocation and the size
+  // handed to the kernel cannot disagree.
+  const size_t stack_size = static_cast<size_t>(SIGSTKSZ);
+
+  t_alt_stack = new (std::nothrow) char[stack_size];
   if (t_alt_stack == nullptr)
     return;
 
   stack_t ss;
   ss.ss_sp = t_alt_stack;
-  ss.ss_size = SIGSTKSZ;
+  ss.ss_size = stack_size;
   ss.ss_flags = 0;
   if (::sigaltstack(&ss, nullptr) != 0)
   {
@@ -238,7 +307,7 @@ void install_thread_alt_stack()
 void install_crash_handlers(int backtrace_fd)
 {
   g_crash_fd = backtrace_fd;
-  g_already_dumped = 0;
+  __atomic_clear(&g_already_dumped, __ATOMIC_RELEASE);
 
   // Ignore SIGPIPE for the process. Without this, a write to a stderr pipe
   // whose reader has exited kills CAMP outright — changing the exit status the
@@ -260,17 +329,31 @@ void install_crash_handlers(int backtrace_fd)
 
   struct sigaction sa;
   ::memset(&sa, 0, sizeof(sa));
-  sa.sa_handler = &on_fatal_signal;
+  sa.sa_sigaction = &on_fatal_signal;
   ::sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_ONSTACK | SA_RESTART;
+  // SA_SIGINFO: si_code/si_addr, see on_fatal_signal.
+  // SA_RESETHAND: the kernel restores SIG_DFL atomically at delivery, which is
+  //   what the handler's first statement asks for.
+  // No SA_RESTART: it governs restarting interrupted syscalls after the
+  //   handler RETURNS, and none of these handlers return normally — it read as
+  //   a claim about behavior that cannot happen.
+  sa.sa_flags = SA_ONSTACK | SA_SIGINFO | SA_RESETHAND;
 
   // All five are the same class of fatal, silent death; the handler is
   // identical for each.
-  ::sigaction(SIGSEGV, &sa, nullptr);
-  ::sigaction(SIGABRT, &sa, nullptr);
-  ::sigaction(SIGBUS, &sa, nullptr);
-  ::sigaction(SIGFPE, &sa, nullptr);
-  ::sigaction(SIGILL, &sa, nullptr);
+  const int fatal[] = {SIGSEGV, SIGABRT, SIGBUS, SIGFPE, SIGILL};
+  for (int sig : fatal)
+  {
+    if (::sigaction(sig, &sa, nullptr) != 0)
+    {
+      // Not fatal — the other signals are still covered — but it must not be
+      // silent, or a crash class quietly stops being reported. Safe to use
+      // stderr formatting here: install time, not handler time.
+      ::fprintf(stderr,
+                "[camp #217] could not install crash handler for signal %d; "
+                "crashes of that kind will not be reported\n", sig);
+    }
+  }
 
   std::set_terminate(&on_terminate);
 }
