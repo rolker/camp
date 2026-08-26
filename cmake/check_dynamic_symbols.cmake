@@ -28,8 +28,11 @@ if(NOT DEFINED READELF OR READELF STREQUAL "" OR READELF MATCHES "NOTFOUND$")
     "host; do not silence this by dropping the test.")
 endif()
 
+# -W (wide): without it readelf elides long symbol names to
+# `_ZN10camp_crash1[...]`, which is short enough to still match a substring
+# check and long enough to hide which symbol it is.
 execute_process(
-  COMMAND "${READELF}" --dyn-syms "${EXECUTABLE}"
+  COMMAND "${READELF}" -W --dyn-syms "${EXECUTABLE}"
   OUTPUT_VARIABLE _dynsyms
   ERROR_VARIABLE _err
   RESULT_VARIABLE _rc
@@ -39,15 +42,36 @@ if(NOT _rc EQUAL 0)
   message(FATAL_ERROR "check_dynamic_symbols: readelf failed (${_rc}): ${_err}")
 endif()
 
-# A symbol from CAMP's own sources, not from a linked library: proof that the
+# A symbol DEFINED by CAMP's own sources, not merely referenced: proof that the
 # executable's own symbols were exported.
-if(NOT _dynsyms MATCHES "camp_crash")
+#
+# The "defined" half is load-bearing and was not always so. `crash_handler.cpp`
+# used to be compiled into this executable, so grepping the dynamic symbol table
+# for `camp_crash` proved something. Once the handler moved into libcamp_crash
+# (#217 follow-up), that same grep matched the UNDEFINED import every dynamically
+# linked executable carries — the check would have passed with ENABLE_EXPORTS
+# deleted. So: match on `crash_log_path`, which is `src/camp/crash_log_path.cpp`
+# and stays in the executable precisely because it needs rclcpp, and require at
+# least one match whose section index is not UND.
+#
+# readelf --dyn-syms columns: Num: Value Size Type Bind Vis Ndx Name
+set(_defined_match FALSE)
+string(REPLACE "\n" ";" _dynsym_lines "${_dynsyms}")
+foreach(_line IN LISTS _dynsym_lines)
+  if(_line MATCHES "crash_log_path" AND NOT _line MATCHES "[ \t]UND[ \t]")
+    set(_defined_match TRUE)
+    break()
+  endif()
+endforeach()
+
+if(NOT _defined_match)
   message(FATAL_ERROR
-    "No camp_crash* symbol in the dynamic symbol table of\n"
+    "No DEFINED crash_log_path symbol in the dynamic symbol table of\n"
     "  ${EXECUTABLE}\n"
     "ENABLE_EXPORTS has been dropped from the CCOMAutonomousMissionPlanner "
-    "target (CMakeLists.txt). Crash backtraces (#217) will render as bare "
-    "addresses with no function names.")
+    "target (CMakeLists.txt), or src/camp/crash_log_path.cpp is no longer "
+    "linked into it. Crash backtraces (#217) will render as bare addresses "
+    "with no function names.")
 endif()
 
 message(STATUS "check_dynamic_symbols: OK — CAMP symbols are exported")

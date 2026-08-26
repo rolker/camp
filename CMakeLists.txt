@@ -535,6 +535,27 @@ if(BUILD_TESTING)
       -DREADELF=${READELF_EXECUTABLE}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_dynamic_symbols.cmake)
 
+  # [#217] Coverage guard for the per-thread alternate signal stacks. Every
+  # QtConcurrent::run() site hands work to a pool thread, and a pool thread
+  # without an alternate stack cannot report a stack-overflow SIGSEGV — the
+  # crash class #215 is suspected of. Nothing about adding a new
+  # QtConcurrent::run() call announces that, so this fails the test run when a
+  # worker entry point does not call camp_crash::install_thread_alt_stack().
+  # [#217] The other half of the promotion-to-a-library decision: camp_map links
+  # libcamp_crash, so libcamp_crash's dependencies are camp_map's, and camp_map
+  # is ROS-free by design (ADR-0002). Asserted against the built .so, because
+  # that boundary erodes by one plausible #include at a time.
+  add_test(NAME check_crash_lib_deps
+    COMMAND ${CMAKE_COMMAND}
+      -DLIBRARY=$<TARGET_FILE:camp_crash>
+      -DREADELF=${READELF_EXECUTABLE}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_crash_lib_deps.cmake)
+
+  add_test(NAME check_worker_alt_stacks
+    COMMAND ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_worker_alt_stacks.cmake)
+
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.
   ament_add_gtest(test_color_map
