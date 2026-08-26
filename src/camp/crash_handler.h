@@ -12,11 +12,13 @@
 /// Fixing that means root-level administration of a field host, which is not
 /// available mid-deployment — so CAMP explains its own death instead.
 ///
-/// On a fatal signal or an uncaught exception these handlers write a
-/// backtrace to stderr (which the `ros2 launch` session log captures, right
-/// next to the "process has died" line) and to a pre-opened file, then
-/// re-raise so the exit status is unchanged and the supervisor's respawn
-/// behavior is identical.
+/// On a fatal signal or an uncaught exception these handlers write a backtrace
+/// to a crash file — **created at crash time, never pre-opened** — and then to
+/// stderr, which the `ros2 launch` session log captures right next to the
+/// "process has died" line. The file goes FIRST, deliberately; the reason is on
+/// `emit()` in crash_handler.cpp. The handler then re-raises, so the exit status
+/// is unchanged and the supervisor's respawn behavior is identical — unless the
+/// anti-hang watchdog fires first, in which case the process dies of SIGALRM.
 ///
 /// **This header is deliberately free of ROS and Qt types.** The fd is passed
 /// in rather than resolved internally, so the handlers can be installed and
@@ -48,7 +50,10 @@ namespace camp_crash
 /// name is what correlates a file to the launch log's
 /// `process has died [pid N, ...]` line.
 ///
-/// Must be called after `rclcpp::init()`.
+/// Does **not** require `rclcpp::init()`: it reads `$ROS_LOG_DIR` / `$ROS_HOME`
+/// / `$HOME` directly, which is why a test can call it standalone. `main()`
+/// still calls it after `rclcpp::init()`, so the resolved path reflects the
+/// environment CAMP is actually running under.
 std::string crash_log_path();
 
 /// Install handlers for fatal signals and for `std::terminate`, writing to
