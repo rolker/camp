@@ -46,7 +46,33 @@ int open_crash_log_fd();
 ///
 /// `backtrace_fd` may be -1, in which case output goes to stderr only. Safe to
 /// call once, early in `main()`; calling it again simply reinstalls.
+///
+/// The signal handlers themselves are **process-wide**: a SIGSEGV on any
+/// thread — including the ROS node thread and the executor's workers — is
+/// caught and dumped. The one exception is the *stack-overflow* SIGSEGV, which
+/// needs a per-thread alternate signal stack; see
+/// `install_thread_alt_stack()`.
 void install_crash_handlers(int backtrace_fd);
+
+/// Give the **calling thread** an alternate signal stack.
+///
+/// `install_crash_handlers()` does this for the thread that calls it (the main
+/// thread). `sigaltstack(2)` is a per-thread attribute that `pthread_create(3)`
+/// does not inherit, so every other thread starts without one — and a thread
+/// without an alternate stack cannot report a *stack-overflow* SIGSEGV at all,
+/// because the kernel has no room left on the faulting stack to push a handler
+/// frame. Ordinary faults on such a thread are still reported normally.
+///
+/// Call this as the first statement of any thread CAMP starts itself
+/// (`camp_ros::NodeThread::start()` does).
+///
+/// **Known gap, deliberately not papered over:** threads created *inside*
+/// rclcpp — the `MultiThreadedExecutor` workers and the
+/// `tf2_ros::TransformListener` thread — offer no entry hook, so they have no
+/// alternate stack. An unbounded recursion inside a subscription callback
+/// running on an executor worker therefore still dies silently. Every other
+/// crash class on those threads is covered.
+void install_thread_alt_stack();
 
 } // namespace camp_crash
 

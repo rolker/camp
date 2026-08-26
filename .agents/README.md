@@ -153,7 +153,15 @@ coverage of the Map model's insert/remove/reorder paths).
   directory, **not** the per-run `~/.ros/log/<timestamp>/` subdirectory: files
   land flat and accumulate across runs, and the **`<pid>` is how you correlate a
   crash file to the launch log's "process has died [pid N]" line**. The symbol
-  names are **mangled** — pipe the file through `c++filt` to read it. Don't
+  names are **mangled** — pipe the file through `c++filt` to read it.
+  **One class is only partly covered:** a *stack-overflow* SIGSEGV needs a
+  per-thread alternate signal stack (`sigaltstack(2)` is per-thread and is not
+  inherited across `pthread_create`). CAMP installs one on the main thread and
+  on the ROS node thread, but the `MultiThreadedExecutor` workers and the
+  `tf2_ros::TransformListener` thread are created inside rclcpp with no entry
+  hook — so an unbounded recursion inside a subscription callback still dies
+  silently, with no file and no stderr. Every other crash class on those
+  threads *is* reported. Don't
   expect a core file instead: CAMP is a colcon-built (unpackaged) binary and
   apport discards crashes from unpackaged binaries outright, which is why these
   handlers exist.

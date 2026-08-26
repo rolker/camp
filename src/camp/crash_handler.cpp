@@ -32,10 +32,19 @@ volatile sig_atomic_t g_crash_fd = -1;
 /// output is suppressed, never the exit status.
 volatile sig_atomic_t g_already_dumped = 0;
 
-/// Alternate signal stack. A stack-overflow SIGSEGV leaves no room to push a
-/// handler frame on the faulting stack, so without `sigaltstack` + `SA_ONSTACK`
-/// that entire class of crash stays as silent as it is today.
-char* g_alt_stack = nullptr;
+/// Alternate signal stack — **per thread**. A stack-overflow SIGSEGV leaves no
+/// room to push a handler frame on the faulting stack, so without
+/// `sigaltstack` + `SA_ONSTACK` that class of crash stays as silent as it is
+/// today.
+///
+/// `sigaltstack(2)` is a per-thread attribute and `pthread_create(3)`
+/// explicitly does not inherit it, so installing one on the main thread covers
+/// only the main thread. Hence `thread_local` plus the exported
+/// `install_thread_alt_stack()`, which every thread CAMP creates itself calls
+/// on entry. Threads created inside rclcpp (the `MultiThreadedExecutor`
+/// workers, the `tf2_ros::TransformListener` thread) cannot be hooked and so
+/// have no alternate stack — see the scoping note in `crash_handler.h`.
+thread_local char* t_alt_stack = nullptr;
 
 constexpr int kMaxFrames = 128;
 
@@ -204,6 +213,28 @@ int open_crash_log_fd()
   return fd;  // -1 on failure is fine; the caller installs handlers anyway.
 }
 
+void install_thread_alt_stack()
+{
+  if (t_alt_stack != nullptr)
+    return;
+
+  t_alt_stack = new (std::nothrow) char[SIGSTKSZ];
+  if (t_alt_stack == nullptr)
+    return;
+
+  stack_t ss;
+  ss.ss_sp = t_alt_stack;
+  ss.ss_size = SIGSTKSZ;
+  ss.ss_flags = 0;
+  if (::sigaltstack(&ss, nullptr) != 0)
+  {
+    // Nothing to do about it from here, but don't leave the pointer looking
+    // like a live alternate stack: a later retry on this thread may succeed.
+    delete[] t_alt_stack;
+    t_alt_stack = nullptr;
+  }
+}
+
 void install_crash_handlers(int backtrace_fd)
 {
   g_crash_fd = backtrace_fd;
@@ -223,19 +254,9 @@ void install_crash_handlers(int backtrace_fd)
     (void)::backtrace(warmup, 4);
   }
 
-  // Alternate signal stack, so a stack-overflow SIGSEGV is still catchable.
-  if (g_alt_stack == nullptr)
-  {
-    g_alt_stack = new (std::nothrow) char[SIGSTKSZ];
-    if (g_alt_stack != nullptr)
-    {
-      stack_t ss;
-      ss.ss_sp = g_alt_stack;
-      ss.ss_size = SIGSTKSZ;
-      ss.ss_flags = 0;
-      ::sigaltstack(&ss, nullptr);
-    }
-  }
+  // Alternate stack for the installing (main) thread. Other threads must call
+  // install_thread_alt_stack() themselves — see that function's contract.
+  install_thread_alt_stack();
 
   struct sigaction sa;
   ::memset(&sa, 0, sizeof(sa));
