@@ -18,8 +18,14 @@ if(NOT DEFINED EXECUTABLE OR NOT EXISTS "${EXECUTABLE}")
   message(FATAL_ERROR "check_dynamic_symbols: no executable at '${EXECUTABLE}'")
 endif()
 
-if(NOT DEFINED READELF OR READELF STREQUAL "")
-  message(FATAL_ERROR "check_dynamic_symbols: no readelf")
+# find_program() leaves <VAR>-NOTFOUND when it finds nothing, and that string is
+# what reaches us. Fail here rather than let CMakeLists.txt skip registering the
+# test: a guard that silently does not run is worse than one that fails.
+if(NOT DEFINED READELF OR READELF STREQUAL "" OR READELF MATCHES "NOTFOUND$")
+  message(FATAL_ERROR
+    "check_dynamic_symbols: neither readelf nor llvm-readelf was found, so the "
+    "#217 ENABLE_EXPORTS guard cannot run. Install binutils (or llvm) on this "
+    "host; do not silence this by dropping the test.")
 endif()
 
 execute_process(

@@ -470,18 +470,19 @@ if(BUILD_TESTING)
   # itself, so deleting it from CCOMAutonomousMissionPlanner would otherwise
   # leave every test green while every field crash dump reverted to bare
   # addresses.
+  #
+  # Registered UNCONDITIONALLY. Skipping registration when readelf is missing
+  # left a fully green test run with the guard silently absent, announced only
+  # by a configure-time message(WARNING) that nobody reads in colcon output.
+  # READELF is passed through even as READELF_EXECUTABLE-NOTFOUND; the script
+  # turns that into a FATAL_ERROR, so a host without binutils fails the test
+  # loudly instead of quietly dropping the check.
   find_program(READELF_EXECUTABLE NAMES readelf llvm-readelf)
-  if(READELF_EXECUTABLE)
-    add_test(NAME check_camp_exports
-      COMMAND ${CMAKE_COMMAND}
-        -DEXECUTABLE=$<TARGET_FILE:CCOMAutonomousMissionPlanner>
-        -DREADELF=${READELF_EXECUTABLE}
-        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_dynamic_symbols.cmake)
-  else()
-    message(WARNING
-      "readelf not found: the #217 ENABLE_EXPORTS regression guard "
-      "(check_camp_exports) will not run.")
-  endif()
+  add_test(NAME check_camp_exports
+    COMMAND ${CMAKE_COMMAND}
+      -DEXECUTABLE=$<TARGET_FILE:CCOMAutonomousMissionPlanner>
+      -DREADELF=${READELF_EXECUTABLE}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_dynamic_symbols.cmake)
 
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.
