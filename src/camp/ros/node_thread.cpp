@@ -1,6 +1,8 @@
 #include "node_thread.h"
 #include "ros_context.h"
 #include "tf2_ros/create_timer_ros.h"
+
+#include "crash_handler.h"
 //#include "node_manager.h"
 
 namespace camp_ros
@@ -15,6 +17,12 @@ NodeThread::~NodeThread() = default;
 
 void NodeThread::start()
 {
+  // [#217] sigaltstack() is per-thread and pthread_create() does not inherit
+  // it, so this thread starts without one no matter what main() installed.
+  // Without it a stack-overflow SIGSEGV on the ROS thread is uncatchable and
+  // dies as silently as it did before #217.
+  camp_crash::install_thread_alt_stack();
+
   node_ = std::make_shared<rclcpp::Node>("camp");
 
   buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());

@@ -1,12 +1,13 @@
 #include "graph_thread.h"
 #include "node.h"
+#include "crash_handler.h"
 
 #include <QDebug>
 
 namespace camp
 {
 namespace ros
-{ 
+{
 
 GraphThread::GraphThread(Node* node):
   QThread(node),
@@ -32,6 +33,13 @@ bool GraphThread::keepRunning() const
 
 void GraphThread::run()
 {
+  // [#217] sigaltstack() is per-thread and QThread does not inherit the main
+  // thread's, so this thread starts without one: a stack-overflow SIGSEGV in
+  // the graph walk below would die as silently as it did before #217. Reachable
+  // only because the crash handler now lives in libcamp_crash rather than in
+  // the executable — camp_map_ros could not call into the executable.
+  camp_crash::install_thread_alt_stack();
+
   graph_event_ = node_->get_graph_event();
   while(keepRunning())
   {

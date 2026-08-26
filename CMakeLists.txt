@@ -64,11 +64,46 @@ if (DOXYGEN_FOUND)
     )
 endif()
 
+# ============================================================================
+# libcamp_crash — crash diagnostics; ROS-free, Qt-free                  [#217]
+# ============================================================================
+# The signal / std::terminate handlers, the async-signal-safe emitters, and the
+# per-thread alternate signal stacks.
+#
+# It is a LIBRARY rather than a couple of files in the executable for one
+# reason: `install_thread_alt_stack()` has to be callable from the first
+# statement of every thread CAMP starts, and CAMP starts threads in camp_map and
+# camp_map_ros (GraphThread, every QtConcurrent worker) — which cannot call into
+# the executable that links them. Compiled into the executable only, those
+# threads had no symbol to call and no report for a stack-overflow SIGSEGV.
+#
+# **No ROS, no Qt — neither in the headers nor in what it links.** camp_map is
+# ROS-free by design (ADR-0002) and links this, so a dependency here would
+# become a dependency there. The one ROS-dependent piece of #217 — resolving the
+# ROS logging directory — is deliberately NOT here; it is
+# src/camp/crash_log_path.cpp, in the executable, which already has rclcpp.
+add_library(camp_crash SHARED
+    src/camp_crash/crash_handler.cpp
+)
+
+# PUBLIC: consumers include "crash_handler.h" and call into it, and the
+# executable reaches the header transitively through camp_map_ros.
+target_include_directories(camp_crash PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_crash
+)
+
+install(TARGETS camp_crash
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+
 set(SOURCES
     src/camp/autonomousvehicleproject.cpp
     src/camp/avoid_area.cpp
     src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
+    src/camp/crash_log_path.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
     src/camp/main.cpp
@@ -142,6 +177,22 @@ set (UIS
 
 add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
 
+# [#217] Export the executable's dynamic symbols so backtrace_symbols_fd()
+# resolves function names instead of bare addresses. CMake-portable -rdynamic.
+#
+# Tradeoff, accepted deliberately: this puts every global symbol across CAMP's
+# ~100 translation units into .dynsym, with the executable first in the global
+# search scope — so a later-loaded Qt plugin / GDAL driver / ROS component that
+# happens to define a same-named symbol binds to CAMP's definition instead of
+# its own. Scoping it with a --dynamic-list would avoid that, at the cost of
+# maintaining the list; unresolvable backtraces were judged the worse problem
+# (#215). Revisit here if a plugin ever misbehaves in a way that smells like
+# symbol interposition.
+#
+# Guarded by the check_camp_exports test below — do not delete one without the
+# other.
+set_target_properties(CCOMAutonomousMissionPlanner PROPERTIES ENABLE_EXPORTS ON)
+
 target_include_directories(CCOMAutonomousMissionPlanner
     PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
@@ -181,6 +232,11 @@ target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRAR
 # Web-Mercator scene (camp::map::Map), web_mercator helpers, and raster::RasterLayer
 # resolve from headers rooted at src/camp_map (e.g. "map/map.h"). See ADR-0002.
 target_link_libraries(CCOMAutonomousMissionPlanner camp_map_ros)
+
+# [#217] Reached transitively through camp_map too, but main.cpp and
+# node_thread.cpp include "crash_handler.h" and call it directly, so name it
+# here rather than depend on another target's link line staying as it is.
+target_link_libraries(CCOMAutonomousMissionPlanner camp_crash)
 
 install (TARGETS CCOMAutonomousMissionPlanner
     DESTINATION lib/${PROJECT_NAME})
@@ -312,6 +368,12 @@ target_link_libraries(camp_map
         # dir propagates to every consumer of camp_map headers (the tests
         # include the selector directly).
         marine_autonomy::marine_autonomy
+        # [#217] The QtConcurrent workers in this library call
+        # camp_crash::install_thread_alt_stack() on entry. PUBLIC so the include
+        # dir and the link propagate to camp_map_ros, whose workers call it too.
+        # camp_crash is ROS-free and Qt-free by construction, so this does not
+        # cost camp_map the ROS-free boundary of ADR-0002.
+        camp_crash
     PRIVATE
         # [camp#142 PR2] The interactive colorbar dialog (colormap_range_dialog.cpp)
         # is the only user of the widget, and only in the .cpp — the public header
@@ -427,6 +489,72 @@ if(BUILD_TESTING)
     Qt5::Test
   )
 
+
+  # Crash diagnostics (#217): death tests that raise real fatal signals and an
+  # uncaught exception in forked children, asserting both the preserved exit
+  # status and a backtrace with RESOLVED SYMBOL NAMES.
+  #
+  # ENABLE_EXPORTS is set on this target too, independently of the main
+  # executable — so these tests do NOT guard the flag on
+  # CCOMAutonomousMissionPlanner. The check_camp_exports test below is what
+  # does that.
+  # [#217] Links the SHIPPED libcamp_crash rather than recompiling its source
+  # into the test: since the promotion to a library, the artifact camp_map and
+  # camp_map_ros link is the one that has to work, and a private recompile could
+  # stay green while the installed library did not. crash_log_path.cpp is still
+  # compiled in — it belongs to the executable, not the library.
+  ament_add_gtest(test_crash_handler
+    test/test_crash_handler.cpp
+    src/camp/crash_log_path.cpp
+  )
+  target_include_directories(test_crash_handler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  target_link_libraries(test_crash_handler camp_crash)
+  set_target_properties(test_crash_handler PROPERTIES ENABLE_EXPORTS ON)
+  ament_target_dependencies(test_crash_handler
+    rclcpp
+  )
+
+  # [#217] The actual ENABLE_EXPORTS regression guard: assert that the SHIPPED
+  # executable exports its own symbols. test_crash_handler sets the property on
+  # itself, so deleting it from CCOMAutonomousMissionPlanner would otherwise
+  # leave every test green while every field crash dump reverted to bare
+  # addresses.
+  #
+  # Registered UNCONDITIONALLY. Skipping registration when readelf is missing
+  # left a fully green test run with the guard silently absent, announced only
+  # by a configure-time message(WARNING) that nobody reads in colcon output.
+  # READELF is passed through even as READELF_EXECUTABLE-NOTFOUND; the script
+  # turns that into a FATAL_ERROR, so a host without binutils fails the test
+  # loudly instead of quietly dropping the check.
+  find_program(READELF_EXECUTABLE NAMES readelf llvm-readelf)
+  add_test(NAME check_camp_exports
+    COMMAND ${CMAKE_COMMAND}
+      -DEXECUTABLE=$<TARGET_FILE:CCOMAutonomousMissionPlanner>
+      -DREADELF=${READELF_EXECUTABLE}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_dynamic_symbols.cmake)
+
+  # [#217] Coverage guard for the per-thread alternate signal stacks. Every
+  # QtConcurrent::run() site hands work to a pool thread, and a pool thread
+  # without an alternate stack cannot report a stack-overflow SIGSEGV — the
+  # crash class #215 is suspected of. Nothing about adding a new
+  # QtConcurrent::run() call announces that, so this fails the test run when a
+  # worker entry point does not call camp_crash::install_thread_alt_stack().
+  # [#217] The other half of the promotion-to-a-library decision: camp_map links
+  # libcamp_crash, so libcamp_crash's dependencies are camp_map's, and camp_map
+  # is ROS-free by design (ADR-0002). Asserted against the built .so, because
+  # that boundary erodes by one plausible #include at a time.
+  add_test(NAME check_crash_lib_deps
+    COMMAND ${CMAKE_COMMAND}
+      -DLIBRARY=$<TARGET_FILE:camp_crash>
+      -DREADELF=${READELF_EXECUTABLE}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_crash_lib_deps.cmake)
+
+  add_test(NAME check_worker_alt_stacks
+    COMMAND ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_worker_alt_stacks.cmake)
 
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.

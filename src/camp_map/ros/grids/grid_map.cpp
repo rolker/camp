@@ -1,4 +1,5 @@
 #include "grid_map.h"
+#include "crash_handler.h"
 #include <grid_map_ros/grid_map_ros.hpp>
 #include "../../map_view/web_mercator.h"
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -131,6 +132,13 @@ void GridMap::gridMapCallback(const grid_map_msgs::msg::GridMap &data)
 
 void GridMap::processGridMap(grid_map_msgs::msg::GridMap data, std::string colormap_name)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   GridMapData grid_data;
   if(renderToData(data, colormap_name, grid_data))
     emit newGridData(grid_data);

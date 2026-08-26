@@ -109,6 +109,23 @@ depend on `ros/`); the PR2 inversion that achieved this — `Map` exposing
 `toolsManager()` so the application layer (not the core) attaches the ROS node
 (`map.cpp:26-30`) — is the mechanism that keeps it acyclic.
 
+> **Addendum (#217, 2026-08-26)** — `libcamp_map` gained a third library
+> below it: `libcamp_crash`, the crash-diagnostics handler. It is PUBLIC-linked
+> because `install_thread_alt_stack()` has to be callable from the first
+> statement of every worker thread `camp_map` and `camp_map_ros` start, and a
+> library cannot call into the executable that links it.
+>
+> This does **not** move the ROS boundary described above. `libcamp_crash` is
+> ROS-free, Qt-free and GDAL-free by construction — it links libc and libstdc++
+> only — and the one piece of #217 that needs `rclcpp` (resolving the ROS
+> logging directory) is deliberately kept out of it, in
+> `src/camp/crash_log_path.cpp` in the executable. Because that boundary is now
+> load-bearing for a second library rather than a matter of intent, it is
+> asserted against the built `.so` by the `check_crash_lib_deps` CTest rather
+> than left to review. This addendum records a consequence of #217; it does not
+> revise the decision above.
+
+
 ## Migration strategy: the `geoToPixel` shim
 
 The blast radius of the projection swap is `GeoGraphicsItem::geoToPixel`, called
