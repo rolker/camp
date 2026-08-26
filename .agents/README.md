@@ -143,6 +143,20 @@ coverage of the Map model's insert/remove/reorder paths).
   in `main.cpp` — otherwise it persists to "Unknown Organization" and splits its
   state across stores. These names must stay stable across releases so the
   persisted chart list / layer settings survive upgrades.
+- **Where to find a crash backtrace (#217):** CAMP installs its own handlers for
+  fatal signals (`SIGSEGV`/`SIGABRT`/`SIGBUS`/`SIGFPE`/`SIGILL`) and for
+  `std::terminate` (uncaught exception, and the "pure virtual method called"
+  case). Each writes a backtrace to **stderr** — so it lands in the `ros2 launch`
+  session log right next to the `process has died [pid N, exit code -11]` line —
+  **and** to a file at **`<base ROS log dir>/camp_crash_<pid>.log`**, i.e.
+  `~/.ros/log/camp_crash_<pid>.log` by default. Note this is the *base* log
+  directory, **not** the per-run `~/.ros/log/<timestamp>/` subdirectory: files
+  land flat and accumulate across runs, and the **`<pid>` is how you correlate a
+  crash file to the launch log's "process has died [pid N]" line**. The symbol
+  names are **mangled** — pipe the file through `c++filt` to read it. Don't
+  expect a core file instead: CAMP is a colcon-built (unpackaged) binary and
+  apport discards crashes from unpackaged binaries outright, which is why these
+  handlers exist.
 - **Shutdown ordering:** `executor.spin()` only returns once `rclcpp::shutdown()`
   is called. Anything that `quit()`/`wait()`s the spin `QThread` (e.g.
   `~ROSLink`) must call `rclcpp::shutdown()` first or it deadlocks on

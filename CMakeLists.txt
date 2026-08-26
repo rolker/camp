@@ -72,6 +72,7 @@ set(SOURCES
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
     src/camp/main.cpp
+    src/camp/crash_handler.cpp
     src/camp/mainwindow.cpp
     src/camp/collision_monitor/collision_monitor.cpp
     src/camp/collision_monitor/collision_monitor_manager.cpp
@@ -141,6 +142,11 @@ set (UIS
 )
 
 add_executable(CCOMAutonomousMissionPlanner ${SOURCES} ${RESOURCES} ${UIS})
+
+# [#217] Export the executable's dynamic symbols so backtrace_symbols_fd()
+# resolves function names instead of bare addresses. CMake-portable -rdynamic.
+set_target_properties(CCOMAutonomousMissionPlanner PROPERTIES ENABLE_EXPORTS ON)
+
 
 target_include_directories(CCOMAutonomousMissionPlanner
     PRIVATE
@@ -427,6 +433,24 @@ if(BUILD_TESTING)
     Qt5::Test
   )
 
+
+  # Crash diagnostics (#217): death tests that raise real fatal signals and an
+  # uncaught exception in forked children, asserting both the preserved exit
+  # status and a backtrace with RESOLVED SYMBOL NAMES. ENABLE_EXPORTS is set on
+  # this target too — without it backtrace_symbols_fd() emits bare addresses
+  # and the symbol assertion (the regression guard for the flag on the main
+  # executable) could not work here.
+  ament_add_gtest(test_crash_handler
+    test/test_crash_handler.cpp
+    src/camp/crash_handler.cpp
+  )
+  target_include_directories(test_crash_handler PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  set_target_properties(test_crash_handler PROPERTIES ENABLE_EXPORTS ON)
+  ament_target_dependencies(test_crash_handler
+    rclcpp
+  )
 
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.

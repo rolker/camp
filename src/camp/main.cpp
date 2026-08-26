@@ -5,9 +5,23 @@
 
 #include "rclcpp/rclcpp.hpp"
 
+#include "crash_handler.h"
+
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
+
+    // [#217] Install crash diagnostics before anything else can fault.
+    //
+    // Ordering matters and is deliberate: after rclcpp::init() because the
+    // crash-log path comes from the ROS logging directory, and before
+    // QApplication so a fault during UI construction is still reported.
+    // Neither claims these signals — rclcpp::init() takes only SIGINT/SIGTERM,
+    // and Qt5 installs no fatal handlers — so there is nothing to conflict
+    // with. A failure to open the file is not fatal: handlers still install
+    // and write to stderr, which the ros2 launch log captures.
+    camp_crash::install_crash_handlers(camp_crash::open_crash_log_fd());
+
     //ros::init(argc,argv, "CCOMAutonomousMissionPlanner", ros::init_options::AnonymousName);
     QApplication a(argc, argv);
     // [#59 ADR-0003] Name the QSettings store explicitly. Without this the

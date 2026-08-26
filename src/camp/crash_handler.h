@@ -1,0 +1,53 @@
+#ifndef CAMP_CRASH_HANDLER_H
+#define CAMP_CRASH_HANDLER_H
+
+/// Crash diagnostics for CAMP (#217).
+///
+/// CAMP is built by colcon, so it is not a packaged binary, and apport
+/// discards crashes from unpackaged binaries outright
+/// (`/usr/share/apport/apport:1136`). No core is ever written, and the
+/// `ros2 launch` log records only `process has died [pid N, exit code -11]`.
+/// Fixing that means root-level administration of a field host, which is not
+/// available mid-deployment — so CAMP explains its own death instead.
+///
+/// On a fatal signal or an uncaught exception these handlers write a
+/// backtrace to stderr (which the `ros2 launch` session log captures, right
+/// next to the "process has died" line) and to a pre-opened file, then
+/// re-raise so the exit status is unchanged and the supervisor's respawn
+/// behavior is identical.
+///
+/// **This header is deliberately free of ROS and Qt types.** The fd is passed
+/// in rather than resolved internally, so the handlers can be installed and
+/// exercised by a test without `rclcpp::init()` or a `QApplication`.
+
+namespace camp_crash
+{
+
+/// Resolve the crash-log path and open it.
+///
+/// Returns a writable fd, or -1 if the log directory cannot be resolved or the
+/// file cannot be created. **-1 is not an error to act on**: the caller still
+/// installs the handlers, which then write to stderr only. A missing log
+/// directory must never keep CAMP from starting.
+///
+/// The path is `<base ROS logging dir>/camp_crash_<pid>.log` — where the base
+/// dir is `$ROS_LOG_DIR`, else `$ROS_HOME/log`, else `~/.ros/log`. Note this
+/// is the *base* directory, NOT the per-run `~/.ros/log/<timestamp>/` that
+/// `ros2 launch` creates: launch never exports that path to child processes
+/// unless the launch file uses `SetROSLogDir`, and camp_launch.py does not.
+/// So crash files land flat and accumulate across runs; the `<pid>` in the
+/// name is what correlates a file to the launch log's
+/// `process has died [pid N, ...]` line.
+///
+/// Must be called after `rclcpp::init()`.
+int open_crash_log_fd();
+
+/// Install handlers for fatal signals and for `std::terminate`.
+///
+/// `backtrace_fd` may be -1, in which case output goes to stderr only. Safe to
+/// call once, early in `main()`; calling it again simply reinstalls.
+void install_crash_handlers(int backtrace_fd);
+
+} // namespace camp_crash
+
+#endif
