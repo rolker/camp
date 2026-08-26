@@ -72,3 +72,27 @@ unrelated to crash handling). None of these need to land first or wait on
 - [ ] Add a regression test that deliberately triggers SIGSEGV/SIGABRT/an uncaught exception and asserts backtrace output + preserved exit status.
 - [ ] Update `.agents/README.md` with the new crash-diagnostics behavior (destination, trigger conditions) in the same PR.
 - [ ] Decide explicitly (and note the decision) whether this warrants a camp ADR, rather than silently skipping ADR-0001.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-08-26 00:38 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-217/plan.md` at `547b9ac`
+**Branch**: feature/issue-217 at `547b9ac`
+**Phases**: single
+
+Both open design questions from the Issue Review were settled by the operator
+before planning (not re-litigated): backtrace destination is both stderr and a
+dedicated per-run file (`<rclcpp::get_logging_directory()>/camp_crash_<pid>.log`,
+verified against the real jazzy `rclcpp::get_logging_directory()` API rather
+than assumed), and no ADR is warranted (diagnostics, not an architecture
+decision) — the skip is recorded explicitly in the plan's Context and ADR
+Compliance sections rather than silently omitted. The other three Issue Review
+action items are folded into the plan: `write()`-only output across all
+handler paths (not just `backtrace_symbols_fd`), a gtest death-test regression
+covering SIGSEGV/SIGABRT/uncaught-exception (exit status + backtrace content),
+and a `.agents/README.md` Common Pitfalls update in the same PR.
+
+### Open questions
+- [ ] No open questions — plan is review-plan-ready.
