@@ -111,6 +111,13 @@ TEST(CrashHandler, SigsegvDumpsBacktraceAndPreservesExitStatus)
     << "no resolved symbol in backtrace — is ENABLE_EXPORTS still set on the "
        "target?\n" << dump;
 
+  // This SIGSEGV was raise()d, not faulted: si_code is SI_TKILL (-6), so the
+  // siginfo union holds si_pid/si_uid and there is no fault address to print.
+  // Gating si_addr on the signal number alone printed (uid << 32 | pid) here.
+  EXPECT_NE(dump.find("[si_code=-6"), std::string::npos) << dump;
+  EXPECT_EQ(dump.find("si_addr"), std::string::npos)
+    << "si_addr printed for a raise()d SIGSEGV\n" << dump;
+
   ::remove(path.c_str());
 }
 
@@ -129,6 +136,19 @@ TEST(CrashHandler, SigabrtDumpsBacktraceAndPreservesExitStatus)
   const std::string dump = read_file(path);
   EXPECT_NE(dump.find("SIGABRT"), std::string::npos) << dump;
   EXPECT_NE(dump.find("camp_test_crashing_frame"), std::string::npos) << dump;
+
+  // si_code must render SIGNED. raise() goes through tgkill(2), so the kernel
+  // reports SI_TKILL (-6) — which an unsigned formatter printed as
+  // 18446744073709551610 on every abort-path dump, i.e. on exactly the #207
+  // abort-on-close class this feature exists to diagnose.
+  EXPECT_NE(dump.find("[si_code=-6"), std::string::npos)
+    << "si_code not rendered as a signed value\n" << dump;
+
+  // ...and si_addr must NOT appear: at si_code <= 0 the siginfo union holds
+  // si_pid/si_uid, not a fault address.
+  EXPECT_EQ(dump.find("si_addr"), std::string::npos)
+    << "si_addr printed for a user-generated signal — that is (uid << 32 | pid)"
+       ", not an address\n" << dump;
 
   ::remove(path.c_str());
 }

@@ -143,6 +143,26 @@ void emit_ulong(unsigned long value, int base)
   emit(p, static_cast<size_t>(buf + sizeof(buf) - p));
 }
 
+/// Async-signal-safe SIGNED decimal formatter.
+///
+/// `siginfo_t::si_code` is an `int` and is **negative** for every
+/// user-generated signal (`SI_USER` 0, `SI_QUEUE` -1, `SI_TKILL` -6). Rendering
+/// it through `emit_ulong()` printed `18446744073709551610` for exactly the
+/// abort-on-close class (#207) this feature targets.
+void emit_long(long value)
+{
+  if (value < 0)
+  {
+    emit("-");
+    // Negate in unsigned space: -LONG_MIN is undefined in signed arithmetic.
+    emit_ulong(0UL - static_cast<unsigned long>(value), 10);
+  }
+  else
+  {
+    emit_ulong(static_cast<unsigned long>(value), 10);
+  }
+}
+
 /// Backtrace to both destinations. `backtrace_symbols_fd` writes straight to
 /// an fd; `backtrace_symbols` would allocate, which is not safe here — heap
 /// corruption is a suspected cause of the crashes this exists to diagnose
@@ -203,8 +223,16 @@ extern "C" void on_fatal_signal(int sig, siginfo_t* info, void* /*ucontext*/)
     if (info != nullptr)
     {
       emit(" [si_code=");
-      emit_ulong(static_cast<unsigned long>(info->si_code), 10);
-      if (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL)
+      emit_long(static_cast<long>(info->si_code));
+
+      // si_addr is a fault address ONLY when the kernel generated the signal,
+      // which is what `si_code > 0` means. At si_code <= 0 the signal came
+      // from kill()/raise()/sigqueue() and the same union member holds
+      // si_pid/si_uid — printing that rendered (uid << 32 | pid) as a
+      // plausible-looking fault address on every raise()d SIGSEGV. Gating on
+      // the signal number alone could not tell the two apart.
+      if (info->si_code > 0 &&
+          (sig == SIGSEGV || sig == SIGBUS || sig == SIGFPE || sig == SIGILL))
       {
         emit(" si_addr=0x");
         emit_ulong(reinterpret_cast<unsigned long>(info->si_addr), 16);
