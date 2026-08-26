@@ -1,4 +1,5 @@
 #include "gggs_tile_layer.h"
+#include "crash_handler.h"
 
 #include "gggs_tile.h"
 #include "gggs_tile_util.h"
@@ -543,6 +544,13 @@ void GggsTileLayer::loadTiles()
 
 void GggsTileLayer::loadTilesWorker(int level, QRectF viewport)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   // [camp#102] Off-thread: GDAL RasterIO only — NEVER touch GL here (texture()/
   // allocateStorage stay on the paint path). The abort check is between tiles
   // (whole-tile granularity, vs RasterLayer's scanline granularity). loadPixels()

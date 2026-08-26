@@ -1,4 +1,5 @@
 #include "raster_layer.h"
+#include "crash_handler.h"
 #include <gdal_priv.h>
 #include <gdalwarper.h>
 #include "../map_view/web_mercator.h"
@@ -180,6 +181,13 @@ void RasterLayer::loadFile(const QString& filename)
 
 RasterLayer::LoadResult RasterLayer::loadAndReprojectFile(const QString& filename)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   LoadResult result;
 
   // [#96] RAII-close both GDAL handles so every return path — normal, the

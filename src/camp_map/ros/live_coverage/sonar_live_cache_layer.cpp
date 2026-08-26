@@ -1,4 +1,5 @@
 #include "sonar_live_cache_layer.h"
+#include "crash_handler.h"
 
 #include "../node.h"
 #include "../../map_view/web_mercator.h"
@@ -96,6 +97,13 @@ QRectF indexSceneRect(const gggs::GridIndex& index)
 std::vector<SonarLiveTile> reloadTilesFromCache(std::vector<gggs::GridIndex> indices,
                                                 std::string dir, std::uint8_t level_value)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   namespace fs = std::filesystem;
   const gggs::Level level(level_value);
   std::vector<SonarLiveTile> loaded;
@@ -118,6 +126,13 @@ std::vector<SonarLiveTile> reloadTilesFromCache(std::vector<gggs::GridIndex> ind
 // Atomic temp+rename for crash safety only (ADR-0006 D2).
 void writeTileToCache(SonarLiveTile tile, std::string dir)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   namespace fs = std::filesystem;
   std::error_code ec;
   fs::create_directories(dir, ec);

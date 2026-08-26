@@ -1,4 +1,5 @@
 #include "polygon.h"
+#include "crash_handler.h"
 #include "../node.h"
 #include "../../map_view/web_mercator.h"
 #include <QPen>
@@ -69,6 +70,13 @@ void Polygon::polygonCallback(const geometry_msgs::msg::PolygonStamped::SharedPt
 
 void Polygon::processPolygon(const geometry_msgs::msg::PolygonStamped::SharedPtr data)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   PolygonData polygon_data;
 
   // [camp#213] The destructor joins this worker, and a destructor is implicitly

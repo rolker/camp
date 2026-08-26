@@ -1,4 +1,5 @@
 #include "occupancy_grid.h"
+#include "crash_handler.h"
 
 #include <array>
 
@@ -132,6 +133,13 @@ void OccupancyGrid::occupancyGridCallback(const nav_msgs::msg::OccupancyGrid &gr
 
 void OccupancyGrid::processOccupancyGrid(const nav_msgs::msg::OccupancyGrid &grid)
 {
+  // [#217] First statement of a QtConcurrent worker: give this pool thread an
+  // alternate signal stack, without which a stack-overflow SIGSEGV here cannot
+  // be reported at all. Idempotent — a thread_local pointer test — so the pool
+  // pays for it once per thread, not once per task. Guarded by the
+  // check_worker_alt_stacks test; see camp_crash/crash_handler.h.
+  camp_crash::install_thread_alt_stack();
+
   OccupancyGridData data;
   // [camp#208] Indexed8, not ARGB32: a quarter of the memory for identical output,
   // since the source is one signed byte per cell and the palette has 256 entries.
