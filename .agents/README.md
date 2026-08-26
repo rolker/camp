@@ -183,7 +183,11 @@ coverage of the Map model's insert/remove/reorder paths).
   (`ENABLE_EXPORTS`, without which every backtrace degrades to bare addresses).
   **If you add a `QtConcurrent::run()` call, its worker's first statement is
   `camp_crash::install_thread_alt_stack();`** — the guard will tell you, but the
-  cost of finding out in the field is a crash that is never reported.
+  cost of finding out in the field is a crash that is never reported. Each
+  thread's 64 KB stack is released at thread exit (`sigaltstack(SS_DISABLE)`
+  *first*, then free — never the other way round), which matters because
+  `QThreadPool` expires an idle worker after 30 s and builds a new one for the
+  next task.
 - **Crash reports, cores, and apport (#217):** **No crash report is filed**,
   ever: CAMP is a colcon-built (unpackaged) binary, and
   apport's `likely_packaged()` branch discards the report for those. A **core

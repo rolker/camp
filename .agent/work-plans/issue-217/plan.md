@@ -457,6 +457,25 @@ else. Recorded under Follow-ups with the two mechanisms that could close it and
 why the available one (a `pthread_create` interposer) is a worse trade than the
 gap.
 
+**A leak the promotion turned into a real one.** The per-thread alternate
+stacks were deliberately leaked, on the reasoning that a `thread_local`
+destructor runs while the thread can still take a signal, so freeing there would
+hand the kernel a dangling alternate stack. That reasoning is sound but
+incomplete — `sigaltstack(SS_DISABLE)` first, and free only if the kernel
+accepted it, closes the window — and the leak was affordable only while every
+caller was a thread that lives as long as the process. It is not now: most
+callers are QtConcurrent workers, and `QThreadPool` expires an idle thread after
+30 s and creates a fresh one for the next task (measured on this host:
+`expiryTimeout()` 30000 ms, `maxThreadCount()` 16). Bursty tile and raster work
+across a day-long deployment churns through thousands of threads at 64 KB each.
+`AltStack` now releases in that order, and `AltStacksAreReleasedWhenTheirThreadExits` pins it over 2000 short-lived threads.
+
+That test is worth a note of its own: written first against **RSS**, it passed
+with the leak deliberately reintroduced. An alternate signal stack is allocated
+and never written to unless a signal is actually delivered onto it, so its pages
+never become resident and RSS measures nothing. It reads **virtual** size, and
+was then verified to fail with the leak and pass without it.
+
 **Three guards, each verified non-vacuous by making it fail.**
 
 - `check_worker_alt_stacks` (new) — fails the test run when a thread entry point

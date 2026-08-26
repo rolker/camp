@@ -423,6 +423,60 @@ TEST(CrashHandler, EmptyCrashPathIsStderrOnly)
     ::testing::KilledBySignal(SIGABRT), "CAMP std::terminate");
 }
 
+namespace
+{
+
+/// Virtual size in bytes, from /proc/self/statm (field 1, in pages).
+///
+/// Virtual, not RESIDENT: an alternate signal stack is allocated and then never
+/// written to unless a signal is actually delivered onto it, so the pages stay
+/// untouched and never become resident. An RSS-based version of this test
+/// passed against a deliberately reintroduced leak — it measured nothing.
+std::size_t virtual_bytes()
+{
+  std::ifstream statm("/proc/self/statm");
+  std::size_t total_pages = 0;
+  statm >> total_pages;
+  return total_pages * static_cast<std::size_t>(::sysconf(_SC_PAGESIZE));
+}
+
+} // namespace
+
+TEST(CrashHandler, AltStacksAreReleasedWhenTheirThreadExits)
+{
+  // [#217] The alternate stacks used to be leaked deliberately, which was
+  // affordable while the only callers were threads that live as long as the
+  // process. They are not: most callers are now QtConcurrent workers, and
+  // QThreadPool expires an idle thread after 30 s and creates a fresh one for
+  // the next task. A day of bursty tile work would churn through thousands of
+  // threads at 64 KB apiece.
+  //
+  // Threshold, not equality: the allocator keeps arenas and per-thread caches,
+  // and each thread's own stack is mapped and unmapped around this. What this
+  // catches is the linear growth a leak produces — 2000 leaked stacks is at
+  // least 128 MB, and 32 MB is comfortably below that and above the noise.
+  constexpr int kThreads = 2000;
+  constexpr std::size_t kMaxGrowthBytes = 32u * 1024u * 1024u;
+
+  // Warm up first: the first few threads pull in allocator arenas and TLS
+  // machinery that would otherwise be counted as growth.
+  for (int i = 0; i < 8; ++i)
+    std::thread([]{ camp_crash::install_thread_alt_stack(); }).join();
+
+  const std::size_t before = virtual_bytes();
+
+  for (int i = 0; i < kThreads; ++i)
+    std::thread([]{ camp_crash::install_thread_alt_stack(); }).join();
+
+  const std::size_t after = virtual_bytes();
+  const std::size_t growth = (after > before) ? (after - before) : 0u;
+
+  EXPECT_LT(growth, kMaxGrowthBytes)
+    << "virtual size grew by " << (growth / (1024 * 1024)) << " MB across " << kThreads
+    << " short-lived threads; the per-thread alternate signal stacks are not "
+       "being released at thread exit (crash_handler.cpp, AltStack).";
+}
+
 TEST(CrashHandler, CrashLogPathIsUnderTheRosLoggingDirectory)
 {
   // crash_log_path() had no coverage at all, including the documented

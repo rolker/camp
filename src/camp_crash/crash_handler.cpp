@@ -123,15 +123,76 @@ bool claim_dump()
 /// internal threads, which offer no entry hook; see the enumerated gap on
 /// `install_thread_alt_stack()` in `crash_handler.h`.
 ///
-/// **Deliberately leaked at thread exit** — do NOT "fix" this into a
-/// `unique_ptr` or give it a destructor. The kernel keeps the `ss_sp` pointer
-/// this hands it for the lifetime of the thread, and a `thread_local`
-/// destructor runs while the thread is still alive and still able to take a
-/// signal. Freeing there would leave the kernel a dangling alternate stack — a
-/// use-after-free reachable only from a signal handler, i.e. the least
-/// debuggable kind there is. The leak is one buffer per CAMP-started thread,
-/// reclaimed at process exit.
-thread_local char* t_alt_stack = nullptr;
+/// **Released at thread exit, and the ORDER is the whole point.** The kernel
+/// keeps the `ss_sp` pointer this hands it for as long as the thread has an
+/// alternate stack, and a `thread_local` destructor runs while the thread is
+/// still alive and still able to take a signal — so a plain `unique_ptr` here
+/// would leave the kernel a dangling alternate stack, a use-after-free
+/// reachable only from a signal handler. `sigaltstack(SS_DISABLE)` first, and
+/// free only if the kernel accepted it, removes that: after it returns, nothing
+/// can be delivered onto this buffer. A signal arriving in the window between
+/// the two costs the *stack-overflow* coverage on a thread that is exiting
+/// anyway — the handler simply runs on the normal stack — and never a write
+/// into freed memory.
+///
+/// It was a deliberate leak until #217's round-3 pass, on the reasoning above
+/// minus the `SS_DISABLE` step, and that was affordable only while the callers
+/// were long-lived threads. They are not any more: `QThreadPool` is where most
+/// of these now come from, and its threads **expire after 30 s idle and are
+/// recreated on the next task** (measured on this host: `expiryTimeout()` 30000
+/// ms, `maxThreadCount()` 16). Bursty tile and raster work over a day-long
+/// deployment would churn through thousands of pool threads, at 64 KB each — a
+/// diagnostics feature quietly eating an operator station's memory is not a
+/// trade worth making for it.
+///
+/// Residual, accepted and small: on the main thread this destructor runs at
+/// process exit, so a stack-overflow SIGSEGV during static destruction — after
+/// this point — is not reported. Every other crash class still is; the
+/// `sigaction()` handlers are process-wide and outlive this.
+class AltStack
+{
+ public:
+  AltStack() = default;
+
+  ~AltStack()
+  {
+    if (stack_ == nullptr)
+      return;
+
+    stack_t ss;
+    ss.ss_sp = nullptr;
+    ss.ss_size = 0;
+    ss.ss_flags = SS_DISABLE;
+    if (::sigaltstack(&ss, nullptr) != 0)
+      return;   // kernel still holds the pointer: leak it rather than free under it
+
+    delete[] stack_;
+    stack_ = nullptr;
+  }
+
+  AltStack(const AltStack&) = delete;
+  AltStack& operator=(const AltStack&) = delete;
+
+  bool installed() const { return stack_ != nullptr; }
+
+  /// Takes ownership of `stack`, which must be the buffer just handed to
+  /// `sigaltstack()`.
+  void adopt(char* stack) { stack_ = stack; }
+
+  /// Hand the buffer back — for the failure path, where `sigaltstack()` refused
+  /// it and the kernel therefore never saw the pointer.
+  char* release()
+  {
+    char* const stack = stack_;
+    stack_ = nullptr;
+    return stack;
+  }
+
+ private:
+  char* stack_ = nullptr;
+};
+
+thread_local AltStack t_alt_stack;
 
 constexpr int kMaxFrames = 128;
 
@@ -398,7 +459,7 @@ void on_terminate()
 
 void install_thread_alt_stack()
 {
-  if (t_alt_stack != nullptr)
+  if (t_alt_stack.installed())
     return;
 
   // SIGSTKSZ is sysconf(_SC_SIGSTKSZ) on glibc >= 2.34, i.e. a function call
@@ -422,8 +483,8 @@ void install_thread_alt_stack()
   // being reported, which is exactly what #217 exists to end.
   const long tid = static_cast<long>(::syscall(SYS_gettid));
 
-  t_alt_stack = new (std::nothrow) char[stack_size];
-  if (t_alt_stack == nullptr)
+  char* const stack = new (std::nothrow) char[stack_size];
+  if (stack == nullptr)
   {
     ::fprintf(stderr,
               "[camp #217] could not allocate a %zu-byte alternate signal stack "
@@ -432,8 +493,13 @@ void install_thread_alt_stack()
     return;
   }
 
+  // Adopt BEFORE the syscall, not after: if sigaltstack() succeeds and this
+  // thread is killed before the assignment, the destructor has to know about the
+  // buffer the kernel is now holding. The failure path below takes it back.
+  t_alt_stack.adopt(stack);
+
   stack_t ss;
-  ss.ss_sp = t_alt_stack;
+  ss.ss_sp = stack;
   ss.ss_size = stack_size;
   ss.ss_flags = 0;
   if (::sigaltstack(&ss, nullptr) != 0)
@@ -442,10 +508,10 @@ void install_thread_alt_stack()
               "[camp #217] sigaltstack() failed for thread %ld; a "
               "stack-overflow SIGSEGV on that thread will not be reported\n",
               tid);
-    // Don't leave the pointer looking like a live alternate stack: a later retry
-    // on this thread may succeed.
-    delete[] t_alt_stack;
-    t_alt_stack = nullptr;
+    // The kernel never took the pointer, so freeing it here is safe — and the
+    // thread must not look like it has a live alternate stack: a later call on
+    // this thread may succeed.
+    delete[] t_alt_stack.release();
   }
 }
 
