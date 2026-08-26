@@ -17,8 +17,6 @@
 #include <new>
 #include <string>
 
-#include "rclcpp/logger.hpp"
-
 namespace camp_crash
 {
 
@@ -45,9 +43,10 @@ volatile sig_atomic_t g_crash_fd_owned = 0;
 /// buries the real reports. Worse, on a host with the stock `pid_max` a
 /// recycled pid silently truncated an earlier genuine crash report.
 ///
-/// Resolving the path needs rclcpp and allocates, so that still happens at
-/// install time; only the `open()` moves into the handler, and `open(2)` is on
-/// the async-signal-safe list.
+/// Resolving the path allocates (and, in CAMP's case, asks rcl for the ROS
+/// logging directory — see `src/camp/crash_log_path.h`), so that still happens
+/// at install time, in the caller; only the `open()` moves into the handler,
+/// and `open(2)` is on the async-signal-safe list.
 char g_crash_path[PATH_MAX] = {0};
 volatile sig_atomic_t g_crash_path_valid = 0;
 
@@ -118,9 +117,10 @@ bool claim_dump()
 /// `sigaltstack(2)` is a per-thread attribute and `pthread_create(3)`
 /// explicitly does not inherit it, so installing one on the main thread covers
 /// only the main thread. Hence `thread_local` plus the exported
-/// `install_thread_alt_stack()`. The executable's own sources start exactly one
-/// thread and it calls that on entry; rclcpp's internal threads, camp_map's
-/// `GraphThread` and Qt's QtConcurrent pool do not — see the enumerated gap on
+/// `install_thread_alt_stack()`, which every thread CAMP's own sources start
+/// calls on entry — the ROS node thread, `camp::ros::GraphThread`, and each
+/// QtConcurrent worker entry point. What remains uncovered is rclcpp's own
+/// internal threads, which offer no entry hook; see the enumerated gap on
 /// `install_thread_alt_stack()` in `crash_handler.h`.
 ///
 /// **Deliberately leaked at thread exit** — do NOT "fix" this into a
@@ -395,28 +395,6 @@ void on_terminate()
 }
 
 } // namespace
-
-std::string crash_log_path()
-{
-  std::string dir;
-  try
-  {
-    // Throws rclcpp::exceptions::RCLError if the directory cannot be
-    // resolved. Caught here so a bad log dir degrades to stderr-only rather
-    // than terminating CAMP before it has a window — a diagnostics feature
-    // must not become a startup failure on the hosts it serves.
-    dir = rclcpp::get_logging_directory().string();
-  }
-  catch (const std::exception&)
-  {
-    return std::string();
-  }
-
-  if (dir.empty())
-    return std::string();
-
-  return dir + "/camp_crash_" + std::to_string(::getpid()) + ".log";
-}
 
 void install_thread_alt_stack()
 {

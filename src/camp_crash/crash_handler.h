@@ -36,45 +36,30 @@
 /// is unchanged and the supervisor's respawn behavior is identical — unless the
 /// anti-hang watchdog fires first, in which case the process dies of SIGALRM.
 ///
-/// **This header is deliberately free of ROS and Qt types.** The fd is passed
-/// in rather than resolved internally, so the handlers can be installed and
-/// exercised by a test without `rclcpp::init()` or a `QApplication`.
+/// **This is `libcamp_crash`, and it is deliberately free of ROS and Qt — in
+/// its headers and in what it links.** The fd (or path) is passed in rather
+/// than resolved internally, so the handlers can be installed and exercised by
+/// a test without `rclcpp::init()` or a `QApplication` — and, more to the
+/// point, so `camp_map` can link this library without acquiring a ROS
+/// dependency it does not have (ADR-0002). The one part of #217 that does need
+/// rclcpp — resolving the ROS logging directory — is the application's, in
+/// `src/camp/crash_log_path.h`.
+///
+/// Every thread started by CAMP's own sources, in the executable *and* in
+/// `camp_map` / `camp_map_ros`, calls `install_thread_alt_stack()` on entry.
+/// That is what this library being a library buys: before #217's follow-up
+/// pass the handler was compiled into the executable only, so the map
+/// libraries' threads had no symbol to call.
 
 #include <string>
 
 namespace camp_crash
 {
 
-/// Resolve the crash-log path. Does **not** create the file.
-///
-/// Returns an empty string if the log directory cannot be resolved. **That is
-/// not an error to act on**: the caller still installs the handlers, which then
-/// write to stderr only. A missing log directory must never keep CAMP from
-/// starting.
-///
-/// The file is created by the handler, at crash time, not here. Pre-creating it
-/// left a zero-byte file behind after every clean run, which in a log directory
-/// holding thousands of entries makes a real crash report impossible to spot —
-/// and let a recycled pid truncate an earlier genuine report.
-///
-/// The path is `<base ROS logging dir>/camp_crash_<pid>.log` — where the base
-/// dir is `$ROS_LOG_DIR`, else `$ROS_HOME/log`, else `~/.ros/log`. Note this
-/// is the *base* directory, NOT the per-run `~/.ros/log/<timestamp>/` that
-/// `ros2 launch` creates: launch never exports that path to child processes
-/// unless the launch file uses `SetROSLogDir`, and camp_launch.py does not.
-/// So crash files land flat and accumulate across runs; the `<pid>` in the
-/// name is what correlates a file to the launch log's
-/// `process has died [pid N, ...]` line.
-///
-/// Does **not** require `rclcpp::init()`: it reads `$ROS_LOG_DIR` / `$ROS_HOME`
-/// / `$HOME` directly, which is why a test can call it standalone. `main()`
-/// still calls it after `rclcpp::init()`, so the resolved path reflects the
-/// environment CAMP is actually running under.
-std::string crash_log_path();
-
 /// Install handlers for fatal signals and for `std::terminate`, writing to
-/// stderr and to `crash_log_path` (from `crash_log_path()`, or any path a test
-/// picks). The file is created on the first crash, never before.
+/// stderr and to `crash_log_path` (from the application's `crash_log_path()` in
+/// `src/camp/crash_log_path.h`, or any path a test picks). The file is created
+/// on the first crash, never before.
 ///
 /// An empty path installs the handlers stderr-only. Safe to call more than
 /// once; calling it again simply reinstalls.
@@ -89,9 +74,8 @@ void install_crash_handlers(const std::string& crash_log_path);
 /// The signal handlers themselves are **process-wide**: a SIGSEGV on any
 /// thread — the ROS node thread, the executor's workers, a QtConcurrent worker
 /// — is caught and dumped. The one exception is the *stack-overflow* SIGSEGV,
-/// which needs a per-thread alternate signal stack, and which several of CAMP's
-/// threads do not have; see `install_thread_alt_stack()` for the enumerated
-/// gap.
+/// which needs a per-thread alternate signal stack; see
+/// `install_thread_alt_stack()` for which threads have one.
 void install_crash_handlers(int backtrace_fd);
 
 /// Give the **calling thread** an alternate signal stack.
@@ -103,39 +87,39 @@ void install_crash_handlers(int backtrace_fd);
 /// because the kernel has no room left on the faulting stack to push a handler
 /// frame. Ordinary faults on such a thread are still reported normally.
 ///
-/// Call this as the first statement of any thread started by the
-/// `CCOMAutonomousMissionPlanner` executable's own sources. Today that is
-/// exactly one thread — `camp_ros::NodeThread::start()`
-/// (`src/camp/ros/node_thread.cpp`) — which is also where
-/// `MultiThreadedExecutor::spin()` runs one worker inline, so that worker is
-/// covered too.
+/// **Call this as the first statement of every thread CAMP's own sources
+/// start**, wherever that source lives. Idempotent and cheap — a `thread_local`
+/// pointer test — so calling it on a pooled thread that already has a stack
+/// costs a compare and returns.
 ///
-/// **Known gap, deliberately not papered over and wider than the executable.**
-/// Threads with no alternate signal stack, and therefore no report for a
-/// *stack-overflow* SIGSEGV:
+/// The call sites today. The `check_worker_alt_stacks` test (CMakeLists.txt,
+/// `cmake/check_worker_alt_stacks.cmake`) fails the build's test run if a
+/// `QtConcurrent::run()` site is added without one, so coverage cannot be lost
+/// silently the way it was before this list existed:
 ///
-///  - rclcpp-internal threads: the `MultiThreadedExecutor`'s *spawned* workers
-///    (all but the inline one above) and the `tf2_ros::TransformListener`
-///    thread. Neither offers an entry hook. An unbounded recursion inside a
-///    subscription callback **may** die silently, depending on which worker
-///    picks the callback up.
-///  - `camp::ros::GraphThread` (`src/camp_map/ros/graph_thread.cpp`), live in
-///    the shipped app via `MainWindow`. It *does* have an entry hook —
-///    `run()` — and does not use it.
-///  - Qt's global thread pool: every `QtConcurrent::run()` worker, which is
-///    where the GDAL / raster / tile work implicated in #215 executes.
+///  - `camp_ros::NodeThread::start()` (`src/camp/ros/node_thread.cpp`), which
+///    is also where `MultiThreadedExecutor::spin()` runs one worker inline, so
+///    that worker is covered too.
+///  - `camp::ros::GraphThread::run()` (`src/camp_map/ros/graph_thread.cpp`).
+///  - The entry point of every `QtConcurrent::run()` worker — the GDAL /
+///    raster / tile work implicated in #215. The alt stack is installed on the
+///    *pool* thread that picks the task up and persists for that thread's
+///    life, so a pool thread is covered from its first CAMP task onward.
 ///
-/// The last two are in the `camp_map` / `camp_map_ros` libraries, and this
-/// translation unit is compiled only into the executable and the test target
-/// (CMakeLists.txt:72,458) — not into those installed, exported libraries. So
-/// closing them means promoting the crash handler out of the executable and
-/// into a library, which changes that library's public surface: a design
-/// decision beyond #217's scope, recorded as a follow-up in the work plan
-/// rather than made in passing.
+/// **Remaining gap, deliberately not papered over.** rclcpp's own internal
+/// threads — the `MultiThreadedExecutor`'s *spawned* workers (all but the
+/// inline one above) and the `tf2_ros::TransformListener` thread — have no
+/// alternate signal stack, because rclcpp offers no thread-entry hook to hang
+/// one on. An unbounded recursion inside a subscription callback **may** die
+/// silently, depending on which worker picks the callback up. Closing that
+/// needs an upstream hook (or a `pthread_create` interposer, which is a far
+/// worse trade in a diagnostics feature); it is recorded as a follow-up rather
+/// than papered over.
 ///
 /// **Every other crash class on all of these threads is reported normally** —
 /// the `sigaction()` handlers are process-wide. What is missing is only the one
-/// class that cannot push a handler frame on its own stack.
+/// class that cannot push a handler frame on its own stack, on the rclcpp
+/// threads only.
 void install_thread_alt_stack();
 
 } // namespace camp_crash

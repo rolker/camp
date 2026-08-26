@@ -6,6 +6,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "crash_handler.h"
+#include "crash_log_path.h"
 
 int main(int argc, char *argv[])
 {

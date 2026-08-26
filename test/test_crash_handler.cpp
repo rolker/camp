@@ -35,6 +35,7 @@
 #include <thread>
 
 #include "crash_handler.h"
+#include "crash_log_path.h"
 
 namespace
 {

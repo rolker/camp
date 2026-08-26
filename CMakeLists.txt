@@ -64,12 +64,46 @@ if (DOXYGEN_FOUND)
     )
 endif()
 
+# ============================================================================
+# libcamp_crash — crash diagnostics; ROS-free, Qt-free                  [#217]
+# ============================================================================
+# The signal / std::terminate handlers, the async-signal-safe emitters, and the
+# per-thread alternate signal stacks.
+#
+# It is a LIBRARY rather than a couple of files in the executable for one
+# reason: `install_thread_alt_stack()` has to be callable from the first
+# statement of every thread CAMP starts, and CAMP starts threads in camp_map and
+# camp_map_ros (GraphThread, every QtConcurrent worker) — which cannot call into
+# the executable that links them. Compiled into the executable only, those
+# threads had no symbol to call and no report for a stack-overflow SIGSEGV.
+#
+# **No ROS, no Qt — neither in the headers nor in what it links.** camp_map is
+# ROS-free by design (ADR-0002) and links this, so a dependency here would
+# become a dependency there. The one ROS-dependent piece of #217 — resolving the
+# ROS logging directory — is deliberately NOT here; it is
+# src/camp/crash_log_path.cpp, in the executable, which already has rclcpp.
+add_library(camp_crash SHARED
+    src/camp_crash/crash_handler.cpp
+)
+
+# PUBLIC: consumers include "crash_handler.h" and call into it, and the
+# executable reaches the header transitively through camp_map_ros.
+target_include_directories(camp_crash PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_crash
+)
+
+install(TARGETS camp_crash
+    LIBRARY DESTINATION lib
+    ARCHIVE DESTINATION lib
+    RUNTIME DESTINATION bin)
+
+
 set(SOURCES
     src/camp/autonomousvehicleproject.cpp
     src/camp/avoid_area.cpp
     src/camp/depth_raster.cpp
     src/camp/detailsview.cpp
-    src/camp/crash_handler.cpp
+    src/camp/crash_log_path.cpp
     src/camp/geographicsitem.cpp
     src/camp/georeferenced.cpp
     src/camp/main.cpp
@@ -198,6 +232,11 @@ target_link_libraries(CCOMAutonomousMissionPlanner ${QT_LIBRARIES} ${GDAL_LIBRAR
 # Web-Mercator scene (camp::map::Map), web_mercator helpers, and raster::RasterLayer
 # resolve from headers rooted at src/camp_map (e.g. "map/map.h"). See ADR-0002.
 target_link_libraries(CCOMAutonomousMissionPlanner camp_map_ros)
+
+# [#217] Reached transitively through camp_map too, but main.cpp and
+# node_thread.cpp include "crash_handler.h" and call it directly, so name it
+# here rather than depend on another target's link line staying as it is.
+target_link_libraries(CCOMAutonomousMissionPlanner camp_crash)
 
 install (TARGETS CCOMAutonomousMissionPlanner
     DESTINATION lib/${PROJECT_NAME})
@@ -329,6 +368,12 @@ target_link_libraries(camp_map
         # dir propagates to every consumer of camp_map headers (the tests
         # include the selector directly).
         marine_autonomy::marine_autonomy
+        # [#217] The QtConcurrent workers in this library call
+        # camp_crash::install_thread_alt_stack() on entry. PUBLIC so the include
+        # dir and the link propagate to camp_map_ros, whose workers call it too.
+        # camp_crash is ROS-free and Qt-free by construction, so this does not
+        # cost camp_map the ROS-free boundary of ADR-0002.
+        camp_crash
     PRIVATE
         # [camp#142 PR2] The interactive colorbar dialog (colormap_range_dialog.cpp)
         # is the only user of the widget, and only in the .cpp — the public header
@@ -453,13 +498,19 @@ if(BUILD_TESTING)
   # executable — so these tests do NOT guard the flag on
   # CCOMAutonomousMissionPlanner. The check_camp_exports test below is what
   # does that.
+  # [#217] Links the SHIPPED libcamp_crash rather than recompiling its source
+  # into the test: since the promotion to a library, the artifact camp_map and
+  # camp_map_ros link is the one that has to work, and a private recompile could
+  # stay green while the installed library did not. crash_log_path.cpp is still
+  # compiled in — it belongs to the executable, not the library.
   ament_add_gtest(test_crash_handler
     test/test_crash_handler.cpp
-    src/camp/crash_handler.cpp
+    src/camp/crash_log_path.cpp
   )
   target_include_directories(test_crash_handler PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
   )
+  target_link_libraries(test_crash_handler camp_crash)
   set_target_properties(test_crash_handler PROPERTIES ENABLE_EXPORTS ON)
   ament_target_dependencies(test_crash_handler
     rclcpp
