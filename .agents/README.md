@@ -27,6 +27,7 @@ One ROS 2 / ament_cmake package (`camp`) that builds **one executable** and
 | `CCOMAutonomousMissionPlanner` | executable | `src/camp/` | The deployed product (mission planning + monitoring) |
 | `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,util}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
 | `camp_map_ros` | shared lib | `src/camp_map/ros/` | ROS overlay framework (topic discovery, grids, markers, geometry) built on `camp_map` |
+| `camp_crash` | shared lib | `src/camp_crash/` | Crash diagnostics (#217): fatal-signal / `std::terminate` backtraces + per-thread alternate signal stacks. ROS-free, Qt-free — see the pitfall below |
 
 `CCOMAutonomousMissionPlanner` links the shared libs. The strategy (ADR-0002) was
 that the deployed `camp` **adopts** the shared map framework rather than one app
@@ -43,6 +44,7 @@ as the `test_map_model` gtest.
 src/camp/        deployed app (CCOMAutonomousMissionPlanner): mission model,
                  overlays, ROS link, details/manager widgets
 src/camp_map/    the shared map framework (camp_map / camp_map_ros libraries)
+src/camp_crash/  crash diagnostics (camp_crash library) — no ROS, no Qt
 docs/decisions/  ADRs — read these before touching the scene/layer/depth model
 test/            gtest suites (run via colcon test)
 workspace/       sample data, incl. the 13283 KAP test charts
@@ -156,18 +158,34 @@ coverage of the Map model's insert/remove/reorder paths).
   names are **mangled** — pipe the file through `c++filt` to read it.
   **One class is only partly covered:** a *stack-overflow* SIGSEGV needs a
   per-thread alternate signal stack (`sigaltstack(2)` is per-thread and is not
-  inherited across `pthread_create`). CAMP installs one on the main thread and
-  on the ROS node thread (where `MultiThreadedExecutor::spin()` also runs one
-  worker inline). It does **not** on: rclcpp's *spawned* executor workers and
-  the `tf2_ros::TransformListener` thread (no entry hook), `camp::ros::GraphThread`
-  in `camp_map`, or any `QtConcurrent` worker — which is where the GDAL/raster/
-  tile work runs. So an unbounded recursion inside a subscription callback **may**
-  die silently with no file and no stderr, depending on which worker picks the
+  inherited across `pthread_create` or `QThread`). CAMP installs one on every
+  thread its own sources start: the main thread, the ROS node thread (where
+  `MultiThreadedExecutor::spin()` also runs one worker inline),
+  `camp::ros::GraphThread`, and each `QtConcurrent` worker entry point — the
+  GDAL/raster/tile work. It does **not** on rclcpp's *spawned* executor workers
+  or the `tf2_ros::TransformListener` thread, which offer no entry hook to hang
+  one on. So an unbounded recursion inside a subscription callback **may** die
+  silently with no file and no stderr, depending on which worker picks the
   callback up. Every other crash class on all of those threads *is* reported: the
-  handlers are process-wide. Closing the `camp_map` half means moving the crash
-  handler out of the executable into an exported library — a follow-up, not a
-  #217 change. **No crash
-  report is filed**, ever: CAMP is a colcon-built (unpackaged) binary, and
+  handlers are process-wide.
+- **`libcamp_crash` is ROS-free and Qt-free on purpose (#217):** the handler is
+  its own shared library rather than part of the executable *only* so that the
+  worker threads in `camp_map` / `camp_map_ros` can call
+  `camp_crash::install_thread_alt_stack()` — code in a library cannot call into
+  the executable that links it. Because `camp_map` links it, anything
+  `libcamp_crash` depends on becomes a `camp_map` dependency, and `camp_map` is
+  ROS-free by design (ADR-0002). So the one piece of #217 that needs rclcpp —
+  resolving the ROS logging directory — lives in `src/camp/crash_log_path.cpp`,
+  in the executable. Three CTest guards hold this together, and none of them is
+  optional decoration: `check_crash_lib_deps` (the .so's `DT_NEEDED` list),
+  `check_worker_alt_stacks` (every `QtConcurrent::run()` / `::run()` entry point
+  calls `install_thread_alt_stack()`), and `check_camp_exports`
+  (`ENABLE_EXPORTS`, without which every backtrace degrades to bare addresses).
+  **If you add a `QtConcurrent::run()` call, its worker's first statement is
+  `camp_crash::install_thread_alt_stack();`** — the guard will tell you, but the
+  cost of finding out in the field is a crash that is never reported.
+- **Crash reports, cores, and apport (#217):** **No crash report is filed**,
+  ever: CAMP is a colcon-built (unpackaged) binary, and
   apport's `likely_packaged()` branch discards the report for those. A **core
   file** is a separate question — apport still runs its core-dump callback, so a
   core is written whenever the crashing process's core ulimit is non-zero.

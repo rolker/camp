@@ -276,14 +276,19 @@ exception reaching `std::terminate` (#207's abort-on-close path).
 
 | File | Change |
 |------|--------|
-| `src/camp/crash_handler.h` | New. Declares `install_crash_handlers(const std::string& crash_log_path)` and an `install_crash_handlers(int backtrace_fd)` overload (no ROS/Qt types), `install_thread_alt_stack()`, and `crash_log_path()` (wraps `rclcpp::get_logging_directory()`, returns `""` on failure; creates nothing). |
-| `src/camp/crash_handler.cpp` | New. Signal handler, `set_terminate` handler, `write()`-only output, `backtrace()`/`backtrace_symbols_fd()`. |
+| `src/camp_crash/crash_handler.h` | New. Declares `install_crash_handlers(const std::string& crash_log_path)` and an `install_crash_handlers(int backtrace_fd)` overload (no ROS/Qt types), and `install_thread_alt_stack()`. Header of the `camp_crash` library. |
+| `src/camp_crash/crash_handler.cpp` | New. Signal handler, `set_terminate` handler, `write()`-only output, `backtrace()`/`backtrace_symbols_fd()`, per-thread alternate stacks. No ROS, no Qt. |
+| `src/camp/crash_log_path.h` / `.cpp` | New. `crash_log_path()` — wraps `rclcpp::get_logging_directory()`, returns `""` on failure; creates nothing. Kept in the **executable**, not the library: it is the only rclcpp-dependent piece of #217, and `camp_map` links the library (see Revisions round 3). |
 | `src/camp/main.cpp` | `install_crash_handlers(-1)` before `rclcpp::init()`, then `install_crash_handlers(crash_log_path())` immediately after it and before `QApplication a(...)`. |
-| `CMakeLists.txt` | Add `crash_handler.cpp` to `SOURCES`; add `ENABLE_EXPORTS ON` target property; add `ament_add_gtest(test_crash_handler ...)` and the `check_camp_exports` CTest in the `if(BUILD_TESTING)` section. |
+| `CMakeLists.txt` | Add the `camp_crash` shared library + install rule; link it from `CCOMAutonomousMissionPlanner` and PUBLIC from `camp_map`; add `crash_log_path.cpp` to `SOURCES`; add `ENABLE_EXPORTS ON` target property; add `ament_add_gtest(test_crash_handler ...)` and the `check_camp_exports`, `check_worker_alt_stacks` and `check_crash_lib_deps` CTests in the `if(BUILD_TESTING)` section. |
 | `cmake/check_dynamic_symbols.cmake` | New. `readelf`-based `ENABLE_EXPORTS` regression guard for the shipped executable. |
+| `cmake/check_worker_alt_stacks.cmake` | New. Fails the test run if a thread entry point (`QtConcurrent::run()` site or a `::run()` override) exists without an `install_thread_alt_stack()` call in the same file. |
+| `cmake/check_crash_lib_deps.cmake` | New. Asserts `libcamp_crash`'s `DT_NEEDED` list carries no Qt / ROS / GDAL / `marine_*` entry — the boundary that lets `camp_map` link it (ADR-0002). |
 | `src/camp/ros/node_thread.cpp` | Call `install_thread_alt_stack()` on entry to `NodeThread::start()`. |
-| `test/test_crash_handler.cpp` | New. Death-test coverage for SIGSEGV, SIGABRT, uncaught exception. |
-| `.agents/README.md` | New Common Pitfalls bullet documenting the crash-diagnostics behavior. |
+| `src/camp_map/ros/graph_thread.cpp` | Call `install_thread_alt_stack()` on entry to `GraphThread::run()`. |
+| `src/camp_map/**` (6 files) | Call `install_thread_alt_stack()` as the first statement of each `QtConcurrent` worker entry point: `Polygon::processPolygon`, `OccupancyGrid::processOccupancyGrid`, `GridMap::processGridMap`, `RasterLayer::loadAndReprojectFile`, `GggsTileLayer::loadTilesWorker`, `writeTileToCache`, `reloadTilesFromCache`. |
+| `test/test_crash_handler.cpp` | New. Death-test coverage for SIGSEGV, SIGABRT, uncaught exception. Links the shipped `camp_crash` library rather than recompiling its source. |
+| `.agents/README.md` | New Common Pitfalls bullets documenting the crash-diagnostics behavior and the `libcamp_crash` dependency boundary; `camp_crash` added to the target inventory and repository layout. |
 
 ## Principles Self-Check
 
@@ -414,6 +419,69 @@ was watched to fail with its fix removed.
 | suggestion — apport line citations disagreed with each other and with the installed version | Context, `crash_handler.h`, `.agents/README.md`: cited by branch name plus version |
 | suggestion — the decline's "nothing can collect the benefit" clause | Re-argued above on grounds independent of `ulimit -c` |
 
+### Round 3 — the worker-thread gap, closed rather than carried
+
+Round 2 closed the alternate-signal-stack must-fix by **correcting the
+documentation**: the gap on `camp::ros::GraphThread` and the QtConcurrent pool
+workers was enumerated honestly and recorded as a follow-up, because
+`crash_handler.cpp` was compiled only into the executable and the test target,
+and code in `camp_map` cannot call into the executable that links it. Roland's
+instruction was to close it properly instead, by promoting the handler into a
+library. That is what this round does.
+
+**The design decision the round-2 note said should not be made in passing.**
+`camp_map` is ROS-free by design (ADR-0002), and it now links the crash handler
+— so whatever the handler links, `camp_map` links. `crash_log_path()` was the
+one piece of #217 that needs rclcpp. Three options were weighed:
+
+| Option | Rejected because |
+|---|---|
+| Put the whole handler, rclcpp and all, in the library | Hands `camp_map` a ROS dependency to buy a diagnostics feature. ADR-0002's boundary is the point of that library. |
+| Keep it whole and ROS-free by reimplementing rcl's `ROS_LOG_DIR` / `ROS_HOME` / `~/.ros` precedence | A second copy of upstream policy, free to drift out of agreement with the directory `ros2 launch` actually writes to — a diagnostics feature failing quietly, which is the exact failure mode #217 exists to end. |
+| **Chosen:** split mechanism from policy | `libcamp_crash` = signals, alternate stacks, async-signal-safe emission (libc + libstdc++ only). `src/camp/crash_log_path.cpp` = the rclcpp call, in the executable, which already depends on rclcpp. One namespace, two targets, for a stated dependency reason. |
+
+**What is now covered.** Every thread CAMP's own sources start installs an
+alternate signal stack on entry: the main thread, `NodeThread::start()` (whose
+inline `MultiThreadedExecutor` worker comes with it), `GraphThread::run()`, and
+all seven QtConcurrent worker entry points — including the GDAL/raster/tile work
+implicated in #215, which is where a deep recursion is most plausible. The
+QtConcurrent call is per-*pool-thread*, not per-task: it is idempotent (a
+`thread_local` pointer test), so a pool thread is covered from its first CAMP
+task onward and pays nothing after that.
+
+**What is still not covered, stated as narrowly as it is true.** rclcpp's
+*spawned* executor workers and the `tf2_ros::TransformListener` thread, because
+rclcpp offers no thread-entry hook. Only the stack-overflow SIGSEGV class, only
+on those threads; the `sigaction()` handlers remain process-wide for everything
+else. Recorded under Follow-ups with the two mechanisms that could close it and
+why the available one (a `pthread_create` interposer) is a worse trade than the
+gap.
+
+**Three guards, each verified non-vacuous by making it fail.**
+
+- `check_worker_alt_stacks` (new) — fails the test run when a thread entry point
+  has no `install_thread_alt_stack()` call in its file. Nothing about writing a
+  new `QtConcurrent::run(...)` announces the requirement, and the failure is
+  invisible: it builds, it tests green, and the only symptom is a crash that is
+  never reported, on a boat, months later. Verified by deleting the call from
+  `grid_map.cpp` and watching it fail. Deliberately coarse (a per-file count,
+  not call-graph resolution) and fail-closed; the reasoning is on the script.
+- `check_crash_lib_deps` (new) — asserts `libcamp_crash`'s `DT_NEEDED` list has
+  no Qt / ROS / GDAL / `marine_*` entry, i.e. the boundary this whole split
+  exists to hold. That boundary erodes one plausible `#include` at a time, so it
+  is asserted against the built `.so` rather than trusted. Verified by pointing
+  it at `libcamp_map.so`, which fails with seven entries.
+- `check_camp_exports` (existing, **repaired**) — it looked for any `camp_crash`
+  symbol in the executable's dynamic symbol table as proof that
+  `ENABLE_EXPORTS` was still on. Once the handler moved to a library, those
+  symbols became *undefined imports*, which every dynamically linked executable
+  carries: the guard would have passed with `ENABLE_EXPORTS` deleted. It now
+  requires a **defined** (non-`UND`) `crash_log_path` symbol — the function that
+  stays in the executable precisely because it needs rclcpp. Two related fixes
+  fell out: `readelf` needs `-W`, because without it the symbol name is elided
+  to `_ZN10camp_crash1[...]` — short enough to still satisfy a substring match,
+  long enough to hide which symbol matched. Verified in both directions.
+
 ### Undocumented behavior now recorded
 
 - `install_crash_handlers(const std::string&)` silently drops a crash path
@@ -442,19 +510,25 @@ and stays revisitable if a plugin ever misbehaves.
 
 ## Follow-ups (not #217)
 
-- **Alternate signal stacks for `camp_map`'s threads.** `camp::ros::GraphThread`
-  and the QtConcurrent pool workers have entry hooks but cannot call
-  `camp_crash::install_thread_alt_stack()`, because `crash_handler.cpp` is
-  compiled only into the executable and the test target, never into the
-  installed `camp_map`/`camp_map_ros` libraries. Closing this means promoting
-  the crash handler into one of those libraries and adding it to that library's
-  public surface. Residual exposure until then: *stack-overflow* SIGSEGV only,
-  on those threads; every other crash class is reported.
+- ~~**Alternate signal stacks for `camp_map`'s threads.**~~ **Done in this PR**,
+  round 3 — the handler was promoted into its own `camp_crash` library, which
+  `camp_map` links, so `GraphThread` and every QtConcurrent worker entry point
+  now calls `install_thread_alt_stack()`. See Revisions round 3.
+- **Alternate signal stacks for rclcpp's own threads.** The
+  `MultiThreadedExecutor`'s *spawned* workers and the
+  `tf2_ros::TransformListener` thread still have none, because rclcpp exposes no
+  thread-entry hook. The only mechanisms that would close it are an upstream
+  hook or a `pthread_create` interposer; the latter is a bad trade in a
+  diagnostics feature (it changes thread creation for every library in the
+  process to buy one crash class). Residual exposure: *stack-overflow* SIGSEGV
+  on those threads only; every other crash class is reported, on every thread.
 - **Operator manual.** `docs/camp_user_manual.md` has no troubleshooting
   section; where to find `camp_crash_<pid>.log` and how to read it is operator
   knowledge that belongs there.
 
 ## Estimated Scope
 
-Single PR. Nine files (3 new source/cmake, 1 new test, 5 edited), no cross-repo
-or cross-layer coordination.
+Single PR. Nineteen files (7 new source/cmake, 1 new test, 11 edited), no
+cross-repo or cross-layer coordination. Grew from nine at round 3, when the
+worker-thread gap was closed by promoting the handler into a library instead of
+being carried as a follow-up.
