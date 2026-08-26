@@ -200,8 +200,14 @@ TEST(CrashHandler, CrashOnANonMainThreadIsStillReported)
 
   // Where CAMP actually crashes: ROS callbacks run on the node thread and on
   // the executor's workers, never on the thread that installed the handlers.
-  // sigaction() is process-wide, so this must work — and this is the test that
-  // would have caught the alternate signal stack being main-thread-only.
+  // sigaction() is process-wide, so this must work.
+  //
+  // This covers the process-wide half ONLY. It does NOT cover the alternate
+  // signal stack: the worker raises on a perfectly healthy stack, and
+  // sigaltstack() changes only *where* the handler frame is pushed — so this
+  // test stays green with install_thread_alt_stack() deleted outright
+  // (demonstrated, not assumed). StackOverflowOnANonMainThreadIsReported below
+  // is the alt-stack guard.
   ASSERT_EXIT(
     {
       camp_crash::install_crash_handlers(path);
@@ -217,6 +223,67 @@ TEST(CrashHandler, CrashOnANonMainThreadIsStillReported)
   const std::string dump = read_file(path);
   EXPECT_NE(dump.find("camp_test_thread_crashing_frame"), std::string::npos)
     << dump;
+
+  ::remove(path.c_str());
+}
+
+/// Recurses without a tail call (the recursive call's value is used after it,
+/// and the frame carries a volatile array), so no optimization level can turn
+/// this into a loop. Each frame is ~8 KB, so an 8 MB default thread stack is
+/// exhausted in ~1000 calls — fast and deterministic.
+///
+/// GCC's -Winfinite-recursion fires here, correctly: exhausting the stack is
+/// the entire point. Silenced at this one site rather than repaired, the same
+/// way -Wterminate is above.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winfinite-recursion"
+unsigned long camp_test_overflow_frame(unsigned long depth)
+{
+  volatile char pad[8192];
+  pad[0] = static_cast<char>(depth & 0xffu);
+  const unsigned long deeper =
+    camp_test_overflow_frame(depth + 1u + static_cast<unsigned long>(pad[0]));
+  return deeper + static_cast<unsigned long>(pad[sizeof(pad) - 1]);
+}
+#pragma GCC diagnostic pop
+
+TEST(CrashHandler, StackOverflowOnANonMainThreadIsReported)
+{
+  const std::string path = temp_path("overflow");
+  ::remove(path.c_str());
+
+  // THE alternate-signal-stack guard — the only test here that can fail when
+  // install_thread_alt_stack() is removed from a worker.
+  //
+  // A stack-overflow SIGSEGV is the one crash class that needs sigaltstack():
+  // the kernel has no room left on the faulting stack to push a handler frame,
+  // so without SA_ONSTACK plus a live alternate stack the process dies of
+  // SIGSEGV having produced no output at all. The stderr matcher is what
+  // detects that — KilledBySignal(SIGSEGV) alone passes either way.
+  //
+  // sigaltstack(2) is per-thread and pthread_create(3) does not inherit it, so
+  // what main() installed does nothing for this worker.
+  ASSERT_EXIT(
+    {
+      camp_crash::install_crash_handlers(path);
+      std::thread worker([]
+        {
+          camp_crash::install_thread_alt_stack();
+          camp_test_overflow_frame(0);
+        });
+      worker.join();
+    },
+    ::testing::KilledBySignal(SIGSEGV), "CAMP caught SIGSEGV");
+
+  const std::string dump = read_file(path);
+  EXPECT_NE(dump.find("camp_test_overflow_frame"), std::string::npos)
+    << "no overflowing frame in the dump — did the handler run on the "
+       "alternate stack?\n" << dump;
+  // A genuine kernel-generated fault, unlike the raise()d cases above: si_code
+  // is positive (SEGV_MAPERR / SEGV_ACCERR) and si_addr IS a real address, so
+  // it must be printed. This is the other half of the si_addr gate.
+  EXPECT_NE(dump.find("si_addr=0x"), std::string::npos)
+    << "si_addr suppressed for a real kernel-generated fault\n" << dump;
 
   ::remove(path.c_str());
 }
