@@ -42,17 +42,27 @@ constexpr int kMaxFrames = 128;
 /// `write()` to both destinations. Async-signal-safe: no allocation, no
 /// buffered I/O, no locks. Short writes and errors are ignored deliberately —
 /// there is nothing useful to do about them from inside a crash.
+///
+/// **The durable file is written FIRST, stderr second.** Under `ros2 launch`
+/// stderr is a pipe to the launch parent, and in the abort-on-close class
+/// (#207) that parent may already be gone or no longer draining. Writing
+/// stderr first would mean a full pipe blocks the handler forever (CAMP hangs
+/// instead of dying, and no "process has died" line is ever logged) or SIGPIPE
+/// kills the process mid-handler — either way costing the crash file this
+/// feature exists to produce. The file is a regular fd: it never blocks and
+/// never raises SIGPIPE.
 void emit(const char* text, size_t len)
 {
   if (len == 0)
     return;
-  ssize_t ignored = ::write(STDERR_FILENO, text, len);
-  (void)ignored;
+  ssize_t ignored;
   if (g_crash_fd >= 0)
   {
     ignored = ::write(static_cast<int>(g_crash_fd), text, len);
     (void)ignored;
   }
+  ignored = ::write(STDERR_FILENO, text, len);
+  (void)ignored;
 }
 
 void emit(const char* text)
@@ -64,13 +74,14 @@ void emit(const char* text)
 /// an fd; `backtrace_symbols` would allocate, which is not safe here — heap
 /// corruption is a suspected cause of the crashes this exists to diagnose
 /// (#215).
+/// Durable file first, stderr second, for the reason documented on `emit()`.
 void emit_backtrace()
 {
   void* frames[kMaxFrames];
   const int count = ::backtrace(frames, kMaxFrames);
-  ::backtrace_symbols_fd(frames, count, STDERR_FILENO);
   if (g_crash_fd >= 0)
     ::backtrace_symbols_fd(frames, count, static_cast<int>(g_crash_fd));
+  ::backtrace_symbols_fd(frames, count, STDERR_FILENO);
 }
 
 const char* signal_name(int sig)
@@ -186,6 +197,12 @@ void install_crash_handlers(int backtrace_fd)
 {
   g_crash_fd = backtrace_fd;
   g_already_dumped = 0;
+
+  // Ignore SIGPIPE for the process. Without this, a write to a stderr pipe
+  // whose reader has exited kills CAMP outright — changing the exit status the
+  // supervisor sees from the real fault (-11) to 13, and truncating the dump
+  // partway. CAMP writes nothing else to a pipe it needs SIGPIPE for.
+  ::signal(SIGPIPE, SIG_IGN);
 
   // Force backtrace()'s lazy initialization now. Its first call may dlopen
   // libgcc and allocate — exactly what must not happen inside a handler
