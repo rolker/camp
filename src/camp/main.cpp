@@ -9,7 +9,12 @@
 
 int main(int argc, char *argv[])
 {
-    // [#217] Stderr-only handlers first, before anything at all can fault.
+    // [#217] Stderr-only handlers as the first statement of main() — which is
+    // as early as CAMP can reach, not "before anything at all can fault":
+    // dynamic-library loading, static initialization across ~100 translation
+    // units, Qt resource registration and GDAL driver registration have all
+    // already run by the time control arrives here, and a fault in any of them
+    // is still silent.
     // rclcpp::init() is itself a documented thrower; if it escapes,
     // std::terminate would otherwise run with the default handler and that
     // startup crash would be as silent as it was before #217. The crash-log
