@@ -70,15 +70,24 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      must-fix 1.
 
    Resolve the directory once, after `rclcpp::init()` and before installing
-   the handlers, and pre-open the file with
-   `::open(path, O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0644)` (`O_CLOEXEC` so
-   the fd does not leak into any child process camp spawns). If `open()`
-   fails, fall back to stderr-only — still install the handlers; never abort
-   startup over a missing log dir.
+   the handlers. **Do not pre-open the file** — resolve the *path* at install
+   time and `::open()` it inside the handler, on the first crash
+   (`open(2)` is async-signal-safe). [Local Review Round 1 suggestion:
+   pre-opening with `O_CREAT|O_TRUNC` left a zero-byte
+   `camp_crash_<pid>.log` after every clean run, making "no crash"
+   indistinguishable from "crashed before the first write" in a log directory
+   holding 10k+ entries, and let a recycled pid truncate an earlier genuine
+   report.] Open flags: `O_WRONLY|O_CREAT|O_APPEND|O_CLOEXEC|O_NOFOLLOW`, mode
+   `0600` — `O_APPEND` so a recycled pid appends rather than destroying;
+   `O_CLOEXEC` so the fd does not leak into a child process; `O_NOFOLLOW`
+   because `$ROS_LOG_DIR`/`$ROS_HOME` are environment-controlled and a
+   pre-planted symlink must not redirect the write; `0600` because the dump
+   embeds full install paths. If `open()` fails, the handlers still report to
+   stderr — never abort startup over a log dir.
 
 2b. **Log-dir resolution must never fail startup.** `get_logging_directory()`
    **throws** `rclcpp::exceptions::RCLError` (`rclcpp/logger.hpp:80-90`).
-   Wrap the call in `try { ... } catch (const std::exception&) { fd = -1; }`
+   Wrap the call in `try { ... } catch (const std::exception&) { return {}; }`
    so an unresolvable log directory degrades to stderr-only rather than
    terminating CAMP before `QApplication` is even constructed. A diagnostics
    feature must not become a startup failure on the field hosts it exists to
@@ -92,6 +101,16 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      the kernel has no room to push the handler frame — so infinite-recursion
      crashes stay as silent as they are today, which is precisely the failure
      mode this issue exists to end. [Plan Review should-fix.]
+     **The alternate stack is per-thread** (`sigaltstack(2)` is a per-thread
+     attribute that `pthread_create(3)` does not inherit), so it is
+     `thread_local` behind an exported `install_thread_alt_stack()` that
+     `camp_ros::NodeThread::start()` also calls. The rclcpp-internal threads
+     (`MultiThreadedExecutor` workers, the `tf2_ros::TransformListener`
+     thread) offer no entry hook and therefore have **no** alternate stack —
+     documented as a known gap in the header and in the `.agents/README.md`
+     bullet rather than left implied as covered. [Local Review Round 1
+     must-fix: the original single global stack covered only the main thread
+     while the docs claimed the class outright.]
    - Cover `SIGSEGV` and `SIGABRT`; also install for **`SIGBUS`, `SIGFPE` and
      `SIGILL`**. They are the same class of fatal, silent death, the handler
      is identical, and adding them costs three lines. [Plan Review suggestion.]
@@ -122,17 +141,39 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      unwind, before `abort()`, so it is not required to be async-signal-safe,
      but MUST NOT allocate/throw itself if the reason for termination is
      already heap corruption; keep it to `write()` + `strlen()` for
-     symmetry with the signal path and to avoid a second-failure mode. Then
-     call `backtrace()`/`backtrace_symbols_fd()` the same way as the signal
-     handler (a `terminate` reached via `abort()`, e.g.
-     "pure virtual method called", still benefits from a stack), and end
-     with `std::abort()`.
+     symmetry with the signal path and to avoid a second-failure mode.
+     **Order: backtrace FIRST, `what()` extraction second.**
+     `current_exception()`/`rethrow_exception()` allocate and run the
+     unwinder; if that faults under the very heap corruption being diagnosed,
+     the SIGSEGV handler finds `already_dumped` set and suppresses its output,
+     so an exception-first order yields a header line and no stack at all.
+     Backtrace-first degrades instead to "stack without a reason line".
+     [Plan Review should-fix "order the terminate handler's output", carried
+     into implementation only in its `already_dumped` half — re-raised as a
+     Local Review Round 1 must-fix.] End with `std::abort()`.
    - **Do not emit a second stack on the terminate path.** `std::abort()`
      raises `SIGABRT`, which re-enters `on_fatal_signal` and prints a second,
      useless backtrace rooted in `abort()` itself. Guard with a
      `static volatile sig_atomic_t already_dumped` set by whichever handler
      runs first; the signal handler still re-raises to preserve exit status,
      it simply skips the duplicate output. [Plan Review should-fix.]
+   - Handler hardening carried in from Local Review Round 1: the
+     `already_dumped` guard is an atomic `__atomic_test_and_set` (a plain
+     test-and-set races between two faulting threads); `SA_SIGINFO` so
+     `si_code`/`si_addr` are reported; the faulting thread's `gettid()` in the
+     header line; `::alarm(10)` after the `SIG_DFL` restore, because
+     `backtrace()` takes glibc's loader locks and a fault while another thread
+     holds one in a GDAL/Qt-plugin `dlopen()` would turn a silent death into a
+     silent hang; `SA_RESETHAND` in place of the inert `SA_RESTART`; `extern
+     "C"` linkage on the handler; every `sigaction()`/`sigaltstack()` return
+     value checked. `::raise(sig)` is kept deliberately (a core, if one were
+     ever enabled, is taken at the raise site — but none is written on these
+     hosts) and the comment no longer implies otherwise.
+   - `main.cpp` installs stderr-only handlers **before** `rclcpp::init()` as
+     well: `rclcpp::init()` is itself a documented thrower, and an exception
+     escaping it would otherwise reach `std::terminate` with the default
+     handler and die as silently as before this issue. [Local Review Round 1
+     suggestion.]
    - All handler-side output goes through `write()` exclusively — extends
      the issue's `backtrace_symbols_fd` requirement to the signal-name/what()
      preambles too (Issue Review action item).
@@ -142,6 +183,15 @@ exception reaching `std::terminate` (#207's abort-on-close path).
    in `CMakeLists.txt` next to the `add_executable(CCOMAutonomousMissionPlanner ...)`
    call (line 143) — the CMake-portable equivalent of `-rdynamic`, needed so
    `backtrace_symbols_fd()` resolves function names instead of bare addresses.
+   **Guard it with a check against the shipped executable**, not against the
+   test target: `test_crash_handler` sets `ENABLE_EXPORTS` on itself, so its
+   symbol assertion stays green if the flag is dropped from
+   `CCOMAutonomousMissionPlanner`. A `check_camp_exports` CTest runs
+   `readelf --dyn-syms` over `$<TARGET_FILE:CCOMAutonomousMissionPlanner>` and
+   requires a `camp_crash*` symbol in `.dynsym`. Record the accepted
+   tradeoff — exporting ~100 TUs' globals invites symbol interposition from a
+   later-loaded plugin — next to the flag. [Local Review Round 1 must-fix +
+   suggestion.]
 
 5. **Regression test `test/test_crash_handler.cpp`** (new `ament_add_gtest`
    target, following the existing pattern at CMakeLists.txt:403+): a
@@ -151,10 +201,12 @@ exception reaching `std::terminate` (#207's abort-on-close path).
    is unaffected) that:
    - installs the handlers against a temp file (via the same
      `install_crash_handlers()` entry point, no `rclcpp::init()` needed since
-     the fd is passed in directly — this is why step 1 keeps the header
+     the path/fd is passed in directly — this is why step 1 keeps the header
      ROS-free and fd-based rather than resolving the path internally),
    - raises `SIGSEGV`, asserts the child's exit description matches signal 11
-     and that the temp file contains a non-empty backtrace,
+     and that the temp file contains a backtrace **with a resolved symbol
+     name** (see the `ENABLE_EXPORTS` bullet below — a non-empty assertion
+     would pass with the flag removed and cover nothing),
    - repeats for `SIGABRT`,
    - throws an uncaught `std::runtime_error("boom")` **across a `noexcept`
      boundary**, asserts `abort()`'s exit status (signal 6) and that the temp
@@ -170,6 +222,12 @@ exception reaching `std::terminate` (#207's abort-on-close path).
      issue. Throwing from inside a `noexcept` function escapes gtest's catch
      and forces the real `std::terminate` path. [Plan Review must-fix 3.]
 
+   - Also covered, per Local Review Round 1: the **stderr** half (all three
+     `ASSERT_EXIT` matchers assert the real preamble instead of `""`, so
+     deleting the `write(STDERR_FILENO, ...)` calls fails the suite); a crash
+     on a **non-main thread**, which is where CAMP actually crashes; that
+     installing creates **no file** when there is no crash; and the
+     `crash_log_path()` / unopenable-path / `fd == -1` degradation paths.
    - **Assert a resolved symbol name, not merely a non-empty backtrace.** The
      test exists partly to protect the `ENABLE_EXPORTS` build flag; without
      it `backtrace_symbols_fd()` still emits output, just bare addresses with
@@ -197,10 +255,12 @@ exception reaching `std::terminate` (#207's abort-on-close path).
 
 | File | Change |
 |------|--------|
-| `src/camp/crash_handler.h` | New. Declares `install_crash_handlers(int backtrace_fd)` (fd-based, no ROS/Qt types) and `open_crash_log_fd()` (wraps `rclcpp::get_logging_directory()` + `open()`, returns `-1` on failure). |
+| `src/camp/crash_handler.h` | New. Declares `install_crash_handlers(const std::string& crash_log_path)` and an `install_crash_handlers(int backtrace_fd)` overload (no ROS/Qt types), `install_thread_alt_stack()`, and `crash_log_path()` (wraps `rclcpp::get_logging_directory()`, returns `""` on failure; creates nothing). |
 | `src/camp/crash_handler.cpp` | New. Signal handler, `set_terminate` handler, `write()`-only output, `backtrace()`/`backtrace_symbols_fd()`. |
-| `src/camp/main.cpp` | Call `open_crash_log_fd()` and `install_crash_handlers()` immediately after `rclcpp::init()`, before `QApplication a(...)`. |
-| `CMakeLists.txt` | Add `crash_handler.cpp` to `SOURCES`; add `ENABLE_EXPORTS ON` target property; add `ament_add_gtest(test_crash_handler ...)` block in the `if(BUILD_TESTING)` section. |
+| `src/camp/main.cpp` | `install_crash_handlers(-1)` before `rclcpp::init()`, then `install_crash_handlers(crash_log_path())` immediately after it and before `QApplication a(...)`. |
+| `CMakeLists.txt` | Add `crash_handler.cpp` to `SOURCES`; add `ENABLE_EXPORTS ON` target property; add `ament_add_gtest(test_crash_handler ...)` and the `check_camp_exports` CTest in the `if(BUILD_TESTING)` section. |
+| `cmake/check_dynamic_symbols.cmake` | New. `readelf`-based `ENABLE_EXPORTS` regression guard for the shipped executable. |
+| `src/camp/ros/node_thread.cpp` | Call `install_thread_alt_stack()` on entry to `NodeThread::start()`. |
 | `test/test_crash_handler.cpp` | New. Death-test coverage for SIGSEGV, SIGABRT, uncaught exception. |
 | `.agents/README.md` | New Common Pitfalls bullet documenting the crash-diagnostics behavior. |
 
@@ -219,7 +279,7 @@ exception reaching `std::terminate` (#207's abort-on-close path).
 
 | ADR | Triggered | How addressed |
 |---|---|---|
-| camp ADR-0001 (adopt ADRs, precedent set by 0002-0015) | No | Deliberately declined — see Context "No ADR" and the Issue Review's "Capture decisions" row. This is diagnostic tooling, not an architecture decision; the issue body and this plan already carry the durable rationale (why apport can't help, why `backtrace_symbols_fd` not `backtrace_symbols`, why re-raise with `SIG_DFL`, why no core-dump/host fix). |
+| workspace ADR-0001 (record architecture decisions as ADRs; camp's own ADR-0001 is the TopicBridge/executor contract, and camp has no meta-ADR) | No | Deliberately declined — see Context "No ADR" and the Issue Review's "Capture decisions" row. This is diagnostic tooling, not an architecture decision; the issue body and this plan already carry the durable rationale (why apport can't help, why `backtrace_symbols_fd` not `backtrace_symbols`, why re-raise with `SIG_DFL`, why no core-dump/host fix). |
 
 ## Consequences
 
@@ -227,6 +287,7 @@ exception reaching `std::terminate` (#207's abort-on-close path).
 |---|---|---|
 | `main.cpp` startup sequence | `.agents/README.md` Common Pitfalls (crash file location, trigger conditions) | Yes — step 6 |
 | `CMakeLists.txt` SOURCES / test list | Nothing else generates from this file (no docs auto-derived from CMakeLists) | N/A |
+| Crash-log file lifecycle (created lazily, `O_APPEND`, `0600`) | Nothing generates from it; the `.agents/README.md` bullet describes where it lands and that its *presence* means a crash | Yes — step 6 |
 | Executable link flags (`ENABLE_EXPORTS`) | Binary size/symbol visibility — negligible; no packaging step depends on stripped symbols today (unpackaged colcon build per the issue's own apport analysis) | Yes — noted, no follow-up needed |
 
 ## Documentation & Instruction Impact
@@ -270,7 +331,31 @@ planned `main.cpp` ordering (after `rclcpp::init()`, before `QApplication`) is
 correct — `rclcpp::init()` claims only SIGINT/SIGTERM and Qt5 installs no fatal
 handlers — and asked only that it stay explicit, which step 3 already makes it.
 
+**Amended again after Local Review (Pre-Push) Round 1** (verdict:
+changes-requested), during the address-findings pass. Corrected in place per
+`plan-task`'s "During implementation" rules:
+
+| Local Review finding | Where corrected |
+|---|---|
+| must-fix 1 — stderr written before the durable fd, so a blocked or broken stderr costs the crash file | Step 3: durable fd first, stderr second, `SIGPIPE` ignored at install |
+| must-fix 2 — terminate handler ran the allocating exception introspection before emitting any stack | Step 3 `set_terminate` bullet, rewritten with the ordering and why it is load-bearing. This is the Plan Review should-fix that the first Revisions table recorded as addressed but which shipped only in its `already_dumped` half |
+| must-fix 3 — `sigaltstack()` is per-thread, so the stack-overflow claim was false off the main thread | Step 3 `sigaltstack` bullet: `thread_local` + `install_thread_alt_stack()`, called from `NodeThread::start()`; the rclcpp-internal threads recorded as a known gap in the header and the README bullet |
+| must-fix 4 — the advertised `ENABLE_EXPORTS` regression guard did not exist | Step 4: `check_camp_exports` CTest over the shipped binary; Files to Change gains `cmake/check_dynamic_symbols.cmake` |
+| suggestions — non-atomic guard, `SA_SIGINFO`, tid in the header, `alarm()` bound on the loader-lock deadlock, `SIGSTKSZ` evaluated once, unchecked `sigaction`/`sigaltstack` returns, `SA_RESETHAND` over the inert `SA_RESTART`, `extern "C"` handler linkage, `raise()` comment | New Step 3 "Handler hardening" bullet |
+| suggestions — `O_TRUNC` littering a zero-byte file every run and truncating a real report on pid reuse; `O_NOFOLLOW`/mode | Step 2, rewritten around lazy open-at-crash-time and the hardened flags; `open_crash_log_fd()` becomes `crash_log_path()` throughout |
+| suggestion — install stderr-only handlers before `rclcpp::init()`, itself a thrower | Step 3, new bullet; Files to Change `main.cpp` row |
+| suggestions — `ASSERT_EXIT` matchers all `""`; no non-main-thread crash test; no `open_crash_log_fd()`/`fd == -1` coverage; `open_temp()` asserting inside the forked child | Step 5, new coverage bullet (the `open_temp()` helper is gone: the handler creates the file itself) |
+| suggestion — plan step 5 still said "non-empty backtrace" | Step 5, first sub-bullet |
+| suggestion — ADR Compliance cited camp ADR-0001 for the adopt-ADRs decision | ADR Compliance table now cites workspace ADR-0001 and names what camp's own ADR-0001 actually is |
+| suggestion — apport "discards outright" overstated | `.agents/README.md` bullet and `crash_handler.h` header comment (not a plan claim) |
+
+One Round-1 suggestion was **declined**: replacing `::raise(sig)` with a return
+from the handler so a core would be taken at the faulting instruction. No core
+is written on these hosts (`ulimit -c` 0), the change alters the death path of
+a diagnostics-only feature, and it does not apply to SIGABRT. The misleading
+half of the comment it flagged *was* corrected.
+
 ## Estimated Scope
 
-Single PR. Six files (2 new source, 1 new test, 3 edited), no cross-repo or
-cross-layer coordination.
+Single PR. Nine files (3 new source/cmake, 1 new test, 5 edited), no cross-repo
+or cross-layer coordination.
