@@ -111,6 +111,12 @@ public:
   /// [camp#160] Number of indices the reconciler holds — used by tests to assert
   /// overview tiles never enter the anti-entropy set (ADR-0010 D4).
   std::size_t reconcilerHeldCount() const { return reconciler_.size(); }
+  /// [field 2026-08-27] Test seam: the resident overview tile at @p index, or nullptr
+  /// when it is not resident. The pyramid prune-on-absence test needs the CONTENT of a
+  /// rebuilt overview (did the withdrawn descendant's contribution actually leave?),
+  /// which a count cannot express; reading it back off disk would race the async
+  /// write-through instead of pinning the in-memory repair.
+  const SonarLiveTile* overviewTileForTest(const gggs::GridIndex& index) const;
 
   /// [camp#121] Render the in-memory tiles into an offscreen image of @p size
   /// spanning the layer extent. Null image if there is no data / GL is
@@ -218,6 +224,11 @@ private:
   void startWriteThrough(const gggs::GridIndex& index);
   void onWriteThroughFinished(const gggs::GridIndex& index,
                               QFutureWatcher<void>* watcher);
+  // [field 2026-08-27] Drop a deleted tile's queued write-through so a coalesced
+  // relaunch can't re-create the file a prune just removed. An in-flight write is left
+  // to finish (its WriteState must survive, or a later fold would launch a second
+  // worker racing it on the shared `<stem>.tif.tmp` path) — see the definition.
+  void cancelPendingWrite(const gggs::GridIndex& index);
 
   // [camp#160] Bounded eviction + overview pyramid (view-based LOD).
   // accountedBytes(): resident fine-tile footprint (CPU band data + any uploaded
@@ -233,6 +244,29 @@ private:
   void evictIfOverBudget();
   void foldIntoParent(const SonarLiveTile& fine);
   std::optional<QPointF> currentViewCentre() const;
+
+  // [field 2026-08-27 / ADR-0010 D7] Propagate anti-entropy prune-on-absence into the
+  // derived overview pyramid. The catalog is authoritative over the fine tiles, and the
+  // pyramid is a function of them, so an overview SHOULD exist exactly when it is an
+  // ancestor of a live fine index. reconcilePyramid() removes the overviews with no
+  // live descendant (memory + GPU texture + disk, including the `overviews/` files of
+  // non-resident ones) and rebuilds those that merely lost one — foldChild() has no
+  // inverse, so a withdrawn contribution can never be subtracted in place.
+  // rebuiltOverview() re-folds one tile from its surviving children (nullopt = nothing
+  // survives, so the caller removes it: an honest gap beats stale coverage);
+  // overviewRebuildChild() resolves one input, preferring a child repaired earlier in
+  // the same pass, then the resident copy, then the disk copy. Returns true when the
+  // pyramid changed. GUI thread only (ADR-0006 D4).
+  bool reconcilePyramid(const marine_tiled_raster_store::TileCatalog& catalog,
+                        const std::vector<gggs::GridIndex>& pruned_fine);
+  std::optional<SonarLiveTile> rebuiltOverview(
+    const gggs::GridIndex& index,
+    const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+    const std::set<gggs::GridIndex>& gone) const;
+  std::optional<SonarLiveTile> overviewRebuildChild(
+    const gggs::GridIndex& child,
+    const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+    const std::set<gggs::GridIndex>& gone) const;
 
   // [camp#172] On-demand reload of evicted fine tiles (the ADR-0013 §"camp#172 hook").
   // hasUnloadedVisibleTiles(): does the viewport expose an evicted fine index whose
@@ -317,10 +351,16 @@ private:
 
   // [camp#160] Coarse overview (pyramid) tiles keyed by their own GGGS index at a
   // level below tiles_'s. Built by folding evicted fine tiles into their parents,
-  // kept resident (never evicted — a handful of tiles), and rendered *under* the
-  // fine tiles so an evicted area degrades to a coarser resolution instead of
-  // going blank. These are a LOCAL derived product: they are NEVER entered into
-  // `reconciler_`, so anti-entropy prune-on-absence can't delete them.
+  // kept resident (all but the numerous near-fine levels — see evictIfOverBudget
+  // phase 2), and rendered *under* the fine tiles so an evicted area degrades to a
+  // coarser resolution instead of going blank. These are a LOCAL derived product:
+  // they are NEVER entered into `reconciler_` (ADR-0010 D4 — they are absent from the
+  // boat's catalog, so reconciling them directly would prune every one of them on the
+  // first catalog).
+  // [field 2026-08-27] That is a statement about reconciler membership only. It is NOT
+  // an exemption from prune-on-absence, though the code read as if it were: see
+  // reconcilePyramid(), which converges this map (and the `overviews/` sub-dir) to the
+  // ancestors of the live fine set on every catalog.
   std::map<gggs::GridIndex, Entry> overview_tiles_;
 
   // [camp#172] Fine indices that were evicted (folded to overview + dropped from

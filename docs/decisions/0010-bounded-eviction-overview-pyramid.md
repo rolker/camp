@@ -8,6 +8,13 @@ Amended by camp#171/#172 (world-store LOD step 4): D3 reframed as *convergence* 
 the uma shared fold engine (no geometry change); D2 on-demand reload implemented; D6
 reload-hysteresis added. See the "Consequences" memory-math and migration notes.
 
+Amended [field 2026-08-27]: **D7** added — catalog prune-on-absence propagates into the
+pyramid. This closes the "overview lifecycle-on-retraction / catalog-prune propagation"
+item that the Consequences list had carried as a deferred follow-up since 2026-08-20.
+It was deferred as bounded and display-grade; the BizzyBoat deployment showed it is
+neither once a boat-side store is reset, because warm-load reinstates the stale pyramid
+on every restart, so no code path could ever reflect the reset.
+
 Cross-reference (camp#195, no change to this decision):
 [ADR-0014](0014-gggs-viewport-scoped-residency.md) gives `GggsTileLayer` its own
 residency budget. It is a **sibling**, not an extension — same forces, different
@@ -182,6 +189,52 @@ amount of local disk I/O, which is the accepted trade for pan-back recovering fu
 resolution. A stronger anti-churn scheme (e.g. a dwell timer before eviction) was judged
 unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
 
+### D7 — Prune-on-absence propagates into the pyramid [field 2026-08-27]
+
+D4 keeps overviews out of the reconciler; it does **not** exempt them from
+prune-on-absence, though the code read as though it did (the `foldIntoParent()` comment
+asserted the exemption as intent). The pyramid is a pure function of the fine tiles, so
+the catalog is authoritative over it too: **an overview tile should exist exactly when
+it is an ancestor of a live fine index.**
+
+`SonarLiveCacheLayer::reconcilePyramid()` runs at the end of every `handleCatalog()`
+reconcile, after the fine prune, and applies two distinct repairs:
+
+- **Stale by absence.** An overview with no live descendant is entirely stale: remove it
+  from `overview_tiles_`, free its GL texture under the renderer's context (the
+  camp#134 discipline the fine prune already follows), and delete its `overviews/` file.
+  The **directory itself is swept**, not just the resident map — eviction phase 1/D2
+  frees an overview Entry while deliberately keeping its disk copy, so a stale overview
+  can be absent from memory and still be warm-loaded back on the next restart. That is
+  exactly how the pre-reset coverage kept returning.
+- **Dirty by partial withdrawal.** An overview that kept some descendants but lost
+  others holds folded contributions that cannot be subtracted: `foldChild()` only ever
+  folds data IN and has no inverse. Such a tile is **rebuilt** from its surviving
+  children rather than kept. The rebuild reproduces the original construction exactly —
+  D3's chain folds the *whole* parent into the grandparent, so every level above the
+  fine tiles is by construction "the fold of my children" — and it draws its inputs from
+  a child repaired earlier in the same pass, else the resident copy, else the disk copy
+  (D2 makes disk the durable backing for both pools). A tile with **no** surviving child
+  is removed instead: a zoomed-out gap is honest, stale coverage is not.
+
+Two properties are load-bearing and are pinned by
+`test/test_sonar_live_overview_prune.cpp`:
+
+- **Proportionality.** Every fine tile's ancestor chain reaches level 0, so invalidating
+  the chain of each pruned tile would destroy the whole pyramid on any ordinary
+  retraction — and tiles are withdrawn and re-added in normal operation. Nothing is
+  removed while a live descendant remains, and only ancestors of something that really
+  was withdrawn are rebuilt, so the work is proportionate to what actually went away.
+- **Prune-gate parity.** A `generation_time` of 0 disables prune-on-absence in the
+  reconciler (ADR-0008 D4b: no held version is strictly older than 0), so it disables
+  the pyramid sweep too. The live set is also unioned with the ancestors of the fine
+  tiles still held locally, so a held tile that was absent from the catalog but too
+  *new* to prune keeps its ancestors alive.
+
+The budget accounting (D1) is unaffected: removals shrink `overviewResidentBytes()`, a
+rebuild that brings a non-resident overview back into memory is followed by
+`evictIfOverBudget()`, and overviews still never enter `reconciler_` (D4 stands).
+
 ## Consequences
 
 - Long surveys no longer grow resident memory/VRAM without bound; the crash scenario
@@ -210,15 +263,28 @@ unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
 - The `LiveTileCache/max_vram_bytes` budget is self-accounted today; when the #155
   `ResourceMonitor` lands, its VRAM feed replaces `accountedBytes()` self-accounting
   behind the same knob (a named integration seam, not in this change).
+- **[field 2026-08-27] Prune now reaches the pyramid** (D7). A retracted region loses its
+  coarse coverage and its `overviews/` files instead of keeping them forever, and a
+  boat-side store reset is reflected on the next catalog rather than never. The costs
+  are accepted and bounded: each catalog reconcile lists the `overviews/` sub-dir
+  (published on change, not at rate), and a repair re-folds only the ancestors of what
+  was actually withdrawn, preferring resident children so the common case does no disk
+  I/O at all.
 - **Deferred follow-ups:**
-  - `handleCatalog` prune removes a retracted fine tile from `tiles_`/disk/reconciler
-    (and now from the reload's evicted-index set) but does not invalidate the overview
-    cells it was folded into, nor delete orphaned `overviews/` files — a retracted
-    region keeps stale coarse coverage and the `overviews/` dir grows slowly. Bounded
-    (overviews are display-grade + evictable). Overview lifecycle-on-retraction /
-    catalog-prune propagation (incl. nightly-regen anti-clobber) is a **tracked
-    follow-up issue**, out of scope for the camp#171/#172 PR (operator decision
-    2026-08-20).
+  - Pyramid content that went stale *before* D7 shipped, in a session whose descendant
+    overviews were already correctly removed, is not detectable: the repair keys off
+    what this reconcile withdrew, and overviews carry no provenance. Not reachable going
+    forward, and not reachable for the state D7 shipped into (the stale `overviews/`
+    files were all still present, so the first reconcile withdrew them and rebuilt their
+    ancestors). Persisting per-overview provenance was rejected — it cannot survive
+    warm-load, which is precisely the path that resurrects a stale pyramid.
+  - Nightly-regen anti-clobber (a regenerated world store re-publishing a catalog that
+    momentarily disagrees with the live one) is untouched by D7 and remains open.
+  - A write-through already in flight for a tile the sweep deletes can still land its
+    file after the `remove()`. `cancelPendingWrite()` stops the queued/coalesced case;
+    an in-flight worker cannot be cancelled without reintroducing the two-workers-one-
+    tmp-path race the coalescing exists to prevent. The next catalog's directory sweep
+    deletes it again, so the window self-heals rather than persisting.
   - `foldChild` silently drops a child cell whose geographic centre falls outside the
     parent (only reachable across a ±72°/±80° GGGS latitude-band boundary) → a possible
     overview seam on a high-latitude survey; add a boundary test / handling if such
