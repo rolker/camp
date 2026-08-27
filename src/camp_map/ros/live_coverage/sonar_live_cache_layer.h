@@ -14,6 +14,8 @@
 #include "marine_interfaces/msg/tile_catalog.hpp"
 #include "marine_interfaces/msg/tile_request.hpp"
 
+#include <rclcpp/qos.hpp>
+
 #include <QFutureWatcher>
 #include <QImage>
 #include <QPointF>
@@ -36,6 +38,16 @@ namespace ros
 namespace live_coverage
 {
 
+/// QoS used for the `<base>/coverage_catalog` subscription: RELIABLE, depth 1,
+/// and — [field 2026-08-27] — **VOLATILE**.
+///
+/// Exposed (rather than inlined at the subscribe site) so the durability can be
+/// pinned by a regression test: the operator-side subscriber receives the catalog
+/// republished by `udp_bridge`, which is volatile, and a transient-local
+/// subscriber never matches it. Nothing pinned that, which is exactly why the
+/// mismatch went unnoticed. See the definition for the full rationale.
+rclcpp::QoS catalogSubscriptionQos();
+
 /// [camp#121] Live coverage cache layer for ONE boat-side source namespace.
 ///
 /// Renders dequantized in-memory `SonarLiveTile`s through a GL pipeline
@@ -43,7 +55,7 @@ namespace live_coverage
 /// anti-entropy convergence with a `TileCatalogReconciler`. See ADR-0006.
 ///
 /// **Activation model (ADR-0006 D5).** The layer is spawned by discovery in a
-/// *discovered-but-inactive* state: it may subscribe to the cheap, transient-local
+/// *discovered-but-inactive* state: it may subscribe to the cheap, low-rate
 /// `coverage_catalog` to advertise availability, but it does NOT subscribe to the
 /// best-effort `coverage_tiles` stream and does NOT publish `TileRequest` until the
 /// operator enables it (context-menu "Enable live coverage"). Enabling warm-loads
@@ -280,13 +292,15 @@ private:
   // Needed to recover a GridIndex from a cached GeoTIFF on warm-load.
   std::optional<std::uint8_t> level_;
 
-  // [camp#169] Last catalog seen, buffered even while disabled. The catalog
-  // subscription is transient-local depth-1: if the single latched sample is
-  // delivered while enabled_ is false it would otherwise be discarded, and —
-  // the boat's catalog being stable — never re-delivered, so requests would
-  // never resume until a restart (the 2026-07-23 field incident's timing
-  // race). enableLiveCoverage() replays this buffer through handleCatalog()
-  // so reconcile/request fire on every enable.
+  // [camp#169] Last catalog seen, buffered even while disabled. The catalog is
+  // published only on change and the boat's catalog is stable, so a sample
+  // arriving while enabled_ is false would otherwise be discarded and never
+  // re-delivered — requests would not resume until a restart (the 2026-07-23
+  // field incident's timing race). enableLiveCoverage() replays this buffer
+  // through handleCatalog() so reconcile/request fire on every enable.
+  // [field 2026-08-27] With the subscription now volatile (see catalogSubscriptionQos())
+  // there is no latched sample either, which makes this buffer the only bridge
+  // from a catalog seen while disabled to a reconcile on enable.
   std::optional<marine_interfaces::msg::TileCatalog> last_catalog_;
 
   // [camp#134] The shared GL raster renderer (its own offscreen context + the

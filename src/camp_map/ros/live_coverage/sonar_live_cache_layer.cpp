@@ -227,14 +227,34 @@ QString SonarLiveCacheLayer::settingsKey() const
 
 // ------------------------------- subscriptions -------------------------------
 
+rclcpp::QoS catalogSubscriptionQos()
+{
+  // Complete snapshot, latest wins: reliable, depth 1.
+  //
+  // [field 2026-08-27] Durability must be VOLATILE, not transient-local. The boat-side
+  // producer IS transient-local, but camp runs on the OPERATOR side and never
+  // sees that publisher: it receives the catalog as republished by
+  // `udp_bridge`, which emits VOLATILE. A transient-local subscriber is
+  // QoS-incompatible with a volatile publisher, so the subscription never
+  // matched and handleCatalog() never fired — the anti-entropy reconcile
+  // (ADR-0006 D4) never pruned, and stale coverage persisted on screen
+  // indefinitely (verified live on pandy: publisher /operator/udp_bridge
+  // RELIABLE/VOLATILE vs subscriber /operator/camp RELIABLE/TRANSIENT_LOCAL).
+  //
+  // Tradeoff, accepted: volatile means there is no latched sample, so camp no
+  // longer gets the current catalog immediately on join. It must wait for the
+  // next publication of the catalog before it can reconcile. A never-matching
+  // subscription delivers nothing at all, so waiting strictly dominates.
+  rclcpp::QoS qos(1);
+  qos.durability(rclcpp::DurabilityPolicy::Volatile).reliable();
+  return qos;
+}
+
 void SonarLiveCacheLayer::subscribeCatalog()
 {
   if(catalog_sub_ || !node_ || !node_->node())
     return;
-  // Complete snapshot, latest wins; transient-local so a late joiner gets the
-  // current catalog immediately (matches the boat-side producer QoS).
-  rclcpp::QoS qos(1);
-  qos.transient_local().reliable();
+  const rclcpp::QoS qos = catalogSubscriptionQos();
   const std::string topic = base_namespace_ + "/coverage_catalog";
   catalog_sub_ = node_->node()->create_subscription<marine_interfaces::msg::TileCatalog>(
     topic, qos,
@@ -306,7 +326,7 @@ void SonarLiveCacheLayer::enableLiveCoverage()
   warmLoad();
   subscribeTiles();
   // [camp#169] Replay the buffered catalog so reconcile (and the resulting tile
-  // requests) fire on every enable — the latched sample may have arrived while
+  // requests) fire on every enable — the sample may have arrived while
   // disabled (startup settings-restore race) or the request publisher may have
   // been torn down by a disable since the last reconcile. Direct call on the
   // GUI thread; enabled_ is already true so handleCatalog() proceeds. Warm-load
@@ -514,10 +534,16 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   if(!level_ && !msg.entries.empty())
     level_ = msg.entries.front().index.level;
 
-  // [camp#169] Always buffer, even while disabled: the transient-local depth-1
-  // subscription delivers its latched sample exactly once — discarding it here
-  // while disabled means no reconcile ever fires (the boat's catalog is stable,
-  // so nothing re-delivers it). enableLiveCoverage() replays this buffer.
+  // [camp#169] Always buffer, even while disabled. The catalog is published only
+  // when it changes, and the boat's catalog is stable for long stretches, so a
+  // sample discarded here while disabled may not be re-delivered for the rest of
+  // the session — no reconcile would ever fire. enableLiveCoverage() replays this
+  // buffer. [field 2026-08-27] The volatile subscription makes this MORE load-bearing, not
+  // less: there is no latched sample to re-deliver on a late join either, so this
+  // buffer is now the only path from a catalog seen while disabled to a reconcile
+  // on enable. The catalog subscription itself is never torn down by
+  // disableLiveCoverage() (only the tile stream is), so samples keep arriving and
+  // landing here throughout a disabled window.
   last_catalog_ = msg;
 
   if(!enabled_)

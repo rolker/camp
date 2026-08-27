@@ -1232,6 +1232,32 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [field 2026-08-27] The coverage_catalog subscription QoS must stay VOLATILE to match
+  # the operator-side udp_bridge republisher. No ROS graph / Qt / GL needed.
+  ament_add_gtest(test_sonar_live_catalog_qos
+    test/test_sonar_live_catalog_qos.cpp
+  )
+  target_include_directories(test_sonar_live_catalog_qos PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_catalog_qos
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_catalog_qos
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#170] Tile dimension/byte validation before allocation (crash guard).
   # Same offscreen harness.
   ament_add_gtest(test_sonar_live_tile_validation
