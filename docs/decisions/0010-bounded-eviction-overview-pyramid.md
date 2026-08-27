@@ -8,6 +8,12 @@ Amended by camp#171/#172 (world-store LOD step 4): D3 reframed as *convergence* 
 the uma shared fold engine (no geometry change); D2 on-demand reload implemented; D6
 reload-hysteresis added. See the "Consequences" memory-math and migration notes.
 
+Amended [field 2026-08-27]: **D5 replaced** — an overview tile is no longer drawn over
+its own extent. Coarse data is drawn only as a *placeholder* for a fine tile that is
+known to exist and has not loaded, clipped to that fine tile's footprint. The old
+draw-order fallback rested on a false premise and put a ~650 m block of folded means
+over the operator's chart mid-survey.
+
 Amended [field 2026-08-27]: **D7** added — catalog prune-on-absence propagates into the
 pyramid. This closes the "overview lifecycle-on-retraction / catalog-prune propagation"
 item that the Consequences list had carried as a deferred follow-up since 2026-08-20.
@@ -90,7 +96,13 @@ discard the rest; viewport centre from `scene()->views()`, LRU by a monotonic
 
 The apex is inherently a small, bounded handful for any realistic survey extent
 (level-6 tiles span ~0.125°), so total resident memory is bounded: fine tiles +
-near-view overviews to the budget, plus the O(small) apex. No vessel-position / tf
+near-view overviews to the budget, plus the O(small) apex.
+
+[field 2026-08-27] What the apex guarantees is unchanged in force but changed in shape
+by D5: it is no longer *drawn* at zoom-out, it is the guaranteed resident **source** a
+zoomed-out view samples through the footprints of the tiles that are missing. Coverage
+still appears everywhere the survey reached; it now stops at the edge of what was
+actually surveyed instead of washing across the apex's own 8° extent. No vessel-position / tf
 dependency — the operator chose view-based LOD over distance-from-vessel as the
 simpler, more natural model.
 
@@ -154,14 +166,72 @@ warm-loaded from the `overviews/` sub-dir (each file's level recovered from its
 stem, since overviews span multiple coarse levels), and are freed under the
 renderer context in the destructor exactly like fine tiles.
 
-### D5 — LOD fallback by draw order
+### D5 — Coarse data is a placeholder for a known missing tile, clipped to its footprint [field 2026-08-27]
 
-`items()` emits overview tiles first (coarse→fine, the natural `std::map` order by
-GGGS level) and the fine tiles last, so the renderer draws fine tiles on top. Where
-a fine tile is present it fully covers its parent; where it was evicted, the coarse
-parent shows through instead of a blank gap. `recomputeBounds()` and
-`foldAutoRange()` union both maps so the extent and colormap range stay correct when
-only overviews remain for a region.
+**Superseded design (what this replaces).** `items()` emitted every resident overview
+first (coarse→fine, the natural `std::map` order by GGGS level) and the fine tiles
+last, so fine drew on top: LOD fallback by draw order alone, with no level selection.
+Its stated premise was "where a fine tile is present it fully covers its parent" —
+**false**: a child covers a *quarter* of its parent. Wherever fine coverage was sparse,
+which is most of a survey in progress, every coarse ancestor painted through. And the
+apex is resident by design (D1), so the coarsest level of all drew at every zoom.
+Measured on pandy during the BizzyBoat deployment: cached tiles are 960×960 cells at
+every level, so a level-0 cell is ~667 × 926 m carrying the MEAN of everything folded
+beneath it. The operator saw a solid ~650 m block over a good part of the survey area,
+covering the chart — over water the survey had never touched.
+
+**The decision.** Coarse data may be drawn **only as a placeholder for a fine tile that
+is known to exist and is not currently resident**, and only **over that fine tile's own
+footprint**. `SonarLiveCacheLayer::planDraw()` resolves exactly two contributions:
+
+1. for each index in `pendingFineIndices()` — known to exist, not resident — the
+   **finest resident ancestor** overview, painted over the *fine index's* extent and
+   sampled through the sub-rect of that ancestor which the index occupies;
+2. every resident fine tile, whole, on top.
+
+Nothing else is drawn. An overview's own extent is never painted, so the pyramid can
+no longer assert coverage over water no fine tile ever covered.
+
+**"Known to exist" is derivable, not guessed.** The boat's catalog is authoritative for
+which tiles exist (`catalogued_fine_`, refreshed from every catalog — a complete
+snapshot, so it is assigned, not merged), and residency is `tiles_`. That set is unioned
+with `evicted_fine_indices_`, which is the only authority available on a warm start with
+no link, and which also covers the window where a catalog has been retracted but the
+disk copy is still ours. The reverse gap is deliberate: a catalogued tile we have never
+received has no disk copy, so it is a *request* candidate (the reconciler's job, ADR-0006
+D4), not a reload candidate — it simply gets a placeholder from whatever the pyramid
+holds over it, which is usually NoData and therefore nothing.
+
+**The clip is a texture sub-rect, not narrowed bounds.** `raster::RasterFieldItem`
+carries a geographic extent and one texture, and the renderer stretches the whole
+texture across the extent — so narrowing the bounds alone would *squash* the coarse tile
+into the small box instead of clipping it. The item therefore gained a normalized
+texture window `[u0,v0]-[u1,v1]` (u west→east, v north→south, texture row 0 = north),
+honoured by `RasterGlRenderer`'s texcoord generation. It **defaults to the whole
+texture**, so `RasterLayer`, `GggsTileLayer` and this layer's own resident tiles emit
+exactly the coordinates they did before. The window is computed from GGGS index
+arithmetic (rows and columns both double per level, and the ±72°/±80°
+`latitudeScaleFactor` bands are bounded by whole grid rows at every level, so an
+ancestor and its descendants always share a band), which makes it an exact
+power-of-two fraction rather than a floating-point extent ratio; a descendant that does
+not resolve inside its ancestor draws nothing rather than guessing a window.
+
+The CPU-side alternative — crop the sub-window into a small per-placeholder texture and
+leave the renderer untouched — was rejected: at zoom-out the pending set is the whole
+survey, so it pays a GPU upload per placeholder per frame (or keeps a second resident
+texture per pending index, which is precisely the memory eviction exists to reclaim).
+The sub-rect samples the textures the pyramid already has.
+
+**No scale threshold, and none needed.** The rule is stated in terms of what is missing,
+not how far out the view is, so the zoom-out case falls out of it: zoomed out over a
+whole survey nearly every catalogued tile is non-resident, so the union of the
+placeholders *is* the coverage. A cell-size-versus-screen-pixel LOD rule was considered
+first and rejected: it would have stopped level 0 from drawing at survey zoom, but at
+any zoom where a coarse level did qualify it would still have smeared that level across
+its full extent, including unsurveyed water.
+
+`recomputeBounds()` and `foldAutoRange()` still union both maps, so the extent and
+colormap range stay correct when only overviews remain for a region.
 
 ### D6 — Reload hysteresis (no ping-pong with eviction)
 
@@ -248,6 +318,17 @@ rebuild that brings a non-resident overview back into memory is followed by
   salmon accelerant) — not just a post-load trim.
 - Evicted coverage degrades gracefully to a coarser resolution rather than vanishing,
   and — with D2/D6 reload — recovers to full resolution when the operator pans back.
+- **[field 2026-08-27] Coarse coverage is now gated on knowing the fine index exists**
+  (D5). Two consequences follow and are accepted. (a) A pyramid whose fine tiles are
+  neither catalogued nor on disk — e.g. `overviews/` warm-loaded after the fine cache
+  was cleared by hand — draws nothing; under the old rule its coarse data would have
+  shown. That is the honest reading: nothing local says that coverage is still real.
+  (b) The number of draw items at zoom-out is now the number of *pending* fine indices
+  rather than the number of overview tiles, so a whole-survey view issues one small quad
+  per missing tile. They share the handful of overview textures (no extra uploads), and
+  the clip culls to the viewport, but a very large survey pays more draw calls than
+  before; batching them (one strip per contiguous run against a shared source) is the
+  obvious lever if it ever bites.
 - **Overview memory converges to the 1.33× series.** Because 4 same-size fine tiles
   collapse into 1 same-size uniform parent (D3), the full pyramid over a densely
   covered region sums to `1 + ¼ + 1/16 + … = 4/3` of one level — eviction frees

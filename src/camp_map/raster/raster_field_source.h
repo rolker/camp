@@ -51,6 +51,23 @@ struct RasterFieldItem
   /// NaN cells are always discarded by the shader regardless of these.
   bool has_nodata = false;
   float nodata = 0.0f;
+
+  /// [field 2026-08-27] Sub-rect of the texture to stretch across the bounds above,
+  /// in normalized texture coordinates: `u` runs west→east, `v` runs north→south
+  /// (texture row 0 = north, matching the renderer's vertex generation). The
+  /// default (0,0)-(1,1) is the whole texture — exactly what every item did before
+  /// this field existed, so `RasterLayer` and `GggsTileLayer` are unaffected.
+  ///
+  /// It exists for the live-coverage **coarse placeholder**: an overview tile may
+  /// only ever be painted over the footprint of ONE not-yet-loaded fine tile
+  /// (ADR-0010 D5), which is a sub-rectangle of the overview, not the whole of it.
+  /// Narrowing the bounds alone cannot express that — the renderer stretches the
+  /// full texture across whatever bounds it is given, so the coarse tile would be
+  /// squashed into the small box instead of clipped to it.
+  float u0 = 0.0f;   ///< west edge of the sampled sub-rect
+  float v0 = 0.0f;   ///< north edge of the sampled sub-rect
+  float u1 = 1.0f;   ///< east edge of the sampled sub-rect
+  float v1 = 1.0f;   ///< south edge of the sampled sub-rect
 };
 
 /// [camp#134] Per-band metadata, surfaced for the (per-layer) band picker.

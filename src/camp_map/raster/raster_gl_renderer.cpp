@@ -351,13 +351,19 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
       // already in Web-Mercator metres, so a single linear quad (2 rows) suffices
       // (the RasterLayer path, reprojected by GDAL on load). Interleaved
       // [local_x, local_y, u, v] per vertex; texture row 0 = north (v = 0).
+      // [field 2026-08-27] The texcoords span the item's sub-rect [u0,v0]-[u1,v1]
+      // instead of the whole texture. It DEFAULTS to the whole texture, so every
+      // pre-existing caller (RasterLayer, GggsTileLayer, and the live layer's own
+      // resident tiles) emits exactly the coordinates it did before. The one caller
+      // that narrows it is the live-coverage coarse placeholder, which paints a
+      // single fine tile's footprint out of a coarse overview (ADR-0010 D5).
       const int rows = item.geographic ? (kLatSubdivisions + 1) : 2;
       verts.clear();
       verts.reserve(rows * 2 * 4);
       for(int r = 0; r < rows; ++r)
       {
         const double frac = double(r) / (rows - 1);
-        const float v = float(frac);                   // tex row 0 = north
+        const float v = item.v0 + (item.v1 - item.v0) * float(frac);   // row 0 = north
         QPointF l, rt;
         if(item.geographic)
         {
@@ -373,9 +379,9 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
           rt = QPointF(item.east, y);
         }
         verts.insert(verts.end(),
-                     {float(l.x() - origin_x), float(l.y() - origin_y), 0.0f, v});
+                     {float(l.x() - origin_x), float(l.y() - origin_y), item.u0, v});
         verts.insert(verts.end(),
-                     {float(rt.x() - origin_x), float(rt.y() - origin_y), 1.0f, v});
+                     {float(rt.x() - origin_x), float(rt.y() - origin_y), item.u1, v});
       }
 
       const bool scalar = (item.format == RasterFieldItem::Format::Scalar);

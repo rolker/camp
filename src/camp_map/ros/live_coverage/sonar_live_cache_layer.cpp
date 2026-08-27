@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 #include <set>
@@ -127,6 +128,49 @@ QRectF indexSceneRect(const gggs::GridIndex& index)
   const QPointF hi = web_mercator::geoToMap(
     QGeoCoordinate(index.northLatitude(), index.eastLongitude()));
   return QRectF(lo, hi).normalized();
+}
+
+// [field 2026-08-27 / ADR-0010 D5] The sub-rect of @p ancestor's texture that
+// @p descendant occupies, in normalized texture coordinates (u west->east, v
+// north->south — texture row 0 is north, as SonarLiveTile stores it and as the
+// renderer's vertex generation assumes). This is what clips a coarse placeholder to
+// one fine tile's footprint instead of stretching the whole overview over it.
+//
+// Derived from GGGS index arithmetic, not from an extent ratio: a level's grid rows
+// and columns both double per level (the ±72/±80 `latitudeScaleFactor` bands are
+// bounded by whole grid rows at every level, so an ancestor and its descendants are
+// always inside one band and share the scale factor), which makes the window an
+// exact power-of-two fraction — no floating-point extent division, and no drift when
+// the walk spans many levels. Rows count NORTHWARD while v counts southward, hence
+// the row flip.
+//
+// Returns false — caller draws nothing — when @p descendant is not really inside
+// @p ancestor at a finer level. That is the polar-band case the fold itself already
+// declines to handle (ADR-0010's `foldChild` boundary follow-up), and a silent wrong
+// window would paint one tile's data over another's footprint.
+bool textureWindowOf(const gggs::GridIndex& ancestor, const gggs::GridIndex& descendant,
+                     float& u0, float& v0, float& u1, float& v1)
+{
+  if(!ancestor.valid() || !descendant.valid())
+    return false;
+  const int steps = int(descendant.level()) - int(ancestor.level());
+  if(steps <= 0 || steps > 20)   // >20 cannot happen: GGGS has 21 levels
+    return false;
+  const std::uint64_t span = std::uint64_t(1) << steps;
+  const std::uint64_t base_row = std::uint64_t(ancestor.row()) * span;
+  const std::uint64_t base_col = std::uint64_t(ancestor.column()) * span;
+  const std::uint64_t row = descendant.row();
+  const std::uint64_t col = descendant.column();
+  if(row < base_row || row - base_row >= span || col < base_col || col - base_col >= span)
+    return false;
+  const double inv = 1.0 / double(span);
+  const std::uint64_t row_off = row - base_row;
+  const std::uint64_t col_off = col - base_col;
+  u0 = float(double(col_off) * inv);
+  u1 = float(double(col_off + 1) * inv);
+  v0 = float(double(span - 1 - row_off) * inv);   // rows go north, v goes south
+  v1 = float(double(span - row_off) * inv);
+  return true;
 }
 
 // [camp#172] Off-thread reload worker: load each evicted fine tile's cached GeoTIFF
@@ -588,6 +632,21 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   // disableLiveCoverage() (only the tile stream is), so samples keep arriving and
   // landing here throughout a disabled window.
   last_catalog_ = msg;
+
+  // [field 2026-08-27 / ADR-0010 D5] Record what the boat says EXISTS. This is the
+  // set a coarse placeholder may be drawn for (planDraw), so it is maintained from
+  // every catalog — including one that arrives while disabled, exactly like the
+  // camp#169 buffer above, since a re-enable replays that buffer rather than
+  // waiting for a catalog that may not be republished for the rest of the session.
+  // A complete catalog is a full snapshot, so this is an assignment, not a merge:
+  // a tile that left the catalog must stop being placeholder-able at once.
+  catalogued_fine_.clear();
+  for(const auto& entry : msg.entries)
+  {
+    const gggs::GridIndex index = gridIndexFromTileIndex(entry.index);
+    if(index.valid())
+      catalogued_fine_.insert(index);
+  }
 
   if(!enabled_)
   {
@@ -1215,8 +1274,14 @@ bool SonarLiveCacheLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) 
 {
   // [camp#172 / ADR-0013] Does the viewport expose an evicted fine tile whose disk copy
   // is not resident? GUI thread. The tile is gone, so test the GGGS extent of the index
-  // directly (same extent math as itemsIntersecting's per-tile clip test). A null
+  // directly (indexSceneRect — literally the clip test planDraw() applies). A null
   // viewport (headless with no clip) matches nothing — reload is viewport-driven.
+  // [field 2026-08-27] Consistent with the draw set by construction: every index here is
+  // in pendingFineIndices() (evicted, so not resident), i.e. every tile this wants to
+  // reload is one currently shown as a coarse placeholder, and a completed reload
+  // replaces that placeholder with the real thing. The converse does not hold and must
+  // not: a catalogued tile we have never received is placeholder-able but has no disk
+  // copy to reload — it is a REQUEST candidate (the reconciler's job), not a reload one.
   if(viewport_scene.isNull())
     return false;
   for(const gggs::GridIndex& index : evicted_fine_indices_)
@@ -1521,6 +1586,114 @@ QPair<float, float> SonarLiveCacheLayer::dataRange() const
   return {float(data_min_), float(data_max_)};
 }
 
+std::set<gggs::GridIndex> SonarLiveCacheLayer::pendingFineIndices() const
+{
+  // [field 2026-08-27 / ADR-0010 D5] The fine tiles KNOWN TO EXIST that are not
+  // resident. Coarse overview data may be drawn for exactly these indices and for
+  // nothing else, so this set is the whole licence for painting anything coarse.
+  //
+  // Two authorities are unioned because neither alone is complete:
+  //   * the catalog is authoritative for what exists on the boat, but it is empty
+  //     until the first one arrives (a warm start with the link down never sees
+  //     one, yet the disk cache is full of real coverage);
+  //   * evicted_fine_indices_ is locally known — an evicted tile whose disk copy
+  //     survives — but it is CLEARED after a reload attempt whether or not the
+  //     load succeeded (camp#172, so a permanently unloadable index cannot re-kick
+  //     forever), which would otherwise silently blank a region the catalog still
+  //     lists.
+  // A resident index is excluded: it draws itself at full resolution, and a
+  // placeholder under it would be a coarse wash bleeding past its edges.
+  std::set<gggs::GridIndex> pending;
+  for(const gggs::GridIndex& index : catalogued_fine_)
+    if(!tiles_.count(index))
+      pending.insert(index);
+  for(const gggs::GridIndex& index : evicted_fine_indices_)
+    if(!tiles_.count(index))
+      pending.insert(index);
+  return pending;
+}
+
+const SonarLiveCacheLayer::Entry* SonarLiveCacheLayer::finestResidentAncestor(
+  const gggs::GridIndex& index, gggs::GridIndex* source) const
+{
+  // [field 2026-08-27] Walk up the GGGS chain and stop at the first resident
+  // overview: the finest coarse representation this pyramid holds for @p index.
+  // Nothing resident anywhere up the chain means the pyramid has no data over it,
+  // so the caller draws nothing — an honest gap beats inventing coverage.
+  for(gggs::GridIndex a = gggs::parent(index); a.valid(); a = gggs::parent(a))
+  {
+    auto it = overview_tiles_.find(a);
+    if(it != overview_tiles_.end())
+    {
+      if(source)
+        *source = a;
+      return &it->second;
+    }
+  }
+  return nullptr;
+}
+
+std::vector<SonarLiveCacheLayer::DrawItem> SonarLiveCacheLayer::planDraw(
+  const QRectF& clip_scene) const
+{
+  // [field 2026-08-27 / ADR-0010 D5] Resolve the draw list. Two contributions, and
+  // deliberately no third:
+  //
+  //   1. a COARSE PLACEHOLDER for every fine tile that is known to exist but has
+  //      not loaded (pendingFineIndices()), sampled out of its finest resident
+  //      ancestor and clipped — via the texture sub-rect — to that fine tile's own
+  //      footprint;
+  //   2. every RESIDENT fine tile, whole, on top.
+  //
+  // What is NOT drawn is the point of this function. An overview tile used to be
+  // drawn over its own extent, which is 4^n fine tiles wide: at level 0 a single
+  // cell is ~667 x 926 m of the mean of everything folded beneath it, painted
+  // across water nobody has ever surveyed and over the chart underneath. The
+  // premise that licensed it — "where a fine tile is present it fully covers its
+  // parent" (camp#160) — is false: a child covers a QUARTER of its parent, so the
+  // parent showed through everywhere the finer level was sparse, which is most of
+  // a survey in progress. Measured on pandy during the BizzyBoat deployment: the
+  // operator saw a solid ~650 m block over a good part of the survey area.
+  //
+  // Scale does not appear here at all. A placeholder exists exactly while a real
+  // tile is missing, so the zoomed-out case needs no separate threshold: zoom out
+  // over a whole survey and nearly every catalogued tile is non-resident, so the
+  // union of their footprints IS the coverage (ADR-0010 D1).
+  //
+  // [camp#103] A non-null @p clip_scene culls by Web-Mercator extent here, before
+  // any texture is touched, so an offscreen tile is neither uploaded nor drawn.
+  std::vector<DrawItem> plan;
+  const bool clipped = !clip_scene.isNull();
+
+  for(const gggs::GridIndex& index : pendingFineIndices())
+  {
+    if(clipped && !indexSceneRect(index).intersects(clip_scene))
+      continue;
+    gggs::GridIndex source;
+    const Entry* ancestor = finestResidentAncestor(index, &source);
+    if(!ancestor)
+      continue;
+    DrawItem item;
+    item.footprint = index;
+    item.source = source;
+    item.placeholder = true;
+    if(!textureWindowOf(source, index, item.u0, item.v0, item.u1, item.v1))
+      continue;   // not a real descendant (see textureWindowOf) — draw nothing
+    plan.push_back(item);
+  }
+
+  for(const auto& entry : tiles_)
+  {
+    if(clipped && !indexSceneRect(entry.first).intersects(clip_scene))
+      continue;
+    DrawItem item;
+    item.footprint = entry.first;
+    item.source = entry.first;
+    plan.push_back(item);
+  }
+  return plan;
+}
+
 QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 {
   return itemsIntersecting(QRectF());
@@ -1529,53 +1702,48 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 QList<raster::RasterFieldItem> SonarLiveCacheLayer::itemsIntersecting(
   const QRectF& clip_scene)
 {
-  // [camp#134] Collect the held tiles' selected band as Scalar items for the shared
+  // [camp#134] Turn planDraw()'s selection into Scalar items for the shared
   // renderer. Called with the renderer's GL context current (renderImage()), so
   // textureFor() may lazily (re)upload here. The geo->Web-Mercator warp lives in
-  // the renderer; this only forwards each tile's lat/lon extent + NoData sentinel.
-  // [camp#103] A non-null @p clip_scene keeps only tiles whose Web-Mercator extent
-  // intersects it — tested BEFORE textureFor(), so offscreen tiles are neither
-  // uploaded nor drawn. Both pools are filtered with the same predicate, keeping
-  // the overviews-first order below intact.
+  // the renderer; this only forwards each footprint's lat/lon extent, the sampled
+  // texture sub-rect, and the source tile's NoData sentinel.
+  // [camp#103] The clip test already happened in planDraw(), i.e. BEFORE
+  // textureFor(), so an offscreen tile is still neither uploaded nor drawn.
+  const std::vector<DrawItem> plan = planDraw(clip_scene);
   QList<raster::RasterFieldItem> result;
-  result.reserve(int(overview_tiles_.size() + tiles_.size()));
-  auto append = [&](Entry& entry)
+  result.reserve(int(plan.size()));
+  for(const DrawItem& planned : plan)
   {
-    if(!clip_scene.isNull())
-    {
-      const QPointF lo = web_mercator::geoToMap(
-        QGeoCoordinate(entry.tile.minLat(), entry.tile.minLon()));
-      const QPointF hi = web_mercator::geoToMap(
-        QGeoCoordinate(entry.tile.maxLat(), entry.tile.maxLon()));
-      if(!QRectF(lo, hi).normalized().intersects(clip_scene))
-        return;
-    }
+    auto& pool = planned.placeholder ? overview_tiles_ : tiles_;
+    auto it = pool.find(planned.source);
+    if(it == pool.end())
+      continue;
+    Entry& entry = it->second;
     const SonarLiveBand* band = entry.tile.band(band_name_);
     if(!band)
-      return;
+      continue;
     QOpenGLTexture* texture = textureFor(entry);
     if(!texture)
-      return;
+      continue;
     raster::RasterFieldItem fi;
     fi.texture = texture;
     fi.format = raster::RasterFieldItem::Format::Scalar;
     fi.geographic = true;
-    fi.west = entry.tile.minLon();
-    fi.east = entry.tile.maxLon();
-    fi.south = entry.tile.minLat();
-    fi.north = entry.tile.maxLat();
+    // The extent painted is the FOOTPRINT's, not the source tile's: for a coarse
+    // placeholder they differ, and the sub-rect below is what keeps the coarse
+    // texture clipped to it instead of being squashed across it.
+    fi.west = planned.footprint.westLongitude();
+    fi.east = planned.footprint.eastLongitude();
+    fi.south = planned.footprint.southLatitude();
+    fi.north = planned.footprint.northLatitude();
+    fi.u0 = planned.u0;
+    fi.v0 = planned.v0;
+    fi.u1 = planned.u1;
+    fi.v1 = planned.v1;
     fi.has_nodata = band->has_nodata;
     fi.nodata = band->has_nodata ? band->nodata : 0.0f;
     result.push_back(fi);
-  };
-  // [camp#160] LOD fallback by draw order: overviews first (coarse->fine, the
-  // std::map orders by GGGS level), then the fine tiles on top. Where a fine tile
-  // is present it fully covers its parent; where it was evicted, the coarse parent
-  // shows through instead of a blank gap.
-  for(auto& item : overview_tiles_)
-    append(item.second);
-  for(auto& item : tiles_)
-    append(item.second);
+  }
   return result;
 }
 
@@ -1593,8 +1761,8 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bo
   // (uploading textures under it), then delegate the warp + draw.
   if(!renderer_.makeCurrent())
     return QImage();
-  // [camp#103] Only tiles intersecting the clip contribute (both pools,
-  // overviews-first order preserved — the ADR-0010 LOD fallback).
+  // [camp#103] Only what intersects the clip contributes: the resident fine tiles
+  // plus a coarse placeholder for each known-but-not-loaded one (ADR-0010 D5).
   const QList<raster::RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
