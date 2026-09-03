@@ -296,7 +296,7 @@ Two properties are load-bearing and are pinned by
   removed while a live descendant remains, and only ancestors of something that really
   was withdrawn are rebuilt, so the work is proportionate to what actually went away.
 - **Prune-gate parity.** A `generation_time` of 0 disables prune-on-absence in the
-  reconciler (ADR-0008 D4b: no held version is strictly older than 0), so it disables
+  reconciler (uma ADR-0008 D4, correctness condition (b): no held version is strictly older than 0), so it disables
   the pyramid sweep too. The live set is also unioned with the ancestors of the fine
   tiles still held locally, so a held tile that was absent from the catalog but too
   *new* to prune keeps its ancestors alive.
@@ -361,6 +361,18 @@ rebuild that brings a non-resident overview back into memory is followed by
     warm-load, which is precisely the path that resurrects a stale pyramid.
   - Nightly-regen anti-clobber (a regenerated world store re-publishing a catalog that
     momentarily disagrees with the live one) is untouched by D7 and remains open.
+  - **The Proportionality argument above bounds tile COUNT, not cost per tile.** The
+    sweep and rebuild run on the Qt GUI thread (`handleCatalog` is dispatched
+    `Qt::QueuedConnection`), and on that thread a rebuild performs a synchronous
+    GDAL `loadFromGeoTiff()` per non-resident input, `fs::remove()` per stale
+    overview, and — because `overviewRebuildChild()` returns by value — a copy of
+    each staged/resident child's full band payload (~3.7 MB per 960x960 Float32
+    band). GL texture frees belong on that thread; the disk I/O and the copies do
+    not, and uma ADR-0008 D5 already puts the write-through off the GUI thread for
+    exactly this reason. Unmeasured: the operator-visible cost is unknown, and the
+    likeliest moment to feel it is a reconcile right after a boat-side store reset,
+    which is the case D7 exists to serve. Tracked as camp#224, which asks for a
+    profile before any threading rework.
   - A write-through already in flight for a tile the sweep deletes can still land its
     file after the `remove()`. `cancelPendingWrite()` stops the queued/coalesced case;
     an in-flight worker cannot be cancelled without reintroducing the two-workers-one-

@@ -46,6 +46,13 @@ namespace live_coverage
 /// republished by `udp_bridge`, which is volatile, and a transient-local
 /// subscriber never matches it. Nothing pinned that, which is exactly why the
 /// mismatch went unnoticed. See the definition for the full rationale.
+///
+/// NOT the intended durability, and NOT settled: revert to TRANSIENT_LOCAL once
+/// the boat's bridge config sets `durability: transient_local` on the catalog
+/// topic. udp_bridge already supports it; the config never opted in. Tracked
+/// with the coupled revert in marine_web_view as
+/// rolker/unh_echoboats_project11#484. The definition explains why nothing will
+/// prompt this revert on its own.
 rclcpp::QoS catalogSubscriptionQos();
 
 /// [camp#121] Live coverage cache layer for ONE boat-side source namespace.
