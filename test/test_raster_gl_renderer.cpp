@@ -419,6 +419,74 @@ TEST(RasterGlRendererTest, NonFiniteAnchorIsDroppedAtTheSeam)
   EXPECT_FLOAT_EQ(*renderer.shorelineAnchor(), -28.0f);
 }
 
+// [field 2026-08-27 / ADR-0010 D5] The texture sub-rect. An item may sample a window
+// of its texture instead of the whole of it — how the live-coverage coarse placeholder
+// paints ONE missing fine tile's footprint out of an overview that spans many. Two
+// halves are pinned: the default window is still the whole texture (every pre-existing
+// caller must be untouched by the new field), and a narrowed window samples exactly the
+// quadrant asked for, with v running north->south like the vertex generation does.
+TEST(RasterGlRendererTest, TextureWindowSamplesTheRequestedSubRect)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+  renderer.setColormap("grayscale");
+
+  // 4x4, uniform within each quadrant and distinct between them (row 0 = north).
+  const int n = 4;
+  const float nw = 10.0f, ne = 7.0f, sw = 4.0f, se = 1.0f;
+  std::vector<float> data(n * n, 0.0f);
+  for(int row = 0; row < n; ++row)
+    for(int col = 0; col < n; ++col)
+      data[row * n + col] = (row < 2) ? (col < 2 ? nw : ne) : (col < 2 ? sw : se);
+  auto tex = makeScalarTexture(n, n, data);
+
+  const RasterFieldItem whole = scalarItem(tex.get(), n, /*has_nodata=*/false, 0.0f);
+  const QRectF bounds(0, 0, n, n);
+  const QSize size(n, n);
+
+  // Default window: all four quadrants, each in its own corner — unchanged behaviour.
+  const QImage full = renderer.renderToImage({whole}, bounds, 0.0f, 10.0f, size);
+  ASSERT_FALSE(full.isNull());
+  const int nw_red = full.pixelColor(0, 0).red();
+  const int ne_red = full.pixelColor(3, 0).red();
+  const int sw_red = full.pixelColor(0, 3).red();
+  const int se_red = full.pixelColor(3, 3).red();
+  EXPECT_GT(nw_red, ne_red);
+  EXPECT_GT(ne_red, sw_red);
+  EXPECT_GT(sw_red, se_red);
+
+  // Each quadrant in turn, stretched over the whole quad: every output pixel must
+  // carry that quadrant's value and nothing from its neighbours. The south-west and
+  // north-east cases are the ones that catch a flipped v.
+  struct Case { const char* name; float u0, v0, u1, v1; int expected; };
+  const Case cases[] = {
+    {"north-west", 0.0f, 0.0f, 0.5f, 0.5f, nw_red},
+    {"north-east", 0.5f, 0.0f, 1.0f, 0.5f, ne_red},
+    {"south-west", 0.0f, 0.5f, 0.5f, 1.0f, sw_red},
+    {"south-east", 0.5f, 0.5f, 1.0f, 1.0f, se_red},
+  };
+  for(const Case& c : cases)
+  {
+    RasterFieldItem item = whole;
+    item.u0 = c.u0;
+    item.v0 = c.v0;
+    item.u1 = c.u1;
+    item.v1 = c.v1;
+    const QImage img = renderer.renderToImage({item}, bounds, 0.0f, 10.0f, size);
+    ASSERT_FALSE(img.isNull()) << c.name;
+    for(int y = 0; y < n; ++y)
+      for(int x = 0; x < n; ++x)
+        EXPECT_EQ(img.pixelColor(x, y).red(), c.expected)
+          << c.name << " window leaked a neighbouring quadrant at " << x << "," << y;
+  }
+
+  tex.reset();
+  renderer.doneCurrent();
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");

@@ -1146,6 +1146,63 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [field 2026-08-27] Catalog prune-on-absence must propagate into the derived overview
+  # pyramid (ADR-0010 D7): stale overviews leave memory and disk, ancestors that still
+  # have a catalogued descendant are kept, and one that lost only SOME descendants is
+  # rebuilt from the survivors. Same offscreen harness (GL-free / ROS-free).
+  ament_add_gtest(test_sonar_live_overview_prune
+    test/test_sonar_live_overview_prune.cpp
+  )
+  target_include_directories(test_sonar_live_overview_prune PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_overview_prune
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_overview_prune
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [field 2026-08-27] Coarse overview data may be drawn ONLY as a placeholder for a
+  # fine tile that is known to exist and has not loaded, clipped to that tile's own
+  # footprint (ADR-0010 D5): nothing coarse while the fine tiles are resident, a
+  # clipped placeholder where one is missing, zoom-out coverage after eviction, and
+  # nothing at all over unsurveyed water. Same offscreen harness (GL-free / ROS-free).
+  ament_add_gtest(test_sonar_live_placeholder_draw
+    test/test_sonar_live_placeholder_draw.cpp
+  )
+  target_include_directories(test_sonar_live_placeholder_draw PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_placeholder_draw
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_placeholder_draw
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # [camp#172] On-demand reload of evicted fine tiles (the ADR-0013 hook), with the
   # ADR-0010 D6 hysteresis guard. Same offscreen harness (GL-free / ROS-free).
   ament_add_gtest(test_sonar_live_reload
@@ -1224,6 +1281,32 @@ if(BUILD_TESTING)
     tf2_ros
   )
   target_link_libraries(test_sonar_live_catalog_resume
+    camp_map_ros
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [field 2026-08-27] The coverage_catalog subscription QoS must stay VOLATILE to match
+  # the operator-side udp_bridge republisher. No ROS graph / Qt / GL needed.
+  ament_add_gtest(test_sonar_live_catalog_qos
+    test/test_sonar_live_catalog_qos.cpp
+  )
+  target_include_directories(test_sonar_live_catalog_qos PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  ament_target_dependencies(test_sonar_live_catalog_qos
+    geometry_msgs
+    marine_autonomy
+    marine_colormap
+    marine_interfaces
+    marine_tiled_raster_store
+    rclcpp
+    tf2_ros
+  )
+  target_link_libraries(test_sonar_live_catalog_qos
     camp_map_ros
     Qt5::Core
     Qt5::Gui

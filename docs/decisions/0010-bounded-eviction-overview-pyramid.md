@@ -8,6 +8,19 @@ Amended by camp#171/#172 (world-store LOD step 4): D3 reframed as *convergence* 
 the uma shared fold engine (no geometry change); D2 on-demand reload implemented; D6
 reload-hysteresis added. See the "Consequences" memory-math and migration notes.
 
+Amended [field 2026-08-27]: **D5 replaced** — an overview tile is no longer drawn over
+its own extent. Coarse data is drawn only as a *placeholder* for a fine tile that is
+known to exist and has not loaded, clipped to that fine tile's footprint. The old
+draw-order fallback rested on a false premise and put a ~650 m block of folded means
+over the operator's chart mid-survey.
+
+Amended [field 2026-08-27]: **D7** added — catalog prune-on-absence propagates into the
+pyramid. This closes the "overview lifecycle-on-retraction / catalog-prune propagation"
+item that the Consequences list had carried as a deferred follow-up since 2026-08-20.
+It was deferred as bounded and display-grade; the BizzyBoat deployment showed it is
+neither once a boat-side store is reset, because warm-load reinstates the stale pyramid
+on every restart, so no code path could ever reflect the reset.
+
 Cross-reference (camp#195, no change to this decision):
 [ADR-0014](0014-gggs-viewport-scoped-residency.md) gives `GggsTileLayer` its own
 residency budget. It is a **sibling**, not an extension — same forces, different
@@ -83,7 +96,13 @@ discard the rest; viewport centre from `scene()->views()`, LRU by a monotonic
 
 The apex is inherently a small, bounded handful for any realistic survey extent
 (level-6 tiles span ~0.125°), so total resident memory is bounded: fine tiles +
-near-view overviews to the budget, plus the O(small) apex. No vessel-position / tf
+near-view overviews to the budget, plus the O(small) apex.
+
+[field 2026-08-27] What the apex guarantees is unchanged in force but changed in shape
+by D5: it is no longer *drawn* at zoom-out, it is the guaranteed resident **source** a
+zoomed-out view samples through the footprints of the tiles that are missing. Coverage
+still appears everywhere the survey reached; it now stops at the edge of what was
+actually surveyed instead of washing across the apex's own 8° extent. No vessel-position / tf
 dependency — the operator chose view-based LOD over distance-from-vessel as the
 simpler, more natural model.
 
@@ -147,14 +166,72 @@ warm-loaded from the `overviews/` sub-dir (each file's level recovered from its
 stem, since overviews span multiple coarse levels), and are freed under the
 renderer context in the destructor exactly like fine tiles.
 
-### D5 — LOD fallback by draw order
+### D5 — Coarse data is a placeholder for a known missing tile, clipped to its footprint [field 2026-08-27]
 
-`items()` emits overview tiles first (coarse→fine, the natural `std::map` order by
-GGGS level) and the fine tiles last, so the renderer draws fine tiles on top. Where
-a fine tile is present it fully covers its parent; where it was evicted, the coarse
-parent shows through instead of a blank gap. `recomputeBounds()` and
-`foldAutoRange()` union both maps so the extent and colormap range stay correct when
-only overviews remain for a region.
+**Superseded design (what this replaces).** `items()` emitted every resident overview
+first (coarse→fine, the natural `std::map` order by GGGS level) and the fine tiles
+last, so fine drew on top: LOD fallback by draw order alone, with no level selection.
+Its stated premise was "where a fine tile is present it fully covers its parent" —
+**false**: a child covers a *quarter* of its parent. Wherever fine coverage was sparse,
+which is most of a survey in progress, every coarse ancestor painted through. And the
+apex is resident by design (D1), so the coarsest level of all drew at every zoom.
+Measured on pandy during the BizzyBoat deployment: cached tiles are 960×960 cells at
+every level, so a level-0 cell is ~667 × 926 m carrying the MEAN of everything folded
+beneath it. The operator saw a solid ~650 m block over a good part of the survey area,
+covering the chart — over water the survey had never touched.
+
+**The decision.** Coarse data may be drawn **only as a placeholder for a fine tile that
+is known to exist and is not currently resident**, and only **over that fine tile's own
+footprint**. `SonarLiveCacheLayer::planDraw()` resolves exactly two contributions:
+
+1. for each index in `pendingFineIndices()` — known to exist, not resident — the
+   **finest resident ancestor** overview, painted over the *fine index's* extent and
+   sampled through the sub-rect of that ancestor which the index occupies;
+2. every resident fine tile, whole, on top.
+
+Nothing else is drawn. An overview's own extent is never painted, so the pyramid can
+no longer assert coverage over water no fine tile ever covered.
+
+**"Known to exist" is derivable, not guessed.** The boat's catalog is authoritative for
+which tiles exist (`catalogued_fine_`, refreshed from every catalog — a complete
+snapshot, so it is assigned, not merged), and residency is `tiles_`. That set is unioned
+with `evicted_fine_indices_`, which is the only authority available on a warm start with
+no link, and which also covers the window where a catalog has been retracted but the
+disk copy is still ours. The reverse gap is deliberate: a catalogued tile we have never
+received has no disk copy, so it is a *request* candidate (the reconciler's job, ADR-0006
+D4), not a reload candidate — it simply gets a placeholder from whatever the pyramid
+holds over it, which is usually NoData and therefore nothing.
+
+**The clip is a texture sub-rect, not narrowed bounds.** `raster::RasterFieldItem`
+carries a geographic extent and one texture, and the renderer stretches the whole
+texture across the extent — so narrowing the bounds alone would *squash* the coarse tile
+into the small box instead of clipping it. The item therefore gained a normalized
+texture window `[u0,v0]-[u1,v1]` (u west→east, v north→south, texture row 0 = north),
+honoured by `RasterGlRenderer`'s texcoord generation. It **defaults to the whole
+texture**, so `RasterLayer`, `GggsTileLayer` and this layer's own resident tiles emit
+exactly the coordinates they did before. The window is computed from GGGS index
+arithmetic (rows and columns both double per level, and the ±72°/±80°
+`latitudeScaleFactor` bands are bounded by whole grid rows at every level, so an
+ancestor and its descendants always share a band), which makes it an exact
+power-of-two fraction rather than a floating-point extent ratio; a descendant that does
+not resolve inside its ancestor draws nothing rather than guessing a window.
+
+The CPU-side alternative — crop the sub-window into a small per-placeholder texture and
+leave the renderer untouched — was rejected: at zoom-out the pending set is the whole
+survey, so it pays a GPU upload per placeholder per frame (or keeps a second resident
+texture per pending index, which is precisely the memory eviction exists to reclaim).
+The sub-rect samples the textures the pyramid already has.
+
+**No scale threshold, and none needed.** The rule is stated in terms of what is missing,
+not how far out the view is, so the zoom-out case falls out of it: zoomed out over a
+whole survey nearly every catalogued tile is non-resident, so the union of the
+placeholders *is* the coverage. A cell-size-versus-screen-pixel LOD rule was considered
+first and rejected: it would have stopped level 0 from drawing at survey zoom, but at
+any zoom where a coarse level did qualify it would still have smeared that level across
+its full extent, including unsurveyed water.
+
+`recomputeBounds()` and `foldAutoRange()` still union both maps, so the extent and
+colormap range stay correct when only overviews remain for a region.
 
 ### D6 — Reload hysteresis (no ping-pong with eviction)
 
@@ -182,6 +259,52 @@ amount of local disk I/O, which is the accepted trade for pan-back recovering fu
 resolution. A stronger anti-churn scheme (e.g. a dwell timer before eviction) was judged
 unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
 
+### D7 — Prune-on-absence propagates into the pyramid [field 2026-08-27]
+
+D4 keeps overviews out of the reconciler; it does **not** exempt them from
+prune-on-absence, though the code read as though it did (the `foldIntoParent()` comment
+asserted the exemption as intent). The pyramid is a pure function of the fine tiles, so
+the catalog is authoritative over it too: **an overview tile should exist exactly when
+it is an ancestor of a live fine index.**
+
+`SonarLiveCacheLayer::reconcilePyramid()` runs at the end of every `handleCatalog()`
+reconcile, after the fine prune, and applies two distinct repairs:
+
+- **Stale by absence.** An overview with no live descendant is entirely stale: remove it
+  from `overview_tiles_`, free its GL texture under the renderer's context (the
+  camp#134 discipline the fine prune already follows), and delete its `overviews/` file.
+  The **directory itself is swept**, not just the resident map — eviction phase 1/D2
+  frees an overview Entry while deliberately keeping its disk copy, so a stale overview
+  can be absent from memory and still be warm-loaded back on the next restart. That is
+  exactly how the pre-reset coverage kept returning.
+- **Dirty by partial withdrawal.** An overview that kept some descendants but lost
+  others holds folded contributions that cannot be subtracted: `foldChild()` only ever
+  folds data IN and has no inverse. Such a tile is **rebuilt** from its surviving
+  children rather than kept. The rebuild reproduces the original construction exactly —
+  D3's chain folds the *whole* parent into the grandparent, so every level above the
+  fine tiles is by construction "the fold of my children" — and it draws its inputs from
+  a child repaired earlier in the same pass, else the resident copy, else the disk copy
+  (D2 makes disk the durable backing for both pools). A tile with **no** surviving child
+  is removed instead: a zoomed-out gap is honest, stale coverage is not.
+
+Two properties are load-bearing and are pinned by
+`test/test_sonar_live_overview_prune.cpp`:
+
+- **Proportionality.** Every fine tile's ancestor chain reaches level 0, so invalidating
+  the chain of each pruned tile would destroy the whole pyramid on any ordinary
+  retraction — and tiles are withdrawn and re-added in normal operation. Nothing is
+  removed while a live descendant remains, and only ancestors of something that really
+  was withdrawn are rebuilt, so the work is proportionate to what actually went away.
+- **Prune-gate parity.** A `generation_time` of 0 disables prune-on-absence in the
+  reconciler (uma ADR-0008 D4, correctness condition (b): no held version is strictly older than 0), so it disables
+  the pyramid sweep too. The live set is also unioned with the ancestors of the fine
+  tiles still held locally, so a held tile that was absent from the catalog but too
+  *new* to prune keeps its ancestors alive.
+
+The budget accounting (D1) is unaffected: removals shrink `overviewResidentBytes()`, a
+rebuild that brings a non-resident overview back into memory is followed by
+`evictIfOverBudget()`, and overviews still never enter `reconciler_` (D4 stands).
+
 ## Consequences
 
 - Long surveys no longer grow resident memory/VRAM without bound; the crash scenario
@@ -195,6 +318,17 @@ unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
   salmon accelerant) — not just a post-load trim.
 - Evicted coverage degrades gracefully to a coarser resolution rather than vanishing,
   and — with D2/D6 reload — recovers to full resolution when the operator pans back.
+- **[field 2026-08-27] Coarse coverage is now gated on knowing the fine index exists**
+  (D5). Two consequences follow and are accepted. (a) A pyramid whose fine tiles are
+  neither catalogued nor on disk — e.g. `overviews/` warm-loaded after the fine cache
+  was cleared by hand — draws nothing; under the old rule its coarse data would have
+  shown. That is the honest reading: nothing local says that coverage is still real.
+  (b) The number of draw items at zoom-out is now the number of *pending* fine indices
+  rather than the number of overview tiles, so a whole-survey view issues one small quad
+  per missing tile. They share the handful of overview textures (no extra uploads), and
+  the clip culls to the viewport, but a very large survey pays more draw calls than
+  before; batching them (one strip per contiguous run against a shared source) is the
+  obvious lever if it ever bites.
 - **Overview memory converges to the 1.33× series.** Because 4 same-size fine tiles
   collapse into 1 same-size uniform parent (D3), the full pyramid over a densely
   covered region sums to `1 + ¼ + 1/16 + … = 4/3` of one level — eviction frees
@@ -210,15 +344,40 @@ unnecessary at the lake/harbour envelope; revisit if a survey exercises it.
 - The `LiveTileCache/max_vram_bytes` budget is self-accounted today; when the #155
   `ResourceMonitor` lands, its VRAM feed replaces `accountedBytes()` self-accounting
   behind the same knob (a named integration seam, not in this change).
+- **[field 2026-08-27] Prune now reaches the pyramid** (D7). A retracted region loses its
+  coarse coverage and its `overviews/` files instead of keeping them forever, and a
+  boat-side store reset is reflected on the next catalog rather than never. The costs
+  are accepted and bounded: each catalog reconcile lists the `overviews/` sub-dir
+  (published on change, not at rate), and a repair re-folds only the ancestors of what
+  was actually withdrawn, preferring resident children so the common case does no disk
+  I/O at all.
 - **Deferred follow-ups:**
-  - `handleCatalog` prune removes a retracted fine tile from `tiles_`/disk/reconciler
-    (and now from the reload's evicted-index set) but does not invalidate the overview
-    cells it was folded into, nor delete orphaned `overviews/` files — a retracted
-    region keeps stale coarse coverage and the `overviews/` dir grows slowly. Bounded
-    (overviews are display-grade + evictable). Overview lifecycle-on-retraction /
-    catalog-prune propagation (incl. nightly-regen anti-clobber) is a **tracked
-    follow-up issue**, out of scope for the camp#171/#172 PR (operator decision
-    2026-08-20).
+  - Pyramid content that went stale *before* D7 shipped, in a session whose descendant
+    overviews were already correctly removed, is not detectable: the repair keys off
+    what this reconcile withdrew, and overviews carry no provenance. Not reachable going
+    forward, and not reachable for the state D7 shipped into (the stale `overviews/`
+    files were all still present, so the first reconcile withdrew them and rebuilt their
+    ancestors). Persisting per-overview provenance was rejected — it cannot survive
+    warm-load, which is precisely the path that resurrects a stale pyramid.
+  - Nightly-regen anti-clobber (a regenerated world store re-publishing a catalog that
+    momentarily disagrees with the live one) is untouched by D7 and remains open.
+  - **The Proportionality argument above bounds tile COUNT, not cost per tile.** The
+    sweep and rebuild run on the Qt GUI thread (`handleCatalog` is dispatched
+    `Qt::QueuedConnection`), and on that thread a rebuild performs a synchronous
+    GDAL `loadFromGeoTiff()` per non-resident input, `fs::remove()` per stale
+    overview, and — because `overviewRebuildChild()` returns by value — a copy of
+    each staged/resident child's full band payload (~3.7 MB per 960x960 Float32
+    band). GL texture frees belong on that thread; the disk I/O and the copies do
+    not, and uma ADR-0008 D5 already puts the write-through off the GUI thread for
+    exactly this reason. Unmeasured: the operator-visible cost is unknown, and the
+    likeliest moment to feel it is a reconcile right after a boat-side store reset,
+    which is the case D7 exists to serve. Tracked as camp#224, which asks for a
+    profile before any threading rework.
+  - A write-through already in flight for a tile the sweep deletes can still land its
+    file after the `remove()`. `cancelPendingWrite()` stops the queued/coalesced case;
+    an in-flight worker cannot be cancelled without reintroducing the two-workers-one-
+    tmp-path race the coalescing exists to prevent. The next catalog's directory sweep
+    deletes it again, so the window self-heals rather than persisting.
   - `foldChild` silently drops a child cell whose geographic centre falls outside the
     parent (only reachable across a ±72°/±80° GGGS latitude-band boundary) → a possible
     overview seam on a high-latitude survey; add a boundary test / handling if such

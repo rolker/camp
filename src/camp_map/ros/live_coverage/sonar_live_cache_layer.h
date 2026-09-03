@@ -14,6 +14,8 @@
 #include "marine_interfaces/msg/tile_catalog.hpp"
 #include "marine_interfaces/msg/tile_request.hpp"
 
+#include <rclcpp/qos.hpp>
+
 #include <QFutureWatcher>
 #include <QImage>
 #include <QPointF>
@@ -36,6 +38,23 @@ namespace ros
 namespace live_coverage
 {
 
+/// QoS used for the `<base>/coverage_catalog` subscription: RELIABLE, depth 1,
+/// and — [field 2026-08-27] — **VOLATILE**.
+///
+/// Exposed (rather than inlined at the subscribe site) so the durability can be
+/// pinned by a regression test: the operator-side subscriber receives the catalog
+/// republished by `udp_bridge`, which is volatile, and a transient-local
+/// subscriber never matches it. Nothing pinned that, which is exactly why the
+/// mismatch went unnoticed. See the definition for the full rationale.
+///
+/// NOT the intended durability, and NOT settled: revert to TRANSIENT_LOCAL once
+/// the boat's bridge config sets `durability: transient_local` on the catalog
+/// topic. udp_bridge already supports it; the config never opted in. Tracked
+/// with the coupled revert in marine_web_view as
+/// rolker/unh_echoboats_project11#484. The definition explains why nothing will
+/// prompt this revert on its own.
+rclcpp::QoS catalogSubscriptionQos();
+
 /// [camp#121] Live coverage cache layer for ONE boat-side source namespace.
 ///
 /// Renders dequantized in-memory `SonarLiveTile`s through a GL pipeline
@@ -43,7 +62,7 @@ namespace live_coverage
 /// anti-entropy convergence with a `TileCatalogReconciler`. See ADR-0006.
 ///
 /// **Activation model (ADR-0006 D5).** The layer is spawned by discovery in a
-/// *discovered-but-inactive* state: it may subscribe to the cheap, transient-local
+/// *discovered-but-inactive* state: it may subscribe to the cheap, low-rate
 /// `coverage_catalog` to advertise availability, but it does NOT subscribe to the
 /// best-effort `coverage_tiles` stream and does NOT publish `TileRequest` until the
 /// operator enables it (context-menu "Enable live coverage"). Enabling warm-loads
@@ -99,18 +118,52 @@ public:
   /// [camp#160] Number of indices the reconciler holds — used by tests to assert
   /// overview tiles never enter the anti-entropy set (ADR-0010 D4).
   std::size_t reconcilerHeldCount() const { return reconciler_.size(); }
+  /// [field 2026-08-27] Test seam: the resident overview tile at @p index, or nullptr
+  /// when it is not resident. The pyramid prune-on-absence test needs the CONTENT of a
+  /// rebuilt overview (did the withdrawn descendant's contribution actually leave?),
+  /// which a count cannot express; reading it back off disk would race the async
+  /// write-through instead of pinning the in-memory repair.
+  const SonarLiveTile* overviewTileForTest(const gggs::GridIndex& index) const;
+
+  /// [field 2026-08-27 / ADR-0010 D5] One resolved contribution to the draw list.
+  ///
+  /// `footprint` is the GGGS index whose geographic extent is painted; `source` is
+  /// the index of the RESIDENT tile whose texture supplies the pixels. For a
+  /// resident fine tile the two are the same index and the whole texture is used.
+  /// For a **coarse placeholder** — a fine tile that is known to exist but is not
+  /// resident — `source` is the finest resident ancestor overview and the sampled
+  /// region is the sub-rect `[u0,v0]-[u1,v1]` of it that the footprint occupies, so
+  /// the coarse data is CLIPPED to that one fine tile's footprint and never painted
+  /// across the overview's own (vastly larger) extent.
+  struct DrawItem
+  {
+    gggs::GridIndex footprint;   ///< extent painted (a fine index)
+    gggs::GridIndex source;      ///< resident tile supplying the texture
+    bool placeholder = false;    ///< source is an overview sampled through a sub-rect
+    float u0 = 0.0f;             ///< west edge of the sampled sub-rect
+    float v0 = 0.0f;             ///< north edge (texture row 0 = north)
+    float u1 = 1.0f;             ///< east edge
+    float v1 = 1.0f;             ///< south edge
+  };
+
+  /// [field 2026-08-27 / ADR-0010 D5] Resolve what this layer draws for
+  /// @p clip_scene (Web-Mercator; a null rect means "no clip", as in items()):
+  /// the coarse placeholders first, then every resident fine tile. GL-free and
+  /// side-effect-free — itemsIntersecting() turns this list into RasterFieldItems
+  /// (uploading textures), and the draw-selection tests drive it directly.
+  std::vector<DrawItem> planDraw(const QRectF& clip_scene) const;
 
   /// [camp#121] Render the in-memory tiles into an offscreen image of @p size
   /// spanning the layer extent. Null image if there is no data / GL is
   /// unavailable. Exposed for a headless render check (skips with no GL).
   QImage renderImage(const QSize& size);
 
-  /// [camp#103 / ADR-0011] Clip-aware overload: render only the tiles whose
-  /// scene extent intersects @p clip_bounds (a sub-rect of sceneBounds(),
-  /// Web-Mercator metres) into an image of @p size spanning exactly
-  /// @p clip_bounds. Filters BOTH pools while preserving the overviews-first
-  /// draw order (the ADR-0010 LOD fallback). paint() uses it with the
-  /// viewport-derived clip; public (mirroring renderImage(size)) for tests.
+  /// [camp#103 / ADR-0011] Clip-aware overload: render only what intersects
+  /// @p clip_bounds (a sub-rect of sceneBounds(), Web-Mercator metres) into an
+  /// image of @p size spanning exactly @p clip_bounds — the resident fine tiles
+  /// plus the coarse placeholders planDraw() resolves for the not-yet-loaded ones
+  /// (ADR-0010 D5). paint() uses it with the viewport-derived clip; public
+  /// (mirroring renderImage(size)) for tests.
   QImage renderImage(const QSize& size, const QRectF& clip_bounds);
 
   /// The layer's Web-Mercator extent (union of tile extents). Exposed for tests.
@@ -206,6 +259,11 @@ private:
   void startWriteThrough(const gggs::GridIndex& index);
   void onWriteThroughFinished(const gggs::GridIndex& index,
                               QFutureWatcher<void>* watcher);
+  // [field 2026-08-27] Drop a deleted tile's queued write-through so a coalesced
+  // relaunch can't re-create the file a prune just removed. An in-flight write is left
+  // to finish (its WriteState must survive, or a later fold would launch a second
+  // worker racing it on the shared `<stem>.tif.tmp` path) — see the definition.
+  void cancelPendingWrite(const gggs::GridIndex& index);
 
   // [camp#160] Bounded eviction + overview pyramid (view-based LOD).
   // accountedBytes(): resident fine-tile footprint (CPU band data + any uploaded
@@ -221,6 +279,29 @@ private:
   void evictIfOverBudget();
   void foldIntoParent(const SonarLiveTile& fine);
   std::optional<QPointF> currentViewCentre() const;
+
+  // [field 2026-08-27 / ADR-0010 D7] Propagate anti-entropy prune-on-absence into the
+  // derived overview pyramid. The catalog is authoritative over the fine tiles, and the
+  // pyramid is a function of them, so an overview SHOULD exist exactly when it is an
+  // ancestor of a live fine index. reconcilePyramid() removes the overviews with no
+  // live descendant (memory + GPU texture + disk, including the `overviews/` files of
+  // non-resident ones) and rebuilds those that merely lost one — foldChild() has no
+  // inverse, so a withdrawn contribution can never be subtracted in place.
+  // rebuiltOverview() re-folds one tile from its surviving children (nullopt = nothing
+  // survives, so the caller removes it: an honest gap beats stale coverage);
+  // overviewRebuildChild() resolves one input, preferring a child repaired earlier in
+  // the same pass, then the resident copy, then the disk copy. Returns true when the
+  // pyramid changed. GUI thread only (ADR-0006 D4).
+  bool reconcilePyramid(const marine_tiled_raster_store::TileCatalog& catalog,
+                        const std::vector<gggs::GridIndex>& pruned_fine);
+  std::optional<SonarLiveTile> rebuiltOverview(
+    const gggs::GridIndex& index,
+    const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+    const std::set<gggs::GridIndex>& gone) const;
+  std::optional<SonarLiveTile> overviewRebuildChild(
+    const gggs::GridIndex& child,
+    const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+    const std::set<gggs::GridIndex>& gone) const;
 
   // [camp#172] On-demand reload of evicted fine tiles (the ADR-0013 §"camp#172 hook").
   // hasUnloadedVisibleTiles(): does the viewport expose an evicted fine index whose
@@ -252,11 +333,27 @@ private:
   QOpenGLTexture* textureFor(Entry& entry);
 
   /// [camp#103] items() body with an optional scene-space clip: a non-null
-  /// @p clip_scene keeps only tiles whose Web-Mercator extent intersects it,
-  /// tested BEFORE the lazy texture upload. Filters both pools, preserving the
-  /// overviews-first draw order (ADR-0010 LOD fallback). items() (the
-  /// RasterFieldSource interface) delegates with a null rect.
+  /// @p clip_scene keeps only the tiles/footprints whose Web-Mercator extent
+  /// intersects it, tested BEFORE the lazy texture upload, so an offscreen tile is
+  /// neither uploaded nor drawn. items() (the RasterFieldSource interface)
+  /// delegates with a null rect. The selection itself is planDraw()'s.
   QList<raster::RasterFieldItem> itemsIntersecting(const QRectF& clip_scene);
+
+  /// [field 2026-08-27 / ADR-0010 D5] The fine indices that are KNOWN TO EXIST but
+  /// are not resident — the set a coarse placeholder may be drawn for, and nothing
+  /// else. Two authorities, unioned: the boat's catalog (`catalogued_fine_`, which
+  /// is authoritative for what exists) and `evicted_fine_indices_` (locally known
+  /// to be on disk — the only authority when no catalog has arrived, e.g. a warm
+  /// start with the link down). Resident indices are excluded: they draw
+  /// themselves at full resolution.
+  std::set<gggs::GridIndex> pendingFineIndices() const;
+
+  /// [field 2026-08-27] The finest resident overview tile that CONTAINS @p index,
+  /// or nullptr when the pyramid has nothing over it (an honest gap — we draw
+  /// nothing rather than inventing coverage). Walks `gggs::parent()` up from
+  /// @p index, so it stops at the first hit: the best available resolution.
+  const Entry* finestResidentAncestor(const gggs::GridIndex& index,
+                                      gggs::GridIndex* source) const;
 
   static constexpr int kMaxImageEdge = 4096;
 
@@ -280,13 +377,15 @@ private:
   // Needed to recover a GridIndex from a cached GeoTIFF on warm-load.
   std::optional<std::uint8_t> level_;
 
-  // [camp#169] Last catalog seen, buffered even while disabled. The catalog
-  // subscription is transient-local depth-1: if the single latched sample is
-  // delivered while enabled_ is false it would otherwise be discarded, and —
-  // the boat's catalog being stable — never re-delivered, so requests would
-  // never resume until a restart (the 2026-07-23 field incident's timing
-  // race). enableLiveCoverage() replays this buffer through handleCatalog()
-  // so reconcile/request fire on every enable.
+  // [camp#169] Last catalog seen, buffered even while disabled. The catalog is
+  // published only on change and the boat's catalog is stable, so a sample
+  // arriving while enabled_ is false would otherwise be discarded and never
+  // re-delivered — requests would not resume until a restart (the 2026-07-23
+  // field incident's timing race). enableLiveCoverage() replays this buffer
+  // through handleCatalog() so reconcile/request fire on every enable.
+  // [field 2026-08-27] With the subscription now volatile (see catalogSubscriptionQos())
+  // there is no latched sample either, which makes this buffer the only bridge
+  // from a catalog seen while disabled to a reconcile on enable.
   std::optional<marine_interfaces::msg::TileCatalog> last_catalog_;
 
   // [camp#134] The shared GL raster renderer (its own offscreen context + the
@@ -303,10 +402,22 @@ private:
 
   // [camp#160] Coarse overview (pyramid) tiles keyed by their own GGGS index at a
   // level below tiles_'s. Built by folding evicted fine tiles into their parents,
-  // kept resident (never evicted — a handful of tiles), and rendered *under* the
-  // fine tiles so an evicted area degrades to a coarser resolution instead of
-  // going blank. These are a LOCAL derived product: they are NEVER entered into
-  // `reconciler_`, so anti-entropy prune-on-absence can't delete them.
+  // kept resident (all but the numerous near-fine levels — see evictIfOverBudget
+  // phase 2), and sampled as the PLACEHOLDER source for a fine tile that is known
+  // to exist but is not resident, so an evicted area degrades to a coarser
+  // resolution instead of going blank.
+  // [field 2026-08-27] An overview tile is NEVER drawn over its own extent — only
+  // ever through the footprint of one such fine tile (ADR-0010 D5 / planDraw). Its
+  // own extent covers water nobody surveyed, and painting the mean of everything
+  // folded beneath a coarse cell across all of it hides the chart underneath.
+  // These are a LOCAL derived product:
+  // they are NEVER entered into `reconciler_` (ADR-0010 D4 — they are absent from the
+  // boat's catalog, so reconciling them directly would prune every one of them on the
+  // first catalog).
+  // [field 2026-08-27] That is a statement about reconciler membership only. It is NOT
+  // an exemption from prune-on-absence, though the code read as if it were: see
+  // reconcilePyramid(), which converges this map (and the `overviews/` sub-dir) to the
+  // ancestors of the live fine set on every catalog.
   std::map<gggs::GridIndex, Entry> overview_tiles_;
 
   // [camp#172] Fine indices that were evicted (folded to overview + dropped from
@@ -315,6 +426,16 @@ private:
   // when it is reloaded (onReloadFinished, whether the load succeeded or not),
   // re-received live (handleTile), or pruned by the catalog (handleCatalog).
   std::set<gggs::GridIndex> evicted_fine_indices_;
+
+  // [field 2026-08-27 / ADR-0010 D5] The fine indices of the last catalog — the
+  // boat's authoritative statement of which tiles EXIST. Maintained from every
+  // catalog (including one that arrives while disabled, which handleCatalog also
+  // buffers for replay), it is the set a coarse placeholder is allowed to be drawn
+  // for: coarse data is a stand-in for a specific fine tile that has not loaded,
+  // never a wash over the overview's own extent. Empty until the first catalog —
+  // pendingFineIndices() then falls back to evicted_fine_indices_ alone, which is
+  // what a warm start with no link has.
+  std::set<gggs::GridIndex> catalogued_fine_;
 
   // [camp#172] Async reload worker (loads evicted fine GeoTIFFs off the GUI thread) and
   // the moved-since-last-kick guard, mirroring GggsTileLayer's demand-driven loader.

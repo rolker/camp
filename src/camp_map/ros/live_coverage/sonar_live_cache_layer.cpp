@@ -26,7 +26,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <filesystem>
+#include <set>
 #include <vector>
 
 namespace camp
@@ -56,6 +59,53 @@ QString sanitize(const std::string& ns)
 // fine tiles at the cache-dir root so warm-load of fine tiles can't pick them up.
 const std::string kOverviewSubdir = "overviews";
 
+// [field 2026-08-27] The cache filename stem for a tile index, `<level>_<row>_<col>` —
+// the single formula behind every cache path (fine tiles at the cache-dir root,
+// overviews under `overviews/`). It was open-coded at three sites; the pyramid prune
+// adds more, and a silent divergence between the writer's name and a deleter's name
+// would orphan files rather than fail loudly.
+std::string tileStem(const gggs::GridIndex& index)
+{
+  return std::to_string(static_cast<int>(index.level())) + "_" +
+         std::to_string(index.row()) + "_" + std::to_string(index.column());
+}
+
+// [field 2026-08-27] Cache path of a fine tile (cache-dir root) and of an overview tile
+// (the `overviews/` sidecar sub-dir).
+std::filesystem::path fineTilePath(const std::string& cache_dir, const gggs::GridIndex& index)
+{
+  return std::filesystem::path(cache_dir) / (tileStem(index) + ".tif");
+}
+
+std::filesystem::path overviewTilePath(const std::string& cache_dir,
+                                       const gggs::GridIndex& index)
+{
+  return std::filesystem::path(cache_dir) / kOverviewSubdir / (tileStem(index) + ".tif");
+}
+
+// [field 2026-08-27] Inverse of tileStem(): recover a GridIndex from a cache filename
+// stem. Returns the invalid sentinel when the stem does not parse in full or does not
+// name a real grid — the disk sweep then leaves that file alone rather than guessing,
+// since writeTileToCache() is the only writer and only ever emits this shape.
+gggs::GridIndex indexFromStem(const std::string& stem)
+{
+  int level = 0;
+  unsigned long long row = 0;
+  unsigned long long col = 0;
+  int consumed = 0;
+  if(std::sscanf(stem.c_str(), "%d_%llu_%llu%n", &level, &row, &col, &consumed) != 3 ||
+     consumed != static_cast<int>(stem.size()))
+    return gggs::GridIndex();
+  if(level < 0 || level > 255 ||
+     row > 0xffffffffull || col > 0xffffffffull)
+    return gggs::GridIndex();
+  marine_interfaces::msg::TileIndex wire;
+  wire.level = static_cast<std::uint8_t>(level);
+  wire.row = static_cast<std::uint32_t>(row);
+  wire.col = static_cast<std::uint32_t>(col);
+  return gridIndexFromTileIndex(wire);
+}
+
 // [camp#160] Squared distance (Web-Mercator scene units) from a tile's centre to
 // a scene point — the eviction key for view-based LOD (farthest tile evicts first).
 double tileSceneDistanceSquared(const SonarLiveTile& tile, const QPointF& point)
@@ -78,6 +128,49 @@ QRectF indexSceneRect(const gggs::GridIndex& index)
   const QPointF hi = web_mercator::geoToMap(
     QGeoCoordinate(index.northLatitude(), index.eastLongitude()));
   return QRectF(lo, hi).normalized();
+}
+
+// [field 2026-08-27 / ADR-0010 D5] The sub-rect of @p ancestor's texture that
+// @p descendant occupies, in normalized texture coordinates (u west->east, v
+// north->south — texture row 0 is north, as SonarLiveTile stores it and as the
+// renderer's vertex generation assumes). This is what clips a coarse placeholder to
+// one fine tile's footprint instead of stretching the whole overview over it.
+//
+// Derived from GGGS index arithmetic, not from an extent ratio: a level's grid rows
+// and columns both double per level (the ±72/±80 `latitudeScaleFactor` bands are
+// bounded by whole grid rows at every level, so an ancestor and its descendants are
+// always inside one band and share the scale factor), which makes the window an
+// exact power-of-two fraction — no floating-point extent division, and no drift when
+// the walk spans many levels. Rows count NORTHWARD while v counts southward, hence
+// the row flip.
+//
+// Returns false — caller draws nothing — when @p descendant is not really inside
+// @p ancestor at a finer level. That is the polar-band case the fold itself already
+// declines to handle (ADR-0010's `foldChild` boundary follow-up), and a silent wrong
+// window would paint one tile's data over another's footprint.
+bool textureWindowOf(const gggs::GridIndex& ancestor, const gggs::GridIndex& descendant,
+                     float& u0, float& v0, float& u1, float& v1)
+{
+  if(!ancestor.valid() || !descendant.valid())
+    return false;
+  const int steps = int(descendant.level()) - int(ancestor.level());
+  if(steps <= 0 || steps > 20)   // >20 cannot happen: GGGS has 21 levels
+    return false;
+  const std::uint64_t span = std::uint64_t(1) << steps;
+  const std::uint64_t base_row = std::uint64_t(ancestor.row()) * span;
+  const std::uint64_t base_col = std::uint64_t(ancestor.column()) * span;
+  const std::uint64_t row = descendant.row();
+  const std::uint64_t col = descendant.column();
+  if(row < base_row || row - base_row >= span || col < base_col || col - base_col >= span)
+    return false;
+  const double inv = 1.0 / double(span);
+  const std::uint64_t row_off = row - base_row;
+  const std::uint64_t col_off = col - base_col;
+  u0 = float(double(col_off) * inv);
+  u1 = float(double(col_off + 1) * inv);
+  v0 = float(double(span - 1 - row_off) * inv);   // rows go north, v goes south
+  v1 = float(double(span - row_off) * inv);
+  return true;
 }
 
 // [camp#172] Off-thread reload worker: load each evicted fine tile's cached GeoTIFF
@@ -110,10 +203,7 @@ std::vector<SonarLiveTile> reloadTilesFromCache(std::vector<gggs::GridIndex> ind
   loaded.reserve(indices.size());
   for(const gggs::GridIndex& index : indices)
   {
-    const std::string stem = std::to_string(static_cast<int>(index.level())) + "_" +
-                             std::to_string(index.row()) + "_" +
-                             std::to_string(index.column()) + ".tif";
-    const std::string path = (fs::path(dir) / stem).string();
+    const std::string path = (fs::path(dir) / (tileStem(index) + ".tif")).string();
     auto tile = SonarLiveTile::loadFromGeoTiff(path, level);
     if(tile && tile->index().valid())
       loaded.push_back(std::move(*tile));
@@ -138,10 +228,7 @@ void writeTileToCache(SonarLiveTile tile, std::string dir)
   fs::create_directories(dir, ec);
   if(ec)
     return;   // unwritable cache dir — skip the GDAL round-trip (best-effort cache)
-  const std::string stem = std::to_string(static_cast<int>(tile.index().level())) + "_" +
-                           std::to_string(tile.index().row()) + "_" +
-                           std::to_string(tile.index().column());
-  const std::string final_path = (fs::path(dir) / (stem + ".tif")).string();
+  const std::string final_path = (fs::path(dir) / (tileStem(tile.index()) + ".tif")).string();
   const std::string tmp_path = final_path + ".tmp";
   if(!tile.writeToGeoTiff(tmp_path))
   {
@@ -227,14 +314,48 @@ QString SonarLiveCacheLayer::settingsKey() const
 
 // ------------------------------- subscriptions -------------------------------
 
+rclcpp::QoS catalogSubscriptionQos()
+{
+  // Complete snapshot, latest wins: reliable, depth 1.
+  //
+  // [field 2026-08-27] Durability must be VOLATILE, not transient-local. The boat-side
+  // producer IS transient-local, but camp runs on the OPERATOR side and never
+  // sees that publisher: it receives the catalog as republished by
+  // `udp_bridge`, which emits VOLATILE. A transient-local subscriber is
+  // QoS-incompatible with a volatile publisher, so the subscription never
+  // matched and handleCatalog() never fired — the anti-entropy reconcile
+  // (ADR-0006 D4) never pruned, and stale coverage persisted on screen
+  // indefinitely (verified live on pandy: publisher /operator/udp_bridge
+  // RELIABLE/VOLATILE vs subscriber /operator/camp RELIABLE/TRANSIENT_LOCAL).
+  //
+  // Tradeoff, accepted for now: volatile means there is no latched sample, so
+  // camp no longer gets the current catalog immediately on join. It must wait
+  // for the next publication before it can reconcile -- about 6 s during an
+  // active survey, and UNBOUNDED while the producer is down, which is exactly
+  // the case transient-local exists for. A never-matching subscription
+  // delivers nothing at all, so waiting strictly dominates.
+  //
+  // REVERT THIS TO TRANSIENT_LOCAL once the boat's bridge config is fixed.
+  // Determined after this was written: udp_bridge is NOT at fault and needs no
+  // change. It already supports per-topic transient-local durability (its
+  // doc/qos_design.md, "Durability"); the boat's coverage_catalog entry simply
+  // never set it, so the topic took the documented VOLATILE default. Tracked
+  // as rolker/unh_echoboats_project11#484, which carries the config fix and
+  // lists this revert alongside the same downgrade in marine_web_view.
+  //
+  // Nothing will prompt the revert, which is why it is written here: a
+  // transient-local publisher still MATCHES a volatile subscriber, so once the
+  // config lands camp keeps working and keeps silently losing late-join.
+  rclcpp::QoS qos(1);
+  qos.durability(rclcpp::DurabilityPolicy::Volatile).reliable();
+  return qos;
+}
+
 void SonarLiveCacheLayer::subscribeCatalog()
 {
   if(catalog_sub_ || !node_ || !node_->node())
     return;
-  // Complete snapshot, latest wins; transient-local so a late joiner gets the
-  // current catalog immediately (matches the boat-side producer QoS).
-  rclcpp::QoS qos(1);
-  qos.transient_local().reliable();
+  const rclcpp::QoS qos = catalogSubscriptionQos();
   const std::string topic = base_namespace_ + "/coverage_catalog";
   catalog_sub_ = node_->node()->create_subscription<marine_interfaces::msg::TileCatalog>(
     topic, qos,
@@ -306,7 +427,7 @@ void SonarLiveCacheLayer::enableLiveCoverage()
   warmLoad();
   subscribeTiles();
   // [camp#169] Replay the buffered catalog so reconcile (and the resulting tile
-  // requests) fire on every enable — the latched sample may have arrived while
+  // requests) fire on every enable — the sample may have arrived while
   // disabled (startup settings-restore race) or the request publisher may have
   // been torn down by a disable since the last reconcile. Direct call on the
   // GUI thread; enabled_ is already true so handleCatalog() proceeds. Warm-load
@@ -514,11 +635,32 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   if(!level_ && !msg.entries.empty())
     level_ = msg.entries.front().index.level;
 
-  // [camp#169] Always buffer, even while disabled: the transient-local depth-1
-  // subscription delivers its latched sample exactly once — discarding it here
-  // while disabled means no reconcile ever fires (the boat's catalog is stable,
-  // so nothing re-delivers it). enableLiveCoverage() replays this buffer.
+  // [camp#169] Always buffer, even while disabled. The catalog is published only
+  // when it changes, and the boat's catalog is stable for long stretches, so a
+  // sample discarded here while disabled may not be re-delivered for the rest of
+  // the session — no reconcile would ever fire. enableLiveCoverage() replays this
+  // buffer. [field 2026-08-27] The volatile subscription makes this MORE load-bearing, not
+  // less: there is no latched sample to re-deliver on a late join either, so this
+  // buffer is now the only path from a catalog seen while disabled to a reconcile
+  // on enable. The catalog subscription itself is never torn down by
+  // disableLiveCoverage() (only the tile stream is), so samples keep arriving and
+  // landing here throughout a disabled window.
   last_catalog_ = msg;
+
+  // [field 2026-08-27 / ADR-0010 D5] Record what the boat says EXISTS. This is the
+  // set a coarse placeholder may be drawn for (planDraw), so it is maintained from
+  // every catalog — including one that arrives while disabled, exactly like the
+  // camp#169 buffer above, since a re-enable replays that buffer rather than
+  // waiting for a catalog that may not be republished for the rest of the session.
+  // A complete catalog is a full snapshot, so this is an assignment, not a merge:
+  // a tile that left the catalog must stop being placeholder-able at once.
+  catalogued_fine_.clear();
+  for(const auto& entry : msg.entries)
+  {
+    const gggs::GridIndex index = gridIndexFromTileIndex(entry.index);
+    if(index.valid())
+      catalogued_fine_.insert(index);
+  }
 
   if(!enabled_)
   {
@@ -553,13 +695,13 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
       tiles_.erase(it);
       pruned = true;
     }
-    // Delete the disk copy too (best-effort).
+    // Delete the disk copy too (best-effort). [field 2026-08-27] Drop the queued
+    // write-through first, or a coalesced relaunch would re-create the file we are
+    // about to remove (see cancelPendingWrite for the in-flight case).
+    cancelPendingWrite(index);
     namespace fs = std::filesystem;
-    const std::string stem = std::to_string(static_cast<int>(index.level())) + "_" +
-                             std::to_string(index.row()) + "_" +
-                             std::to_string(index.column()) + ".tif";
     std::error_code ec;
-    fs::remove(fs::path(cache_dir_) / stem, ec);
+    fs::remove(fineTilePath(cache_dir_, index), ec);
     // [camp#172] The disk copy is gone, so this index is no longer reloadable — drop
     // it from the on-demand reload set, or kickReload() would snapshot it and
     // loadFromGeoTiff() would fail forever with the index never cleared.
@@ -568,7 +710,18 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
   }
   if(gl_current)
     renderer_.doneCurrent();
-  if(pruned)
+
+  // [field 2026-08-27] Propagate prune-on-absence into the DERIVED overview pyramid
+  // (ADR-0010 D7). Pruning only `tiles_` leaves the folded coarse copy of a retracted
+  // region on screen and on disk forever — it is warm-loaded back on every restart, so
+  // no code path could ever reflect a boat-side store reset (measured on pandy: fine
+  // tiles pruned 107M -> 44M while 41M of `overviews/` survived and kept the pre-reset
+  // coverage in front of the operator).
+  const bool pyramid_changed = reconcilePyramid(catalog, result.to_prune);
+  if(pyramid_changed)
+    evictIfOverBudget();   // a rebuild can pull a non-resident overview back into memory
+
+  if(pruned || pyramid_changed)
   {
     // Reset before re-folding so a pruned tile's extreme min/max can't linger in
     // data_min_/data_max_ — the range reflects only the surviving tiles (mirrors
@@ -637,6 +790,30 @@ void SonarLiveCacheLayer::onWriteThroughFinished(const gggs::GridIndex& index,
     write_states_.erase(it);    // clean: drop the per-tile state
 }
 
+void SonarLiveCacheLayer::cancelPendingWrite(const gggs::GridIndex& index)
+{
+  // [field 2026-08-27] GUI thread. The tile is being deleted, so drop its queued
+  // write-through — without this a coalesced relaunch would re-create the `.tif` the
+  // caller is about to remove, and warm-load would resurrect the deleted tile on the
+  // next restart.
+  //
+  // An IN-FLIGHT write cannot be cancelled, and its WriteState must NOT be erased:
+  // scheduleWriteThrough() keys "is a worker already running for this index?" on that
+  // state, so erasing it would let a later fold launch a SECOND concurrent worker
+  // racing the first on the shared `<stem>.tif.tmp` path — the exact bug the
+  // coalescing exists to prevent. Clear `dirty` instead and let
+  // onWriteThroughFinished() erase the state. The already-running worker may still
+  // land its file after the caller's remove(); the next catalog's pyramid sweep scans
+  // the directory and deletes it again, so that window self-heals rather than
+  // persisting.
+  auto it = write_states_.find(index);
+  if(it == write_states_.end())
+    return;
+  it->second.dirty = false;
+  if(!it->second.in_flight)
+    write_states_.erase(it);
+}
+
 // -------------------------- eviction / overview pyramid ----------------------
 
 std::size_t SonarLiveCacheLayer::entryBytes(const Entry& e)
@@ -702,8 +879,19 @@ void SonarLiveCacheLayer::foldIntoParent(const SonarLiveTile& fine)
   // camp#171). foldChild() requires parent and child to be the same size (it maps each
   // child into a 1/4 sub-window), so the parent MUST match fine.width()/height(). They
   // persist under the `overviews/` cache sub-dir (the uma sidecar layout) and are never
-  // added to the reconciler (a local derived product; prune-on-absence must not touch
-  // them).
+  // added to the reconciler (ADR-0010 D4: they are a local derived product and are not
+  // in the boat's catalog, so reconciling them directly would prune them all on the
+  // first catalog).
+  //
+  // [field 2026-08-27] That is a statement about the RECONCILER's membership, not an
+  // exemption from prune-on-absence, and this comment used to assert the latter. It was
+  // wrong, and the bug it described as intent shipped: a retracted region kept its
+  // coarse coverage forever. The pyramid is derived from the fine tiles, so the catalog
+  // is authoritative over it too — see reconcilePyramid(), which removes overviews with
+  // no catalogued descendant and REBUILDS the ones that merely lost some. The rebuild is
+  // the other half of the reason: this fold is purely accumulative (foldChild only ever
+  // folds data IN — there is no un-fold), so a withdrawn contribution can never be
+  // subtracted from a parent in place.
   const gggs::GridIndex parent_index = gggs::parent(fine.index());
   if(!parent_index.valid())
     return;
@@ -719,6 +907,269 @@ void SonarLiveCacheLayer::foldIntoParent(const SonarLiveTile& fine)
   overview.texture_dirty = true;
   scheduleWriteThrough(overview.tile, kOverviewSubdir);
   foldIntoParent(overview.tile);   // build the full chain to level 0
+}
+
+// ------------------- pyramid prune-on-absence (ADR-0010 D7) ------------------
+
+bool SonarLiveCacheLayer::reconcilePyramid(
+  const marine_tiled_raster_store::TileCatalog& catalog,
+  const std::vector<gggs::GridIndex>& pruned_fine)
+{
+  // [field 2026-08-27] Converge the DERIVED overview pyramid to the catalog, the same
+  // way handleCatalog() converges the fine tiles. The pyramid is a function of the fine
+  // tiles, so the catalog is authoritative over it too — an overview tile SHOULD exist
+  // exactly when it is an ancestor of a live fine index.
+  //
+  // Two distinct failure modes, two distinct repairs:
+  //   * stale by absence   — no live descendant at all: the whole tile is stale, remove
+  //                          it (memory + GPU texture + disk).
+  //   * dirty by partial   — some descendants live, but a descendant was withdrawn:
+  //     withdrawal            foldChild() has no inverse, so the withdrawn contribution
+  //                          cannot be subtracted in place. Rebuild the tile from its
+  //                          surviving children instead of keeping it.
+  //
+  // Deliberately NOT done: invalidating the whole ancestor chain of every pruned tile.
+  // That chain always reaches level 0, which spans a whole GGGS grid at the coarsest
+  // level, so any single ordinary retraction would destroy the apex — and tiles are
+  // withdrawn and re-added in normal operation. The work here is proportionate to what
+  // actually went away: nothing is removed while a live descendant remains, and only
+  // ancestors of something that really was withdrawn are rebuilt.
+  namespace fs = std::filesystem;
+  std::error_code ec;
+
+  // Prune-gate parity with the reconciler (ADR-0008 D4b): a generation_time of 0 — an
+  // un-stamped or sim-time-0 catalog — disables prune-on-absence there, because no held
+  // version can be strictly older than 0. It must disable it here too, or an unstamped
+  // catalog would sweep the entire pyramid while every fine tile stayed put.
+  if(catalog.generation_time == 0)
+    return false;
+
+  // ---- 1. The authoritative live-ancestor set --------------------------------
+  // Ancestors of every catalogued fine index, unioned with the ancestors of the fine
+  // tiles we still possess locally. The second half is what keeps this consistent with
+  // the reconciler's per-tile timestamp gate: a held fine tile that is absent from the
+  // catalog but too NEW to prune is still on disk and still legitimately folded into
+  // its ancestors, so those ancestors must not be swept out from under it. Walking each
+  // chain only until it meets an already-recorded ancestor keeps this linear in the
+  // size of the result, not catalog-size x pyramid-depth.
+  std::set<gggs::GridIndex> live;
+  auto addChain = [&live](const gggs::GridIndex& index)
+  {
+    for(gggs::GridIndex a = gggs::parent(index); a.valid(); a = gggs::parent(a))
+      if(!live.insert(a).second)
+        break;
+  };
+  for(const auto& entry : catalog.entries)
+    addChain(entry.index);
+  for(const auto& item : tiles_)                              // post-prune residency
+    addChain(item.first);
+  for(const gggs::GridIndex& index : evicted_fine_indices_)   // post-prune, on disk
+    addChain(index);
+
+  // ---- 2. Stale by absence ---------------------------------------------------
+  std::set<gggs::GridIndex> gone;
+  for(const auto& item : overview_tiles_)
+    if(!live.count(item.first))
+      gone.insert(item.first);
+
+  // The `overviews/` sub-dir must be swept too, not just the resident map. Memory-
+  // pressure eviction (evictIfOverBudget phase 2) frees an overview Entry but KEEPS its
+  // disk copy on purpose — the disk cache is the durable backing (ADR-0010 D2) — so a
+  // stale overview can be invisible in overview_tiles_ and still be warm-loaded back on
+  // the next restart. That is precisely how the pre-reset coverage kept returning on
+  // pandy. Collect first, delete after: removing entries under a live
+  // directory_iterator is not defined.
+  std::vector<fs::path> stale_files;
+  for(fs::directory_iterator it(fs::path(cache_dir_) / kOverviewSubdir, ec), end;
+      !ec && it != end; it.increment(ec))
+  {
+    if(it->path().extension() != ".tif")
+      continue;
+    const gggs::GridIndex index = indexFromStem(it->path().stem().string());
+    if(!index.valid() || live.count(index))
+      continue;
+    stale_files.push_back(it->path());
+    gone.insert(index);
+  }
+  // Delete the stale files BEFORE the rebuild below reads children off disk, so a stale
+  // child can never be folded back into the parent that is being repaired.
+  for(const fs::path& path : stale_files)
+    fs::remove(path, ec);
+
+  // ---- 3. Dirty by partial withdrawal ----------------------------------------
+  // A surviving ancestor of anything withdrawn this pass holds folded contributions
+  // that can no longer be subtracted. Ancestors that were themselves removed above are
+  // skipped (nothing to rebuild), and a chain stops as soon as it meets an ancestor
+  // already queued — everything above that is queued too.
+  std::set<gggs::GridIndex> dirty;
+  auto markChainDirty = [&](const gggs::GridIndex& index)
+  {
+    for(gggs::GridIndex a = gggs::parent(index); a.valid(); a = gggs::parent(a))
+    {
+      if(!live.count(a))
+        continue;
+      if(!dirty.insert(a).second)
+        break;
+    }
+  };
+  for(const gggs::GridIndex& index : pruned_fine)
+    markChainDirty(index);
+  for(const gggs::GridIndex& index : gone)
+    markChainDirty(index);
+
+  // Only rebuild overviews that actually exist (resident or on disk) — the pyramid is
+  // built by folding, never by this repair path, so fabricating a tile here would both
+  // invent coverage and do unbounded work. Deepest level first, so a parent's rebuild
+  // sees its children already repaired.
+  std::vector<gggs::GridIndex> targets;
+  for(const gggs::GridIndex& index : dirty)
+    if(overview_tiles_.count(index) ||
+       fs::exists(overviewTilePath(cache_dir_, index), ec))
+      targets.push_back(index);
+  std::sort(targets.begin(), targets.end(),
+            [](const gggs::GridIndex& a, const gggs::GridIndex& b)
+            { return a.level() > b.level(); });
+
+  std::map<gggs::GridIndex, SonarLiveTile> staged;
+  const std::size_t stale_count = gone.size();
+  for(const gggs::GridIndex& index : targets)
+  {
+    std::optional<SonarLiveTile> rebuilt = rebuiltOverview(index, staged, gone);
+    if(rebuilt)
+      staged.emplace(index, std::move(*rebuilt));
+    else
+      gone.insert(index);   // no surviving child: an honest gap beats a stale tile
+  }
+
+  // ---- 4. Apply --------------------------------------------------------------
+  // [camp#134] A removed Entry owns a QOpenGLTexture whose dtor frees GPU resources
+  // ONLY under a current GL context; erasing it without one leaks the texture. Same
+  // hasContext()/makeCurrent()/doneCurrent() discipline as the fine prune above and as
+  // the destructor's teardown.
+  const bool gl_current = !gone.empty() && renderer_.hasContext() && renderer_.makeCurrent();
+  for(const gggs::GridIndex& index : gone)
+  {
+    auto it = overview_tiles_.find(index);
+    if(it != overview_tiles_.end())
+    {
+      it->second.texture.reset();
+      overview_tiles_.erase(it);
+    }
+    cancelPendingWrite(index);
+  }
+  if(gl_current)
+    renderer_.doneCurrent();
+  // Every removed tile's disk copy. The stale-by-absence files were already deleted
+  // above (before the rebuild read children off disk, so a stale child could not be
+  // folded back in) — repeating them here is a harmless no-op and keeps this the single
+  // place that guarantees "in `gone` => no file left behind", which is what the
+  // unrebuildable tiles need.
+  for(const gggs::GridIndex& index : gone)
+    if(!staged.count(index))
+      fs::remove(overviewTilePath(cache_dir_, index), ec);
+
+  for(auto& item : staged)
+  {
+    auto it = overview_tiles_.find(item.first);
+    if(it == overview_tiles_.end())
+      it = overview_tiles_
+             .emplace(item.first, Entry{std::move(item.second), nullptr, true, 0})
+             .first;
+    else
+    {
+      // Mutate the Entry IN PLACE. Replacing it would destroy the old
+      // QOpenGLTexture here, outside any GL context (this runs after doneCurrent());
+      // keeping the texture object and marking it dirty lets textureFor() re-upload it
+      // under the renderer's context at draw time, which is where every other
+      // re-upload happens.
+      it->second.tile = std::move(item.second);
+      it->second.texture_dirty = true;
+    }
+    // Persist the repair, or warm-load would bring the stale content straight back.
+    scheduleWriteThrough(it->second.tile, kOverviewSubdir);
+  }
+
+  const bool changed = !gone.empty() || !staged.empty();
+  if(changed)
+    qInfo().noquote() << "[live coverage" << QString::fromStdString(base_namespace_)
+                      << "] pyramid reconcile: removed" << qulonglong(stale_count)
+                      << "overview tiles with no live descendant and"
+                      << qulonglong(gone.size() - stale_count)
+                      << "with no rebuildable children; rebuilt"
+                      << qulonglong(staged.size()) << "that lost a descendant";
+  return changed;
+}
+
+std::optional<SonarLiveTile> SonarLiveCacheLayer::rebuiltOverview(
+  const gggs::GridIndex& index,
+  const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+  const std::set<gggs::GridIndex>& gone) const
+{
+  // [field 2026-08-27] Rebuild ONE overview tile from scratch out of its surviving
+  // children. foldChild() only ever folds data IN — there is no un-fold — so a tile
+  // that lost a descendant cannot have that contribution subtracted; starting from an
+  // empty parent and re-folding what is left is the only correct repair.
+  //
+  // This reproduces exactly how the tile was built in the first place: foldIntoParent()
+  // folds the WHOLE parent tile into the grandparent, so every pyramid level above the
+  // fine tiles is by construction "the fold of my children". Cells no surviving child
+  // covers stay NoData and are discarded by the renderer.
+  //
+  // std::nullopt means "no child survives" — the caller then removes the tile. A
+  // zoomed-out gap is honest; a knowingly-stale tile is not.
+  if(!level_)
+    return std::nullopt;   // fine level unknown: cannot tell a fine child from a coarse one
+  std::optional<SonarLiveTile> parent;
+  for(const gggs::GridIndex& kid : gggs::children(index))
+  {
+    const std::optional<SonarLiveTile> child = overviewRebuildChild(kid, staged, gone);
+    if(!child)
+      continue;
+    if(!parent)
+      parent.emplace(index, child->width(), child->height());   // foldChild needs same size
+    parent->foldChild(*child);
+  }
+  return parent;
+}
+
+std::optional<SonarLiveTile> SonarLiveCacheLayer::overviewRebuildChild(
+  const gggs::GridIndex& child,
+  const std::map<gggs::GridIndex, SonarLiveTile>& staged,
+  const std::set<gggs::GridIndex>& gone) const
+{
+  // [field 2026-08-27] Freshest copy of one rebuild input, or nullopt when it is gone.
+  // Order: a child already repaired in this same pass (targets run deepest-first) beats
+  // the resident copy, which beats the disk copy. A child this pass withdrew
+  // contributes nothing — that omission IS the repair.
+  if(gone.count(child))
+    return std::nullopt;
+  const auto staged_it = staged.find(child);
+  if(staged_it != staged.end())
+    return staged_it->second;
+
+  std::error_code ec;
+  const bool child_is_fine = (child.level() == *level_);
+  if(child.level() > *level_)
+    return std::nullopt;   // below the finest level this source publishes: no such tile
+  const std::map<gggs::GridIndex, Entry>& pool = child_is_fine ? tiles_ : overview_tiles_;
+  const auto resident = pool.find(child);
+  if(resident != pool.end())
+    return resident->second.tile;
+  // Not resident: the disk cache is the durable backing for BOTH pools (ADR-0010 D2),
+  // so an evicted child is still a valid input. exists() first so a missing file is not
+  // a GDAL open failure on the log.
+  const std::filesystem::path path = child_is_fine ? fineTilePath(cache_dir_, child)
+                                                   : overviewTilePath(cache_dir_, child);
+  if(!std::filesystem::exists(path, ec))
+    return std::nullopt;
+  return SonarLiveTile::loadFromGeoTiff(path.string(), gggs::Level(child.level()));
+}
+
+const SonarLiveTile* SonarLiveCacheLayer::overviewTileForTest(
+  const gggs::GridIndex& index) const
+{
+  const auto it = overview_tiles_.find(index);
+  return it == overview_tiles_.end() ? nullptr : &it->second.tile;
 }
 
 void SonarLiveCacheLayer::evictIfOverBudget()
@@ -837,8 +1288,14 @@ bool SonarLiveCacheLayer::hasUnloadedVisibleTiles(const QRectF& viewport_scene) 
 {
   // [camp#172 / ADR-0013] Does the viewport expose an evicted fine tile whose disk copy
   // is not resident? GUI thread. The tile is gone, so test the GGGS extent of the index
-  // directly (same extent math as itemsIntersecting's per-tile clip test). A null
+  // directly (indexSceneRect — literally the clip test planDraw() applies). A null
   // viewport (headless with no clip) matches nothing — reload is viewport-driven.
+  // [field 2026-08-27] Consistent with the draw set by construction: every index here is
+  // in pendingFineIndices() (evicted, so not resident), i.e. every tile this wants to
+  // reload is one currently shown as a coarse placeholder, and a completed reload
+  // replaces that placeholder with the real thing. The converse does not hold and must
+  // not: a catalogued tile we have never received is placeholder-able but has no disk
+  // copy to reload — it is a REQUEST candidate (the reconciler's job), not a reload one.
   if(viewport_scene.isNull())
     return false;
   for(const gggs::GridIndex& index : evicted_fine_indices_)
@@ -1143,6 +1600,114 @@ QPair<float, float> SonarLiveCacheLayer::dataRange() const
   return {float(data_min_), float(data_max_)};
 }
 
+std::set<gggs::GridIndex> SonarLiveCacheLayer::pendingFineIndices() const
+{
+  // [field 2026-08-27 / ADR-0010 D5] The fine tiles KNOWN TO EXIST that are not
+  // resident. Coarse overview data may be drawn for exactly these indices and for
+  // nothing else, so this set is the whole licence for painting anything coarse.
+  //
+  // Two authorities are unioned because neither alone is complete:
+  //   * the catalog is authoritative for what exists on the boat, but it is empty
+  //     until the first one arrives (a warm start with the link down never sees
+  //     one, yet the disk cache is full of real coverage);
+  //   * evicted_fine_indices_ is locally known — an evicted tile whose disk copy
+  //     survives — but it is CLEARED after a reload attempt whether or not the
+  //     load succeeded (camp#172, so a permanently unloadable index cannot re-kick
+  //     forever), which would otherwise silently blank a region the catalog still
+  //     lists.
+  // A resident index is excluded: it draws itself at full resolution, and a
+  // placeholder under it would be a coarse wash bleeding past its edges.
+  std::set<gggs::GridIndex> pending;
+  for(const gggs::GridIndex& index : catalogued_fine_)
+    if(!tiles_.count(index))
+      pending.insert(index);
+  for(const gggs::GridIndex& index : evicted_fine_indices_)
+    if(!tiles_.count(index))
+      pending.insert(index);
+  return pending;
+}
+
+const SonarLiveCacheLayer::Entry* SonarLiveCacheLayer::finestResidentAncestor(
+  const gggs::GridIndex& index, gggs::GridIndex* source) const
+{
+  // [field 2026-08-27] Walk up the GGGS chain and stop at the first resident
+  // overview: the finest coarse representation this pyramid holds for @p index.
+  // Nothing resident anywhere up the chain means the pyramid has no data over it,
+  // so the caller draws nothing — an honest gap beats inventing coverage.
+  for(gggs::GridIndex a = gggs::parent(index); a.valid(); a = gggs::parent(a))
+  {
+    auto it = overview_tiles_.find(a);
+    if(it != overview_tiles_.end())
+    {
+      if(source)
+        *source = a;
+      return &it->second;
+    }
+  }
+  return nullptr;
+}
+
+std::vector<SonarLiveCacheLayer::DrawItem> SonarLiveCacheLayer::planDraw(
+  const QRectF& clip_scene) const
+{
+  // [field 2026-08-27 / ADR-0010 D5] Resolve the draw list. Two contributions, and
+  // deliberately no third:
+  //
+  //   1. a COARSE PLACEHOLDER for every fine tile that is known to exist but has
+  //      not loaded (pendingFineIndices()), sampled out of its finest resident
+  //      ancestor and clipped — via the texture sub-rect — to that fine tile's own
+  //      footprint;
+  //   2. every RESIDENT fine tile, whole, on top.
+  //
+  // What is NOT drawn is the point of this function. An overview tile used to be
+  // drawn over its own extent, which is 4^n fine tiles wide: at level 0 a single
+  // cell is ~667 x 926 m of the mean of everything folded beneath it, painted
+  // across water nobody has ever surveyed and over the chart underneath. The
+  // premise that licensed it — "where a fine tile is present it fully covers its
+  // parent" (camp#160) — is false: a child covers a QUARTER of its parent, so the
+  // parent showed through everywhere the finer level was sparse, which is most of
+  // a survey in progress. Measured on pandy during the BizzyBoat deployment: the
+  // operator saw a solid ~650 m block over a good part of the survey area.
+  //
+  // Scale does not appear here at all. A placeholder exists exactly while a real
+  // tile is missing, so the zoomed-out case needs no separate threshold: zoom out
+  // over a whole survey and nearly every catalogued tile is non-resident, so the
+  // union of their footprints IS the coverage (ADR-0010 D1).
+  //
+  // [camp#103] A non-null @p clip_scene culls by Web-Mercator extent here, before
+  // any texture is touched, so an offscreen tile is neither uploaded nor drawn.
+  std::vector<DrawItem> plan;
+  const bool clipped = !clip_scene.isNull();
+
+  for(const gggs::GridIndex& index : pendingFineIndices())
+  {
+    if(clipped && !indexSceneRect(index).intersects(clip_scene))
+      continue;
+    gggs::GridIndex source;
+    const Entry* ancestor = finestResidentAncestor(index, &source);
+    if(!ancestor)
+      continue;
+    DrawItem item;
+    item.footprint = index;
+    item.source = source;
+    item.placeholder = true;
+    if(!textureWindowOf(source, index, item.u0, item.v0, item.u1, item.v1))
+      continue;   // not a real descendant (see textureWindowOf) — draw nothing
+    plan.push_back(item);
+  }
+
+  for(const auto& entry : tiles_)
+  {
+    if(clipped && !indexSceneRect(entry.first).intersects(clip_scene))
+      continue;
+    DrawItem item;
+    item.footprint = entry.first;
+    item.source = entry.first;
+    plan.push_back(item);
+  }
+  return plan;
+}
+
 QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 {
   return itemsIntersecting(QRectF());
@@ -1151,53 +1716,48 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::items()
 QList<raster::RasterFieldItem> SonarLiveCacheLayer::itemsIntersecting(
   const QRectF& clip_scene)
 {
-  // [camp#134] Collect the held tiles' selected band as Scalar items for the shared
+  // [camp#134] Turn planDraw()'s selection into Scalar items for the shared
   // renderer. Called with the renderer's GL context current (renderImage()), so
   // textureFor() may lazily (re)upload here. The geo->Web-Mercator warp lives in
-  // the renderer; this only forwards each tile's lat/lon extent + NoData sentinel.
-  // [camp#103] A non-null @p clip_scene keeps only tiles whose Web-Mercator extent
-  // intersects it — tested BEFORE textureFor(), so offscreen tiles are neither
-  // uploaded nor drawn. Both pools are filtered with the same predicate, keeping
-  // the overviews-first order below intact.
+  // the renderer; this only forwards each footprint's lat/lon extent, the sampled
+  // texture sub-rect, and the source tile's NoData sentinel.
+  // [camp#103] The clip test already happened in planDraw(), i.e. BEFORE
+  // textureFor(), so an offscreen tile is still neither uploaded nor drawn.
+  const std::vector<DrawItem> plan = planDraw(clip_scene);
   QList<raster::RasterFieldItem> result;
-  result.reserve(int(overview_tiles_.size() + tiles_.size()));
-  auto append = [&](Entry& entry)
+  result.reserve(int(plan.size()));
+  for(const DrawItem& planned : plan)
   {
-    if(!clip_scene.isNull())
-    {
-      const QPointF lo = web_mercator::geoToMap(
-        QGeoCoordinate(entry.tile.minLat(), entry.tile.minLon()));
-      const QPointF hi = web_mercator::geoToMap(
-        QGeoCoordinate(entry.tile.maxLat(), entry.tile.maxLon()));
-      if(!QRectF(lo, hi).normalized().intersects(clip_scene))
-        return;
-    }
+    auto& pool = planned.placeholder ? overview_tiles_ : tiles_;
+    auto it = pool.find(planned.source);
+    if(it == pool.end())
+      continue;
+    Entry& entry = it->second;
     const SonarLiveBand* band = entry.tile.band(band_name_);
     if(!band)
-      return;
+      continue;
     QOpenGLTexture* texture = textureFor(entry);
     if(!texture)
-      return;
+      continue;
     raster::RasterFieldItem fi;
     fi.texture = texture;
     fi.format = raster::RasterFieldItem::Format::Scalar;
     fi.geographic = true;
-    fi.west = entry.tile.minLon();
-    fi.east = entry.tile.maxLon();
-    fi.south = entry.tile.minLat();
-    fi.north = entry.tile.maxLat();
+    // The extent painted is the FOOTPRINT's, not the source tile's: for a coarse
+    // placeholder they differ, and the sub-rect below is what keeps the coarse
+    // texture clipped to it instead of being squashed across it.
+    fi.west = planned.footprint.westLongitude();
+    fi.east = planned.footprint.eastLongitude();
+    fi.south = planned.footprint.southLatitude();
+    fi.north = planned.footprint.northLatitude();
+    fi.u0 = planned.u0;
+    fi.v0 = planned.v0;
+    fi.u1 = planned.u1;
+    fi.v1 = planned.v1;
     fi.has_nodata = band->has_nodata;
     fi.nodata = band->has_nodata ? band->nodata : 0.0f;
     result.push_back(fi);
-  };
-  // [camp#160] LOD fallback by draw order: overviews first (coarse->fine, the
-  // std::map orders by GGGS level), then the fine tiles on top. Where a fine tile
-  // is present it fully covers its parent; where it was evicted, the coarse parent
-  // shows through instead of a blank gap.
-  for(auto& item : overview_tiles_)
-    append(item.second);
-  for(auto& item : tiles_)
-    append(item.second);
+  }
   return result;
 }
 
@@ -1215,8 +1775,8 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bo
   // (uploading textures under it), then delegate the warp + draw.
   if(!renderer_.makeCurrent())
     return QImage();
-  // [camp#103] Only tiles intersecting the clip contribute (both pools,
-  // overviews-first order preserved — the ADR-0010 LOD fallback).
+  // [camp#103] Only what intersects the clip contributes: the resident fine tiles
+  // plus a coarse placeholder for each known-but-not-loaded one (ADR-0010 D5).
   const QList<raster::RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
