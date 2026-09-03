@@ -328,10 +328,24 @@ rclcpp::QoS catalogSubscriptionQos()
   // indefinitely (verified live on pandy: publisher /operator/udp_bridge
   // RELIABLE/VOLATILE vs subscriber /operator/camp RELIABLE/TRANSIENT_LOCAL).
   //
-  // Tradeoff, accepted: volatile means there is no latched sample, so camp no
-  // longer gets the current catalog immediately on join. It must wait for the
-  // next publication of the catalog before it can reconcile. A never-matching
-  // subscription delivers nothing at all, so waiting strictly dominates.
+  // Tradeoff, accepted for now: volatile means there is no latched sample, so
+  // camp no longer gets the current catalog immediately on join. It must wait
+  // for the next publication before it can reconcile -- about 6 s during an
+  // active survey, and UNBOUNDED while the producer is down, which is exactly
+  // the case transient-local exists for. A never-matching subscription
+  // delivers nothing at all, so waiting strictly dominates.
+  //
+  // REVERT THIS TO TRANSIENT_LOCAL once the boat's bridge config is fixed.
+  // Determined after this was written: udp_bridge is NOT at fault and needs no
+  // change. It already supports per-topic transient-local durability (its
+  // doc/qos_design.md, "Durability"); the boat's coverage_catalog entry simply
+  // never set it, so the topic took the documented VOLATILE default. Tracked
+  // as rolker/unh_echoboats_project11#484, which carries the config fix and
+  // lists this revert alongside the same downgrade in marine_web_view.
+  //
+  // Nothing will prompt the revert, which is why it is written here: a
+  // transient-local publisher still MATCHES a volatile subscriber, so once the
+  // config lands camp keeps working and keeps silently losing late-join.
   rclcpp::QoS qos(1);
   qos.durability(rclcpp::DurabilityPolicy::Volatile).reliable();
   return qos;
