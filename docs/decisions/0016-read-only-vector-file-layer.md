@@ -159,11 +159,35 @@ had to be answered rather than assumed.
     the Layers-tab status and the log say so: a layer showing 2 of 5 features and
     reporting "(2 features)" is indistinguishable from a file that holds 2.
 
-12. **The driver set is pinned.** `GDALOpenEx` is handed an operator-supplied
-    string, which OGR treats as a *connection* string. The call is restricted to
-    a list of file-based vector drivers so that "open this file" cannot become a
-    `/vsicurl/` fetch, a `PG:` database connection, or a KML NetworkLink issued
-    from the load worker. Adding a format is a deliberate edit to that list.
+12. **A `/vsi` path is refused, and the driver set is pinned.** `GDALOpenEx` is
+    handed an operator-supplied string, which OGR treats as a *connection*
+    string, so two different things have to be said no to.
+
+    - **Remote and archive fetches are stopped by refusing the PATH**
+      (`camp::vector::isVirtualFileSystemPath`), checked in `VectorLayer`'s
+      constructor before anything is opened and in
+      `AutonomousVehicleProject` on both the open and the restore path. The
+      driver allowlist cannot do this job: GDAL resolves `/vsicurl/`,
+      `/vsizip/`, `/vsis3/` … in its virtual file system *before* a driver is
+      selected, so `/vsicurl/https://host/x.geojson` is fetched and then read
+      by the perfectly-allowed GeoJSON driver — confirmed against GDAL 3.8.4
+      with exactly this allowlist. The restore path is the one that matters:
+      `restorePersistedVectorLayers()` reopens every persisted entry at startup
+      with no operator present, so a `/vsi` entry is dropped from the list
+      rather than remembered.
+    - **Non-file drivers are excluded by the allowlist** — `PG:`, `MySQL:`,
+      `WFS:`, `OAPIF:` and the rest are not on it, so a connection string
+      cannot open a database or a service from the load worker. That, and not
+      the network, is what the list buys. Adding a format is a deliberate edit
+      to it.
+
+    **Known limitation:** `KML`/`LIBKML` are on the allowlist — operators are
+    handed KML routinely — and a KML file can carry a `NetworkLink` that the
+    driver may follow. Nothing here blocks that: the exposure is a fetch
+    initiated by file *content*, after the operator chose to open that file,
+    rather than by the path CAMP was given. Dropping the KML drivers, or
+    disabling network access at the GDAL configuration level
+    (`GDAL_HTTP_*`/`CPL_VSIL_CURL_*`), would close it and is not done here.
 
 ## Consequences
 

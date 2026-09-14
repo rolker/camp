@@ -386,6 +386,18 @@ QString AutonomousVehicleProject::canonicalVectorLayerPath(const QString &fname)
 
 void AutonomousVehicleProject::openVectorLayer(const QString &requested)
 {
+    // [camp#22] Refuse a GDAL virtual-file-system path before anything is created
+    // or PERSISTED: /vsicurl/, /vsizip/, /vsis3/ … are resolved by GDAL ahead of
+    // driver selection, so the driver allowlist does not stop them fetching. A
+    // refused path must not reach vectorLayers/files either, or every later
+    // launch would retry it unattended.
+    if(camp::vector::isVirtualFileSystemPath(requested))
+    {
+        qWarning() << "AutonomousVehicleProject: refusing vector layer" << requested
+                   << "- a /vsi path is a GDAL virtual file system, which can fetch"
+                   << "over the network. Open Vector Layer reads local files only.";
+        return;
+    }
     const QString fname = canonicalVectorLayerPath(requested);
     // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
     // identical layers, and without this the restore path plus a command-line or
@@ -451,6 +463,18 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
     m_unavailableVectorLayerFiles.clear();
     for(const auto& fname : files)
     {
+        // [camp#22] A /vsi entry is DROPPED from the list rather than remembered:
+        // it can only have come from an older build or a hand-edited settings
+        // file, and startup restore is precisely the unattended path where a
+        // network fetch must not be attempted. Carrying it forward would retry it
+        // on every launch.
+        if(camp::vector::isVirtualFileSystemPath(fname))
+        {
+            qWarning() << "AutonomousVehicleProject: dropping persisted vector layer" << fname
+                       << "- a /vsi path is a GDAL virtual file system, which can fetch over"
+                       << "the network; it is not restored and not kept in the list";
+            continue;
+        }
         const QString canonical = canonicalVectorLayerPath(fname);
         if(!QFileInfo::exists(canonical))
         {

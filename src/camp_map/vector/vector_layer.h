@@ -205,6 +205,19 @@ private slots:
 /// layers on both the add and the remove path — so the two halves can never
 /// disagree about what is persisted. They live here (rather than in the project,
 /// which no test can construct) so the add/dedup/remove rules are testable.
+/// [camp#22] True if @p path would be resolved through GDAL's VIRTUAL FILE SYSTEM
+/// — a leading `/vsicurl/`, `/vsizip/`, `/vsis3/`, `/vsigs/` … token.
+///
+/// This is the check that keeps "open this file" from becoming a network fetch.
+/// The driver allowlist in vector_layer.cpp cannot do it: GDAL resolves the /vsi
+/// prefix BEFORE it selects a driver, so `/vsicurl/https://host/x.geojson` is
+/// downloaded and then handed to the perfectly-allowed GeoJSON driver. A /vsi
+/// path is refused by `VectorLayer`'s constructor (before anything is opened) and
+/// by `AutonomousVehicleProject` on both the open and the restore path — the
+/// restore path matters most, since it reopens every persisted entry at startup
+/// with nobody there to confirm it.
+bool isVirtualFileSystemPath(const QString& path);
+
 QString vectorLayerFilesKey();
 QStringList persistedVectorLayerFiles();
 void writePersistedVectorLayerFiles(const QStringList& files);

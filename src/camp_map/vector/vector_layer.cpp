@@ -37,12 +37,23 @@ const marine_colormap::Palette* resolvePalette(const std::string& name)
 }
 
 // [camp#22] The drivers this layer will open. GDALOpenEx is given an operator-
-// supplied STRING, which OGR treats as a connection string rather than a path:
-// the unrestricted driver set would let a typed (or persisted) "/vsicurl/https://
-// ...", "PG:host=...", or a KML NetworkLink turn opening a local file into a
-// network fetch or a database connection from the load worker. CAMP's Open Vector
-// Layer means "read this file", so the set is pinned to file-based vector drivers.
-// Adding a format here is a deliberate act; the list is the contract.
+// supplied STRING, which OGR treats as a connection string rather than a path, so
+// an unrestricted driver set would let a typed (or persisted) "PG:host=...",
+// "MySQL:", "WFS:" or "OAPIF:" open a DATABASE OR SERVICE CONNECTION from the
+// load worker. CAMP's Open Vector Layer means "read this file", so the set is
+// pinned to file-based vector drivers. Adding a format here is a deliberate act;
+// the list is the contract.
+//
+// What this list does NOT do is stop a remote fetch: GDAL resolves a /vsicurl/,
+// /vsizip/ or /vsis3/ prefix in its VIRTUAL FILE SYSTEM layer BEFORE a driver is
+// chosen, so "/vsicurl/https://host/x.geojson" would still be fetched — through
+// the allowed GeoJSON driver. `isVirtualFileSystemPath()` is what blocks that,
+// and it is checked before this call (see the constructor).
+//
+// Remaining limitation, documented in ADR-0016 D12: KML/LIBKML are file drivers
+// that can carry a NetworkLink, and nothing here stops the driver following one.
+// The formats are on the list because operators are handed KML routinely; the
+// exposure is a fetch initiated by file CONTENT, not by the path CAMP was given.
 const char* const kAllowedDrivers[] = {
   "GeoJSON", "GeoJSONSeq", "TopoJSON", "ESRI Shapefile", "GPKG", "SQLite",
   "KML", "LIBKML", "GML", "GMT", "CSV", "DXF", "FlatGeobuf", "OpenFileGDB",
@@ -52,6 +63,17 @@ const char* const kAllowedDrivers[] = {
 
 }  // namespace
 
+bool isVirtualFileSystemPath(const QString& path)
+{
+  // GDAL's virtual file systems are selected by a leading "/vsi..." token in the
+  // filename, resolved BEFORE any driver is chosen, so the driver allowlist does
+  // not see them. Nested forms ("/vsizip//vsicurl/https://...") start with the
+  // same token. Whitespace is trimmed first: GDAL does not, but a path pasted
+  // into the file dialog or carried in a settings file can arrive padded, and a
+  // check that a space defeats is not a check.
+  return path.trimmed().startsWith(QStringLiteral("/vsi"), Qt::CaseInsensitive);
+}
+
 VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename, int feature_cap):
   map::Layer(parentItem, QFileInfo(filename).fileName()),
   filename_(filename),
@@ -59,6 +81,21 @@ VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename, int 
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
+  // [camp#22] A /vsi path is refused HERE, before anything is opened: the worker
+  // would otherwise hand it to GDALOpenEx, which resolves the virtual file system
+  // before driver selection and fetches. This runs on the restore path too —
+  // restorePersistedVectorLayers() reopens every persisted entry at startup with
+  // no operator present to confirm anything — which is why the refusal lives in
+  // the constructor rather than at the menu action.
+  if(isVirtualFileSystemPath(filename))
+  {
+    qWarning() << "camp::vector::VectorLayer:" << filename
+               << "- refused: a /vsi path is a GDAL virtual file system, which is"
+               << "resolved before driver selection and can fetch over the network."
+               << "Open Vector Layer reads local files only.";
+    setStatus("(refused: not a local file)");
+    return;
+  }
   connect(&future_watcher_, &QFutureWatcher<LoadResult>::finished, this, &VectorLayer::loadFinished);
   setStatus("(loading...)");
   future_watcher_.setFuture(QtConcurrent::run(this, &VectorLayer::loadVectorFile, filename));

@@ -193,6 +193,49 @@ TEST(VectorLayerTeardown, UnopenableFileReportsLoadFailed)
   delete layer;
 }
 
+// [camp#22] A GDAL virtual-file-system path is REFUSED without being opened.
+//
+// The driver allowlist cannot stop a remote read: GDAL resolves /vsicurl/,
+// /vsizip/ and /vsis3/ ahead of driver selection, so the fetch happens and the
+// allowed GeoJSON driver reads the result. The path check is the gate, and it has
+// to hold on the RESTORE path too, which reopens every persisted entry at startup
+// with no operator present. Opening no dataset is the assertion that matters here:
+// a /vsicurl/ URL that reached GDAL would go to the network from a unit test.
+TEST(VectorLayerTeardown, VirtualFileSystemPathsAreRefusedWithoutOpening)
+{
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  const int baseline = openDatasetCount();
+
+  for(const QString& path : {QStringLiteral("/vsicurl/https://example.invalid/x.geojson"),
+                             QStringLiteral("/vsizip//data/archive.zip/x.shp"),
+                             QStringLiteral("/vsis3/bucket/x.gpkg"),
+                             QStringLiteral("  /vsicurl/https://example.invalid/x.geojson")})
+  {
+    auto* layer = new camp::vector::VectorLayer(layers, path);
+    // Refused in the constructor: no worker was started, so this is final without
+    // waiting for anything.
+    EXPECT_FALSE(layer->loaded()) << path.toStdString();
+    EXPECT_EQ(layer->status(), QStringLiteral("(refused: not a local file)"))
+        << path.toStdString();
+    EXPECT_EQ(layer->featureCount(), 0) << path.toStdString();
+    EXPECT_EQ(openDatasetCount(), baseline)
+        << "a /vsi path must never reach GDALOpenEx: " << path.toStdString();
+    delete layer;
+  }
+
+  // The predicate itself, since both the project's open path and its restore path
+  // call it directly to keep a refused path out of `vectorLayers/files`.
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/vsicurl/https://h/x.geojson"));
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/vsizip//data/a.zip/x.shp"));
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/VSIS3/bucket/x.gpkg"));
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/data/survey/x.geojson"));
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/data/vsicurl/x.geojson"));
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath(QString()));
+}
+
 // [camp#22 must-fix 7] Per-feature item construction happens on the GUI thread and
 // the Open Vector Layer dialog does not bound what an operator can pick. A
 // coastline shapefile is millions of features; without a cap CAMP freezes with no
