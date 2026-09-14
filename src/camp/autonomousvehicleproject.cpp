@@ -447,12 +447,31 @@ void AutonomousVehicleProject::persistVectorLayers() const
     // separately through the layer's own settings group; this records which layers
     // to recreate. Single writer of the key — see the header.
     QStringList files;
+    // [camp#22] ORDER FIRST, from the list as restored: a file that could not be
+    // opened at restore time (an unmounted share) is carried forward — see
+    // restorePersistedVectorLayers() — and it has to keep its POSITION while it
+    // does. Appending the unavailable entries at the end, which is what this did
+    // first, means one launch with the share unmounted permanently reshuffles the
+    // operator's layer order. Entries in the restored order that are now neither
+    // loaded nor unavailable were REMOVED through the Layers tab, and are skipped.
+    for(const auto& restored : m_restoredVectorLayerOrder)
+    {
+        if(m_unavailableVectorLayerFiles.contains(restored))
+        {
+            files = camp::vector::withVectorLayerFile(files, restored);
+            continue;
+        }
+        for(auto* layer : m_vectorLayers)
+            if(layer->filename() == restored)
+            {
+                files = camp::vector::withVectorLayerFile(files, restored);
+                break;
+            }
+    }
+    // Then anything opened since the restore, in load order. withVectorLayerFile
+    // is append-if-absent, so a layer already placed above keeps its slot.
     for(auto* layer : m_vectorLayers)
         files = camp::vector::withVectorLayerFile(files, layer->filename());
-    // [camp#22] Files that were persisted but could not be opened at restore time
-    // are carried forward rather than forgotten — see restorePersistedVectorLayers().
-    for(const auto& unavailable : m_unavailableVectorLayerFiles)
-        files = camp::vector::withVectorLayerFile(files, unavailable);
     camp::vector::writePersistedVectorLayerFiles(files);
 }
 
@@ -473,6 +492,7 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
     // by clearing the setting.
     const QStringList files = camp::vector::persistedVectorLayerFiles();
     m_unavailableVectorLayerFiles.clear();
+    m_restoredVectorLayerOrder.clear();
     for(const auto& fname : files)
     {
         // [camp#22] A /vsi entry is DROPPED from the list rather than remembered:
@@ -488,6 +508,9 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
             continue;
         }
         const QString canonical = canonicalVectorLayerPath(fname);
+        // The order of record, kept whether or not this entry can be opened now.
+        if(!m_restoredVectorLayerOrder.contains(canonical))
+            m_restoredVectorLayerOrder << canonical;
         if(!QFileInfo::exists(canonical))
         {
             qWarning() << "AutonomousVehicleProject: persisted vector layer" << fname

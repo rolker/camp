@@ -244,6 +244,12 @@ private:
     // time (an unmounted share, an external disk). Kept so persistVectorLayers()
     // can carry them forward instead of forgetting them after one launch.
     QStringList m_unavailableVectorLayerFiles;
+    // [camp#22] The persisted list as it was READ at restore, which is the record
+    // of the operator's layer ORDER. persistVectorLayers() rewrites the key in
+    // this order so an unreachable entry keeps its slot instead of being appended
+    // at the end — otherwise one launch with the share unmounted permanently
+    // reshuffles the list.
+    QStringList m_restoredVectorLayerOrder;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;

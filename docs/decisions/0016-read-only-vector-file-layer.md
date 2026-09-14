@@ -143,11 +143,13 @@ had to be answered rather than assumed.
    the camp#90 / camp#104 hook, used here for the property it has rather than
    for the key it writes.
 
-10. **A persisted file that is unreachable is REMEMBERED, not dropped.** Survey
-    data lives on network shares and external disks; "the share was not mounted
-    when CAMP started" is not the operator asking for the layer to be removed.
-    Such an entry is carried forward into the rewritten key and restores on the
-    next launch that can see it.
+10. **A persisted file that is unreachable is REMEMBERED, not dropped — in
+    place.** Survey data lives on network shares and external disks; "the share
+    was not mounted when CAMP started" is not the operator asking for the layer
+    to be removed. Such an entry is carried forward into the rewritten key and
+    restores on the next launch that can see it, keeping its POSITION in the
+    list: the key is rewritten in the order it was read, so one launch with the
+    share unmounted does not permanently reshuffle the operator's layer order.
 
 11. **Two bounded resources, both reported rather than silently clipped.** The
     parse runs on a QtConcurrent worker whose abort flag is polled *per feature*,
