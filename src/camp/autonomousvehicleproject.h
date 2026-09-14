@@ -274,9 +274,14 @@ private:
     // [camp#22 / camp#90 / camp#117] React to a vector layer being removed via the
     // Layers-tab Remove action: drop its bookkeeping entry and re-persist, so a
     // removed layer does not silently reappear on the next launch. Connected to
-    // m_map's rowsAboutToBeRemoved (the item still exists during that signal, so
-    // its filename can be read).
-    void onVectorLayerRemoved(const QModelIndex& parent, int first, int last);
+    // each layer's VectorLayer::removedFromMap (which comes from
+    // Layer::onRemovedFromMap) — NOT to the Map model's rowsAboutToBeRemoved,
+    // which a drag-reorder fires too and which therefore used to un-persist a
+    // layer the operator only moved up the list.
+    void onVectorLayerRemoved();
+    // [camp#22] Drop a destroyed layer's dangling pointer from the bookkeeping.
+    // Deliberately does not persist: app shutdown destroys every layer.
+    void onVectorLayerDestroyed(QObject* object);
     QString generateUniqueLabel(std::string const &prefix);
 
 

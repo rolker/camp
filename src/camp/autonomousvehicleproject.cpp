@@ -61,10 +61,12 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     // removed via the Layers-tab Remove action (camp_map Layer detaches through the
     // Map model; we react here so camp_map stays unaware of the project).
     connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
-    // [camp#22 / camp#90] Same mechanism for the read-only vector layers: a layer
-    // removed from the Layers tab must also leave the persisted file list, or it
-    // comes back on the next launch.
-    connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onVectorLayerRemoved);
+    // [camp#22 / camp#90] The read-only vector layers deliberately do NOT use
+    // rowsAboutToBeRemoved: Map::setMapItemParent() implements a drag-reorder as
+    // beginRemoveRows + beginInsertRows, so that signal cannot tell a reorder from
+    // a removal and dragging a vector layer up the list used to un-persist it.
+    // Each layer is connected to VectorLayer::removedFromMap instead, which fires
+    // only from Layer::removeFromMap() — see openVectorLayer().
 
     m_root = new Group();
     m_root->setParent(this);
@@ -386,7 +388,18 @@ void AutonomousVehicleProject::openVectorLayer(const QString &fname)
     // and reports a failed or empty load in its own Layers-tab status rather than
     // being silently dropped here — the operator asked for this file, so a file
     // that will not open should say so rather than vanish.
-    m_vectorLayers.push_back(new camp::vector::VectorLayer(layers, fname));
+    auto* layer = new camp::vector::VectorLayer(layers, fname);
+    // [camp#22 / camp#90] Removal — and ONLY removal — drops the file from the
+    // persisted list. VectorLayer::removedFromMap comes from onRemovedFromMap(),
+    // which a drag-reorder never reaches.
+    connect(layer, &camp::vector::VectorLayer::removedFromMap,
+            this, &AutonomousVehicleProject::onVectorLayerRemoved);
+    // Lifetime safety net: a layer destroyed by any other path (app shutdown,
+    // a direct delete) must not leave a dangling pointer in the bookkeeping.
+    // This deliberately does NOT re-persist — shutdown destroys every layer and
+    // persisting from here would erase the whole restore list on every quit.
+    connect(layer, &QObject::destroyed, this, &AutonomousVehicleProject::onVectorLayerDestroyed);
+    m_vectorLayers.push_back(layer);
     persistVectorLayers();
 }
 
@@ -419,29 +432,34 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
         persistVectorLayers();
 }
 
-void AutonomousVehicleProject::onVectorLayerRemoved(const QModelIndex& parent, int first, int last)
+void AutonomousVehicleProject::onVectorLayerRemoved()
 {
-    // [camp#22 / camp#90 / camp#117] A layer is being detached from the Map model
-    // (Layers-tab Remove). The item still exists during rowsAboutToBeRemoved, so
-    // the pointer can be matched against our bookkeeping here; afterwards it is
-    // gone. Dropping only the in-memory entry would leave the file in
+    // [camp#22 / camp#90 / camp#117] The layer this slot was invoked for is being
+    // REMOVED (Layers-tab Remove, or a programmatic removeFromMap) — not merely
+    // reordered. Dropping only the in-memory entry would leave the file in
     // `vectorLayers/files` and the layer would return on the next launch.
-    bool changed = false;
-    for(int row = first; row <= last; ++row)
-    {
-        auto idx = m_map->index(row, 0, parent);
-        auto* item = reinterpret_cast<camp::map::MapItem*>(idx.internalPointer());
-        auto* layer = qobject_cast<camp::vector::VectorLayer*>(item);
-        if(!layer)
-            continue;
-        auto it = std::find(m_vectorLayers.begin(), m_vectorLayers.end(), layer);
-        if(it == m_vectorLayers.end())
-            continue;
-        m_vectorLayers.erase(it);
-        changed = true;
-    }
-    if(changed)
-        persistVectorLayers();
+    auto* layer = qobject_cast<camp::vector::VectorLayer*>(sender());
+    if(!layer)
+        return;
+    auto it = std::find(m_vectorLayers.begin(), m_vectorLayers.end(), layer);
+    if(it == m_vectorLayers.end())
+        return;
+    m_vectorLayers.erase(it);
+    persistVectorLayers();
+}
+
+void AutonomousVehicleProject::onVectorLayerDestroyed(QObject* object)
+{
+    // [camp#22] Bookkeeping hygiene only — never persistence. By the time
+    // QObject::destroyed fires the VectorLayer subobject is already gone, so the
+    // entry is matched by pointer identity (static_cast applies the same
+    // adjustment the connect() did).
+    for(auto it = m_vectorLayers.begin(); it != m_vectorLayers.end(); ++it)
+        if(static_cast<QObject*>(*it) == object)
+        {
+            m_vectorLayers.erase(it);
+            return;
+        }
 }
 
 QGraphicsItem *AutonomousVehicleProject::originAnchor() const

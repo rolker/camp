@@ -208,6 +208,15 @@ void VectorLayer::applyStyle()
   }
 }
 
+void VectorLayer::onRemovedFromMap()
+{
+  // [camp#22 / camp#90] Layer::removeFromMap() calls this synchronously, BEFORE
+  // it detaches the item through the Map model — and a drag-reorder, which goes
+  // through the same model detach, never reaches here. Owners sync (and
+  // re-persist) from this signal rather than from rowsAboutToBeRemoved.
+  emit removedFromMap();
+}
+
 void VectorLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);

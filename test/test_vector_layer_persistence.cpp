@@ -19,7 +19,11 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <vector>
+
 #include <QApplication>
+#include <QFile>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -133,6 +137,93 @@ TEST(VectorLayerPersistence, SettingsKeyIsPathNotBasename)
 
   delete layer_a;
   delete layer_b;
+}
+
+// [camp#22 must-fix 1] A drag-reorder in the Layers tab must NOT un-persist the
+// layer; only a real removal may.
+//
+// `Map::setMapItemParent()` implements a reorder as beginRemoveRows +
+// beginInsertRows, so an owner watching the model's `rowsAboutToBeRemoved` — which
+// is how this was first written — sees a reorder as a removal and deletes the file
+// from `vectorLayers/files`. The layer then does not come back on the next launch,
+// and nothing about the operator's gesture said "remove". The reorder-safe hook is
+// `Layer::onRemovedFromMap()`, which `Layer::removeFromMap()` calls and a reorder
+// never reaches — the same hook RasterLayer (camp#90) and GggsTileLayer (camp#104)
+// de-persist through.
+//
+// The owner is `AutonomousVehicleProject`, which no test can construct (see the
+// harness note at the top of this file), so its two lines of wiring — track the
+// layer, and re-persist from `VectorLayer::removedFromMap` — are reproduced here
+// verbatim. What is under test is the SIGNAL's discrimination: that it fires for
+// `removeFromMap()` and stays silent for a reorder.
+TEST(VectorLayerPersistence, ReorderKeepsFilePersistedRemovalDropsIt)
+{
+  QSettings().clear();
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  auto writeFeature = [&dir](const QString& name) -> QString
+  {
+    const QString path = dir.filePath(name);
+    QFile file(path);
+    if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+      return QString();
+    file.write(R"({"type": "FeatureCollection", "features": [
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-70.7, 43.1]},
+       "properties": {}}]})");
+    file.close();
+    return path;
+  };
+  const QString a = writeFeature("a.geojson");
+  const QString b = writeFeature("b.geojson");
+  ASSERT_FALSE(a.isEmpty());
+  ASSERT_FALSE(b.isEmpty());
+
+  std::vector<VectorLayer*> tracked;
+  camp::map::Map map;
+
+  // AutonomousVehicleProject::persistVectorLayers(): the single writer rebuilds
+  // the whole key from the layers it tracks.
+  auto persistTracked = [&tracked]()
+  {
+    QStringList files;
+    for(const VectorLayer* layer : tracked)
+      files = withVectorLayerFile(files, layer->filename());
+    writePersistedVectorLayerFiles(files);
+  };
+  // AutonomousVehicleProject::openVectorLayer() + onVectorLayerRemoved().
+  auto open = [&](const QString& filename)
+  {
+    auto* layer = new VectorLayer(map.topLevelLayers(), filename);
+    QObject::connect(layer, &VectorLayer::removedFromMap, layer, [&tracked, &persistTracked, layer]()
+    {
+      tracked.erase(std::remove(tracked.begin(), tracked.end(), layer), tracked.end());
+      persistTracked();
+    });
+    tracked.push_back(layer);
+    persistTracked();
+    return layer;
+  };
+
+  VectorLayer* layer_a = open(a);
+  VectorLayer* layer_b = open(b);
+  ASSERT_EQ(persistedVectorLayerFiles(), (QStringList{a, b}));
+
+  // The gesture that used to lose the file: drag layer_a below layer_b. The model
+  // detaches and re-inserts the row; the layer is still on the map afterwards.
+  map.setMapItemParent(layer_a, map.topLevelLayers(), 2);
+  EXPECT_EQ(tracked.size(), 2u) << "a reorder must not touch the bookkeeping";
+  EXPECT_EQ(persistedVectorLayerFiles(), (QStringList{a, b}))
+      << "a reorder must not un-persist the layer";
+  EXPECT_EQ(layer_a->parentMapItem(), map.topLevelLayers()) << "the layer is still on the map";
+
+  // A real removal still de-persists — the half that must keep working.
+  layer_b->removeFromMap();
+  EXPECT_EQ(tracked.size(), 1u);
+  EXPECT_EQ(persistedVectorLayerFiles(), QStringList{a});
+
+  // removeFromMap() defers the delete; let it run before the Map goes away.
+  QCoreApplication::processEvents();
 }
 
 int main(int argc, char** argv)

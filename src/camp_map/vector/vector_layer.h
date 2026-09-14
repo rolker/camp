@@ -97,7 +97,32 @@ public:
   /// "(load failed)" / "(no features)" in the Layers tab.
   bool loaded() const { return loaded_; }
 
+signals:
+  /// [camp#22] This layer was REMOVED from the map — emitted from
+  /// onRemovedFromMap(), so it fires only on `Layer::removeFromMap()` (the
+  /// Layers-tab Remove action or a programmatic detach) and NOT on the
+  /// remove-then-insert that `Map::setMapItemParent()` performs when a layer is
+  /// dragged to a new position in the list.
+  ///
+  /// That distinction is the whole reason this hook exists: the owner used to
+  /// watch the model's `rowsAboutToBeRemoved`, which cannot tell a reorder from a
+  /// removal, so dragging a vector layer up or down the Layers tab silently
+  /// dropped its file from `vectorLayers/files` and the layer did not come back
+  /// on the next launch. RasterLayer and GggsTileLayer de-persist through
+  /// `onRemovedFromMap()` for exactly this reason (camp#90 / camp#104).
+  ///
+  /// The signal carries no payload: the owner (AutonomousVehicleProject) matches
+  /// on `sender()` and remains the single writer of `vectorLayers/files`.
+  void removedFromMap();
+
 protected:
+  /// [camp#22 / camp#90] Reorder-safe removal notification — see removedFromMap().
+  /// Deliberately does NOT write `vectorLayers/files` itself: that key has one
+  /// writer, `AutonomousVehicleProject::persistVectorLayers()`, which rebuilds it
+  /// from the layers it tracks. (RasterLayer writes its key here because it owns
+  /// a key of its own; this layer does not.)
+  void onRemovedFromMap() override;
+
   void contextMenu(QMenu* menu) override;
   void readSettings() override;
   void writeSettings() override;
