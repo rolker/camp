@@ -25,7 +25,7 @@ One ROS 2 / ament_cmake package (`camp`) that builds **one executable** and
 | Target | Kind | Source | Role |
 |--------|------|--------|------|
 | `CCOMAutonomousMissionPlanner` | executable | `src/camp/` | The deployed product (mission planning + monitoring) |
-| `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,util}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
+| `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,catalog,util,vector}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
 | `camp_map_ros` | shared lib | `src/camp_map/ros/` | ROS overlay framework (topic discovery, grids, markers, geometry) built on `camp_map` |
 | `camp_crash` | shared lib | `src/camp_crash/` | Crash diagnostics (#217): fatal-signal / `std::terminate` backtraces + per-thread alternate signal stacks. ROS-free, Qt-free — see the pitfall below |
 
@@ -97,6 +97,23 @@ items (cf. topic discovery #44/#68/#69). The retired store node also carried a
 **manual "Rescan" context-menu action** (right-click → Rescan re-enumerates the
 tile-set directory for newly-landed tiles). Live auto-pickup (a per-layer
 watcher) is a follow-up.
+
+**Two vector-file entry points, and they are not interchangeable (camp#22):**
+a file like a GeoJSON, shapefile, GeoPackage or KML can be brought in two ways,
+and picking the wrong one is the easy mistake because the names look alike.
+`VectorDataset` (`src/camp/vector/`, File > Open Geometry) imports it as
+**editable mission-tree nodes** — Group/Point/LineString/Polygon `MissionItem`s
+the operator can move, rename and send to the robot — persisted in the mission
+project file. `camp::vector::VectorLayer` (`src/camp_map/vector/`, File > Open
+Vector Layer) **displays** it read-only as an ordinary Layers-tab layer with
+attribute-driven styling (colour-by-field through `marine_colormap`,
+size-by-field on point markers) and a click-to-inspect attribute popup;
+it persists as **app state** under `QSettings vectorLayers/files` like the chart
+list (ADR-0003 §4), not in the mission file. Both read the file through
+`camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
+which lives in **camp_map** so both the library layer and the executable's
+importer can call it — a library cannot call into the executable that links it
+(the libcamp_crash rule below).
 
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,

@@ -6,6 +6,52 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 4** (2026-09-14) — implementation notes, edited inline as the work landed
+(plan-first workflow). Scope is unchanged; these are the points where the
+implementation differs from rev 3's letter, each with its reason:
+
+- **No `VectorLayer::onRemovedFromMap()` override** (steps 3 and 7). Rev 3 kept
+  the override but — answering Plan Review round 2's "one owner for the key" —
+  left it nothing to write. The whole removal half is
+  `AutonomousVehicleProject::onVectorLayerRemoved`, connected to the Map model's
+  `rowsAboutToBeRemoved` (verified: `Layer::removeFromMap()` detaches through
+  `Map::setMapItemParent`, `layer.cpp:54-70`), which drops the bookkeeping entry
+  and re-persists. An override that neither writes the key nor signals anything
+  the model does not already signal would be dead code, so it is not there.
+  `RasterLayer::onRemovedFromMap()` exists because it writes a *different* key
+  (`GggsRasters/files`) from the project's `backgrounds/files`; the vector key
+  has one owner and one writer.
+- **No `ProjectView` change** (step 4; Open Question 2 resolved). The feature
+  item reads pan mode from the view's own `dragMode()`
+  (`QGraphicsView::ScrollHandDrag`), which `ProjectView::setPanMode()` sets
+  (`projectview.cpp:335`) and all six add-* modes clear to `NoDrag`
+  (`projectview.cpp:273-314`). No accessor is needed — and a camp_map item could
+  not call into `ProjectView` (executable) anyway, the same layering rule that
+  moved the parser. `src/camp/projectview.{h,cpp}` drops out of Files to Change.
+- **New `src/camp_map/vector/vector_style.{h,cpp}`** — the colour/size mapping
+  as free functions, which is what step 5's tests require ("extract the
+  normalize+sample logic into small free functions"). Added to Files to Change.
+- **The lat/lon-order fix landed in this PR** (step 1; Open Question 3 resolved).
+  Confirmed only the UNTRANSFORMED branch was wrong (`readRing` built
+  `QGeoCoordinate(getX(), getY())` where the Point path built `(getY(), getX())`);
+  both now go through one `toWgs84()` helper. One helper in a file this step
+  already rewrote, so no follow-up issue.
+- **`boundingRect()` override IS needed** (step 3's "confirm during
+  implementation"): `MapItem::boundingRect()` returns an empty rect
+  (`map_item.cpp:34-37`), so the layer returns `childrenBoundingRect()`.
+- **Persistence-test harness** (step 8): the `vectorLayers/files` mechanism
+  (key, read/write, add-dedup, remove) lives in `camp_map` so the rules are
+  testable — `AutonomousVehicleProject` is no more constructible in a test than
+  it was for step 2's seam. The project stays the single *owner*, rebuilding the
+  whole list from `m_vectorLayers` on both paths; its two call sites are verified
+  by reading the source, as step 2's are.
+- **Step 9 acceptance, partially automated**: both real datasets were driven
+  through the shipped parse + styling path off-GUI (33 and 7 features; the
+  58.07 nT/m peak normalizes to 1.0; candidate C reads back at 307792 E /
+  4762878 N UTM 19N — confirmed with `gdaltransform` — carrying its `assessment`
+  text). What remains genuinely manual is the GUI half: rendering, the click
+  popup, and the remove-then-restart check.
+
 **Rev 3** (2026-09-14) — responds to Plan Review round 2 (verdict
 changes-requested, 1 must-fix + 2 suggestions; all 9 round-1 findings
 verified resolved). Operator chose "patch the plan, then implement" — no third
@@ -460,7 +506,8 @@ rounds of answers directly:
 | `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute (with degenerate/missing-value handling), readSettings/writeSettings |
 | `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon), click-to-inspect gated on pan mode |
 | `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test + `mousePressEvent` attribute popup |
-| `src/camp/projectview.h`/`.cpp` | Expose a read-only pan-mode accessor if `mouseMode` has no existing one (needed by the feature item's click-to-inspect gate) |
+| `src/camp_map/vector/vector_style.h`/`.cpp` (new) | Colour/size-by-field mapping as free functions — the headless-testable seam step 5's tests need |
+| ~~`src/camp/projectview.h`/`.cpp`~~ | **Not needed** (rev 4): the feature item reads pan mode from the view's `dragMode()` rather than asking ProjectView |
 | `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
 | `CMakeLists.txt` | Move `vector_parse.cpp` from the executable's `SOURCES` to `CAMP_MAP_SOURCES`; add `vector_layer.cpp`/`vector_feature_item.cpp` to `CAMP_MAP_SOURCES`; 5 new `ament_add_gtest` blocks |
 | `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
@@ -517,20 +564,18 @@ rounds of answers directly:
 
 ## Open Questions
 
-- [ ] `ParsedGeometry::attributes` container type (`QMap<QString, QVariant>`
-      vs. an ordered vector-of-pairs) — default to `QMap` for MVP; revisit
-      only if attribute display order turns out to matter for the
-      click-to-inspect popup.
-- [ ] Whether `ProjectView` needs a new read-only `mouseMode` accessor for
-      the feature item's click-to-inspect gate, or whether one already
-      exists under a different name — confirm during implementation (step
-      4).
-- [ ] Whether the pre-existing Point-vs-`readRing` lat/lon-order
-      inconsistency (step 1) is fixed in this PR or filed as a separate
-      follow-up issue — lean toward fixing in this PR since step 1 already
-      touches the file and the acceptance test is a coordinate check, but
-      flag for review-plan/implementation-time confirmation if it looks
-      larger than a one-line change once addressed.
+All three were settled during implementation (rev 4):
+
+- [x] `ParsedGeometry::attributes` container type — **`QMap<QString, QVariant>`**.
+      It also gives the click-to-inspect popup a stable alphabetical field order,
+      so the ordered-vector alternative bought nothing.
+- [x] Whether `ProjectView` needs a read-only `mouseMode` accessor — **no**.
+      Pan mode is `QGraphicsView::ScrollHandDrag`, which the feature item reads
+      from the view directly; every add-* mode sets `NoDrag`. ProjectView is
+      untouched, which also keeps the camp_map layering rule intact.
+- [x] Whether the Point-vs-`readRing` lat/lon-order inconsistency is fixed here
+      or filed as a follow-up — **fixed in this PR**. Only the untransformed
+      branch was wrong, and both branches now share one `toWgs84()` helper.
 
 ## Estimated Scope
 
