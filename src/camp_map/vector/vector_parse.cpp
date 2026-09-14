@@ -139,8 +139,15 @@ void appendGeometry(const OGRGeometry *geometry,
     case wkbPolygon:
     {
         const OGRPolygon *op = geometry->toPolygon();
-        // Match the original: only emit a polygon when it has an exterior ring.
-        if(op && op->getExteriorRing())
+        // Only emit a polygon when it has an exterior ring — there is no outline
+        // without one. [camp#22] COUNT the drop: every ParseDiagnostics field
+        // exists so a caller can report what was deliberately left out, and an
+        // empty polygon used to vanish with nothing said.
+        if(op && !op->getExteriorRing())
+        {
+            ++diagnostics.polygons_without_exterior_ring;
+        }
+        else if(op)
         {
             ParsedGeometry g;
             g.type = ParsedGeometry::Polygon;
@@ -290,6 +297,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         parsed.name = layer->GetName();
 
         const int dropped_before = diag.points_dropped;
+        const int polygons_dropped_before = diag.polygons_without_exterior_ring;
         layer->ResetReading();
         OGRFeature *feature = layer->GetNextFeature();
         while(feature)
@@ -326,6 +334,12 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
             }
             feature = layer->GetNextFeature();
         }
+
+        if(diag.polygons_without_exterior_ring > polygons_dropped_before)
+            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                       << "- dropped"
+                       << (diag.polygons_without_exterior_ring - polygons_dropped_before)
+                       << "polygon(s) with no exterior ring";
 
         if(diag.points_dropped > dropped_before)
             qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()

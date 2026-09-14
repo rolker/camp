@@ -764,6 +764,53 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
 }
 
+// [camp#22] A polygon with no exterior ring has no outline to draw, so it is
+// dropped — and COUNTED. Every ParseDiagnostics field exists so the caller can
+// report what was deliberately left out; this one used to vanish silently.
+TEST(VectorParseAttributes, PolygonWithoutExteriorRingIsCounted)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr) << "GDAL Memory driver is required for this test";
+  DatasetPtr dataset(driver->Create("ringless", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(dataset);
+
+  OGRSpatialReference wgs84;
+  wgs84.SetWellKnownGeogCS("WGS84");
+  OGRLayer* layer = dataset->CreateLayer("shapes", &wgs84, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+
+  // One empty polygon (no exterior ring — what a malformed or truncated source
+  // produces) and one good one, so the count is provably the empty one alone.
+  {
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRPolygon empty;
+    ASSERT_TRUE(empty.IsEmpty());
+    feature.SetGeometry(&empty);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  {
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRLinearRing ring;
+    ring.addPoint(-70.8, 43.0);
+    ring.addPoint(-70.6, 43.0);
+    ring.addPoint(-70.6, 43.2);
+    ring.addPoint(-70.8, 43.0);
+    OGRPolygon polygon;
+    polygon.addRing(&ring);
+    feature.SetGeometry(&polygon);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+
+  camp::vector::ParseDiagnostics diagnostics;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diagnostics);
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_EQ(layers.front().geometries.size(), 1u) << "only the ringed polygon is drawable";
+  EXPECT_EQ(diagnostics.polygons_without_exterior_ring, 1);
+  EXPECT_EQ(diagnostics.geometries_unhandled, 0) << "an empty polygon is dropped, not unhandled";
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

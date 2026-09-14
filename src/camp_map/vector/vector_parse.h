@@ -116,6 +116,9 @@ struct ParseDiagnostics
     int points_dropped = 0;
     // Geometries of a type this parser does not handle (the curve types).
     int geometries_unhandled = 0;
+    // Polygons dropped because they carry no exterior ring — there is no outline
+    // to draw and no ring to close, so nothing can be emitted for them.
+    int polygons_without_exterior_ring = 0;
 };
 
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.

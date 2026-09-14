@@ -211,6 +211,10 @@ void VectorLayer::loadFinished()
                << "what is shown is the first" << feature_cap_ << "features and no more."
                << "The cap bounds both the items built on the GUI thread and the memory"
                << "the parse itself takes.";
+  if(result.diagnostics.polygons_without_exterior_ring > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- dropped"
+               << result.diagnostics.polygons_without_exterior_ring
+               << "polygon(s) with no exterior ring";
   if(result.diagnostics.layers_failed > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
                << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total
