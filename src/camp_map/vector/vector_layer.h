@@ -34,6 +34,18 @@ class VectorFeatureItem;
 ///     independent of any mission file.
 /// Both read the file through `camp::vector::parseVectorLayers`.
 ///
+/// Click-to-inspect is a `QToolTip`, shown on left-button RELEASE WITHOUT
+/// MOVEMENT and only while the view is in pan mode — not a persistent panel, and
+/// not available in the add-* modes where a left-press places a mission item. See
+/// VectorFeatureItem::mousePressEvent.
+///
+/// [ADR-0016] The design decisions and the persisted schema (`vectorLayers/files`
+/// plus the per-layer style group) are recorded in
+/// `docs/decisions/0016-read-only-vector-file-layer.md`. Known limitation: a line
+/// or polygon whose vertices straddle the antimeridian is drawn the long way
+/// round the world and stretches this layer's extent with it; nothing splits
+/// geometry at the seam.
+///
 /// Shape follows `raster::RasterLayer`: the file is parsed off the GUI thread
 /// (QFutureWatcher + an abort flag joined in the destructor — the #213 pattern),
 /// and the result is turned into one `VectorFeatureItem` child per feature, whose

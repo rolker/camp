@@ -107,13 +107,26 @@ the operator can move, rename and send to the robot — persisted in the mission
 project file. `camp::vector::VectorLayer` (`src/camp_map/vector/`, File > Open
 Vector Layer) **displays** it read-only as an ordinary Layers-tab layer with
 attribute-driven styling (colour-by-field through `marine_colormap`,
-size-by-field on point markers) and a click-to-inspect attribute popup;
-it persists as **app state** under `QSettings vectorLayers/files` like the chart
-list (ADR-0003 §4), not in the mission file. Both read the file through
+size-by-field on point markers) and click-to-inspect — which is a **`QToolTip`,
+shown on left-button release without movement, and only while the view is in pan
+mode** (ProjectView places mission items on left-press in its add-* modes, and a
+press that becomes a drag is a pan gesture); it is not a persistent panel. The
+layer persists as **app state** under `QSettings vectorLayers/files` like the
+chart list (ADR-0003 §4), not in the mission file. Both read the file through
 `camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
 which lives in **camp_map** so both the library layer and the executable's
 importer can call it — a library cannot call into the executable that links it
 (the libcamp_crash rule below).
+
+The design decisions and the persisted schema are
+[`docs/decisions/0016-read-only-vector-file-layer.md`](../docs/decisions/0016-read-only-vector-file-layer.md).
+Three of them bite when editing this code: **`persistVectorLayers()` is the single
+writer** of `vectorLayers/files` (the layer never writes it); **removal is
+observed through `Layer::onRemovedFromMap()`, never the Map model's
+`rowsAboutToBeRemoved`**, because `Map::setMapItemParent()` implements a
+drag-REORDER as remove+insert and the model signal cannot tell the two apart; and
+**feature-item construction is capped** (`VectorLayer::kMaxFeatureItems`) because
+it runs on the GUI thread, with the shortfall reported in the Layers-tab status.
 
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,
@@ -129,6 +142,8 @@ to get `node_`/`transform_buffer_` + an `onNodeUpdated()` hook.
 
 - `docs/decisions/0002-*.md`, `docs/decisions/0003-*.md` — the scene/layer/depth
   architecture. **Read before changing anything in the map system.**
+- `docs/decisions/0016-*.md` — the read-only vector-file layer family (the first
+  non-raster layer) and its persisted schema.
 - `src/camp/autonomousvehicleproject.{h,cpp}` — the mission model + chart
   load/persistence/depth.
 - `src/camp_map/map/map.{h,cpp}` + `map/layer.{h,cpp}` — the layer model.
