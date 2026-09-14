@@ -6,6 +6,7 @@
 
 #include <QDebug>
 #include <QFileInfo>
+#include <QMutexLocker>
 #include <QMenu>
 #include <QSettings>
 #include <QUrl>
@@ -37,9 +38,10 @@ const marine_colormap::Palette* resolvePalette(const std::string& name)
 
 }  // namespace
 
-VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename):
+VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename, int feature_cap):
   map::Layer(parentItem, QFileInfo(filename).fileName()),
-  filename_(filename)
+  filename_(filename),
+  feature_cap_(feature_cap > 0 ? feature_cap : kMaxFeatureItems)
 {
   if(GDALGetDriverCount() == 0)
     GDALAllRegister();
@@ -66,13 +68,8 @@ VectorLayer::LoadResult VectorLayer::loadVectorFile(const QString& filename)
   camp_crash::install_thread_alt_stack();
 
   LoadResult result;
-  {
-    abort_flag_mutex_.lock();
-    const bool aborted = abort_flag_;
-    abort_flag_mutex_.unlock();
-    if(aborted)
-      return result;
-  }
+  if(isAborted())
+    return result;
 
   // [#152] RAII-close the dataset on every path; parseVectorLayers opens none of
   // its own and frees the transforms/iterators it does create.
@@ -86,24 +83,53 @@ VectorLayer::LoadResult VectorLayer::loadVectorFile(const QString& filename)
     return result;
 
   result.opened = true;
-  result.layers = parseVectorLayers(dataset.get());
+  // [camp#22 / #213] Hand the parser the abort flag so it can be polled PER
+  // FEATURE. Checking it once up here bounds nothing: the destructor's join then
+  // waits out the whole parse on the GUI thread — minutes, for a coastline
+  // shapefile. RasterLayer re-checks inside its work loops for the same reason.
+  ParseOptions options;
+  options.aborted = [this]() { return isAborted(); };
+  result.layers = parseVectorLayers(dataset.get(), options, &result.diagnostics);
   return result;
+}
+
+bool VectorLayer::isAborted()
+{
+  QMutexLocker lock(&abort_flag_mutex_);
+  return abort_flag_;
 }
 
 void VectorLayer::loadFinished()
 {
   const LoadResult result = future_watcher_.result();
+  if(result.diagnostics.aborted)
+    return;   // the parse was cancelled; this layer is on its way out
   if(!result.opened)
   {
     setStatus("(load failed)");
     return;
   }
 
+  int total = 0;
+  for(const ParsedLayer& layer : result.layers)
+    total += static_cast<int>(layer.geometries.size());
+
   prepareGeometryChange();
   int skipped = 0;
+  int capped = 0;
   for(const ParsedLayer& layer : result.layers)
+  {
     for(const ParsedGeometry& geometry : layer.geometries)
     {
+      // [camp#22] Every item below is built on the GUI THREAD, and the file
+      // dialog does not bound what an operator can open: a national coastline
+      // shapefile is millions of features, and building an item for each one
+      // freezes CAMP with no way out. Stop at the cap and say so.
+      if(static_cast<int>(features_.size()) >= feature_cap_)
+      {
+        capped = total - static_cast<int>(features_.size()) - skipped;
+        break;
+      }
       // [camp#22] A feature with no placeable coordinate — a .prj-less shapefile
       // read as degrees, a NaN from a failed transform — is skipped rather than
       // placed 1e17 metres away, where it would poison childrenBoundingRect()
@@ -115,23 +141,49 @@ void VectorLayer::loadFinished()
       }
       features_.push_back(new VectorFeatureItem(this, geometry));
     }
+    if(capped > 0)
+      break;
+  }
+
   if(skipped > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- skipped" << skipped
                << "feature(s) whose coordinates are not a valid latitude/longitude"
                << "(a shapefile missing its .prj sidecar is the usual cause)";
+  if(capped > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- showing the first"
+               << feature_cap_ << "features of" << total << ";" << capped
+               << "were not drawn. Building an item per feature happens on the GUI"
+               << "thread, so the cap is what keeps a very large file from freezing CAMP.";
+  if(result.diagnostics.layers_failed > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
+               << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total
+               << "layer(s) were skipped: no coordinate transformation to WGS84 could be"
+               << "built from their spatial reference";
 
   loaded_ = !features_.empty();
   if(!loaded_)
   {
-    // The driver opened the file but this parser found nothing it renders. Say
-    // so — an empty layer that claims to have loaded is indistinguishable from
-    // one drawn off-screen.
-    setStatus(skipped > 0 ? QString("(no placeable features; %1 skipped)").arg(skipped)
-                          : QString("(no features)"));
+    // The driver opened the file but this layer shows nothing. Say WHY — an empty
+    // layer that claims to have loaded is indistinguishable from one drawn
+    // off-screen, and each of these has a different remedy.
+    if(result.diagnostics.layers_failed > 0)
+      setStatus("(load failed: no usable coordinate system)");
+    else if(skipped > 0)
+      setStatus(QString("(no placeable features; %1 skipped)").arg(skipped));
+    else
+      setStatus("(no features)");
     return;
   }
-  setStatus(skipped > 0 ? QString("(%1 features, %2 unplaceable)").arg(features_.size()).arg(skipped)
-                        : QString("(%1 features)").arg(features_.size()));
+
+  QStringList notes;
+  notes << QString("%1 features").arg(features_.size());
+  if(capped > 0)
+    notes << QString("%1 not drawn (cap %2)").arg(capped).arg(feature_cap_);
+  if(skipped > 0)
+    notes << QString("%1 unplaceable").arg(skipped);
+  if(result.diagnostics.layers_failed > 0)
+    notes << QString("%1 layer(s) failed").arg(result.diagnostics.layers_failed);
+  setStatus("(" + notes.join(", ") + ")");
 
   // readSettings() may have restored a style before the features existed.
   applyStyle();

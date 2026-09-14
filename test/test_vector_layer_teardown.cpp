@@ -72,6 +72,33 @@ QString writeGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22] A GeoJSON with `count` point features — big enough that parsing it is
+// measurably slower than an aborted load, which is what the bounded-join test
+// below needs.
+QString writeManyPoints(const QTemporaryDir& dir, int count)
+{
+  const QString path = dir.filePath("many.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  QByteArray json = R"({"type": "FeatureCollection", "features": [)";
+  for(int i = 0; i < count; ++i)
+  {
+    if(i)
+      json += ',';
+    json += QStringLiteral("{\"type\": \"Feature\", \"geometry\": {\"type\": \"Point\", "
+                           "\"coordinates\": [%1, %2]}, \"properties\": {\"n\": %3}}")
+              .arg(-70.8 + (i % 1000) * 0.0001, 0, 'f', 6)
+              .arg(43.0 + (i / 1000) * 0.0001, 0, 'f', 6)
+              .arg(i)
+              .toUtf8();
+  }
+  json += "]}";
+  file.write(json);
+  file.close();
+  return path;
+}
+
 // The parse is async; the status leaves "(loading...)" when it completes.
 bool waitForLoad(const camp::vector::VectorLayer* layer, int timeout_ms = 5000)
 {
@@ -164,6 +191,82 @@ TEST(VectorLayerTeardown, UnopenableFileReportsLoadFailed)
   EXPECT_EQ(layer->status(), QStringLiteral("(load failed)"));
   EXPECT_EQ(layer->featureCount(), 0);
   delete layer;
+}
+
+// [camp#22 must-fix 7] Per-feature item construction happens on the GUI thread and
+// the Open Vector Layer dialog does not bound what an operator can pick. A
+// coastline shapefile is millions of features; without a cap CAMP freezes with no
+// message and no way out. The cap draws the first N and REPORTS the shortfall.
+TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);   // five features
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path, 2);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  EXPECT_EQ(layer->featureCap(), 2);
+  EXPECT_EQ(layer->featureCount(), 2) << "the cap must bound the items actually built";
+  // Silence is the failure mode that matters: a layer showing 2 of 5 features and
+  // saying "(2 features)" is indistinguishable from a file that holds 2.
+  EXPECT_TRUE(layer->status().contains("not drawn"))
+      << "status must report the shortfall: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("3"))
+      << "status must name how many were not drawn: " << layer->status().toStdString();
+  delete layer;
+
+  // The shipped cap is the default and is not applied to ordinary files.
+  auto* uncapped = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(uncapped));
+  EXPECT_EQ(uncapped->featureCap(), camp::vector::VectorLayer::kMaxFeatureItems);
+  EXPECT_EQ(uncapped->featureCount(), 5);
+  EXPECT_EQ(uncapped->status(), QStringLiteral("(5 features)"));
+  delete uncapped;
+}
+
+// [camp#22 must-fix 6] The destructor's join must be bounded by the ABORT, not by
+// the size of the file. The abort flag used to be read once, before GDALOpenEx, so
+// destroying a layer part way through a large parse blocked the GUI thread until
+// the whole file had been read. The parser now polls the flag per feature.
+TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeManyPoints(dir, 200000);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+
+  // How long the full parse takes on this machine, measured rather than assumed.
+  QElapsedTimer full_timer;
+  full_timer.start();
+  {
+    // A cap of 1 keeps the GUI-thread item construction out of the measurement:
+    // what is being timed is the PARSE.
+    auto* layer = new camp::vector::VectorLayer(layers, path, 1);
+    ASSERT_TRUE(waitForLoad(layer, 120000)) << "load did not complete: "
+                                            << layer->status().toStdString();
+    delete layer;
+  }
+  const qint64 full_ms = full_timer.elapsed();
+  ASSERT_GT(full_ms, 200) << "fixture is too small to distinguish an aborted parse";
+
+  // Now destroy immediately. The dtor sets the abort flag and joins; with the flag
+  // polled inside the parse loop this returns long before the file is read.
+  QElapsedTimer abort_timer;
+  abort_timer.start();
+  {
+    auto* layer = new camp::vector::VectorLayer(layers, path, 1);
+    delete layer;
+  }
+  const qint64 abort_ms = abort_timer.elapsed();
+  EXPECT_LT(abort_ms, full_ms / 2)
+      << "aborted teardown took " << abort_ms << " ms against a full parse of " << full_ms
+      << " ms — the abort flag is not being polled inside the parse";
 }
 
 int main(int argc, char** argv)

@@ -45,7 +45,22 @@ class VectorLayer: public map::Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  VectorLayer(map::MapItem* parentItem, const QString& filename);
+  /// [camp#22] Upper bound on the number of feature ITEMS this layer builds.
+  ///
+  /// Item construction happens on the GUI thread (a QGraphicsItem cannot be built
+  /// off it), and the Open Vector Layer dialog does not bound what an operator can
+  /// pick: a national coastline shapefile or an OSM extract is millions of
+  /// features, which would freeze CAMP with no way out and no message. Beyond this
+  /// many the layer draws the first `kMaxFeatureItems` and REPORTS the shortfall in
+  /// its Layers-tab status and the log — a visibly partial layer rather than a hung
+  /// application. The number is a GUI-responsiveness budget, not a data limit:
+  /// 50 000 items build in well under a second and the scene index handles them.
+  static constexpr int kMaxFeatureItems = 50000;
+
+  /// @param feature_cap  test seam; see kMaxFeatureItems, which is the value the
+  ///                     application uses. Values <= 0 are treated as the default.
+  VectorLayer(map::MapItem* parentItem, const QString& filename,
+              int feature_cap = kMaxFeatureItems);
   ~VectorLayer();
 
   enum { Type = map::VectorLayerType };
@@ -88,6 +103,9 @@ public:
   /// grayscale, matching the raster layers.
   void setColormap(const std::string& name);
   const std::string& colormap() const { return colormap_; }
+
+  /// The cap actually in force for this layer (kMaxFeatureItems unless overridden).
+  int featureCap() const { return feature_cap_; }
 
   /// Number of feature items built from the file. Zero until the load completes.
   int featureCount() const { return static_cast<int>(features_.size()); }
@@ -132,10 +150,15 @@ private:
   {
     bool opened = false;
     std::vector<ParsedLayer> layers;
+    ParseDiagnostics diagnostics;
   };
 
   /// Worker body (QtConcurrent pool thread): open the file with GDAL and parse it.
   LoadResult loadVectorFile(const QString& filename);
+
+  /// Thread-safe read of the abort flag. Called on the worker thread, including
+  /// from inside the parser's per-feature poll (ParseOptions::aborted).
+  bool isAborted();
 
   QFutureWatcher<LoadResult> future_watcher_;
   // Set under the mutex to tell an in-flight load to stop; the destructor sets it
@@ -145,6 +168,7 @@ private:
 
   QString filename_;
   bool loaded_ = false;
+  int feature_cap_ = kMaxFeatureItems;
 
   std::vector<VectorFeatureItem*> features_;   // children; owned by the scene tree
   QString color_field_;
