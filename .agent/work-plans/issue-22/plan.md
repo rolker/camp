@@ -4,68 +4,222 @@
 
 https://github.com/rolker/camp/issues/22
 
+## Revision history
+
+**Rev 2** (2026-09-14, this revision) — responds to the Plan Review
+(`.agent/work-plans/issue-22/progress.md`, verdict changes-requested, 9
+must-fix + 3 suggestion findings). Every finding was re-verified against the
+current source before being folded in:
+
+- Step 2 ("fix `VectorDataset::read()`") is **replaced**. The premise was
+  false: a persisted `VectorDataset` node **is** restored today —
+  `MissionItem::readChildren` (`missionitem.cpp:185`) special-cases
+  `object["type"] == "VectorDataset"` and dispatches to
+  `AutonomousVehicleProject::openGeometry(fname)`
+  (`autonomousvehicleproject.cpp:200-214`), which opens the file. `read()` is
+  never called on that path, so restoring it would be dead code (and risk a
+  double-load if a `VectorDataset` item were ever also constructed there).
+  The real defect, confirmed by reading both functions: `openGeometry`
+  always inserts the new `VectorDataset` under `m_currentGroup` (a
+  project-global "current group" pointer), not under the `MissionItem` whose
+  `readChildren` is doing the dispatching — so a `VectorDataset` nested
+  inside a `Group` is restored at the top level (or wherever
+  `m_currentGroup` happens to point), not back where the user put it. The
+  operator confirmed this re-scoping (decision 1 on the issue, 2026-09-14):
+  fix `openGeometry`'s insertion target instead, with a regression test, and
+  drop all `read()`-stub work.
+- The consequences-table row claiming "previously-empty `VectorDataset`
+  nodes now populate on reload" is removed — it described the same false
+  premise and must not reach the PR description.
+- `vector_parse.{h,cpp}` now moves into `camp_map` (new
+  `src/camp_map/vector/` directory) instead of staying in the executable's
+  sources, so `VectorLayer` (which lives in `camp_map`) can call it — per
+  `.agents/README.md`'s "a library cannot call into the executable that
+  links it" rule (the `camp_crash` lesson, #217; verified at
+  `CMakeLists.txt:135` where `vector_parse.cpp` currently compiles only into
+  `CCOMAutonomousMissionPlanner`'s `SOURCES`, and `CMakeLists.txt:295-339`
+  where `camp_map` is a separate `SHARED` library with no link back to the
+  executable).
+- Step 3 (now step 2) adds the mandatory
+  `camp_crash::install_thread_alt_stack()` first statement in the load
+  worker, per the `check_worker_alt_stacks` CTest guard
+  (`CMakeLists.txt:554-557`, pattern confirmed at `raster_layer.cpp:189`).
+- Persistence (step 6, now step 7) adds the removal half: an
+  `onRemovedFromMap()` override plus `Map`-model `rowsAboutToBeRemoved`
+  bookkeeping on `AutonomousVehicleProject`, mirroring
+  `RasterLayer::onRemovedFromMap()` (`raster_layer.cpp:749-757`) and
+  `AutonomousVehicleProject::onChartLayerRemoved`
+  (`autonomousvehicleproject.cpp:322+`) — confirmed these exist and are
+  wired to the Map model precisely so a Layers-tab removal survives a
+  restart (camp#90/#117). Persistence mechanism is now settled (operator
+  decision 2): QSettings app state, the same `persistBackgrounds()` /
+  `restorePersistedBackgrounds()` pattern, not the mission project file —
+  the prior Open Question is resolved, not deferred to review-plan.
+- Styling (step 5) now specifies degenerate/absent-value handling: a
+  same-value field, a missing field, and a non-numeric/NaN value each get a
+  defined behavior, mirroring `grid_map.cpp:198-206`'s
+  `min_value == max_value` guard.
+- The parser (step 1) now explicitly handles multi-part geometries
+  (`wkbMultiPoint`/`wkbMultiLineString`/`wkbMultiPolygon`) and every 25D/ZM
+  variant via `wkbFlatten()`, instead of silently dropping them — confirmed
+  `vector_parse.cpp:86-140` currently `switch`es on the raw
+  `getGeometryType()` with only `wkbPoint`/`wkbLineString`/`wkbPolygon`
+  cases and a `default: break` that drops everything else, including a
+  GeoJSON point with elevation (`wkbPoint25D`).
+- Click-to-inspect (step 4) is now specified against `ProjectView`'s actual
+  mouse-mode state machine (`projectview.cpp:57-196`), confirmed to run
+  waypoint/trackline/survey placement on left-press in its add-* modes and
+  set `ScrollHandDrag` (`projectview.cpp:335`) in pan mode, unconditionally
+  forwarding to `QGraphicsView::mousePressEvent()` afterward (so child
+  `QGraphicsItem`s under the cursor still receive press events regardless
+  of mode).
+- Files to Change now lists `item_types.h` (new `VectorLayerType` enum
+  value — confirmed every `map::Layer` descendant declares one at
+  `item_types.h:22-45`), the `mainwindow.cpp:161` startup restore call
+  (confirmed `restorePersistedBackgrounds()` is called there and
+  `restorePersistedVectorLayers()` needs the same site), and an
+  `.agents/README.md` note.
+- Suggestions folded in: per-layer settings key now overrides
+  `settingsKey()` rather than relying on the `itemID()` default (camp#126
+  precedent, confirmed at `gggs_tile_layer.h:72` /
+  `gggs_tile_layer.cpp:1829-1852`, since `itemID()` is basename-derived —
+  `map_item.cpp:53-61` — and two same-named files in different directories
+  would otherwise collide); the pre-existing lat/lon-order inconsistency
+  between the Point path (`op->getY(), op->getX()`,
+  `vector_parse.cpp:96-104`) and `readRing` (`getX(), getY()`,
+  `vector_parse.cpp:46`) is flagged for a one-line fix-or-confirm while
+  step 1 is already editing that file, since the acceptance test is a
+  coordinate check; persistence mechanism (previously an Open Question) is
+  now a decided item, not a question.
+
+**Rev 1** (2026-09-14) — initial plan, superseded above.
+
 ## Context
 
 `VectorDataset` (`src/camp/vector/vectordataset.{h,cpp}`) already opens any
-OGR-readable file via `camp::vector::parseVectorLayers` (`src/camp/vector/
-vector_parse.{h,cpp}`) and builds an editable `Group`/`Point`/`LineString`/
-`Polygon` tree in the **mission** model. That parser is already leak-clean
-(#152) and unit-tested (`test/test_vector_dataset_cleanup.cpp`), but
-`ParsedGeometry`/`ParsedLayer` carry no attributes today, and
-`VectorDataset::read()` is an empty stub — the filename `write()` persists is
-never restored on project reload.
+OGR-readable file via `camp::vector::parseVectorLayers` and builds an
+editable `Group`/`Point`/`LineString`/`Polygon` tree in the **mission**
+model. That parser is leak-clean (#152) and unit-tested
+(`test/test_vector_dataset_cleanup.cpp`), but `ParsedGeometry`/`ParsedLayer`
+carry no attributes today, and — the real, verified defect —
+`AutonomousVehicleProject::openGeometry()` always inserts the reopened
+`VectorDataset` under `m_currentGroup` rather than under the `MissionItem`
+whose `readChildren` is restoring it, so a nested `VectorDataset` moves on
+reload.
 
-This issue asks for a second, **read-only** way to view the same kind of file:
-a `map::Layer` in the Layers tab (like `RasterLayer`/backgrounds, ADR-0002/
-ADR-0003) that renders points/lines/polygons with attribute-driven styling
-(colour-by-field via `marine_colormap`, size-by-field) and click-to-inspect.
+This issue asks for a second, **read-only** way to view the same kind of
+file: a `map::Layer` in the Layers tab (like `RasterLayer`/backgrounds,
+ADR-0002/ADR-0003) that renders points/lines/polygons with attribute-driven
+styling (colour-by-field via `marine_colormap`, size-by-field) and
+click-to-inspect.
 
-The issue review (progress.md, 2026-09-14) raised six open items; the operator
-answered all six in a follow-up comment on the issue (2026-09-14). This plan
-implements those answers directly:
+The issue review raised six open items; the operator answered all six in a
+follow-up comment on the issue (2026-09-14), and — after Plan Review rev 1
+found the `read()` premise false — made a further decision (2026-09-14,
+below) re-scoping the persistence-defect fix. This plan implements both
+rounds of answers directly:
 
 1. Extend `vector_parse`'s `ParsedGeometry`/`ParsedLayer` with feature
-   attributes and reuse it — do not re-derive OGR iteration, and do not touch
-   `VectorDataset`'s existing editable-import behavior.
+   attributes and reuse it — do not re-derive OGR iteration, and do not
+   touch `VectorDataset`'s existing editable-import behavior.
 2. Attributes are in scope, carried by the extended parser.
-3. Fix `VectorDataset::read()` (currently an empty stub) as a side finding in
-   this PR — the new layer's own persistence must not copy that defect.
-4. Architecture: per-feature `QGraphicsItem` children under the new layer (for
-   free hit-testing / click-to-inspect), transformed to scene coordinates once
-   at load — not a single painted surface like `RasterLayer`.
-5. Colour-by-field uses `marine_colormap` (already integrated in `RasterLayer`
-   and `ros/grids/grid_map.cpp`), not the deleted `camp::map::ColorMap` /
-   stale #63.
-6. MVP scope for this PR: OGR load (GeoJSON first), points/lines/polygons with
-   a default style, colour-by-field, size-by-field, click-to-inspect
-   attributes, save/restore in the project, unit tests for the parser
-   attributes and the styling mapping. Label-by-field and a style-editing UI
-   are follow-on (new issues, not this PR).
+3. **(Revised per Plan Review + operator decision, 2026-09-14)** Fix the
+   real defect — `AutonomousVehicleProject::openGeometry()` inserts a
+   restored `VectorDataset` under `m_currentGroup` instead of under its
+   original parent node — with a regression test. The `read()` stub is
+   unrelated dead code on this path and is left alone.
+4. Architecture: per-feature `QGraphicsItem` children under the new layer
+   (for free hit-testing / click-to-inspect), transformed to scene
+   coordinates once at load — not a single painted surface like
+   `RasterLayer`.
+5. Colour-by-field uses `marine_colormap` (already integrated in
+   `RasterLayer` and `ros/grids/grid_map.cpp`), not the deleted
+   `camp::map::ColorMap` / stale #63.
+6. MVP scope for this PR: OGR load (GeoJSON first), points/lines/polygons
+   (including multi-part and 25D variants — see step 1) with a default
+   style, colour-by-field, size-by-field, click-to-inspect attributes,
+   save/restore in the project (QSettings app state, per operator decision
+   2 below), unit tests for the parser attributes and the styling mapping.
+   Label-by-field and a style-editing UI are follow-on (new issues, not this
+   PR).
+
+**Operator decision (2026-09-14, responding to Plan Review rev 1):**
+
+1. Replace step 2 with the `openGeometry()` insertion-target fix described
+   above; drop the `read()` work and the wrong consequences row.
+2. Persistence of the new layer's file list uses the app-state QSettings
+   pattern that background rasters use (ADR-0003 §4,
+   `persistBackgrounds`/`restorePersistedBackgrounds`, restored from
+   `mainwindow.cpp` at startup), **including the removal half**
+   (`onRemovedFromMap()` + model `rowsAboutToBeRemoved` bookkeeping, camp#90
+   /#117 precedent) — not the mission file.
 
 ## Approach
 
-1. **Extend `vector_parse` with attributes.** Add
-   `QMap<QString, QVariant> attributes` (or a small `std::vector<std::pair<
-   QString, QVariant>>` if map ordering for display matters — decide during
-   implementation, default to `QMap` for by-name lookup) to `ParsedGeometry`.
-   In `parseVectorLayers`, read every field from `feature`'s `OGRFeatureDefn`
-   (`GetFieldCount()`/`GetFieldDefnRef(i)`/`GetFieldAsString`/
-   `GetFieldAsDouble`/`GetFieldAsInteger` keyed by `OGRFieldType`) into that
-   map before `OGRFeature::DestroyFeature(feature)`. `VectorDataset::
-   buildItems` ignores the new field (source compatible; no behavior change
-   for the editable import path).
+1. **Move `vector_parse` into `camp_map`, and extend it with attributes and
+   full geometry coverage.**
+   - Relocate `src/camp/vector/vector_parse.{h,cpp}` to a new
+     `src/camp_map/vector/vector_parse.{h,cpp}` (pure Qt/GDAL, no ROS — fits
+     `camp_map`'s existing ROS-free boundary, confirmed at
+     `CMakeLists.txt:295-339`). Update `VectorDataset`'s include and the
+     `CMakeLists.txt` source lists (remove from the executable's `SOURCES`,
+     add to `CAMP_MAP_SOURCES`) and the existing
+     `test_vector_dataset_cleanup.cpp` include path. This is the only way
+     the new `VectorLayer` (which must live in `camp_map` — see step 2) can
+     call `parseVectorLayers`, per `.agents/README.md`'s
+     library-cannot-call-executable rule (#217).
+   - Add `QMap<QString, QVariant> attributes` to `ParsedGeometry`. In
+     `parseVectorLayers`, read every field from `feature`'s
+     `OGRFeatureDefn` (`GetFieldCount()`/`GetFieldDefnRef(i)`/
+     `GetFieldAsString`/`GetFieldAsDouble`/`GetFieldAsInteger` keyed by
+     `OGRFieldType`) into that map before `OGRFeature::DestroyFeature
+     (feature)`. `VectorDataset::buildItems` ignores the new field (source
+     compatible; no behavior change for the editable import path).
+   - Replace the `switch(geometry->getGeometryType())` in
+     `parseVectorLayers` (`vector_parse.cpp:86-140`) with a switch on
+     `wkbFlatten(geometry->getGeometryType())` so every 25D/ZM/M variant
+     (`wkbPoint25D`, `wkbLineStringZM`, etc.) reaches the same case as its
+     2D form. Add `wkbMultiPoint`/`wkbMultiLineString`/`wkbMultiPolygon`
+     cases that iterate the multi-geometry's parts (`OGRGeometryCollection::
+     getGeometryRef(i)`) and emit one `ParsedGeometry` per part, reusing the
+     existing Point/LineString/Polygon extraction logic (factor each into a
+     small free function so the multi-* cases can call it per part without
+     duplicating the transform/ring logic). Anything still unhandled
+     (`wkbGeometryCollection`, curves) stays a documented, logged skip — not
+     a silent one — since the issue's format claims (shapefile/GeoPackage/
+     KML) are then honestly met for the geometry types those formats
+     actually emit.
+   - While in this file: confirm and, if confirmed, fix the pre-existing
+     lat/lon-order inconsistency between the Point path (`op->getY(),
+     op->getX()` at `vector_parse.cpp:96-104`) and `readRing` (`getX(),
+     getY()` at `vector_parse.cpp:46`) — untransformed line/polygon vertices
+     currently come out lat/lon-swapped relative to points. Fix in this PR
+     (small, in a file this step already touches) or file a dedicated
+     follow-up issue and note the decision here; do not leave it
+     unacknowledged, since the acceptance test in step 8 is a coordinate
+     check.
 
-2. **Fix `VectorDataset::read()`.** Restore the persisted filename and call
-   `open()`, mirroring `write()`'s `json["filename"]`. Add a focused unit or
-   read/write round-trip test (new small test file, or extend
-   `test_vector_dataset_cleanup.cpp` if a headless `QJsonObject` round trip
-   fits there without pulling in the full mission-item graph — otherwise a
-   new `test_vector_dataset_persistence.cpp`). This is a one-line-cause,
-   real-defect fix, landing in this PR per the operator's decision — not a
-   separate issue.
+2. **Fix the real `openGeometry` persistence defect.**
+   `AutonomousVehicleProject::openGeometry(fname, label)`
+   (`autonomousvehicleproject.cpp:200-214`) always does
+   `vd = new VectorDataset(m_currentGroup)`, ignoring which `MissionItem`
+   node originally contained it. `MissionItem::readChildren`
+   (`missionitem.cpp:185`) calls `project->openGeometry(...)` for a
+   `type == "VectorDataset"` child without passing `this` as the intended
+   parent. Fix: give `openGeometry` an explicit parent-group parameter
+   (defaulting to `m_currentGroup` for the existing "Import" menu-action
+   call site, so that caller's behavior is unchanged), and have
+   `readChildren` pass itself (the enclosing `Group`/`MissionItem`) as that
+   parent when restoring a nested `VectorDataset`. Add a regression test:
+   round-trip a project file with a `VectorDataset` nested two levels under
+   the root (e.g. inside a `Group`), reload it, and assert the restored
+   `VectorDataset`'s parent index matches the original nesting — not
+   `m_currentGroup`. This lands in this PR as the real defect fix (operator
+   decision 1); no `read()`/`write()` change is needed since that path is
+   dead code for the persisted case.
 
-3. **Add a `camp::vector::VectorLayer` class** under a new
-   `src/camp_map/vector/` directory (mirrors `src/camp_map/raster/` for
+3. **Add a `camp::vector::VectorLayer` class** under
+   `src/camp_map/vector/` (mirrors `src/camp_map/raster/` for
    `RasterLayer`), deriving from `map::Layer`:
    - Constructor takes `(map::MapItem* parent, const QString& filename)`,
      mirrors `RasterLayer`'s shape: open the OGR dataset off the GUI thread
@@ -73,189 +227,280 @@ implements those answers directly:
      join-in-destructor pattern) via `parseVectorLayers`, reproject each
      `ParsedGeometry`'s WGS84 coordinates to the Web-Mercator scene **once**
      on load completion, and build one child `QGraphicsItem` per feature.
-   - `boundingRect()` covers the union of child extents (Qt already unions
-     child `boundingRect()`s into the parent's for hit-testing/painting
-     purposes via `childrenBoundingRect()`; confirm during implementation
-     whether an explicit override is needed given `MapItem::boundingRect()`'s
-     current implementation).
+   - The load worker's **first statement** must be
+     `camp_crash::install_thread_alt_stack()`, matching
+     `raster_layer.cpp:189` — required by the `check_worker_alt_stacks`
+     CTest guard (`CMakeLists.txt:554-557`), which fails CI for any
+     `QtConcurrent::run()` entry point that omits it.
+   - `int type() const override` returns a new `VectorLayerType` value
+     added to `camp::map::ItemType` (`item_types.h:22-45` — every
+     `map::Layer` descendant declares one; see Files to Change).
+   - `boundingRect()` covers the union of child extents (confirm during
+     implementation whether an explicit override is needed given
+     `MapItem::boundingRect()`'s current implementation, which already
+     unions children for hit-testing/painting purposes).
    - Destructor joins the load worker before teardown (the #213 pattern
-     already used by `ros/geometry/polygon.h` and `OccupancyGrid`, and cited
-     directly in the issue).
-   - `write()`/`read()` via the `MapItem::readSettings()`/`writeSettings()`
-     override pair (QSettings, keyed by `itemID()`/`settingsKey()`) — see
-     step 6 for why this is the app-state path, not the mission JSON.
+     already used by `ros/geometry/polygon.h` and `OccupancyGrid`).
+   - `settingsKey()` override: do **not** rely on the `itemID()` default
+     (basename-derived, `map_item.cpp:53-61`) — two vector files with the
+     same basename in different directories would share one settings
+     group. Follow the `GggsTileLayer::settingsKey()` precedent
+     (`gggs_tile_layer.cpp:1829-1852`, camp#126) and key on the full
+     filename path instead.
+   - `writeSettings()`/`readSettings()` overrides (QSettings, keyed by
+     `settingsKey()`) persist per-layer style (`colorField`, `sizeField`,
+     `colormap` name) — see step 7 for the file-list half.
+   - `onRemovedFromMap()` override: drop this file from the persisted
+     vector-layer file list (mirrors `RasterLayer::onRemovedFromMap()`,
+     `raster_layer.cpp:749-757`, camp#90/#117) — see step 7.
 
-4. **Add feature child-item classes** (new file, e.g.
+4. **Add feature child-item classes** (new file,
    `src/camp_map/vector/vector_feature_item.{h,cpp}`): lightweight
    `QGraphicsItem` (not `MapItem`/`QGraphicsObject` — no need for the tree
    model, settings, or signal/slot machinery per feature) for Point,
-   LineString, and Polygon geometry, each holding a `const ParsedGeometry*`
-   (or a copy) and its resolved paint color/size. Distinct from
-   `Point`/`LineString`/`Polygon` (`src/camp/*.h`) — those are `MissionItem`
-   subclasses with editing/drag/waypoint-linking baggage that a read-only
-   layer must not inherit (this is a deliberate, new, minimal class, not
-   reuse of the editable classes — matches the "read-only" requirement in
-   the issue's Out-of-scope section).
-   - Default style: point = filled circle (fixed radius unless size-by-field
-     is set), line = stroked path, polygon = filled+stroked path with
-     exterior/interior rings (even-odd fill rule for holes).
-   - `mousePressEvent()`: accept `Qt::LeftButton`
-     (`setAcceptedMouseButtons`), and on press show the feature's attributes
-     — `QToolTip::showText(event->screenPos(), text)` for the MVP (no
-     existing feature-click infrastructure elsewhere in the codebase to
-     match; a dedicated properties panel is a reasonable follow-on but out of
-     scope for this MVP per item 6).
-   - `boundingRect()`/`shape()` from the transformed geometry, in the parent
-     layer's local (scene-mercator) coordinates, consistent with how
-     `MapItem::setWebMercatorPositionAndScale` places geo-referenced items.
+   LineString, and Polygon geometry (including multi-part instances from
+   step 1, each rendered as its own child item), each holding a
+   `const ParsedGeometry*` (or a copy) and its resolved paint color/size.
+   Distinct from `Point`/`LineString`/`Polygon` (`src/camp/*.h`) — those are
+   `MissionItem` subclasses with editing/drag/waypoint-linking baggage a
+   read-only layer must not inherit.
+   - Default style: point = filled circle (fixed radius unless
+     size-by-field is set), line = stroked path, polygon = filled+stroked
+     path with exterior/interior rings (even-odd fill rule for holes).
+   - **Click-to-inspect, specified against `ProjectView`'s actual mouse
+     state machine** (`projectview.cpp:57-196`): `ProjectView::
+     mousePressEvent` runs its own placement logic for left-press only in
+     the add-waypoint/add-trackline/add-survey-pattern/add-survey-area/
+     add-search-pattern/add-avoid-area modes, does nothing extra in pan
+     mode (`ScrollHandDrag`, set at `projectview.cpp:335`), and then
+     **unconditionally** forwards to `QGraphicsView::mousePressEvent(event)`
+     at the end regardless of mode — so a child item under the cursor
+     receives the press either way. Behavior: accept `Qt::LeftButton`
+     (`setAcceptedMouseButtons`) and show the feature's attributes via
+     `QToolTip::showText(event->screenPos(), text)` **only in pan mode**;
+     in every add-* mode, `event->ignore()` in the feature item so the
+     event is not marked accepted at the item level and `ProjectView`'s own
+     placement logic (which reads `event->pos()`/`mapToScene`, not item
+     acceptance) is unaffected either way, and the popup does not fire
+     mid-placement. Confirm during implementation whether `ProjectView`
+     needs a `mouseMode` accessor for the feature item to consult (it
+     currently reads a private `mouseMode` member — check for an existing
+     accessor or add a minimal read-only one, since only pan mode should
+     show the popup).
+   - `boundingRect()`/`shape()` from the transformed geometry, in the
+     parent layer's local (scene-mercator) coordinates.
 
 5. **Attribute-driven styling on `VectorLayer`.**
-   - `setColorField(const QString& field)` / `colorField()`: when set, resolve
-     each feature's numeric value for that field, compute the field's
-     min/max across all features once at load (auto-range, matching
-     `RasterLayer`'s `data_min_`/`data_max_` auto-range convention), and
-     sample a `marine_colormap::Palette` (`find_palette(name)`, default
-     `"viridis"`, `palette->sample(normalized_value)` → `Rgba8` →
-     `to_rgba8`/`QColor`) per feature. No field set → the existing per-layer
-     default style color.
-   - `setSizeField(const QString& field)`: same min/max normalization, linear
-     interpolation between a fixed min/max marker radius (e.g. 3–15 px) for
-     points; lines/polygons ignore size-by-field (documented, not silently
-     dropped — add a one-line status/log note if a size field is set on a
-     layer with no point features, or simply document the point-only scope
-     in the header comment).
-   - `setColormap(const std::string& name)`: mirrors `RasterLayer::
-     setColormap` for consistency, applies to colour-by-field only.
+   - `setColorField(const QString& field)` / `colorField()`: when set,
+     resolve each feature's numeric value for that field, compute the
+     field's min/max **only over features that have a present, numeric,
+     non-NaN value for it** — mirroring `grid_map.cpp:198-206`'s
+     `min_value == max_value` guard — at load, and sample a
+     `marine_colormap::Palette` (`find_palette(name)`, default `"viridis"`,
+     `palette->sample(normalized_value)` → `Rgba8` → `to_rgba8`/`QColor`)
+     per feature. Degenerate/absent-value handling, specified explicitly
+     (missing from rev 1):
+     - **All present values equal** (`min == max`): treat as `grid_map.cpp`
+       does — offset `min` by a small epsilon so every feature normalizes
+       to 1.0 (top of the ramp) instead of dividing by zero, rather than
+       falling back to the default style.
+     - **Field missing on a feature, or present but non-numeric/NaN**:
+       paint that feature in a fixed neutral/"no data" color (documented
+       constant, distinct from any position on the active palette) so it
+       is visually distinguishable from a real low-end value — never
+       silently reuses palette index 0.
+     - No field set → the existing per-layer default style color.
+   - `setSizeField(const QString& field)`: same min/max normalization and
+     the same degenerate/missing/non-numeric handling as colour-by-field
+     (equal-value epsilon; missing/non-numeric → a fixed default radius,
+     not a computed one), linear interpolation between a fixed min/max
+     marker radius (e.g. 3–15 px) for points; lines/polygons ignore
+     size-by-field (documented in the header comment, not silently
+     dropped).
+   - `setColormap(const std::string& name)`: mirrors
+     `RasterLayer::setColormap` for consistency, applies to colour-by-field
+     only.
    - Recompute per-feature paint properties when a style setter changes
      (single pass over already-loaded features — no re-parse, no re-load).
 
-6. **Persistence.** Per ADR-0003 §4, backgrounds/depth layers persist as
-   **app/Map state** (QSettings), not the mission project file — mission
-   items alone use the project JSON. `VectorLayer` is a `map::Layer` in the
-   Layers tab, architecturally identical to `RasterLayer` in this respect, so
-   it follows the **same** split:
-   - A new `m_vectorLayers` list + `persistVectorLayers()`/
-     `restorePersistedVectorLayers()` pair on `AutonomousVehicleProject`,
-     mirroring `persistBackgrounds()`/`restorePersistedBackgrounds()`
-     (`autonomousvehicleproject.cpp:291-320`) — QSettings key
-     `vectorLayers/files`, de-dup by filename, self-heal on restore.
-   - Per-layer style (`colorField`, `sizeField`, `colormap` name) persists via
-     the existing `MapItem::readSettings()`/`writeSettings()` /
-     `settingsKey()` mechanism `RasterLayer` already uses — no new
-     persistence plumbing needed for style, just new keys under the
-     item's settings group.
-   - This is a **deliberate divergence from the issue text's "persist in the
-     project file"** wording — recorded as an Open Question below since it
-     is a judgment call the operator's six answers didn't explicitly settle
-     (they addressed *which defect not to copy*, not *which persistence
-     mechanism*). ADR-0003 §4 is the load-bearing precedent for this choice
-     and is already Accepted, so this is presented as the plan's resolution
-     rather than a blocking question — flag for review-plan to confirm.
-   - Wire an `AutonomousVehicleProject::openVectorLayer(fname)` entry point
-     (parallel to `addBackgroundLayer`), called from wherever the "Open
-     vector file" action lands (check `mainwindow.cpp`/menu wiring during
-     implementation for the existing "Import" vs "Open background" action
-     pattern to match).
+6. **Menu/action wiring.** Add an `AutonomousVehicleProject::
+   openVectorLayer(fname)` entry point (parallel to `addBackgroundLayer`),
+   wired from a new "Open vector layer" action alongside the existing "Open
+   background" action (confirm the exact wiring site in `mainwindow.cpp`
+   during implementation — same file as the step-7 startup-restore call).
 
-7. **Tests** (new `test/` files, wired into `CMakeLists.txt` next to the
+7. **Persistence (operator decision 2 — QSettings app state, both halves).**
+   Per ADR-0003 §4 and the operator's explicit confirmation, `VectorLayer`
+   persists exactly like `RasterLayer`/backgrounds — app state, not the
+   mission project file:
+   - **Restore half**: a new `m_vectorLayers` list +
+     `persistVectorLayers()`/`restorePersistedVectorLayers()` pair on
+     `AutonomousVehicleProject`, mirroring `persistBackgrounds()`/
+     `restorePersistedBackgrounds()` (`autonomousvehicleproject.cpp:
+     291-320`) — QSettings key `vectorLayers/files`, de-dup by filename,
+     self-heal on restore (re-persist once if the restored count differs
+     from the stored list, same pattern as backgrounds). Add the
+     `project->restorePersistedVectorLayers();` call in `mainwindow.cpp`
+     immediately alongside the existing `restorePersistedBackgrounds()`
+     call at `mainwindow.cpp:161`.
+   - **Removal half** (missing from rev 1 — confirmed
+     `RasterLayer::onRemovedFromMap()` at `raster_layer.cpp:749-757` and
+     `AutonomousVehicleProject::onChartLayerRemoved` at
+     `autonomousvehicleproject.cpp:322+`, wired to the `Map` model's
+     `rowsAboutToBeRemoved`, exist for exactly this reason, camp#90/#117):
+     add `VectorLayer::onRemovedFromMap()` (drops this file from
+     `vectorLayers/files`, same shape as `RasterLayer`'s) and an
+     `AutonomousVehicleProject::onVectorLayerRemoved` slot connected to the
+     Map model's `rowsAboutToBeRemoved`, mirroring `onChartLayerRemoved`'s
+     structure (read the filename while the item still exists during
+     `rowsAboutToBeRemoved`, drop the matching `m_vectorLayers` entry,
+     re-persist). Without this, a vector layer removed from the Layers tab
+     would silently reappear on next launch.
+   - Per-layer style (`colorField`, `sizeField`, `colormap` name) persists
+     via `VectorLayer`'s own `writeSettings()`/`readSettings()` override
+     (step 3), keyed by the overridden `settingsKey()` — no new persistence
+     plumbing needed beyond new keys under that group.
+
+8. **Tests** (new `test/` files, wired into `CMakeLists.txt` next to the
    existing `ament_add_gtest` blocks for `test_vector_dataset_cleanup` /
-   `test_raster_layer_gdal_cleanup`):
-   - `test_vector_parse_attributes.cpp`: extend the existing GeoPackage-writer
-     pattern from `test_vector_dataset_cleanup.cpp` with typed fields (string,
-     int, real) on each feature; assert `ParsedGeometry::attributes` round
-     trips the values and types. Keep the leak-check coverage from the
-     existing test intact (attribute reads must not introduce new
-     leak-prone OGR handles — `GetFieldAsString`/`GetFieldAsDouble` return
-     borrowed pointers/values, no extra destroy needed, but confirm no
-     `OGRFieldDefn` needs freeing).
+   `test_raster_layer_gdal_cleanup` / `test_background_persistence`):
+   - `test_vector_parse_attributes.cpp`: extend the existing
+     GeoPackage-writer pattern from `test_vector_dataset_cleanup.cpp` with
+     typed fields (string, int, real) on each feature; assert
+     `ParsedGeometry::attributes` round trips the values and types. Also
+     write a `MultiPolygon` (and one 25D `Point`) feature and assert each
+     part/variant is parsed into a `ParsedGeometry`, not silently dropped.
+     Keep the leak-check coverage from the existing test intact.
    - `test_vector_layer_styling.cpp`: headless unit test of the
      colour-by-field and size-by-field mapping functions (extract the
      normalize+sample logic into small free functions or static methods
      that don't need a `QApplication`/GUI thread, matching
      `test_color_map.cpp`'s headless style) — assert min/max feature values
-     map to the palette's first/last LUT entries and mid-range values
-     interpolate; assert size-by-field maps to the documented min/max pixel
-     radius.
-   - `test_vector_layer_teardown.cpp` (or extend an existing thread-teardown
-     test if one fits): confirm the load worker is joined in the destructor
-     before the dataset/parsed data it captured is freed — the #213 pattern,
-     analogous to `test_raster_layer_gdal_cleanup.cpp`'s abort-on-destroy
-     coverage.
-   - `test_vector_dataset_persistence.cpp` (or folded into an existing file,
-     see step 2): `VectorDataset::write()`/`read()` round trip restores the
-     filename and re-opens it.
+     map to the palette's first/last LUT entries, mid-range values
+     interpolate, an all-equal field maps every feature to the top of the
+     ramp (not a divide-by-zero/NaN), and a feature missing the field (or
+     holding a non-numeric/NaN value) gets the documented neutral color
+     rather than palette index 0.
+   - `test_vector_layer_teardown.cpp`: confirm the load worker is joined in
+     the destructor before the dataset/parsed data it captured is freed —
+     the #213 pattern, analogous to
+     `test_raster_layer_gdal_cleanup.cpp`'s abort-on-destroy coverage.
+   - `test_open_geometry_nested_group.cpp` (or folded into an existing
+     mission-item test file if a closer fit exists — confirm during
+     implementation): round-trip a project file with a `VectorDataset`
+     nested inside a `Group`, reload, and assert the restored
+     `VectorDataset`'s parent is that `Group`, not the project's
+     `m_currentGroup` (the step-2 regression test).
+   - `test_vector_layer_persistence.cpp` (or extend
+     `test_background_persistence.cpp`'s pattern in a new file scoped to
+     vector layers): mirror its `RestoreExistingNoReseedAndDedup` and
+     `RemoveDePersistsAndSticks` coverage for `vectorLayers/files` — add,
+     restore, remove, confirm it stays removed across a second restore.
+   - The `check_worker_alt_stacks` CTest guard (`CMakeLists.txt:554-557`)
+     already runs against every `QtConcurrent::run()` entry point in the
+     tree; no new test needed for step 3's alt-stack call, but confirm it
+     passes locally before pushing.
 
-8. **Manual acceptance** against the issue's two test datasets
-   (`~/data/logs/analysis/2026-09-14_massabesic_mag/massabesic_mag_peaks.
-   geojson`, `massabesic_joint_candidates.geojson`) — not automatable in this
-   PR (real files outside the repo, GUI rendering), but recorded here so
-   `review-code`/the PR description can check it off explicitly: load both,
-   confirm colour-by-field on `analytic_signal_nT_per_m` puts the 58 nT/m
-   peak at the top of the ramp, and confirm candidate C's popup identifies
-   the point at 307792 E / 4762878 N (UTM 19N) with its `assessment` text.
+9. **Manual acceptance** against the issue's two test datasets
+   (`~/data/logs/analysis/2026-09-14_massabesic_mag/
+   massabesic_mag_peaks.geojson`, `massabesic_joint_candidates.geojson`) —
+   not automatable in this PR (real files outside the repo, GUI rendering),
+   but recorded here so `review-code`/the PR description can check it off
+   explicitly: load both, confirm colour-by-field on
+   `analytic_signal_nT_per_m` puts the 58 nT/m peak at the top of the ramp,
+   confirm candidate C's popup identifies the point at 307792 E /
+   4762878 N (UTM 19N) with its `assessment` text, and confirm a vector
+   layer removed via the Layers tab does **not** reappear after closing and
+   reopening CAMP.
 
 ## Files to Change
 
 | File | Change |
 |------|--------|
-| `src/camp/vector/vector_parse.h` | Add `attributes` field to `ParsedGeometry`; document type-mapping rules |
-| `src/camp/vector/vector_parse.cpp` | Read OGR field values into `attributes` per feature |
-| `src/camp/vector/vectordataset.cpp` | Fix `read()` to restore filename + reopen (side finding, item 3) |
-| `src/camp_map/vector/vector_layer.h` (new) | `VectorLayer : public map::Layer` — async OGR load, style setters, persistence hooks |
-| `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute, readSettings/writeSettings |
-| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon), click-to-inspect |
+| `src/camp_map/vector/vector_parse.h` (moved from `src/camp/vector/`) | Add `attributes` field to `ParsedGeometry`; document type-mapping rules |
+| `src/camp_map/vector/vector_parse.cpp` (moved from `src/camp/vector/`) | Read OGR field values into `attributes`; `wkbFlatten` + multi-part geometry handling |
+| `src/camp/vector/vectordataset.h`, `.cpp` | Update include path for the moved `vector_parse.h`; no behavior change |
+| `src/camp/autonomousvehicleproject.h` | `openGeometry()` gains a parent-group parameter (defaulted); `m_vectorLayers`, `openVectorLayer()`, `persistVectorLayers()`/`restorePersistedVectorLayers()`, `onVectorLayerRemoved` declarations |
+| `src/camp/autonomousvehicleproject.cpp` | `openGeometry()` inserts under the passed parent instead of always `m_currentGroup`; new vector-layer persistence + removal implementations mirroring `addBackgroundLayer`/`persistBackgrounds`/`restorePersistedBackgrounds`/`onChartLayerRemoved` |
+| `src/camp/missionitem.cpp` | `readChildren`'s `VectorDataset` case passes `this` as the restore parent |
+| `src/camp_map/map/item_types.h` | New `VectorLayerType` enum value |
+| `src/camp_map/vector/vector_layer.h` (new) | `VectorLayer : public map::Layer` — async OGR load (with alt-stack install), style setters, `settingsKey()` override, `onRemovedFromMap()`, persistence hooks |
+| `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute (with degenerate/missing-value handling), readSettings/writeSettings |
+| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon), click-to-inspect gated on pan mode |
 | `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test + `mousePressEvent` attribute popup |
-| `src/camp/autonomousvehicleproject.h` | `m_vectorLayers`, `openVectorLayer()`, `persistVectorLayers()`/`restorePersistedVectorLayers()` declarations |
-| `src/camp/autonomousvehicleproject.cpp` | Implementations mirroring `addBackgroundLayer`/`persistBackgrounds`/`restorePersistedBackgrounds` |
-| menu/action wiring (TBD file, likely `mainwindow.cpp`) | "Open vector layer" action calling `openVectorLayer()` |
-| `CMakeLists.txt` | New library sources + 4 new `ament_add_gtest` blocks |
-| `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip |
-| `test/test_vector_layer_styling.cpp` (new) | Colour/size-by-field mapping |
+| `src/camp/projectview.h`/`.cpp` | Expose a read-only pan-mode accessor if `mouseMode` has no existing one (needed by the feature item's click-to-inspect gate) |
+| `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
+| `CMakeLists.txt` | Move `vector_parse.cpp` from the executable's `SOURCES` to `CAMP_MAP_SOURCES`; add `vector_layer.cpp`/`vector_feature_item.cpp` to `CAMP_MAP_SOURCES`; 5 new `ament_add_gtest` blocks |
+| `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
+| `test/test_vector_layer_styling.cpp` (new) | Colour/size-by-field mapping, including degenerate/missing-value cases |
 | `test/test_vector_layer_teardown.cpp` (new) | Thread-safe teardown (#213 pattern) |
-| `test/test_vector_dataset_persistence.cpp` (new, or folded into existing) | `VectorDataset::read()` fix regression test |
+| `test/test_open_geometry_nested_group.cpp` (new, or folded into an existing mission-item test) | `openGeometry` nested-parent regression test |
+| `test/test_vector_layer_persistence.cpp` (new) | Add/restore/remove/stays-removed round trip for `vectorLayers/files` |
+| `.agents/README.md` | Note `VectorLayer` (read-only display, `camp_map`) vs. `VectorDataset` (editable import, mission tree) as the two vector-file entry points |
 
 ## Principles Self-Check
 
 | Principle | Consideration |
 |---|---|
-| Capture decisions, not just implementations | The two architecture forks the issue review flagged (reuse `vector_parse`; per-feature items vs. single surface) are now operator-decided (issue comment, 2026-09-14) and restated in Context above rather than re-litigated. No new ADR is proposed — this plan treats it as an application of the existing ADR-0002/0003/0007/0008 precedents (RasterLayer's async-load shape, marker's per-item Layer precedent, marine_colormap adoption), not a new architectural pattern needing its own record. Flagged as an Open Question below in case review-plan disagrees. |
-| A change includes its consequences | `VectorDataset::read()` fix (item 3) lands in this PR, not deferred. Persistence-mechanism choice (step 6) explicitly reasoned from ADR-0003 §4 rather than left implicit. |
-| Only what's needed | Label-by-field and style-editing UI are explicitly deferred to follow-on issues per the operator's MVP scope (item 6) — not built speculatively. New feature-item classes are minimal `QGraphicsItem`s, not reuse of the heavier editable `Point`/`LineString`/`Polygon` MissionItem classes. |
-| Test what breaks | Four new test files scoped in step 7, covering the two genuinely new failure surfaces (attribute parsing, styling math) plus the two precedented risk patterns in this codebase (GDAL/thread teardown, persistence round trip). |
-| Improve incrementally | `VectorDataset` (editable import) is untouched behaviorally except the `read()` fix; the new read-only layer is fully additive. |
+| Capture decisions, not just implementations | The architecture forks (reuse `vector_parse`; per-feature items vs. single surface; persistence mechanism) are operator-decided (issue comment + Plan Review response, 2026-09-14) and restated in Context/decision blocks above. No new ADR proposed — this plan applies existing ADR-0002/0003/0007/0008 precedent, not a new pattern. |
+| A change includes its consequences | The real `openGeometry` defect (step 2) lands in this PR with a regression test. Persistence's removal half (step 7) is no longer missing. Library layering (step 1's move) is resolved before implementation, not discovered at link time. |
+| Only what's needed | Label-by-field and style-editing UI stay deferred to follow-on issues (operator's MVP scope). Multi-part/25D geometry support is added because dropping it silently would misrepresent the issue's own format claims — not scope creep. |
+| Test what breaks | Five new test files: attribute+geometry-coverage parsing, styling math (including degenerate cases), GDAL/thread teardown, the nested-parent persistence regression, and the layer-list persistence round trip (add/remove/stays-removed). |
+| Improve incrementally | `VectorDataset` (editable import) is untouched behaviorally except the `openGeometry` parent fix; the new read-only layer is fully additive. |
 
 ## ADR Compliance
 
 | ADR | Triggered | How addressed |
 |---|---|---|
 | ADR-0002 (Web-Mercator scene/layer model) | Yes | Coordinates transformed to scene Web-Mercator once at load (step 3), matching the ADR's "transform once, let Qt scale" convention already used by `RasterLayer` and mission items. |
-| ADR-0003 (backgrounds as layers/depth tree) | Yes | `VectorLayer` is an ordinary Layers-tab layer (§1 pattern); §4's split persistence (app-state for Layers-tab layers, project-file for mission items) is the explicit basis for step 6's persistence design. |
-| ADR-0007 (RasterFieldSource render abstraction) | No | Not applicable — `VectorLayer` does not implement `RasterFieldSource`; it is not a raster/field surface. Per-feature `QGraphicsItem` children are the chosen shape (operator decision, item 4), not RasterLayer's single-texture pattern. |
+| ADR-0003 (backgrounds as layers/depth tree) | Yes | `VectorLayer` is an ordinary Layers-tab layer (§1 pattern); §4's split persistence (app-state for Layers-tab layers, project-file for mission items) is the confirmed basis for step 7's persistence design, now including the removal half. |
+| ADR-0007 (RasterFieldSource render abstraction) | No | Not applicable — `VectorLayer` does not implement `RasterFieldSource`; per-feature `QGraphicsItem` children are the chosen shape (operator decision), not `RasterLayer`'s single-texture pattern. |
 | ADR-0008 (marine_colormap LUT bake) | Yes | Colour-by-field uses `marine_colormap::find_palette`/`sample()` directly (step 5), the same facility `RasterLayer` and `grid_map.cpp` already use — not the deleted `camp::map::ColorMap`. |
-| ADR-0011 (viewport-clip render convention) | No (for this PR) | The two acceptance datasets are 33 and 7 features; no viewport-scoped culling is implemented in this MVP. Noted as a follow-on if vector layers grow to survey-index-footprint scale, per the issue review's flag — not blocking here. |
+| ADR-0011 (viewport-clip render convention) | No (for this PR) | The two acceptance datasets are 33 and 7 features; no viewport-scoped culling in this MVP. Noted as a follow-on if vector layers grow to survey-index-footprint scale. |
 
 ## Consequences
 
 | If we change... | Also update... | Included in plan? |
 |---|---|---|
-| `ParsedGeometry`/`ParsedLayer` gain an `attributes` field | `VectorDataset::buildItems` (source-compatible, ignores new field) | Yes — verified no behavior change, noted in step 1 |
-| A new `VectorLayer` type is added to the Layers tab | Any place that maps a persisted layer "type" string to a class (issue review's flag re: `missionitem.cpp`'s type-string switch) | Yes — `VectorLayer` persists via QSettings app state (step 6), not the mission JSON's type-string dispatch, so `missionitem.cpp` is unaffected. Confirmed during step 3/6 implementation that no mission-side type dispatch needs a new case. |
-| `VectorDataset::read()` starts actually restoring on project load | Any project file that has a `VectorDataset` node with `filename` but previously loaded with no geometry (silently) | Yes — this is a bug fix that changes observable behavior (previously-empty `VectorDataset` nodes now populate on reload); called out explicitly in the PR description, not left as a silent side effect |
-| A new menu action opens vector layers | User-facing docs / `.agents/README.md` if it documents the menu structure | Follow-up — see Documentation & Instruction Impact |
+| `vector_parse.{h,cpp}` moves from the executable into `camp_map` | `VectorDataset`'s include path; `CMakeLists.txt` source lists (both the executable's `SOURCES` and `CAMP_MAP_SOURCES`); `test_vector_dataset_cleanup.cpp`'s include | Yes — step 1 and Files to Change |
+| `ParsedGeometry`/`ParsedLayer` gain an `attributes` field and multi-part/25D handling | `VectorDataset::buildItems` (source-compatible, ignores the new field; unaffected by the geometry-type widening since it already only handles Point/LineString/Polygon) | Yes — verified no behavior change, noted in step 1 |
+| A new `VectorLayer` type is added to the Layers tab | `item_types.h`'s `ItemType` enum; any place that maps a persisted layer "type" string to a class | Yes — `VectorLayer` persists via QSettings app state (step 7), not the mission JSON's type-string dispatch in `missionitem.cpp`, so no new case is needed there for the layer itself |
+| `AutonomousVehicleProject::openGeometry()` gains a parent-group parameter | The existing "Import" menu-action call site (must keep passing/defaulting to `m_currentGroup` so its behavior is unchanged) | Yes — step 2, called out explicitly with a default parameter |
+| A vector layer can be removed from the Layers tab | Its entry in `vectorLayers/files` must be dropped, not just the in-memory item | Yes — step 7's removal half, previously missing |
+| A new menu action opens vector layers | `.agents/README.md` if it documents the menu structure | Yes — `.agents/README.md` note added in this PR (Files to Change), since the plan itself proposes the distinction it should record |
 
 ## Documentation & Instruction Impact
 
-- **Stale docs** (must land in this PR): None found — `.agents/README.md` (checked at plan time) does not document the Layers-tab menu structure or `VectorDataset`'s persistence behavior in enough detail to be made stale by this change. If implementation finds a specific doc claim invalidated (e.g. a menu-structure screenshot or a parameter table entry), it must be fixed in this PR per the "Never document from assumptions" rule.
-- **Agent-instruction candidates** (proposals only): Consider adding a short note to `.agents/README.md`'s architecture overview once this lands, pointing future agents at `VectorLayer` as the read-only-display precedent (vs. `VectorDataset` as the editable-import precedent) — the two now look confusingly similar by name and this PR is exactly the moment that distinction is freshest. Operator decides whether/when.
+- **Stale docs** (must land in this PR): `.agents/README.md` gains a short
+  note distinguishing `VectorLayer` (read-only display, `camp_map`) from
+  `VectorDataset` (editable import, mission tree) — the two now look
+  confusingly similar by name, and this PR is the moment that distinction
+  is introduced, so it is a stale-docs item (the change itself creates the
+  gap), not a proposal. See Files to Change.
+- **Agent-instruction candidates** (proposals only): None beyond the above
+  — the library-layering rule (#217) and the persistence pattern (ADR-0003
+  §4) are both already documented; this PR is an application of existing
+  guidance, not a new pattern needing its own instruction entry.
 
 ## Open Questions
 
-- [ ] Persistence mechanism: this plan resolves "persist in the project file" (issue wording) to ADR-0003 §4's app-state (QSettings) pattern, matching `RasterLayer`/backgrounds, since `VectorLayer` is a Layers-tab layer, not a mission item. The operator's six decisions didn't explicitly settle this. Confirm at review-plan, or override before implementation if the intent was literally the mission JSON.
-- [ ] Menu/action wiring location (`mainwindow.cpp` or elsewhere) for "Open vector layer" — to be confirmed by reading the existing "Open background" action wiring during implementation; not expected to change the plan's shape.
-- [ ] `ParsedGeometry::attributes` container type (`QMap<QString, QVariant>` vs. an ordered vector-of-pairs) — default to `QMap` for MVP; revisit only if attribute display order turns out to matter for the click-to-inspect popup.
+- [ ] `ParsedGeometry::attributes` container type (`QMap<QString, QVariant>`
+      vs. an ordered vector-of-pairs) — default to `QMap` for MVP; revisit
+      only if attribute display order turns out to matter for the
+      click-to-inspect popup.
+- [ ] Whether `ProjectView` needs a new read-only `mouseMode` accessor for
+      the feature item's click-to-inspect gate, or whether one already
+      exists under a different name — confirm during implementation (step
+      4).
+- [ ] Whether the pre-existing Point-vs-`readRing` lat/lon-order
+      inconsistency (step 1) is fixed in this PR or filed as a separate
+      follow-up issue — lean toward fixing in this PR since step 1 already
+      touches the file and the acceptance test is a coordinate check, but
+      flag for review-plan/implementation-time confirmation if it looks
+      larger than a one-line change once addressed.
 
 ## Estimated Scope
 
-Single PR (MVP per operator decision, item 6). Label-by-field and a
-style-editing UI are explicitly out of scope, to be filed as follow-on issues
-after this PR lands.
+Single PR (MVP per operator decision). Label-by-field and a style-editing
+UI are explicitly out of scope, to be filed as follow-on issues after this
+PR lands.
