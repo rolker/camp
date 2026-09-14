@@ -408,3 +408,77 @@ Suggestions — all eleven actioned, in `4cf7b2b` unless noted:
 - Findings 2 and 4 landed in ONE commit (`01644e5`): both live in `vector_feature_item`, share its `boundingRect()`, and share the new `test_vector_feature_item` target, so splitting them would have produced two commits neither of which built its own test.
 - The interaction change (release-gated popup) fixes the unrequested-tooltip half of that suggestion. The other half — that accepting the press at all takes the pan gesture over a feature — is NOT fixed: an item that ignores the press receives no release, so gating on release requires holding the press. The proper fix is a ProjectView-side click handler, which camp_map cannot reach (#217) and which is a UI change worth its own issue. Recorded here rather than left implicit.
 - `normalizedValue()`'s documented contract CHANGED: a degenerate range now returns 0.5, not 1.0. The existing `EqualValuesMapToTheTopOfTheRamp` test was renamed and re-pointed accordingly — that is a deliberate behaviour change from must-fix 8, not a test relaxed to pass.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-14 13:48 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `c873d9a`
+**Mode**: pre-push
+**Depth**: Deep (reason: 5168 added lines across 31 files; async worker, persisted app state, new ADR)
+**Must-fix**: 2 | **Suggestions**: 9
+**Round**: 2 | **Ship**: recommended — must-fix fell 10 to 2, both are precise mechanical corrections (a security claim the code does not deliver, and a cap that protects the GUI thread but not memory) with no design question left open.
+
+Specialists: Static Analysis (pre-commit all-passed; cppcheck clean but for
+`useStlAlgorithm` style nits), Governance, Plan Drift, Claude Adversarial
+Lens A + Lens B. Copilot and Local Model off (default).
+
+Build/test reproduced in this worktree: `./ui_ws/build.sh camp` clean;
+`./ui_ws/test.sh camp` — **367 tests, 0 errors, 0 failures, 1 pre-existing
+skip**, matching the Implementation entry's claim.
+
+Round-1 verification: **all ten must-fixes are genuinely fixed in code and
+covered by a test that exercises the real failure**, not a restatement — the
+reorder test drives an actual `Map::setMapItemParent()` reorder, the abort
+test measures a real parse against an aborted teardown, and the degenerate-range
+test asserts its fixture is past the 1.0-ulp boundary before testing. All
+eleven suggestions were actioned. The fix commits introduced no correctness,
+concurrency or lifetime defect; the two new must-fixes below are adjacent
+concerns neither round-1 finding named.
+
+Rulings on the three items the implementer flagged:
+
+- **(a) Findings 2 and 4 in one commit (`01644e5`)** — accepted, not a finding.
+  Both change `vector_feature_item`'s `boundingRect()` and both are proven by
+  the `test_vector_feature_item` target that same commit creates; splitting
+  would have produced a commit whose test does not yet exist.
+- **(b) The press-accept still swallows the pan gesture over a feature** —
+  acceptable to ship with a filed follow-up; NOT a must-fix. The behaviour is
+  real (`QGraphicsView::mousePressEvent` returns early once the scene accepts
+  the press, so hand-scroll pan cannot start on a feature), but it is
+  pre-existing app-wide CAMP behaviour rather than something this branch
+  introduces: `TaskOverlayItem::mousePressEvent`
+  (`src/camp/running_tasks/task_overlay_item.cpp:147`) consumes the press the
+  same way, as do the movable mission `GeoGraphicsItem`s. The implementer's
+  premise also holds — an item that ignores the press never receives the
+  release — so the clean fix is a ProjectView-side click handler outside
+  `camp_map`'s reach. Condition: file the issue in rolker/camp before opening
+  the PR and reference it in the PR body and at
+  `vector_feature_item.cpp:244`, so it does not live only in progress.md.
+- **(c) `normalizedValue()`'s degenerate range 1.0 to 0.5** — confirmed the
+  intended behaviour change, not a relaxed test. The contract is stated
+  consistently in `vector_style.h:58-67`, the implementation comment and
+  ADR-0016 D6; the renamed test asserts 0.5 AND the palette colour sampled at
+  0.5, and the new `DegenerateRangeIsTotalAboveTwoToTheFiftyThree` pins the
+  defect the rename came from. A strengthened test, not a weakened one.
+
+Governance: principles all Pass or N/A; ADR-0016 D1-D11 verified line-by-line
+against the code with no mismatch (D12 is the exception — must-fix 1 below).
+Plan adherence (rev 5): 1:1 on files, no silent drops; only `mainwindow.h` /
+`mainwindow.ui` changed without being listed, which the planned
+`mainwindow.cpp` wiring implies.
+
+### Findings
+- [ ] (must-fix) The driver allowlist does not deliver the property its comment and ADR-0016 D12 claim: GDAL resolves `/vsicurl/`, `/vsizip/`, `/vsis3/` in the VSI layer BEFORE driver selection, so `/vsicurl/https://.../x.geojson` still fetches through the allowed GeoJSON driver — empirically confirmed on this host's GDAL 3.8.4 with exactly `kAllowedDrivers`; `KML`/`LIBKML` are on the list too, so the NetworkLink example does not hold either, and `restorePersistedVectorLayers()` re-opens every persisted path at startup with no confirmation. Reject a `/vsi` prefix and correct the claim to what holds (`PG:` and the other non-file drivers) — `src/camp_map/vector/vector_layer.cpp:39` and `:93`, `docs/decisions/0016-read-only-vector-file-layer.md:162`
+- [ ] (must-fix) The feature cap is applied after `parseVectorLayers()` has already materialised every geometry and attribute map of the whole file in the worker, so for the case the header and ADR D11 name — a national coastline shapefile — the GUI no longer freezes but the matching OOM is unprotected and undocumented; carry the cap into `ParseOptions` (already threaded through and polled per feature) or state the memory limitation — `src/camp_map/vector/vector_layer.cpp:104`, `vector_layer.h:60`
+- [ ] (suggestion) The release-gated popup still accepts the press, taking the pan gesture over a feature — ruling (b): ship it, but file the ProjectView follow-up issue and reference it here and in the PR body — `src/camp_map/vector/vector_feature_item.cpp:244`
+- [ ] (suggestion) A polygon with a null exterior ring is dropped with no diagnostic increment, against `vector_parse.h:82`'s "every field counts something that was deliberately dropped" — `src/camp_map/vector/vector_parse.cpp:143`
+- [ ] (suggestion) The widget-less release fallback compares a scene-metre delta against a device-pixel threshold; the branch is unreachable in the shipped UI and untested (the test always sets a widget) — `src/camp_map/vector/vector_feature_item.cpp:272`
+- [ ] (suggestion) `PopupIsGatedOnPanModeAndOnAClickNotADrag` asserts only `isAccepted()`, which is true on both the click and the drag path, so it cannot distinguish tooltip-shown from tooltip-suppressed; assert `QToolTip::text()` — `test/test_vector_feature_item.cpp:203`
+- [ ] (suggestion) The test comment says a null result means "the caller inserts at top level"; `mission_insertion.h:31` says explicitly that it does not — contradictory documentation of one contract — `test/test_mission_insertion.cpp:54`
+- [ ] (suggestion) `openGeometry()` is itself the caller the new header comment says must check for a null parent, and does not — `RowInserter` receives the unchecked pointer — `src/camp/autonomousvehicleproject.cpp:218`
+- [ ] (suggestion) `WaitCursor` brackets only the synchronous kickoff; the load it appears to represent runs after `unsetCursor()` — `src/camp/mainwindow.cpp:626`
+- [ ] (suggestion) `!range.valid` still returns 1.0 while a degenerate range now returns 0.5 — an asymmetry with no reader, since both callers guard `range.valid` first — `src/camp_map/vector/vector_style.cpp:54`
+- [ ] (suggestion) Unavailable persisted files are folded in at the END of the rebuilt list, so a layer's position is lost across a launch with the share unmounted — `src/camp/autonomousvehicleproject.cpp:426`
