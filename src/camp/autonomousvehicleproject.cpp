@@ -216,6 +216,18 @@ void AutonomousVehicleProject::openGeometry(const QString& fname, QString label,
     // inside a Group is restored inside that Group instead of wherever the
     // project's current-group pointer happens to be.
     MissionItem *insertion_parent = camp::mission::resolveInsertionParent(parent, m_currentGroup);
+    // [camp#22] A null result is NOT "insert at top level" — RowInserter
+    // dereferences the parent it is handed (see mission_insertion.h, which names
+    // this caller). In the running application m_currentGroup is set in the
+    // constructor and never cleared, so this is a programming error rather than a
+    // state the operator can reach; say so instead of crashing on it.
+    if(!insertion_parent)
+    {
+        qWarning() << "AutonomousVehicleProject::openGeometry:" << fname
+                   << "- no insertion parent (no requested parent and no current group);"
+                   << "the file is not opened";
+        return;
+    }
     VectorDataset * vd;
     {
         RowInserter ri(*this,insertion_parent);
