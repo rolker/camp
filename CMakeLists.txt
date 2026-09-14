@@ -701,6 +701,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#22] Feature attributes + geometry coverage in parseVectorLayers: typed
+  # fields round-trip (and an unset field stays ABSENT, which is what lets the
+  # styling path tell "no value" from a low value), multi-part geometries emit one
+  # ParsedGeometry per part, and 25D variants are no longer dropped. Same narrow
+  # source set as test_vector_dataset_cleanup — the TU, not the camp_map library.
+  ament_add_gtest(test_vector_parse_attributes
+    test/test_vector_parse_attributes.cpp
+    src/camp_map/vector/vector_parse.cpp
+  )
+  target_include_directories(test_vector_parse_attributes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_parse_attributes
+    Qt5::Core
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
   # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled
   # from BackgroundRaster). Pure std C++; no Qt/ROS link needed.
   ament_add_gtest(test_astar

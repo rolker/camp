@@ -4,7 +4,9 @@
 #include <vector>
 
 #include <QGeoCoordinate>
+#include <QMap>
 #include <QString>
+#include <QVariant>
 
 class GDALDataset;
 
@@ -35,6 +37,24 @@ struct ParsedGeometry
     std::vector<QGeoCoordinate> exterior;
     // Polygon only: each interior ring's vertices (empty for Point/LineString).
     std::vector<std::vector<QGeoCoordinate>> interiorRings;
+    // [camp#22] The source feature's attribute fields, keyed by field name.
+    //
+    // Type mapping, applied per OGRFieldDefn::GetType():
+    //   OFTInteger        -> int      (OFSTBoolean/OFSTInt16 subtypes included)
+    //   OFTInteger64      -> qlonglong
+    //   OFTReal           -> double
+    //   everything else   -> QString  (GetFieldAsString: OFTString, OFTDate,
+    //                                  OFTDateTime, list types, binary, ...)
+    // A field that is unset or NULL on a feature is ABSENT from the map rather
+    // than present-and-empty, so a consumer can tell "no value" from "empty
+    // string" — the styling path paints a missing value in its no-data colour
+    // instead of at the bottom of the ramp.
+    //
+    // One entry per PART of a multi-part geometry: a MultiPolygon feature emits
+    // one ParsedGeometry per polygon, each carrying a copy of the same feature
+    // attributes, so per-feature styling and click-to-inspect work uniformly
+    // over single- and multi-part sources.
+    QMap<QString, QVariant> attributes;
 };
 
 struct ParsedLayer
@@ -44,6 +64,12 @@ struct ParsedLayer
 };
 
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.
+//
+// Geometry coverage: Point / LineString / Polygon and their Multi* collections,
+// each matched after wkbFlatten() so every 25D/Z/M/ZM variant (a GeoJSON point
+// with an elevation is wkbPoint25D) reaches the same case as its 2D form. A
+// geometry type that is still not handled (wkbGeometryCollection, the curve
+// types) is skipped with a qWarning naming the type — never silently dropped.
 //
 // [#152] For each layer this creates an OGRCoordinateTransformation and, per
 // geometry, OGRPointIterators — and DESTROYS every one of them before
