@@ -108,6 +108,14 @@ TEST(VectorLayerStyling, NormalizationSpansTheRange)
   EXPECT_DOUBLE_EQ(normalizedValue(30.0, range), 0.5);
   EXPECT_DOUBLE_EQ(normalizedValue(-5.0, range), 0.0);
   EXPECT_DOUBLE_EQ(normalizedValue(999.0, range), 1.0);
+
+  // [camp#22] An INVALID range — no feature in the layer had a value for the
+  // field — answers the same 0.5 as a degenerate one below: both are "nothing
+  // distinguishes these features", and the two used to disagree (1.0 vs 0.5) with
+  // no reader to notice.
+  const FieldRange invalid;
+  ASSERT_FALSE(invalid.valid);
+  EXPECT_DOUBLE_EQ(normalizedValue(42.0, invalid), 0.5);
 }
 
 // Every feature holding the same value: the MIDDLE of the palette for all of them

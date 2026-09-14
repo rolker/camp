@@ -51,8 +51,14 @@ FieldRange fieldRange(const std::vector<ParsedGeometry>& geometries, const QStri
 
 double normalizedValue(double value, const FieldRange& range)
 {
+  // [camp#22] No range at all — no feature in the layer held a numeric value for
+  // this field. Nothing distinguishes one feature from another, which is the same
+  // situation as the degenerate range below, so it gets the same answer: the
+  // middle of the ramp, reading as "uniform" rather than as an extreme. (Both
+  // callers guard on range.valid before reaching this, so neither case has a
+  // reader today; they agree anyway, rather than disagreeing silently.)
   if(!range.valid)
-    return 1.0;
+    return 0.5;
   const double span = range.max - range.min;
   // [camp#22] Degenerate range — every feature holds the same value, so there is
   // nothing to distinguish and any position on the ramp is equally (un)true. Take

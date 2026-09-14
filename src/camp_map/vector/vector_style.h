@@ -67,9 +67,12 @@ FieldRange fieldRange(const std::vector<ParsedGeometry>& geometries, const QStri
 /// total for every finite double.
 ///
 /// Out-of-range values clamp. A range so wide that the arithmetic overflows falls
-/// back to the value's ORDER relative to the bounds. An invalid range (no feature
-/// has a value) returns 1.0 — nothing to distinguish, and the caller paints
-/// no-data anyway.
+/// back to the value's ORDER relative to the bounds. An INVALID range (no feature
+/// in the layer has a value for the field) returns the same 0.5 as the degenerate
+/// one: it is the same situation — nothing distinguishes one feature from another
+/// — and the two answers agreeing is what keeps the contract readable. Both
+/// callers guard on `range.valid` and paint no-data before reaching here, so
+/// neither case has a reader today.
 double normalizedValue(double value, const FieldRange& range);
 
 /// The fixed "no data" colour: a feature whose styling field is missing or
