@@ -79,3 +79,83 @@ see finding 1 for what that actually means.
 - [ ] (suggestion) Per-layer style settings key on `itemID()`, which derives from `objectName()` = the file's basename. Two vector files with the same basename in different directories would share one settings group. `GggsTileLayer` overrides `settingsKey()` for exactly this reason (camp#126, `map_item.h:56-61`); consider the same here — `plan.md:142-146`
 - [ ] (suggestion) Latent lat/lon inconsistency in the parser you are extending: the Point path builds `QGeoCoordinate(getY(), getX())` when untransformed, while `readRing` builds `(getX(), getY())` — so line and polygon vertices from a source with no spatial ref are swapped. Pre-existing and out of scope, but worth confirming while the attribute work is in that file, since the acceptance test is a coordinate check — `vector_parse.cpp:96-104` vs `:46`
 - [ ] (suggestion) Open Question 1 (persistence) — recommend **keep QSettings app state** per ADR-0003 §4: a Layers-tab layer is not mission data, and the operator's intent ("the layer returns when the project reopens") is met, since `mainwindow.cpp:161` restores layers at startup. But the plan's stated reason is inaccurate — the operator's decision 6 does repeat "save/restore in the project file" verbatim, so this is not an item their answers left silent. Put it to the operator as one explicit yes/no before implementation rather than treating ADR precedent as having settled it — `plan.md:147-153, 253`
+
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-09-14 11:02 -04:00
+**By**: Claude Code Agent (Claude Sonnet)
+
+**Plan**: `.agent/work-plans/issue-22/plan.md` at `b4fd5b3` (rev 2)
+**Branch**: feature/issue-22 at `b4fd5b3`
+**Phases**: single
+
+Rev 2 responds to the Plan Review (changes-requested, 9 must-fix + 3
+suggestion findings). Every finding was re-verified against source before
+being folded in:
+
+1. **Step 2 premise was false (persisted `VectorDataset` restores fine)** —
+   replaced. The real defect, confirmed at `missionitem.cpp:185` and
+   `autonomousvehicleproject.cpp:200-214`: `openGeometry()` always inserts
+   under `m_currentGroup`, ignoring the node's actual parent. Plan now fixes
+   `openGeometry`'s insertion target (new parent parameter, defaulted for
+   the existing call site) with a nested-`Group` regression test. All
+   `read()`-stub work dropped.
+2. **Wrong consequences row** ("previously-empty nodes now populate") —
+   removed; it rested on the same false premise.
+3. **Library layering** — `vector_parse.{h,cpp}` now moves from the
+   executable into `src/camp_map/vector/` so `VectorLayer` (which must live
+   in `camp_map`) can call it, per `.agents/README.md`'s
+   library-cannot-call-executable rule; verified current placement at
+   `CMakeLists.txt:135` vs. `camp_map`'s separate `SHARED` target
+   (`CMakeLists.txt:295-339`).
+4. **Missing alt-stack call** — step 3 (VectorLayer) now specifies
+   `camp_crash::install_thread_alt_stack()` as the load worker's first
+   statement, matching `raster_layer.cpp:189`, required by the
+   `check_worker_alt_stacks` CTest guard (`CMakeLists.txt:554-557`).
+5. **Persistence missing its removal half** — step 7 now adds
+   `VectorLayer::onRemovedFromMap()` + an `onVectorLayerRemoved` slot wired
+   to the Map model's `rowsAboutToBeRemoved`, mirroring
+   `RasterLayer::onRemovedFromMap()` (`raster_layer.cpp:749-757`) and
+   `onChartLayerRemoved` (`autonomousvehicleproject.cpp:322+`, camp#90/
+   #117), with a persistence test covering add/restore/remove/stays-removed.
+6. **No degenerate/absent-value styling handling** — step 5 now specifies:
+   all-equal values get an epsilon offset (mirroring `grid_map.cpp:
+   198-206`'s guard) instead of dividing by zero; missing/non-numeric/NaN
+   values get a fixed neutral color/radius, never palette index 0 by
+   accident. Covered by new styling-test cases.
+7. **Silent geometry drops** — step 1 now switches on `wkbFlatten()` (so
+   every 25D/ZM variant reaches its base case) and adds
+   `wkbMultiPoint`/`wkbMultiLineString`/`wkbMultiPolygon` handling instead
+   of the prior `default: break` that dropped them, confirmed against
+   `vector_parse.cpp:86-140`. New test coverage for multi-part + 25D
+   features.
+8. **Click-to-inspect unspecified against the real mouse state machine** —
+   step 4 now specifies the popup fires only in pan mode, since
+   `ProjectView::mousePressEvent` (`projectview.cpp:57-196`) runs
+   waypoint/trackline/survey placement on left-press in its add-* modes and
+   always forwards to `QGraphicsView::mousePressEvent` regardless of mode
+   (confirmed `setDragMode(ScrollHandDrag)` at `projectview.cpp:335`), so a
+   naive always-on popup would fire during placement.
+9. **Missing Files-to-Change entries** — `item_types.h` (new
+   `VectorLayerType`, confirmed pattern at `item_types.h:22-45`),
+   `mainwindow.cpp:161`'s `restorePersistedVectorLayers()` startup call
+   (alongside the confirmed existing `restorePersistedBackgrounds()`
+   call), and an `.agents/README.md` note are now all listed.
+
+Suggestions also addressed: `VectorLayer::settingsKey()` now overrides the
+`itemID()` default (camp#126 precedent, `gggs_tile_layer.cpp:1829-1852`) to
+avoid a basename collision between same-named files in different
+directories; the pre-existing Point-vs-`readRing` lat/lon-order
+inconsistency (`vector_parse.cpp:46` vs. `:96-104`) is flagged in step 1
+for a fix-or-explicit-follow-up decision during implementation; the
+persistence-mechanism question is resolved (QSettings app state, both
+halves) rather than left as an Open Question.
+
+### Open questions
+- [ ] `ParsedGeometry::attributes` container type (`QMap` vs. ordered
+      vector-of-pairs) — default `QMap` for MVP.
+- [ ] Whether `ProjectView` needs a new read-only `mouseMode` accessor for
+      the click-to-inspect pan-mode gate, or one already exists.
+- [ ] Whether the lat/lon-order fix in `vector_parse.cpp` lands in this PR
+      or as a separate follow-up issue — confirm during implementation.
