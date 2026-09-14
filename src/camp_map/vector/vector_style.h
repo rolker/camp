@@ -55,13 +55,21 @@ void accumulateValue(FieldRange& range, const std::optional<double>& value);
 /// widen the range nor drag it toward zero.
 FieldRange fieldRange(const std::vector<ParsedGeometry>& geometries, const QString& field);
 
-/// Normalize @p value onto [0, 1] within @p range.
+/// Normalize @p value onto [0, 1] within @p range. NEVER returns NaN.
 ///
-/// Degenerate range (every feature holding the same value) is handled the way
-/// camp_map's grid renderer handles it (`ros/grids/grid_map.cpp`): the low bound
-/// is offset by one unit so every feature normalizes to 1.0 — the top of the
-/// ramp — instead of dividing by zero. Out-of-range values clamp.
-/// An invalid range returns 1.0 for the same reason (nothing to distinguish).
+/// Degenerate range (every feature holding the same value) returns 0.5, the
+/// middle of the palette: there is nothing to distinguish, so the honest reading
+/// is "uniform" rather than either extreme. This is deliberately NOT the grid
+/// renderer's `low = max - 1.0` offset (`ros/grids/grid_map.cpp`), which is a
+/// no-op wherever 1.0 is below the value's precision — above 2^53 (OGR int64 ids,
+/// nanosecond timestamps) the span stays zero and the division yields NaN, which
+/// then reaches `Palette::sample()` and the radius arithmetic. The guard here is
+/// total for every finite double.
+///
+/// Out-of-range values clamp. A range so wide that the arithmetic overflows falls
+/// back to the value's ORDER relative to the bounds. An invalid range (no feature
+/// has a value) returns 1.0 — nothing to distinguish, and the caller paints
+/// no-data anyway.
 double normalizedValue(double value, const FieldRange& range);
 
 /// The fixed "no data" colour: a feature whose styling field is missing or

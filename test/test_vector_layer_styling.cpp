@@ -110,10 +110,10 @@ TEST(VectorLayerStyling, NormalizationSpansTheRange)
   EXPECT_DOUBLE_EQ(normalizedValue(999.0, range), 1.0);
 }
 
-// Every feature holding the same value: the top of the ramp for all of them —
-// not a NaN from dividing by zero, and not a fallback style. Mirrors the grid
-// renderer's guard.
-TEST(VectorLayerStyling, EqualValuesMapToTheTopOfTheRamp)
+// Every feature holding the same value: the MIDDLE of the palette for all of them
+// — not a NaN from dividing by zero, and not a fallback style. There is nothing to
+// distinguish, so neither extreme would be honest.
+TEST(VectorLayerStyling, EqualValuesMapToTheMiddleOfTheRamp)
 {
   std::vector<ParsedGeometry> geometries;
   geometries.push_back(pointWith({{"flat", 4.0}}));
@@ -123,10 +123,67 @@ TEST(VectorLayerStyling, EqualValuesMapToTheTopOfTheRamp)
   ASSERT_TRUE(range.valid);
   const double t = normalizedValue(4.0, range);
   EXPECT_FALSE(std::isnan(t));
-  EXPECT_DOUBLE_EQ(t, 1.0);
+  EXPECT_DOUBLE_EQ(t, 0.5);
 
   const marine_colormap::Palette* palette = marine_colormap::find_palette("viridis");
-  EXPECT_EQ(colorForValue(palette, 4.0, range, Qt::darkCyan), paletteColorAt("viridis", 1.0));
+  EXPECT_EQ(colorForValue(palette, 4.0, range, Qt::darkCyan), paletteColorAt("viridis", 0.5));
+}
+
+// [camp#22 must-fix 8] The degenerate-range guard has to be TOTAL, not merely
+// adequate on small numbers.
+//
+// The previous guard offset the low bound by one unit and divided by that. Above
+// 2^53 — OGR int64 feature ids, nanosecond timestamps, large counters, all
+// perfectly ordinary attribute fields — `max - 1.0 == max`: the offset is a no-op,
+// the span stays zero, and 0.0/0.0 puts a NaN into Palette::sample() and into the
+// radius arithmetic. A NaN radius is not a visible failure; it is a marker that
+// silently does not draw.
+TEST(VectorLayerStyling, DegenerateRangeIsTotalAboveTwoToTheFiftyThree)
+{
+  const marine_colormap::Palette* palette = marine_colormap::find_palette("viridis");
+  ASSERT_NE(palette, nullptr);
+
+  // 2^53 and beyond: adding or subtracting 1.0 changes nothing.
+  for(const double v : {9007199254740992.0,            // 2^53
+                        1.8e19,                         // beyond int64
+                        1.757e18,                       // a nanosecond timestamp
+                        -9007199254740992.0})
+  {
+    FieldRange range;
+    accumulateValue(range, v);
+    accumulateValue(range, v);
+    ASSERT_TRUE(range.valid);
+    ASSERT_DOUBLE_EQ(range.max - 1.0, range.max) << "fixture must be past the 1.0 ulp boundary";
+
+    const double t = normalizedValue(v, range);
+    EXPECT_FALSE(std::isnan(t)) << "value " << v;
+    EXPECT_GE(t, 0.0);
+    EXPECT_LE(t, 1.0);
+
+    // Nothing NaN reaches the palette or the radius.
+    const QColor color = colorForValue(palette, v, range, Qt::darkCyan);
+    EXPECT_TRUE(color.isValid());
+    const double radius =
+      radiusForValue(v, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius);
+    EXPECT_FALSE(std::isnan(radius)) << "value " << v;
+    EXPECT_GE(radius, kMinPointRadius);
+    EXPECT_LE(radius, kMaxPointRadius);
+  }
+
+  // A range so wide the arithmetic overflows still yields a usable position.
+  FieldRange huge;
+  accumulateValue(huge, -std::numeric_limits<double>::max());
+  accumulateValue(huge, std::numeric_limits<double>::max());
+  for(const double v : {-std::numeric_limits<double>::max(), 0.0,
+                        std::numeric_limits<double>::max()})
+  {
+    const double t = normalizedValue(v, huge);
+    EXPECT_FALSE(std::isnan(t)) << "value " << v;
+    EXPECT_GE(t, 0.0);
+    EXPECT_LE(t, 1.0);
+    EXPECT_FALSE(std::isnan(
+      radiusForValue(v, huge, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius)));
+  }
 }
 
 // The ends of the data map to the ends of the palette.

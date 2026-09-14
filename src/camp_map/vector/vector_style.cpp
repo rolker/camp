@@ -53,13 +53,31 @@ double normalizedValue(double value, const FieldRange& range)
 {
   if(!range.valid)
     return 1.0;
-  double low = range.min;
-  // Every value identical: offset the low bound rather than divide by zero, so
-  // the field still reads as "present" (top of the ramp) instead of collapsing
-  // to a fallback style. Mirrors the grid renderer's guard.
-  if(!(low < range.max))
-    low = range.max - 1.0;
-  const double t = (value - low) / (range.max - low);
+  const double span = range.max - range.min;
+  // [camp#22] Degenerate range — every feature holds the same value, so there is
+  // nothing to distinguish and any position on the ramp is equally (un)true. Take
+  // the middle of the palette, which reads as "uniform" rather than as an extreme.
+  //
+  // The previous guard offset the low bound by one unit (`low = max - 1.0`) and
+  // divided by that. It is a NO-OP wherever 1.0 is below the value's precision:
+  // above 2^53 — OGR int64 ids, nanosecond timestamps, large accumulated counters
+  // — `max - 1.0 == max`, the span stays zero, and 0.0/0.0 puts a NaN into
+  // Palette::sample() and into the radius arithmetic. `!(span > 0.0)` is total for
+  // every finite double AND for a NaN span, which no arithmetic offset can be.
+  if(!(span > 0.0))
+    return 0.5;
+  const double t = (value - range.min) / span;
+  if(!std::isfinite(t))
+  {
+    // Reachable when the span or the numerator overflows to infinity (a range
+    // spanning most of the double line, e.g. -DBL_MAX to DBL_MAX). Fall back to
+    // the ORDER, which is still meaningful, rather than emitting a NaN.
+    if(value >= range.max)
+      return 1.0;
+    if(value <= range.min)
+      return 0.0;
+    return 0.5;
+  }
   return std::clamp(t, 0.0, 1.0);
 }
 

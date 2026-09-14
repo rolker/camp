@@ -738,7 +738,8 @@ if(BUILD_TESTING)
 
   # [camp#22] Attribute-driven styling for the read-only vector layer: the range
   # is computed over the features that HAVE a value, an all-equal field maps to the
-  # top of the ramp instead of dividing by zero, and a missing / non-numeric value
+  # middle of the ramp instead of dividing by zero (totally — including above 2^53,
+  # where the old max-1.0 offset was a no-op), and a missing / non-numeric value
   # gets the documented no-data colour rather than palette index 0. Headless free
   # functions (vector_style.cpp) — no QApplication, no GL, no Map model.
   ament_add_gtest(test_vector_layer_styling
