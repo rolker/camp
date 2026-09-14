@@ -51,8 +51,12 @@ TEST(MissionInsertion, RequestedParentWinsWithNoCurrentGroup)
   EXPECT_EQ(resolveInsertionParent(kRestoringNode, nullptr), kRestoringNode);
 }
 
-// ...and with neither, the result is null: the caller inserts at top level, which
-// is exactly what passing a null m_currentGroup did before.
+// ...and with neither, the result is null — which is NOT "insert at top level":
+// AutonomousVehicleProject::RowInserter dereferences the parent it is handed, so a
+// caller that can see a null current group must check before inserting
+// (mission_insertion.h states the contract; openGeometry() makes the check). The
+// resolver's own job here is only to report that there is no parent to insert
+// under, which is exactly what passing a null m_currentGroup meant before.
 TEST(MissionInsertion, BothNullResolvesToNull)
 {
   EXPECT_EQ(resolveInsertionParent(nullptr, nullptr), nullptr);
