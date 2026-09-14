@@ -331,7 +331,10 @@ set(CAMP_MAP_SOURCES
     src/camp_map/tools/map_tool.cpp
     src/camp_map/tools/tools_manager.cpp
     src/camp_map/util/cached_file_loader.cpp
+    src/camp_map/vector/vector_feature_item.cpp
+    src/camp_map/vector/vector_layer.cpp
     src/camp_map/vector/vector_parse.cpp
+    src/camp_map/vector/vector_style.cpp
     src/camp_map/wmts/capabilities.cpp
     src/camp_map/wmts/layer.cpp
     src/camp_map/wmts/tile_matrix_set.cpp
@@ -731,6 +734,46 @@ if(BUILD_TESTING)
   )
   target_include_directories(test_mission_insertion PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+
+  # [camp#22] Attribute-driven styling for the read-only vector layer: the range
+  # is computed over the features that HAVE a value, an all-equal field maps to the
+  # top of the ramp instead of dividing by zero, and a missing / non-numeric value
+  # gets the documented no-data colour rather than palette index 0. Headless free
+  # functions (vector_style.cpp) — no QApplication, no GL, no Map model.
+  ament_add_gtest(test_vector_layer_styling
+    test/test_vector_layer_styling.cpp
+    src/camp_map/vector/vector_style.cpp
+  )
+  target_include_directories(test_vector_layer_styling PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_styling
+    marine_colormap::marine_colormap
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Positioning
+  )
+
+  # [camp#22 / camp#213] VectorLayer teardown: the parse runs on a QtConcurrent
+  # worker that reads the layer's members, so the destructor must abort and JOIN it
+  # — the destroy-during-load case here is the racing shape. The open-dataset
+  # baseline also proves the worker's RAII closes the GDAL handle on the aborted
+  # path, and the load assertions keep the teardown check non-vacuous.
+  ament_add_gtest(test_vector_layer_teardown
+    test/test_vector_layer_teardown.cpp
+  )
+  target_include_directories(test_vector_layer_teardown PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_teardown
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Concurrent
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
   )
 
   # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled
