@@ -26,6 +26,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QToolTip>
 
 #include "map_view/web_mercator.h"
 #include "vector/vector_feature_item.h"
@@ -166,8 +167,12 @@ TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
   ParsedGeometry g;
   g.type = ParsedGeometry::Point;
   g.exterior.push_back(QGeoCoordinate(43.0, -70.0));
+  // An attribute, so the popup has something to say and "shown" is
+  // distinguishable from "suppressed" by the tooltip's TEXT.
+  g.attributes["assessment"] = QStringLiteral("candidate C");
   auto* item = new VectorFeatureItem(nullptr, g);
   scene.addItem(item);
+  ASSERT_FALSE(item->attributeText().isEmpty());
 
   auto press = [&](const QPoint& screen)
   {
@@ -200,11 +205,30 @@ TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
 
   // Pan mode: the press is taken but answers nothing yet — whether this is a
   // click or the start of a pan is not known until the button comes back up.
+  //
+  // What is asserted on the release is the TOOLTIP, not isAccepted(): the item
+  // accepts the release on both the click and the drag path (a drag it started on
+  // is still its event), so acceptance cannot tell "popup shown" from "popup
+  // suppressed" — the one thing this test exists to distinguish.
   view.setDragMode(QGraphicsView::ScrollHandDrag);
   EXPECT_TRUE(press(QPoint(100, 100)));
   EXPECT_TRUE(release(QPoint(100, 100), QPoint(100, 100)));   // a click
+  EXPECT_EQ(QToolTip::text(), item->attributeText())
+      << "a click without movement must show the feature's attributes";
+  EXPECT_FALSE(QToolTip::text().isEmpty());
+
+  // Now the drag. "No popup" is asserted as "the tooltip text did not change",
+  // against a sentinel planted first: QToolTip::hideText() does not clear
+  // QToolTip::text() on the offscreen platform, so an emptiness assertion here
+  // would be testing the platform rather than the item.
+  const QString sentinel = QStringLiteral("sentinel: no popup was shown");
+  QToolTip::showText(QPoint(0, 0), sentinel);
+  ASSERT_EQ(QToolTip::text(), sentinel) << "harness: the sentinel did not take";
+
   EXPECT_TRUE(press(QPoint(100, 100)));
   EXPECT_TRUE(release(QPoint(100, 100), QPoint(400, 250)));   // a drag: no popup
+  EXPECT_EQ(QToolTip::text(), sentinel)
+      << "a release far from the press is a pan, and must not answer with a tooltip";
 
   // A right-button release is not ours.
   QGraphicsSceneMouseEvent right(QEvent::GraphicsSceneMouseRelease);
