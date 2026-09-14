@@ -5,7 +5,7 @@
 #include "point.h"
 #include "linestring.h"
 #include "polygon.h"
-#include "vector_parse.h"
+#include "vector/vector_parse.h"
 #include "autonomousvehicleproject.h"
 #include <ogrsf_frmts.h>
 #include <QDebug>

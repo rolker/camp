@@ -11,6 +11,14 @@ class GDALDataset;
 namespace camp::vector
 {
 
+// [camp#22] This TU lives in camp_map (not in the CCOMAutonomousMissionPlanner
+// executable, where it started under #152) because BOTH vector-file entry points
+// have to reach it: VectorDataset (the editable mission-tree import, in the
+// executable) and the read-only camp::vector::VectorLayer (a map::Layer, in
+// camp_map). A library cannot call into the executable that links it — the
+// libcamp_crash lesson from #217 — so the shared parser belongs in the library.
+// It stays pure Qt/GDAL with no ROS, which is what camp_map requires (ADR-0002).
+
 // Plain-data geometry parsed from an OGR vector source, coordinates already in
 // WGS84. Deliberately free of MissionItem / AutonomousVehicleProject coupling:
 // VectorDataset::open historically interleaved the GDAL/OGR resource lifecycle

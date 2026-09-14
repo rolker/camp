@@ -132,7 +132,6 @@ set(SOURCES
     src/camp/waypointdetails.cpp
 
     src/camp/vector/vectordataset.cpp
-    src/camp/vector/vector_parse.cpp
     src/camp/group.cpp
     src/camp/vector/point.cpp
     src/camp/vector/linestring.cpp
@@ -331,6 +330,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/tools/map_tool.cpp
     src/camp_map/tools/tools_manager.cpp
     src/camp_map/util/cached_file_loader.cpp
+    src/camp_map/vector/vector_parse.cpp
     src/camp_map/wmts/capabilities.cpp
     src/camp_map/wmts/layer.cpp
     src/camp_map/wmts/tile_matrix_set.cpp
@@ -684,13 +684,16 @@ if(BUILD_TESTING)
   # those are proven only under valgrind (run this binary with
   # `valgrind --leak-check=full`; "definitely lost" must be 0). Linked against
   # the standalone vector_parse TU so the leak path is exercised without the
-  # MissionItem / AutonomousVehicleProject item graph.
+  # MissionItem / AutonomousVehicleProject item graph. [camp#22] That TU now
+  # lives in src/camp_map/vector/ (compiled into camp_map) so the read-only
+  # VectorLayer can call it; the test still compiles it directly rather than
+  # linking camp_map, keeping the source set narrow.
   ament_add_gtest(test_vector_dataset_cleanup
     test/test_vector_dataset_cleanup.cpp
-    src/camp/vector/vector_parse.cpp
+    src/camp_map/vector/vector_parse.cpp
   )
   target_include_directories(test_vector_dataset_cleanup PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_vector_dataset_cleanup
     Qt5::Core
