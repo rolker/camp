@@ -201,6 +201,7 @@
     <addaction name="actionOpen"/>
     <addaction name="actionOpenBackground"/>
     <addaction name="actionOpenGeometry"/>
+    <addaction name="actionOpenVectorLayer"/>
     <addaction name="actionImport"/>
     <addaction name="separator"/>
     <addaction name="actionSave"/>
@@ -311,6 +312,14 @@
   <action name="actionOpenGeometry">
    <property name="text">
     <string>Open &amp;Geometry</string>
+   </property>
+  </action>
+  <action name="actionOpenVectorLayer">
+   <property name="text">
+    <string>Open &amp;Vector Layer</string>
+   </property>
+   <property name="toolTip">
+    <string>Display a vector file read-only as a map layer</string>
    </property>
   </action>
   <action name="actionGroup">

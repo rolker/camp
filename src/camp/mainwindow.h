@@ -62,6 +62,8 @@ private slots:
     void on_actionBehavior_triggered();
     void on_actionBehaviorFromContext_triggered();
     void on_actionOpenGeometry_triggered();
+    // [camp#22] File > Open Vector Layer — the read-only display path.
+    void on_actionOpenVectorLayer_triggered();
     void on_actionOrbit_triggered();
     void on_actionOrbitFromContext_triggered();
     void on_actionAvoid_triggered();

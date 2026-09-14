@@ -39,6 +39,7 @@
 #include "map/layer_list.h"
 #include "raster/raster_layer.h"
 #include "raster/gggs_tile_layer.h"
+#include "vector/vector_layer.h"
 #include <QSettings>
 #include <algorithm>
 
@@ -60,6 +61,10 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     // removed via the Layers-tab Remove action (camp_map Layer detaches through the
     // Map model; we react here so camp_map stays unaware of the project).
     connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
+    // [camp#22 / camp#90] Same mechanism for the read-only vector layers: a layer
+    // removed from the Layers tab must also leave the persisted file list, or it
+    // comes back on the next launch.
+    connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onVectorLayerRemoved);
 
     m_root = new Group();
     m_root->setParent(this);
@@ -363,6 +368,80 @@ void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, in
         // Refresh overlays (depth-dependent planning, fit-to-extent presence).
         emit backgroundUpdated();
     }
+}
+
+void AutonomousVehicleProject::openVectorLayer(const QString &fname)
+{
+    // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
+    // identical layers, and without this the restore path plus a command-line or
+    // menu open of the same file would accumulate a duplicate on every launch.
+    for(auto* existing : m_vectorLayers)
+        if(existing->filename() == fname)
+            return;
+
+    auto layers = m_map->topLevelLayers();
+    if(!layers)
+        return;
+    // The layer parses asynchronously; it is recorded (and persisted) immediately,
+    // and reports a failed or empty load in its own Layers-tab status rather than
+    // being silently dropped here — the operator asked for this file, so a file
+    // that will not open should say so rather than vanish.
+    m_vectorLayers.push_back(new camp::vector::VectorLayer(layers, fname));
+    persistVectorLayers();
+}
+
+void AutonomousVehicleProject::persistVectorLayers() const
+{
+    // [camp#22 / ADR-0003 §4] The ordered vector-layer filename list as app state,
+    // beside the chart list. Per-layer style (colour/size field, palette) persists
+    // separately through the layer's own settings group; this records which layers
+    // to recreate. Single writer of the key — see the header.
+    QStringList files;
+    for(auto* layer : m_vectorLayers)
+        files = camp::vector::withVectorLayerFile(files, layer->filename());
+    camp::vector::writePersistedVectorLayerFiles(files);
+}
+
+void AutonomousVehicleProject::restorePersistedVectorLayers()
+{
+    // [camp#22 / ADR-0003] Recreate the persisted vector layers (app state). Read
+    // the list first so it is stable across the loop, skip files that have since
+    // disappeared, and re-persist once if the restored set differs — that
+    // self-heals a list that had accumulated duplicates or stale entries.
+    const QStringList files = camp::vector::persistedVectorLayerFiles();
+    for(const auto& fname : files)
+    {
+        if(!QFileInfo::exists(fname))
+            continue;
+        openVectorLayer(fname);
+    }
+    if(files.size() != static_cast<int>(m_vectorLayers.size()))
+        persistVectorLayers();
+}
+
+void AutonomousVehicleProject::onVectorLayerRemoved(const QModelIndex& parent, int first, int last)
+{
+    // [camp#22 / camp#90 / camp#117] A layer is being detached from the Map model
+    // (Layers-tab Remove). The item still exists during rowsAboutToBeRemoved, so
+    // the pointer can be matched against our bookkeeping here; afterwards it is
+    // gone. Dropping only the in-memory entry would leave the file in
+    // `vectorLayers/files` and the layer would return on the next launch.
+    bool changed = false;
+    for(int row = first; row <= last; ++row)
+    {
+        auto idx = m_map->index(row, 0, parent);
+        auto* item = reinterpret_cast<camp::map::MapItem*>(idx.internalPointer());
+        auto* layer = qobject_cast<camp::vector::VectorLayer*>(item);
+        if(!layer)
+            continue;
+        auto it = std::find(m_vectorLayers.begin(), m_vectorLayers.end(), layer);
+        if(it == m_vectorLayers.end())
+            continue;
+        m_vectorLayers.erase(it);
+        changed = true;
+    }
+    if(changed)
+        persistVectorLayers();
 }
 
 QGraphicsItem *AutonomousVehicleProject::originAnchor() const

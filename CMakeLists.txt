@@ -776,6 +776,26 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#22 / ADR-0003 §4 / camp#90] Vector-layer list persistence: add de-dups,
+  # remove drops every entry AND STICKS across a restart (the half whose absence
+  # makes a removed layer come back), the settings key round-trips, and per-layer
+  # style is keyed by full path rather than basename (camp#126's collision).
+  ament_add_gtest(test_vector_layer_persistence
+    test/test_vector_layer_persistence.cpp
+  )
+  target_include_directories(test_vector_layer_persistence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_persistence
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    Qt5::Test
+    ${GDAL_LIBRARY}
+  )
+
   # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled
   # from BackgroundRaster). Pure std C++; no Qt/ROS link needed.
   ament_add_gtest(test_astar

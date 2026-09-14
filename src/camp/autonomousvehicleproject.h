@@ -30,6 +30,7 @@ class AvoidArea;
 
 namespace camp { namespace map { class Map; } }
 namespace camp { namespace raster { class RasterLayer; } }
+namespace camp { namespace vector { class VectorLayer; } }
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -55,6 +56,16 @@ public:
     // after the MainWindow has wired up the background signals, so fit-to-extent
     // and overlay refresh fire for the restored charts.
     void restorePersistedBackgrounds();
+
+    // [camp#22 / ADR-0003] Load an OGR vector file as a READ-ONLY display layer
+    // (camp::vector::VectorLayer) in the Layers tab, and persist it in the
+    // vector-layer file list. De-duped by filename. This is the display path;
+    // openGeometry() is the editable mission-tree path.
+    void openVectorLayer(QString const &fname);
+
+    // [camp#22 / ADR-0003] Re-create the persisted vector layers (app state),
+    // called from MainWindow at startup beside restorePersistedBackgrounds().
+    void restorePersistedVectorLayers();
 
     // [#59 ADR-0003] True while at least one chart layer is loaded.
     bool hasBackground() const;
@@ -224,6 +235,11 @@ private:
     // filename). This is the multi-background depth model (stage 4 will front it
     // with a tree).
     std::vector<DepthRaster*> m_depthRasters;
+    // [camp#22 / ADR-0003] Read-only vector display layers, Map-owned (parented to
+    // m_map->topLevelLayers()), kept in load order for persistence and removal —
+    // the same bookkeeping shape as m_chartLayers. Lifetime belongs to the Map
+    // model; drop a pointer here only after detaching+deleting via it.
+    std::vector<camp::vector::VectorLayer*> m_vectorLayers;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
@@ -250,6 +266,17 @@ private:
     // Connected to m_map's rowsAboutToBeRemoved so the Map model (camp_map) stays
     // unaware of the project's chart/depth bookkeeping.
     void onChartLayerRemoved(const QModelIndex& parent, int first, int last);
+    // [camp#22 / ADR-0003] Persist the vector-layer filename list (ordered) as
+    // app state. THE single writer of the `vectorLayers/files` key: it rebuilds
+    // the whole list from m_vectorLayers and is called from both the add and the
+    // remove path, so the two can never disagree about what is persisted.
+    void persistVectorLayers() const;
+    // [camp#22 / camp#90 / camp#117] React to a vector layer being removed via the
+    // Layers-tab Remove action: drop its bookkeeping entry and re-persist, so a
+    // removed layer does not silently reappear on the next launch. Connected to
+    // m_map's rowsAboutToBeRemoved (the item still exists during that signal, so
+    // its filename can be read).
+    void onVectorLayerRemoved(const QModelIndex& parent, int first, int last);
     QString generateUniqueLabel(std::string const &prefix);
 
 

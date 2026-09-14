@@ -160,6 +160,10 @@ MainWindow::MainWindow(QWidget *parent) :
     // the restored charts. Charts are app state, independent of any mission file.
     project->restorePersistedBackgrounds();
 
+    // [camp#22 / ADR-0003] Same for the read-only vector display layers: app
+    // state, restored at startup independently of any mission file.
+    project->restorePersistedVectorLayers();
+
     // [camp#90] Restore window geometry/state and the map view position+zoom from
     // the previous session (saved in closeEvent). Geometry applies now; the map
     // view scale/center is deferred to the next event-loop turn so it isn't
@@ -252,7 +256,7 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
 void MainWindow::on_speedLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
         item->setSpeed(m_ui->speedLineEdit->text().toDouble());
     bool ok;
     auto speed = m_ui->speedLineEdit->text().toDouble(&ok);
@@ -266,7 +270,7 @@ void MainWindow::on_speedLineEdit_editingFinished()
 void MainWindow::on_throttleLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
       item->setThrottle(m_ui->throttleLineEdit->text().toDouble()/100.0);
     bool ok;
     auto throttle = m_ui->throttleLineEdit->text().toDouble(&ok);
@@ -285,7 +289,7 @@ void MainWindow::on_priorityLineEdit_editingFinished()
     if(ok)
     {
         auto item = project->currentSelected();
-        if(item) 
+        if(item)
             item->setPriority(priority);
     }
 }
@@ -293,7 +297,7 @@ void MainWindow::on_priorityLineEdit_editingFinished()
 void MainWindow::on_taskDataLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
         item->setTaskData(m_ui->taskDataLineEdit->text().toStdString());
 }
 
@@ -350,9 +354,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         QAction *sendToROSAction = menu.addAction("Send to ROS (Use Execute button)");
         sendToROSAction->setEnabled(false);
         //connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
-        
+
         QMenu *missionMenu = menu.addMenu("Mission");
-        
+
         QAction *appendMissionAction = missionMenu->addAction("append");
         connect(appendMissionAction, &QAction::triggered, this, &MainWindow::appendMission);
 
@@ -361,12 +365,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *updateMissionAction = missionMenu->addAction("update");
         connect(updateMissionAction, &QAction::triggered, this, &MainWindow::updateMission);
-        
+
         QMenu *exportMenu = menu.addMenu("Export");
 
         QAction *exportGeoJsonAction = exportMenu->addAction("Export GeoJSON");
         connect(exportGeoJsonAction, &QAction::triggered, [=](){this->project->exportGeoJson(index);});
-        
+
         QAction *exportHypackAction = exportMenu->addAction("Export Hypack");
         connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
 
@@ -374,10 +378,10 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
     }
 
-    
+
     QAction *openBackgroundAction = menu.addAction("Open Background");
     connect(openBackgroundAction, &QAction::triggered, this, &MainWindow::on_actionOpenBackground_triggered);
-    
+
     QMenu *addMenu = menu.addMenu("Add");
 
     if(!index.isValid())
@@ -455,8 +459,8 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *deleteItemAction = menu.addAction("Delete");
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(m_ui->treeView->selectionModel()->selectedRows());});
-        
-        
+
+
         TrackLine *tl = qobject_cast<TrackLine*>(mi);
         if(tl)
         {
@@ -498,7 +502,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
                 connect(lockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::lock);
             }
         }
-        
+
         SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
         if(sa)
         {
@@ -618,6 +622,21 @@ void MainWindow::on_actionBehaviorFromContext_triggered()
 }
 
 
+void MainWindow::on_actionOpenVectorLayer_triggered()
+{
+    // [camp#22] The DISPLAY path: an OGR vector file as a read-only Layers-tab
+    // layer with attribute-driven styling. File > Open Geometry (below) is the
+    // editable mission-tree import of the same kind of file.
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open Vector Layer"),m_workspace_path);
+
+    if(!fname.isEmpty())
+    {
+        setCursor(Qt::WaitCursor);
+        project->openVectorLayer(fname);
+        unsetCursor();
+    }
+}
+
 void MainWindow::on_actionOpenGeometry_triggered()
 {
     project->setContextMode(false);
@@ -684,4 +703,3 @@ void MainWindow::onROSConnected(bool connected)
 {
     //m_ui->rosDetails->setEnabled(connected);
 }
-
