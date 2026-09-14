@@ -106,10 +106,6 @@ private:
   double radius_ = 0.0;
   QMap<QString, QVariant> attributes_;
 
-  /// Scene position of the press this item accepted, so the release can tell a
-  /// click from a drag.
-  QPointF press_scene_pos_;
-
   /// True when the view the event came from is in pan mode. @p widget is the
   /// event's `widget()` — the viewport of the view that delivered it, whose
   /// parent is the QGraphicsView. Reading the EVENT's view matters once a scene

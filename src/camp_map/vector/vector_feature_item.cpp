@@ -253,9 +253,9 @@ void VectorFeatureItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
     event->ignore();
     return;
   }
-  // Remember where the press landed and say nothing yet: whether this is a click
-  // or the start of a pan is not known until the button comes back up.
-  press_scene_pos_ = event->scenePos();
+  // Say nothing yet: whether this is a click or the start of a pan is not known
+  // until the button comes back up. Where the press landed does not need
+  // remembering — the release event carries its own button-down screen position.
   event->accept();
 }
 
@@ -269,10 +269,15 @@ void VectorFeatureItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
   // A release far from the press is a drag — the operator was panning across the
   // map and happened to start on a feature. Answering that with an attribute
   // tooltip is an answer to a question they did not ask.
-  const QPointF moved = event->scenePos() - press_scene_pos_;
-  const QPointF moved_px = event->widget()
-    ? QPointF(event->screenPos() - event->buttonDownScreenPos(Qt::LeftButton))
-    : moved;
+  //
+  // Measured in SCREEN PIXELS, which is the unit kClickSlopPixels is in and the
+  // unit a hand's worth of wobble is constant in: a scene-coordinate slop would
+  // mean a different tolerance at every zoom level. The screen positions are
+  // carried by the event itself and need no widget, so there is no second,
+  // untestable comparison path (this used to fall back to a SCENE-metre delta
+  // whenever the event had no widget, comparing metres against a pixel
+  // threshold).
+  const QPointF moved_px(event->screenPos() - event->buttonDownScreenPos(Qt::LeftButton));
   if(QPointF::dotProduct(moved_px, moved_px) > kClickSlopPixels * kClickSlopPixels)
   {
     event->accept();
