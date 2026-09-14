@@ -248,6 +248,12 @@ void VectorFeatureItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
   // ProjectView reads the event position itself and forwards to
   // QGraphicsView::mousePressEvent regardless, so its placement logic is
   // unaffected either way.
+  //
+  // [camp#225] KNOWN COST of accepting the press in pan mode: the press no longer
+  // reaches QGraphicsView's ScrollHandDrag, so a pan that starts ON a feature does
+  // not pan the map. The item cannot both accept the press (which is what lets the
+  // release tell a click from a drag) and leave the view's gesture intact; the fix
+  // belongs in ProjectView, which knows about both. Shipped deliberately as-is.
   if(event->button() != Qt::LeftButton || !viewInPanMode(event->widget()))
   {
     event->ignore();

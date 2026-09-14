@@ -229,6 +229,11 @@ had to be answered rather than assumed.
   style — which is the friendlier behaviour for a file the operator opens
   repeatedly, at the cost of an orphan group for one they never open again. The
   split precedent is recorded, not resolved.
+- **A pan that starts on a feature does not pan the map** (camp#225). The item
+  accepts the left press in pan mode, which is what lets the release tell a
+  click from a drag, and that press therefore never reaches `QGraphicsView`'s
+  ScrollHandDrag. An item cannot have both; the fix belongs in `ProjectView`,
+  which sees the gesture and the items under it, and is tracked separately.
 - **Cross-antimeridian geometry is a known limitation.** A line or polygon whose
   vertices straddle 180° is drawn the long way round the world and stretches the
   layer's extent with it. The parser reports what the file says; nothing splits
