@@ -46,6 +46,10 @@ void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const 
 // [camp#22] Click tolerance for a line feature, in scene metres — see shape().
 constexpr double kClickWidth = 5.0;
 
+// [camp#22] How far the cursor may travel between press and release and still
+// count as a click rather than a pan, in device pixels.
+constexpr double kClickSlopPixels = 4.0;
+
 // The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
 {
@@ -222,8 +226,13 @@ QString VectorFeatureItem::attributeText() const
   return lines.join('\n');
 }
 
-bool VectorFeatureItem::viewInPanMode() const
+bool VectorFeatureItem::viewInPanMode(const QWidget* widget) const
 {
+  // The event's own view: its widget() is the viewport, whose parent is the view.
+  if(widget)
+    if(const auto* view = qobject_cast<const QGraphicsView*>(widget->parentWidget()))
+      return view->dragMode() == QGraphicsView::ScrollHandDrag;
+  // A synthesized event carries no widget; fall back to the attached views.
   if(!scene())
     return false;
   for(const QGraphicsView* view : scene()->views())
@@ -239,9 +248,34 @@ void VectorFeatureItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
   // ProjectView reads the event position itself and forwards to
   // QGraphicsView::mousePressEvent regardless, so its placement logic is
   // unaffected either way.
-  if(event->button() != Qt::LeftButton || !viewInPanMode())
+  if(event->button() != Qt::LeftButton || !viewInPanMode(event->widget()))
   {
     event->ignore();
+    return;
+  }
+  // Remember where the press landed and say nothing yet: whether this is a click
+  // or the start of a pan is not known until the button comes back up.
+  press_scene_pos_ = event->scenePos();
+  event->accept();
+}
+
+void VectorFeatureItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
+{
+  if(event->button() != Qt::LeftButton)
+  {
+    event->ignore();
+    return;
+  }
+  // A release far from the press is a drag — the operator was panning across the
+  // map and happened to start on a feature. Answering that with an attribute
+  // tooltip is an answer to a question they did not ask.
+  const QPointF moved = event->scenePos() - press_scene_pos_;
+  const QPointF moved_px = event->widget()
+    ? QPointF(event->screenPos() - event->buttonDownScreenPos(Qt::LeftButton))
+    : moved;
+  if(QPointF::dotProduct(moved_px, moved_px) > kClickSlopPixels * kClickSlopPixels)
+  {
+    event->accept();
     return;
   }
   QToolTip::showText(event->screenPos(), attributeText());

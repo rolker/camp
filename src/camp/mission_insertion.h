@@ -27,8 +27,15 @@ namespace camp::mission
 /// @param requested  The parent the caller intends, or nullptr for no opinion.
 /// @param currentGroup  The project's current group — the fallback. May itself be
 ///                      null (a project with no root yet), in which case the
-///                      result is null and the caller inserts at top level, which
-///                      is what passing m_currentGroup directly used to do.
+///                      result is null. A null result is NOT "insert at top
+///                      level": `AutonomousVehicleProject::RowInserter`
+///                      dereferences the parent it is handed
+///                      (`autonomousvehicleproject.cpp:1386-1393`), so a caller
+///                      that may see a null current group must check before
+///                      inserting. In the running application m_currentGroup is
+///                      set in the constructor and never cleared, so the null
+///                      case is a programming error rather than a state the
+///                      operator can reach.
 MissionItem* resolveInsertionParent(MissionItem* requested, MissionItem* currentGroup);
 
 }  // namespace camp::mission

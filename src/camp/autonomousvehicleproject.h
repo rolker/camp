@@ -61,7 +61,7 @@ public:
     // (camp::vector::VectorLayer) in the Layers tab, and persist it in the
     // vector-layer file list. De-duped by filename. This is the display path;
     // openGeometry() is the editable mission-tree path.
-    void openVectorLayer(QString const &fname);
+    void openVectorLayer(QString const &requested);
 
     // [camp#22 / ADR-0003] Re-create the persisted vector layers (app state),
     // called from MainWindow at startup beside restorePersistedBackgrounds().
@@ -240,6 +240,10 @@ private:
     // the same bookkeeping shape as m_chartLayers. Lifetime belongs to the Map
     // model; drop a pointer here only after detaching+deleting via it.
     std::vector<camp::vector::VectorLayer*> m_vectorLayers;
+    // [camp#22] Persisted vector-layer files that were not reachable at restore
+    // time (an unmounted share, an external disk). Kept so persistVectorLayers()
+    // can carry them forward instead of forgetting them after one launch.
+    QStringList m_unavailableVectorLayerFiles;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
@@ -271,6 +275,10 @@ private:
     // the whole list from m_vectorLayers and is called from both the add and the
     // remove path, so the two can never disagree about what is persisted.
     void persistVectorLayers() const;
+    // [camp#22] The file's canonical path — the identity used for de-dup, removal
+    // and persistence, so "./x.geojson", an absolute path and a symlink do not
+    // stack three layers. Falls back to the given path when the file is not there.
+    static QString canonicalVectorLayerPath(QString const &fname);
     // [camp#22 / camp#90 / camp#117] React to a vector layer being removed via the
     // Layers-tab Remove action: drop its bookkeeping entry and re-persist, so a
     // removed layer does not silently reappear on the next launch. Connected to

@@ -23,6 +23,9 @@
 #include <memory>
 
 #include <QApplication>
+#include <QGraphicsScene>
+#include <QGraphicsSceneMouseEvent>
+#include <QGraphicsView>
 
 #include "map_view/web_mercator.h"
 #include "vector/vector_feature_item.h"
@@ -146,6 +149,70 @@ TEST(VectorFeatureItem, UnplaceableVerticesDoNotStretchTheItem)
   EXPECT_TRUE(std::isfinite(item.pos().x()));
   EXPECT_TRUE(std::isfinite(item.pos().y()));
   EXPECT_EQ(item.pos(), web_mercator::geoToMap(a));
+}
+
+// [camp#22] Click-to-inspect fires on RELEASE WITHOUT MOVEMENT, and only when the
+// view the event came from is in pan mode.
+//
+// ProjectView places waypoints on left-press in its add-* modes, so a popup on
+// press would appear mid-placement; and a press that turns into a drag is the
+// operator panning across the map, not asking about the feature they happened to
+// start on. The mode is read from the EVENT's view rather than from any attached
+// view, which matters as soon as a scene has more than one.
+TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
+{
+  QGraphicsScene scene;
+  QGraphicsView view(&scene);
+  ParsedGeometry g;
+  g.type = ParsedGeometry::Point;
+  g.exterior.push_back(QGeoCoordinate(43.0, -70.0));
+  auto* item = new VectorFeatureItem(nullptr, g);
+  scene.addItem(item);
+
+  auto press = [&](const QPoint& screen)
+  {
+    QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMousePress);
+    event.setButton(Qt::LeftButton);
+    event.setWidget(view.viewport());
+    event.setScenePos(item->pos());
+    event.setScreenPos(screen);
+    event.setButtonDownScreenPos(Qt::LeftButton, screen);
+    event.setAccepted(false);
+    scene.sendEvent(item, &event);
+    return event.isAccepted();
+  };
+  auto release = [&](const QPoint& down, const QPoint& up)
+  {
+    QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMouseRelease);
+    event.setButton(Qt::LeftButton);
+    event.setWidget(view.viewport());
+    event.setScenePos(item->pos());
+    event.setScreenPos(up);
+    event.setButtonDownScreenPos(Qt::LeftButton, down);
+    event.setAccepted(false);
+    scene.sendEvent(item, &event);
+    return event.isAccepted();
+  };
+
+  // An add-* mode (NoDrag): the press is IGNORED, so placement is untouched.
+  view.setDragMode(QGraphicsView::NoDrag);
+  EXPECT_FALSE(press(QPoint(100, 100)));
+
+  // Pan mode: the press is taken but answers nothing yet — whether this is a
+  // click or the start of a pan is not known until the button comes back up.
+  view.setDragMode(QGraphicsView::ScrollHandDrag);
+  EXPECT_TRUE(press(QPoint(100, 100)));
+  EXPECT_TRUE(release(QPoint(100, 100), QPoint(100, 100)));   // a click
+  EXPECT_TRUE(press(QPoint(100, 100)));
+  EXPECT_TRUE(release(QPoint(100, 100), QPoint(400, 250)));   // a drag: no popup
+
+  // A right-button release is not ours.
+  QGraphicsSceneMouseEvent right(QEvent::GraphicsSceneMouseRelease);
+  right.setButton(Qt::RightButton);
+  right.setWidget(view.viewport());
+  right.setAccepted(false);
+  scene.sendEvent(item, &right);
+  EXPECT_FALSE(right.isAccepted());
 }
 
 int main(int argc, char** argv)

@@ -372,8 +372,21 @@ void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, in
     }
 }
 
-void AutonomousVehicleProject::openVectorLayer(const QString &fname)
+QString AutonomousVehicleProject::canonicalVectorLayerPath(const QString &fname)
 {
+    // [camp#22] Identity for de-dup, removal and persistence is the file itself,
+    // not the spelling of the path that reached us. "./survey.geojson", an
+    // absolute path and a symlink all name one file, and without this each
+    // spelling stacks its own layer and its own persisted entry. canonicalFilePath
+    // resolves symlinks and "." / ".." and returns EMPTY for a file that does not
+    // exist, in which case the given path is the best identity available.
+    const QString canonical = QFileInfo(fname).canonicalFilePath();
+    return canonical.isEmpty() ? fname : canonical;
+}
+
+void AutonomousVehicleProject::openVectorLayer(const QString &requested)
+{
+    const QString fname = canonicalVectorLayerPath(requested);
     // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
     // identical layers, and without this the restore path plus a command-line or
     // menu open of the same file would accumulate a duplicate on every launch.
@@ -412,24 +425,47 @@ void AutonomousVehicleProject::persistVectorLayers() const
     QStringList files;
     for(auto* layer : m_vectorLayers)
         files = camp::vector::withVectorLayerFile(files, layer->filename());
+    // [camp#22] Files that were persisted but could not be opened at restore time
+    // are carried forward rather than forgotten — see restorePersistedVectorLayers().
+    for(const auto& unavailable : m_unavailableVectorLayerFiles)
+        files = camp::vector::withVectorLayerFile(files, unavailable);
     camp::vector::writePersistedVectorLayerFiles(files);
 }
 
 void AutonomousVehicleProject::restorePersistedVectorLayers()
 {
     // [camp#22 / ADR-0003] Recreate the persisted vector layers (app state). Read
-    // the list first so it is stable across the loop, skip files that have since
-    // disappeared, and re-persist once if the restored set differs — that
-    // self-heals a list that had accumulated duplicates or stale entries.
+    // the list first so it is stable across the loop.
+    //
+    // A file that is not there RIGHT NOW is REMEMBERED, not dropped. Survey data
+    // routinely lives on a network share or an external disk, and "the share was
+    // not mounted when CAMP started" is not the operator saying "remove this
+    // layer" — but skip-then-re-persist made it exactly that, permanently, after
+    // one launch. The entry is carried in m_unavailableVectorLayerFiles, which
+    // persistVectorLayers() folds back into the key, so the layer returns on the
+    // next launch that can see the file. The one deliberate consequence is that
+    // an unavailable entry cannot be removed through the Layers tab (it has no
+    // layer to right-click); it goes when the file comes back and is removed, or
+    // by clearing the setting.
     const QStringList files = camp::vector::persistedVectorLayerFiles();
+    m_unavailableVectorLayerFiles.clear();
     for(const auto& fname : files)
     {
-        if(!QFileInfo::exists(fname))
+        const QString canonical = canonicalVectorLayerPath(fname);
+        if(!QFileInfo::exists(canonical))
+        {
+            qWarning() << "AutonomousVehicleProject: persisted vector layer" << fname
+                       << "is not reachable right now; keeping it in the list for a later"
+                       << "session rather than forgetting it";
+            if(!m_unavailableVectorLayerFiles.contains(canonical))
+                m_unavailableVectorLayerFiles << canonical;
             continue;
-        openVectorLayer(fname);
+        }
+        openVectorLayer(canonical);
     }
-    if(files.size() != static_cast<int>(m_vectorLayers.size()))
-        persistVectorLayers();
+    // Rewrite the key unconditionally: the rebuild collapses duplicates and
+    // normalises path spellings that an older build may have left behind.
+    persistVectorLayers();
 }
 
 void AutonomousVehicleProject::onVectorLayerRemoved()

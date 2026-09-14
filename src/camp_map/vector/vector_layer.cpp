@@ -36,6 +36,20 @@ const marine_colormap::Palette* resolvePalette(const std::string& name)
   return palette;
 }
 
+// [camp#22] The drivers this layer will open. GDALOpenEx is given an operator-
+// supplied STRING, which OGR treats as a connection string rather than a path:
+// the unrestricted driver set would let a typed (or persisted) "/vsicurl/https://
+// ...", "PG:host=...", or a KML NetworkLink turn opening a local file into a
+// network fetch or a database connection from the load worker. CAMP's Open Vector
+// Layer means "read this file", so the set is pinned to file-based vector drivers.
+// Adding a format here is a deliberate act; the list is the contract.
+const char* const kAllowedDrivers[] = {
+  "GeoJSON", "GeoJSONSeq", "TopoJSON", "ESRI Shapefile", "GPKG", "SQLite",
+  "KML", "LIBKML", "GML", "GMT", "CSV", "DXF", "FlatGeobuf", "OpenFileGDB",
+  "MapInfo File", "GPX", "S57",
+  nullptr
+};
+
 }  // namespace
 
 VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename, int feature_cap):
@@ -77,7 +91,7 @@ VectorLayer::LoadResult VectorLayer::loadVectorFile(const QString& filename)
   std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
     static_cast<GDALDataset*>(
       GDALOpenEx(filename.toUtf8().constData(), GDAL_OF_READONLY | GDAL_OF_VECTOR,
-                 nullptr, nullptr, nullptr)),
+                 const_cast<char**>(kAllowedDrivers), nullptr, nullptr)),
     gdal_closer);
   if(!dataset)
     return result;
@@ -254,7 +268,12 @@ void VectorLayer::applyStyle()
   for(const VectorFeatureItem* feature : features_)
   {
     accumulateValue(color_range, numericAttribute(feature->attributes(), color_field_));
-    accumulateValue(size_range, numericAttribute(feature->attributes(), size_field_));
+    // [camp#22] Size-by-field applies to POINTS only, so its range is folded over
+    // points only. Including lines and polygons would let geometry that is never
+    // sized set the extent — on a mixed file whose polygons carry the largest
+    // values, every marker would be squeezed into the bottom of the radius range.
+    if(feature->isPoint())
+      accumulateValue(size_range, numericAttribute(feature->attributes(), size_field_));
   }
 
   const marine_colormap::Palette* palette = resolvePalette(colormap_);
@@ -388,15 +407,6 @@ QStringList withVectorLayerFile(const QStringList& files, const QString& filenam
       result << file;
   if(!filename.isEmpty() && !result.contains(filename))
     result << filename;
-  return result;
-}
-
-QStringList withoutVectorLayerFile(const QStringList& files, const QString& filename)
-{
-  QStringList result;
-  for(const QString& file : files)
-    if(file != filename && !result.contains(file))
-      result << file;
   return result;
 }
 

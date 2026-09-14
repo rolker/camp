@@ -35,7 +35,6 @@ using camp::vector::VectorLayer;
 using camp::vector::persistedVectorLayerFiles;
 using camp::vector::vectorLayerFilesKey;
 using camp::vector::withVectorLayerFile;
-using camp::vector::withoutVectorLayerFile;
 using camp::vector::writePersistedVectorLayerFiles;
 
 namespace
@@ -70,14 +69,6 @@ TEST(VectorLayerPersistence, AddDeDupsByFilename)
   const QStringList dirty{"/data/a.geojson", "/data/a.geojson", "/data/b.geojson"};
   EXPECT_EQ(withVectorLayerFile(dirty, "/data/b.geojson"),
             (QStringList{"/data/a.geojson", "/data/b.geojson"}));
-}
-
-// Removal drops every entry for the file — not just the first.
-TEST(VectorLayerPersistence, RemoveDropsEveryEntry)
-{
-  const QStringList files{"/data/a.geojson", "/data/b.geojson", "/data/a.geojson"};
-  EXPECT_EQ(withoutVectorLayerFile(files, "/data/a.geojson"), QStringList{"/data/b.geojson"});
-  EXPECT_TRUE(withoutVectorLayerFile(QStringList{"/data/a.geojson"}, "/data/a.geojson").isEmpty());
 }
 
 // The full operator sequence: add two, "restart" (re-read the key), remove one,

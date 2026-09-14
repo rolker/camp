@@ -796,9 +796,10 @@ if(BUILD_TESTING)
   )
 
   # [camp#22 / ADR-0003 §4 / camp#90] Vector-layer list persistence: add de-dups,
-  # remove drops every entry AND STICKS across a restart (the half whose absence
-  # makes a removed layer come back), the settings key round-trips, and per-layer
-  # style is keyed by full path rather than basename (camp#126's collision).
+  # removal STICKS across a restart (the half whose absence makes a removed layer
+  # come back) while a drag-REORDER does not un-persist, the settings key
+  # round-trips, and per-layer style is keyed by full path rather than basename
+  # (camp#126's collision).
   ament_add_gtest(test_vector_layer_persistence
     test/test_vector_layer_persistence.cpp
   )

@@ -198,9 +198,12 @@ QStringList persistedVectorLayerFiles();
 void writePersistedVectorLayerFiles(const QStringList& files);
 /// @p files with @p filename appended if it is not already present (de-dup by
 /// exact path), preserving order — the chart-list convention.
+///
+/// There is deliberately no `withoutVectorLayerFile()` counterpart: the key is
+/// rebuilt from scratch on every change, so removal is "do not include it in the
+/// rebuild" rather than an edit. A remove helper existed briefly and had no
+/// production caller, which made the rule it encoded untrue of the running app.
 QStringList withVectorLayerFile(const QStringList& files, const QString& filename);
-/// @p files with EVERY entry equal to @p filename removed.
-QStringList withoutVectorLayerFile(const QStringList& files, const QString& filename);
 
 }  // namespace camp::vector
 

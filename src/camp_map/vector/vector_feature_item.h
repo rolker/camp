@@ -85,11 +85,15 @@ protected:
   /// ProjectView places waypoints, tracklines and survey patterns on left-press
   /// in its add-* modes and forwards the press to the scene either way, so a
   /// popup that always fired would appear in the middle of placing a waypoint.
-  /// Pan mode is identified by the view's drag mode (ScrollHandDrag, which
-  /// ProjectView::setPanMode sets and every add-* mode clears to NoDrag) rather
-  /// than by asking ProjectView: this item lives in camp_map, which cannot call
-  /// into the executable that links it (#217).
+  /// Pan mode is identified by the drag mode of the view the event came from
+  /// (ScrollHandDrag, which ProjectView::setPanMode sets and every add-* mode
+  /// clears to NoDrag) rather than by asking ProjectView: this item lives in
+  /// camp_map, which cannot call into the executable that links it (#217).
   void mousePressEvent(QGraphicsSceneMouseEvent* event) override;
+  /// The popup fires HERE, on release without movement — not on press. A press
+  /// that turns into a drag is a pan gesture, and answering it with an attribute
+  /// tooltip is an answer to a question the operator did not ask.
+  void mouseReleaseEvent(QGraphicsSceneMouseEvent* event) override;
 
 private:
   bool point_ = false;
@@ -102,9 +106,18 @@ private:
   double radius_ = 0.0;
   QMap<QString, QVariant> attributes_;
 
-  /// True when the view under the cursor is in pan mode. False when there is no
-  /// view (a headless scene), which keeps the popup out of tests.
-  bool viewInPanMode() const;
+  /// Scene position of the press this item accepted, so the release can tell a
+  /// click from a drag.
+  QPointF press_scene_pos_;
+
+  /// True when the view the event came from is in pan mode. @p widget is the
+  /// event's `widget()` — the viewport of the view that delivered it, whose
+  /// parent is the QGraphicsView. Reading the EVENT's view matters once a scene
+  /// has more than one (a second map window, a print preview): the mode of some
+  /// other view says nothing about the one the operator clicked in. Falls back to
+  /// any attached view when the event carries none, and is false for a scene with
+  /// no view at all, which keeps the popup out of tests.
+  bool viewInPanMode(const QWidget* widget) const;
 };
 
 }  // namespace camp::vector
