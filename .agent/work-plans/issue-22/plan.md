@@ -6,6 +6,29 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 6** (2026-09-14) — pre-push review round 2 returned *ship: recommended*
+with two must-fixes and nine suggestions. The plan-level consequences:
+
+- **The driver allowlist was never the thing that stopped a network fetch**, so
+  the plan's "pinned driver set" protection is restated: GDAL resolves
+  `/vsicurl/`, `/vsizip/`, `/vsis3/` in its virtual file system *before* driver
+  selection, so an allowed GeoJSON driver would happily read a downloaded file.
+  The gate is now a refusal of any `/vsi` PATH — in `VectorLayer`'s constructor
+  and on the project's open *and restore* paths, the restore path being the one
+  that reopens every persisted entry at startup unattended. The allowlist keeps
+  the job it can do: excluding non-file drivers (`PG:`, `WFS:`, …). A KML
+  NetworkLink remains a documented limitation (ADR-0016 D12).
+- **The feature cap is carried INTO the parse** (`ParseOptions::max_geometries`)
+  rather than applied to its result. Rev 3 scoped the cap as a bound on
+  GUI-thread item construction; that leaves the worker materialising every
+  geometry and attribute map of the whole file first, which is the OOM the cap
+  is documented as protecting against. The parse now stops at the cap and the
+  rest of the file is never read (ADR-0016 D11).
+- **One follow-up filed**: camp#225 — an item that accepts the left press to
+  tell a click from a drag takes that press away from the view's pan gesture.
+  The fix belongs in `ProjectView`; shipped as-is, recorded in the code and in
+  ADR-0016's consequences.
+
 **Rev 5** (2026-09-14) — pre-push review round 1 returned changes-requested with
 ten must-fixes; these are the plan-level consequences. The code-level fixes are
 in the branch's commits and the `## Implementation` entry in `progress.md`.
