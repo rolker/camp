@@ -77,6 +77,18 @@ struct ParseOptions
     // The abort flag is read here, per feature, exactly as RasterLayer re-checks
     // inside its work loops (camp#213).
     std::function<bool()> aborted;
+
+    // [camp#22] Stop after this many ParsedGeometry parts have been emitted in
+    // total, across all layers. 0 (the default) means unlimited.
+    //
+    // The cap has to be applied HERE, not by the caller after the fact: parsing a
+    // national coastline shapefile materialises every geometry and every
+    // attribute map of the file in the worker before the caller sees anything, so
+    // a cap applied afterwards bounds the GUI work and leaves the memory
+    // unbounded — the OOM that VectorLayer::kMaxFeatureItems is documented as
+    // protecting against. When the cap stops the parse, exactly `max_geometries`
+    // geometries are returned and ParseDiagnostics::geometry_cap_reached says so.
+    int max_geometries = 0;
 };
 
 // [camp#22] What the parse could NOT do. Every field counts something that was
@@ -86,6 +98,12 @@ struct ParseDiagnostics
 {
     // The parse stopped early because ParseOptions::aborted returned true.
     bool aborted = false;
+    // The parse stopped early because ParseOptions::max_geometries was reached.
+    // What is returned is the first `max_geometries` geometries of the file; how
+    // many more the file holds is deliberately NOT reported, because reading that
+    // far is the cost the cap exists to avoid (and an OGR feature count is not a
+    // geometry count — one multi-part feature emits several).
+    bool geometry_cap_reached = false;
     // Layers seen, and layers SKIPPED ENTIRELY because the layer declares a
     // spatial reference but no transformation to WGS84 could be built for it.
     // Such a layer must never fall through to the untransformed branch: its

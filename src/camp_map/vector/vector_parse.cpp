@@ -239,6 +239,10 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
     };
 
     std::vector<ParsedLayer> result;
+    // [camp#22] Geometries emitted so far, across every layer — the quantity
+    // ParseOptions::max_geometries bounds. Tracked incrementally rather than
+    // re-summed per feature so the check stays O(1) on a million-feature file.
+    size_t emitted = 0;
     if(!dataset)
         return result;
 
@@ -290,9 +294,27 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         OGRFeature *feature = layer->GetNextFeature();
         while(feature)
         {
+            const size_t before = parsed.geometries.size();
             appendGeometry(feature->GetGeometryRef(), readAttributes(feature),
                            unprojectTransformation.get(), parsed.geometries, diag);
             OGRFeature::DestroyFeature(feature);
+            emitted += parsed.geometries.size() - before;
+            // [camp#22] The cap is checked HERE, per feature, so the rest of the
+            // file is never read: the caller's cap on the items it builds bounds
+            // the GUI thread, but the memory the parse itself takes is only
+            // bounded by stopping the parse. A multi-part feature can carry the
+            // total past the cap, so the excess is trimmed and the returned count
+            // is exactly the cap.
+            if(options.max_geometries > 0 &&
+               emitted >= static_cast<size_t>(options.max_geometries))
+            {
+                const size_t excess = emitted - static_cast<size_t>(options.max_geometries);
+                if(excess > 0)
+                    parsed.geometries.resize(parsed.geometries.size() - excess);
+                diag.geometry_cap_reached = true;
+                result.push_back(std::move(parsed));
+                return result;
+            }
             if(aborted())
             {
                 // Return what was parsed so far. The caller knows it is partial

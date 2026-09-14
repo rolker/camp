@@ -152,12 +152,23 @@ had to be answered rather than assumed.
 11. **Two bounded resources, both reported rather than silently clipped.** The
     parse runs on a QtConcurrent worker whose abort flag is polled *per feature*,
     so the destructor's join is bounded by the abort and not by the size of the
-    file (camp#213). Item construction, which can only happen on the GUI thread,
-    is capped at `VectorLayer::kMaxFeatureItems` (50 000) — an unbounded file
-    dialog plus a national coastline shapefile is otherwise a frozen CAMP with no
-    message. Whenever the cap, an unplaceable feature, or a failed layer applies,
-    the Layers-tab status and the log say so: a layer showing 2 of 5 features and
-    reporting "(2 features)" is indistinguishable from a file that holds 2.
+    file (camp#213). And the file is read only as far as
+    `VectorLayer::kMaxFeatureItems` (50 000) — an unbounded file dialog plus a
+    national coastline shapefile is otherwise a frozen CAMP with no message.
+
+    The cap is carried **into the parse** (`ParseOptions::max_geometries`), which
+    stops there, rather than applied to the parse result. Item construction can
+    only happen on the GUI thread, which is what first motivated the cap; but a
+    cap applied after `parseVectorLayers()` returns bounds only that half, while
+    the worker has already materialised every geometry and attribute map of the
+    whole file — responsive, and out of memory. Capping the parse bounds both.
+
+    Whenever the cap, an unplaceable feature, a ring-less polygon, or a failed
+    layer applies, the Layers-tab status and the log say so: a layer showing 2 of
+    5 features and reporting "(2 features)" is indistinguishable from a file that
+    holds 2. The one thing not reported is *how many* features were left unread
+    when the cap hit — counting them means reading the file the cap exists to
+    stop reading, and an OGR feature count is not a geometry count anyway.
 
 12. **A `/vsi` path is refused, and the driver set is pinned.** `GDALOpenEx` is
     handed an operator-supplied string, which OGR treats as a *connection*

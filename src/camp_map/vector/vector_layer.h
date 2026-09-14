@@ -57,15 +57,22 @@ class VectorLayer: public map::Layer
   Q_OBJECT
   Q_INTERFACES(QGraphicsItem)
 public:
-  /// [camp#22] Upper bound on the number of feature ITEMS this layer builds.
+  /// [camp#22] Upper bound on how much of a vector file this layer reads and draws.
   ///
-  /// Item construction happens on the GUI thread (a QGraphicsItem cannot be built
-  /// off it), and the Open Vector Layer dialog does not bound what an operator can
-  /// pick: a national coastline shapefile or an OSM extract is millions of
-  /// features, which would freeze CAMP with no way out and no message. Beyond this
-  /// many the layer draws the first `kMaxFeatureItems` and REPORTS the shortfall in
-  /// its Layers-tab status and the log — a visibly partial layer rather than a hung
-  /// application. The number is a GUI-responsiveness budget, not a data limit:
+  /// It bounds TWO things, and it has to be both: item construction happens on the
+  /// GUI thread (a QGraphicsItem cannot be built off it), and the parse that feeds
+  /// it materialises every geometry and attribute map in the worker. The Open
+  /// Vector Layer dialog does not bound what an operator can pick — a national
+  /// coastline shapefile or an OSM extract is millions of features — so a cap on
+  /// the items alone would leave CAMP responsive and out of memory. The cap is
+  /// therefore carried into the parse (`ParseOptions::max_geometries`), which
+  /// STOPS at it: the rest of the file is never read.
+  ///
+  /// What is shown is the first `kMaxFeatureItems` features, and the Layers-tab
+  /// status and the log say the cap was hit — a visibly partial layer rather than a
+  /// hung or dead application. How many features were left unread is deliberately
+  /// not reported: finding out means reading the file the cap exists to stop
+  /// reading. The number is a responsiveness-and-memory budget, not a data limit:
   /// 50 000 items build in well under a second and the scene index handles them.
   static constexpr int kMaxFeatureItems = 50000;
 

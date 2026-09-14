@@ -140,6 +140,12 @@ VectorLayer::LoadResult VectorLayer::loadVectorFile(const QString& filename)
   // shapefile. RasterLayer re-checks inside its work loops for the same reason.
   ParseOptions options;
   options.aborted = [this]() { return isAborted(); };
+  // [camp#22] The cap is carried INTO the parse. Applying it afterwards — which
+  // is what this did first — bounds only the items built on the GUI thread: the
+  // worker has by then materialised every geometry and attribute map of the whole
+  // file, which for the coastline shapefile the cap exists for is the OOM the
+  // header names. Stopping the parse is what bounds the memory.
+  options.max_geometries = feature_cap_;
   result.layers = parseVectorLayers(dataset.get(), options, &result.diagnostics);
   return result;
 }
@@ -161,13 +167,13 @@ void VectorLayer::loadFinished()
     return;
   }
 
-  int total = 0;
-  for(const ParsedLayer& layer : result.layers)
-    total += static_cast<int>(layer.geometries.size());
+  // [camp#22] The parse already stopped at the cap (ParseOptions::max_geometries),
+  // so this flag — not a count — is what the layer has to report: how many more
+  // features the file holds was deliberately never read.
+  const bool capped = result.diagnostics.geometry_cap_reached;
 
   prepareGeometryChange();
   int skipped = 0;
-  int capped = 0;
   for(const ParsedLayer& layer : result.layers)
   {
     for(const ParsedGeometry& geometry : layer.geometries)
@@ -175,12 +181,11 @@ void VectorLayer::loadFinished()
       // [camp#22] Every item below is built on the GUI THREAD, and the file
       // dialog does not bound what an operator can open: a national coastline
       // shapefile is millions of features, and building an item for each one
-      // freezes CAMP with no way out. Stop at the cap and say so.
+      // freezes CAMP with no way out. The parser is capped at the same number, so
+      // this bound is normally never the one that bites; it stays as the backstop
+      // for a caller that hands this class an over-long parse result.
       if(static_cast<int>(features_.size()) >= feature_cap_)
-      {
-        capped = total - static_cast<int>(features_.size()) - skipped;
         break;
-      }
       // [camp#22] A feature with no placeable coordinate — a .prj-less shapefile
       // read as degrees, a NaN from a failed transform — is skipped rather than
       // placed 1e17 metres away, where it would poison childrenBoundingRect()
@@ -192,7 +197,7 @@ void VectorLayer::loadFinished()
       }
       features_.push_back(new VectorFeatureItem(this, geometry));
     }
-    if(capped > 0)
+    if(static_cast<int>(features_.size()) >= feature_cap_)
       break;
   }
 
@@ -200,11 +205,12 @@ void VectorLayer::loadFinished()
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- skipped" << skipped
                << "feature(s) whose coordinates are not a valid latitude/longitude"
                << "(a shapefile missing its .prj sidecar is the usual cause)";
-  if(capped > 0)
-    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- showing the first"
-               << feature_cap_ << "features of" << total << ";" << capped
-               << "were not drawn. Building an item per feature happens on the GUI"
-               << "thread, so the cap is what keeps a very large file from freezing CAMP.";
+  if(capped)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- stopped at the"
+               << feature_cap_ << "feature cap; the REST OF THE FILE WAS NOT READ, so"
+               << "what is shown is the first" << feature_cap_ << "features and no more."
+               << "The cap bounds both the items built on the GUI thread and the memory"
+               << "the parse itself takes.";
   if(result.diagnostics.layers_failed > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
                << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total
@@ -228,8 +234,8 @@ void VectorLayer::loadFinished()
 
   QStringList notes;
   notes << QString("%1 features").arg(features_.size());
-  if(capped > 0)
-    notes << QString("%1 not drawn (cap %2)").arg(capped).arg(feature_cap_);
+  if(capped)
+    notes << QString("stopped at the %1-feature cap; rest of file not read").arg(feature_cap_);
   if(skipped > 0)
     notes << QString("%1 unplaceable").arg(skipped);
   if(result.diagnostics.layers_failed > 0)

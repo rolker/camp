@@ -14,6 +14,8 @@
 
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include <gdal_priv.h>
 
 #include <QApplication>
@@ -24,6 +26,7 @@
 #include "map/layer_list.h"
 #include "map/map.h"
 #include "vector/vector_layer.h"
+#include "vector/vector_parse.h"
 
 namespace
 {
@@ -255,10 +258,14 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
   EXPECT_EQ(layer->featureCount(), 2) << "the cap must bound the items actually built";
   // Silence is the failure mode that matters: a layer showing 2 of 5 features and
   // saying "(2 features)" is indistinguishable from a file that holds 2.
-  EXPECT_TRUE(layer->status().contains("not drawn"))
-      << "status must report the shortfall: " << layer->status().toStdString();
-  EXPECT_TRUE(layer->status().contains("3"))
-      << "status must name how many were not drawn: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("cap"))
+      << "status must report that the cap was hit: " << layer->status().toStdString();
+  // ...and it must say that the rest of the file went UNREAD, which is the whole
+  // point of capping the parse rather than its result. How many more features the
+  // file holds is not reported: reading that far is the cost the cap avoids.
+  EXPECT_TRUE(layer->status().contains("not read"))
+      << "status must say the rest of the file was not read: "
+      << layer->status().toStdString();
   delete layer;
 
   // The shipped cap is the default and is not applied to ordinary files.
@@ -285,25 +292,37 @@ TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
   camp::map::LayerList* layers = map.topLevelLayers();
 
   // How long the full parse takes on this machine, measured rather than assumed.
+  // Measured through parseVectorLayers directly, with NO cap: a capped layer stops
+  // early by design now (the cap is carried into the parse), so it can no longer
+  // stand in for a full read, and going through VectorLayer would fold 200 000
+  // GUI-thread item constructions into the number. What is being timed is the
+  // PARSE, which is exactly what the abort has to cut short.
+  const auto gdal_closer = [](GDALDataset* d){ if(d) GDALClose(d); };
   QElapsedTimer full_timer;
   full_timer.start();
   {
-    // A cap of 1 keeps the GUI-thread item construction out of the measurement:
-    // what is being timed is the PARSE.
-    auto* layer = new camp::vector::VectorLayer(layers, path, 1);
-    ASSERT_TRUE(waitForLoad(layer, 120000)) << "load did not complete: "
-                                            << layer->status().toStdString();
-    delete layer;
+    GDALAllRegister();
+    std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
+      static_cast<GDALDataset*>(
+        GDALOpenEx(path.toUtf8().constData(), GDAL_OF_READONLY | GDAL_OF_VECTOR,
+                   nullptr, nullptr, nullptr)),
+      gdal_closer);
+    ASSERT_TRUE(dataset);
+    const auto parsed = camp::vector::parseVectorLayers(dataset.get());
+    ASSERT_EQ(parsed.size(), 1u);
+    ASSERT_EQ(parsed.front().geometries.size(), 200000u);
   }
   const qint64 full_ms = full_timer.elapsed();
   ASSERT_GT(full_ms, 200) << "fixture is too small to distinguish an aborted parse";
 
   // Now destroy immediately. The dtor sets the abort flag and joins; with the flag
-  // polled inside the parse loop this returns long before the file is read.
+  // polled inside the parse loop this returns long before the file is read. The
+  // cap is set ABOVE the fixture's feature count, so the only thing that can end
+  // the parse early is the abort.
   QElapsedTimer abort_timer;
   abort_timer.start();
   {
-    auto* layer = new camp::vector::VectorLayer(layers, path, 1);
+    auto* layer = new camp::vector::VectorLayer(layers, path, 200001);
     delete layer;
   }
   const qint64 abort_ms = abort_timer.elapsed();

@@ -707,6 +707,63 @@ TEST(VectorParseAttributes, AbortStopsTheParseAndIsReported)
       << "the abort flag must be read inside the feature loop, not only before it";
 }
 
+// [camp#22 round-2 must-fix] The feature cap is applied INSIDE the parse, so the
+// rest of the file is never read.
+//
+// The cap started as a bound on GUI-thread item construction, applied to the
+// parser's RESULT — which meant the worker had already built every geometry and
+// every attribute map of the whole file before anything was capped. For the case
+// the cap is documented for (a national coastline shapefile) that is the OOM, not
+// the freeze. Stopping the parse is what bounds the memory, and the way to prove
+// it from outside is that the returned count is exactly the cap on a file that
+// holds more.
+TEST(VectorParseAttributes, GeometryCapStopsTheParse)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  // Baseline: how many geometries the fixture actually holds.
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  camp::vector::ParseDiagnostics full_diag;
+  const std::vector<ParsedLayer> full =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &full_diag);
+  ASSERT_EQ(full.size(), 1u);
+  const size_t full_count = full.front().geometries.size();
+  ASSERT_GT(full_count, 2u) << "fixture must hold more geometries than the cap below";
+  EXPECT_FALSE(full_diag.geometry_cap_reached);
+
+  // Capped at two: exactly two come back, and the cap is reported. A multi-part
+  // feature can carry the running total past the cap, which is why the parser
+  // trims rather than returning "the cap, give or take a feature".
+  DatasetPtr capped_ds = openDataset(path);
+  ASSERT_TRUE(capped_ds);
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;
+  camp::vector::ParseDiagnostics capped_diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(capped_ds.get(), capped, &capped_diag);
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_EQ(layers.front().geometries.size(), 2u);
+  EXPECT_TRUE(capped_diag.geometry_cap_reached);
+  EXPECT_FALSE(capped_diag.aborted) << "the cap is not an abort; they are reported apart";
+
+  // A cap at or above the file's size changes nothing and is not reported as hit
+  // unless it is actually reached.
+  DatasetPtr generous_ds = openDataset(path);
+  ASSERT_TRUE(generous_ds);
+  camp::vector::ParseOptions generous;
+  generous.max_geometries = static_cast<int>(full_count) + 1;
+  camp::vector::ParseDiagnostics generous_diag;
+  const std::vector<ParsedLayer> all =
+    camp::vector::parseVectorLayers(generous_ds.get(), generous, &generous_diag);
+  ASSERT_EQ(all.size(), 1u);
+  EXPECT_EQ(all.front().geometries.size(), full_count);
+  EXPECT_FALSE(generous_diag.geometry_cap_reached);
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
