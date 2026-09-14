@@ -69,7 +69,7 @@ void MissionItem::write(QJsonObject& json) const
   if (m_speed > 0.0)
     json["speed"]=m_speed;
     if(throttle_ > 0.0)
-        json["throttle"]=throttle_; 
+        json["throttle"]=throttle_;
   json["priority"] = m_priority;
 
   if (!task_data_.empty())
@@ -183,7 +183,10 @@ void MissionItem::readChildren(const QJsonArray& json, int row)
         // restorePersistedBackgrounds). A legacy "BackgroundRaster" entry in an
         // old mission file is intentionally ignored (no back-compat shim).
         if(object["type"] == "VectorDataset")
-            project->openGeometry(object["filename"].toString());
+            // [camp#22] Restore the dataset under THIS node, not the project's
+            // current group: a VectorDataset saved inside a Group used to come
+            // back at the top level.
+            project->openGeometry(object["filename"].toString(), QString(), this);
         MissionItem *item = nullptr;
         int insertRow = row;
         if(object["type"] == "Waypoint")

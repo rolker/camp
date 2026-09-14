@@ -147,7 +147,14 @@ public:
     void save(QString const &fname = QString());
     void open(QString const &fname);
 
-    void openGeometry(QString const &fname, QString label = "");
+    // [camp#22] Open an OGR vector file as an EDITABLE mission-tree node
+    // (VectorDataset). @p parent is the node to insert under; nullptr (the
+    // default, used by the File > Open Geometry action) means "no opinion" and
+    // falls back to the project's current group. MissionItem::readChildren passes
+    // the restoring node so a VectorDataset nested in a Group comes back in that
+    // Group. For the read-only DISPLAY path — a Layers-tab layer with
+    // attribute-driven styling — see openVectorLayer().
+    void openGeometry(QString const &fname, QString label = "", MissionItem *parent = nullptr);
 
     void import(QString const &fname);
 

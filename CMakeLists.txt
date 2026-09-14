@@ -112,6 +112,7 @@ set(SOURCES
     src/camp/collision_monitor/collision_monitor_manager.cpp
     src/camp/footprint/footprint.cpp
     src/camp/footprint/footprint_manager.cpp
+    src/camp/mission_insertion.cpp
     src/camp/missionitem.cpp
     src/camp/mission_manager/mission_manager.cpp
     src/camp/orbit.cpp
@@ -717,6 +718,19 @@ if(BUILD_TESTING)
     Qt5::Core
     Qt5::Positioning
     ${GDAL_LIBRARY}
+  )
+
+  # [camp#22] Insertion-target rule for a restored VectorDataset: an explicitly
+  # requested parent wins, nullptr falls back to the project's current group.
+  # Narrow source set (the seam's own TU) — AutonomousVehicleProject, where the
+  # defect lived, is not constructible in a test harness. Pure pointer logic: no
+  # Qt, no GDAL, nothing to link but gtest.
+  ament_add_gtest(test_mission_insertion
+    test/test_mission_insertion.cpp
+    src/camp/mission_insertion.cpp
+  )
+  target_include_directories(test_mission_insertion PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
   )
 
   # A* shoal avoidance + unknown-depth-as-obstacle (#59 PR6 — depth/A* decoupled

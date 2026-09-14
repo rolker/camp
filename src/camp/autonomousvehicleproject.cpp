@@ -27,6 +27,7 @@
 #include "vector/polygon.h"
 #include "vector/linestring.h"
 #include "behavior.h"
+#include "mission_insertion.h"
 #include "orbit.h"
 #include "avoid_area.h"
 
@@ -197,12 +198,21 @@ void AutonomousVehicleProject::addBackgroundLayer(const QString &fname, const QS
     emit backgroundUpdated();
 }
 
-void AutonomousVehicleProject::openGeometry(const QString& fname, QString label)
+void AutonomousVehicleProject::openGeometry(const QString& fname, QString label, MissionItem *parent)
 {
+    // [camp#22] Resolve the insertion target ONCE and route both the model's
+    // insert notification (RowInserter) and the new node through it. `parent` is
+    // a nullptr sentinel rather than a default argument because the fallback is
+    // a member (m_currentGroup), which a default argument cannot name. The
+    // menu-action caller passes nothing and lands on m_currentGroup exactly as
+    // before; MissionItem::readChildren passes `this`, so a VectorDataset saved
+    // inside a Group is restored inside that Group instead of wherever the
+    // project's current-group pointer happens to be.
+    MissionItem *insertion_parent = camp::mission::resolveInsertionParent(parent, m_currentGroup);
     VectorDataset * vd;
     {
-        RowInserter ri(*this,m_currentGroup);
-        vd = new VectorDataset(m_currentGroup);
+        RowInserter ri(*this,insertion_parent);
+        vd = new VectorDataset(insertion_parent);
         if(label.isEmpty())
             vd->setObjectName(QFileInfo(fname).fileName());
         else
