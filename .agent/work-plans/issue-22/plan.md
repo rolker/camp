@@ -6,6 +6,18 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 3** (2026-09-14) — responds to Plan Review round 2 (verdict
+changes-requested, 1 must-fix + 2 suggestions; all 9 round-1 findings
+verified resolved). Operator chose "patch the plan, then implement" — no third
+review round; the pre-push code review gates the code.
+- Must-fix: the step-2 regression test had no harness (no test constructs
+  `AutonomousVehicleProject`). Step 2 now extracts a `resolveInsertionParent`
+  seam into its own TU with a narrow gtest, and names the fallback.
+- Suggestion: `vectorLayers/files` has one writer (`persistVectorLayers()`).
+- Suggestion: `openGeometry`'s parent is a `nullptr` sentinel, not a default
+  argument, and the `RowInserter` is routed through the same resolved parent.
+
+
 **Rev 2** (2026-09-14, this revision) — responds to the Plan Review
 (`.agent/work-plans/issue-22/progress.md`, verdict changes-requested, 9
 must-fix + 3 suggestion findings). Every finding was re-verified against the
@@ -206,17 +218,35 @@ rounds of answers directly:
    node originally contained it. `MissionItem::readChildren`
    (`missionitem.cpp:185`) calls `project->openGeometry(...)` for a
    `type == "VectorDataset"` child without passing `this` as the intended
-   parent. Fix: give `openGeometry` an explicit parent-group parameter
-   (defaulting to `m_currentGroup` for the existing "Import" menu-action
-   call site, so that caller's behavior is unchanged), and have
-   `readChildren` pass itself (the enclosing `Group`/`MissionItem`) as that
-   parent when restoring a nested `VectorDataset`. Add a regression test:
-   round-trip a project file with a `VectorDataset` nested two levels under
-   the root (e.g. inside a `Group`), reload it, and assert the restored
-   `VectorDataset`'s parent index matches the original nesting — not
-   `m_currentGroup`. This lands in this PR as the real defect fix (operator
-   decision 1); no `read()`/`write()` change is needed since that path is
-   dead code for the persisted case.
+   parent. Fix, in three parts so the regression test has a seam that
+   builds (Plan Review round 2 must-fix — no existing test constructs
+   `AutonomousVehicleProject`, whose TU pulls in the whole mission tree):
+   - **Seam**: a free function
+     `MissionItem* resolveInsertionParent(MissionItem* requested, MissionItem* currentGroup)`
+     in a small new TU `src/camp/mission_insertion.{h,cpp}` — returns
+     `requested` when non-null, else `currentGroup`. Header depends only on a
+     forward-declared `MissionItem`, so a narrow gtest can compile it
+     without the project class.
+   - **Call sites**: `openGeometry` gains a `MissionItem* parent = nullptr`
+     parameter (a `nullptr` sentinel — "default to `m_currentGroup`" is not
+     expressible as a default argument since `m_currentGroup` is a member).
+     It resolves `parent` through the seam **once** and routes both the
+     `RowInserter` and the `new VectorDataset(...)` through that resolved
+     parent. `readChildren` passes `this`; the existing "Import" menu-action
+     caller passes nothing and keeps its behaviour.
+   - **Regression test** `test/test_mission_insertion.cpp`: (a) unit-test the
+     seam — `requested` wins when set, `currentGroup` when it is null —
+     compiling only `mission_insertion.cpp` + stubs (same narrow-source-set
+     pattern as the other `ament_add_gtest` blocks); (b) a parse-level check
+     that `MissionItem::readChildren`'s `VectorDataset` branch is the only
+     `openGeometry` call that passes a parent is covered by review, not a
+     test — the project class is not constructible in the test harness.
+   Fallback, if the seam proves unnecessary during implementation (e.g. the
+   resolution collapses to one expression): keep the narrow test anyway; the
+   operator required a regression test for this fix.
+   This lands in this PR as the real defect fix (operator decision 1); no
+   `read()`/`write()` change is needed since that path is dead code for the
+   persisted case.
 
 3. **Add a `camp::vector::VectorLayer` class** under
    `src/camp_map/vector/` (mirrors `src/camp_map/raster/` for
@@ -348,8 +378,11 @@ rounds of answers directly:
      `AutonomousVehicleProject::onChartLayerRemoved` at
      `autonomousvehicleproject.cpp:322+`, wired to the `Map` model's
      `rowsAboutToBeRemoved`, exist for exactly this reason, camp#90/#117):
-     add `VectorLayer::onRemovedFromMap()` (drops this file from
-     `vectorLayers/files`, same shape as `RasterLayer`'s) and an
+     add `VectorLayer::onRemovedFromMap()` (signals removal; it does **not**
+     write `vectorLayers/files` itself — Plan Review round 2 suggestion:
+     the raster precedent has two writers over *two different* keys, so the
+     vector key gets **one owner**, `AutonomousVehicleProject::persistVectorLayers()`,
+     called from both the add and the remove paths) and an
      `AutonomousVehicleProject::onVectorLayerRemoved` slot connected to the
      Map model's `rowsAboutToBeRemoved`, mirroring `onChartLayerRemoved`'s
      structure (read the filename while the item still exists during
@@ -385,12 +418,11 @@ rounds of answers directly:
      the destructor before the dataset/parsed data it captured is freed —
      the #213 pattern, analogous to
      `test_raster_layer_gdal_cleanup.cpp`'s abort-on-destroy coverage.
-   - `test_open_geometry_nested_group.cpp` (or folded into an existing
-     mission-item test file if a closer fit exists — confirm during
-     implementation): round-trip a project file with a `VectorDataset`
-     nested inside a `Group`, reload, and assert the restored
-     `VectorDataset`'s parent is that `Group`, not the project's
-     `m_currentGroup` (the step-2 regression test).
+   - `test_mission_insertion.cpp`: the step-2 seam test — narrow source
+     set (`mission_insertion.cpp` only), asserts `resolveInsertionParent`
+     returns the requested parent when given and the current group when
+     not. (Rev 2's `test_open_geometry_nested_group.cpp` round-trip is
+     dropped: nothing in `test/` can construct `AutonomousVehicleProject`.)
    - `test_vector_layer_persistence.cpp` (or extend
      `test_background_persistence.cpp`'s pattern in a new file scoped to
      vector layers): mirror its `RestoreExistingNoReseedAndDedup` and
@@ -434,7 +466,8 @@ rounds of answers directly:
 | `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
 | `test/test_vector_layer_styling.cpp` (new) | Colour/size-by-field mapping, including degenerate/missing-value cases |
 | `test/test_vector_layer_teardown.cpp` (new) | Thread-safe teardown (#213 pattern) |
-| `test/test_open_geometry_nested_group.cpp` (new, or folded into an existing mission-item test) | `openGeometry` nested-parent regression test |
+| `src/camp/mission_insertion.{h,cpp}` (new) | `resolveInsertionParent` seam (step 2) |
+| `test/test_mission_insertion.cpp` (new) | step-2 seam regression test, narrow source set |
 | `test/test_vector_layer_persistence.cpp` (new) | Add/restore/remove/stays-removed round trip for `vectorLayers/files` |
 | `.agents/README.md` | Note `VectorLayer` (read-only display, `camp_map`) vs. `VectorDataset` (editable import, mission tree) as the two vector-file entry points |
 
@@ -465,7 +498,7 @@ rounds of answers directly:
 | `vector_parse.{h,cpp}` moves from the executable into `camp_map` | `VectorDataset`'s include path; `CMakeLists.txt` source lists (both the executable's `SOURCES` and `CAMP_MAP_SOURCES`); `test_vector_dataset_cleanup.cpp`'s include | Yes — step 1 and Files to Change |
 | `ParsedGeometry`/`ParsedLayer` gain an `attributes` field and multi-part/25D handling | `VectorDataset::buildItems` (source-compatible, ignores the new field; unaffected by the geometry-type widening since it already only handles Point/LineString/Polygon) | Yes — verified no behavior change, noted in step 1 |
 | A new `VectorLayer` type is added to the Layers tab | `item_types.h`'s `ItemType` enum; any place that maps a persisted layer "type" string to a class | Yes — `VectorLayer` persists via QSettings app state (step 7), not the mission JSON's type-string dispatch in `missionitem.cpp`, so no new case is needed there for the layer itself |
-| `AutonomousVehicleProject::openGeometry()` gains a parent-group parameter | The existing "Import" menu-action call site (must keep passing/defaulting to `m_currentGroup` so its behavior is unchanged) | Yes — step 2, called out explicitly with a default parameter |
+| `AutonomousVehicleProject::openGeometry()` gains a `MissionItem* parent = nullptr` parameter | The existing "Import" menu-action call site passes nothing and resolves to `m_currentGroup` through the seam, so its behavior is unchanged | Yes — step 2, nullptr sentinel + `resolveInsertionParent` |
 | A vector layer can be removed from the Layers tab | Its entry in `vectorLayers/files` must be dropped, not just the in-memory item | Yes — step 7's removal half, previously missing |
 | A new menu action opens vector layers | `.agents/README.md` if it documents the menu structure | Yes — `.agents/README.md` note added in this PR (Files to Change), since the plan itself proposes the distinction it should record |
 
