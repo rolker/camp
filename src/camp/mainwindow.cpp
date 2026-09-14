@@ -631,9 +631,11 @@ void MainWindow::on_actionOpenVectorLayer_triggered()
 
     if(!fname.isEmpty())
     {
-        setCursor(Qt::WaitCursor);
+        // No wait cursor: openVectorLayer() only STARTS the load — the parse runs
+        // on a worker and the layer reports "(loading...)" in the Layers tab until
+        // it finishes. A cursor bracketing the kickoff would be set and unset
+        // before any of the waiting it appears to represent.
         project->openVectorLayer(fname);
-        unsetCursor();
     }
 }
 
