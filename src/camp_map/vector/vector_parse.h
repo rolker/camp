@@ -1,6 +1,7 @@
 #ifndef CAMP_VECTOR_PARSE_H
 #define CAMP_VECTOR_PARSE_H
 
+#include <functional>
 #include <vector>
 
 #include <QGeoCoordinate>
@@ -63,13 +64,59 @@ struct ParsedLayer
     std::vector<ParsedGeometry> geometries;
 };
 
+// [camp#22] Caller-supplied controls for one parse.
+struct ParseOptions
+{
+    // Polled once per layer and once per feature. When it returns true the parse
+    // stops where it is and returns what it has, with ParseDiagnostics::aborted
+    // set. Empty (the default) means "never abort".
+    //
+    // This exists because VectorLayer parses on a worker thread its DESTRUCTOR
+    // joins: without a cancellation hook inside the loops, closing a layer part
+    // way through a large file blocks the GUI thread for the rest of the parse.
+    // The abort flag is read here, per feature, exactly as RasterLayer re-checks
+    // inside its work loops (camp#213).
+    std::function<bool()> aborted;
+};
+
+// [camp#22] What the parse could NOT do. Every field counts something that was
+// deliberately dropped, so a caller can report it instead of presenting a partial
+// read as a clean one.
+struct ParseDiagnostics
+{
+    // The parse stopped early because ParseOptions::aborted returned true.
+    bool aborted = false;
+    // Layers seen, and layers SKIPPED ENTIRELY because the layer declares a
+    // spatial reference but no transformation to WGS84 could be built for it.
+    // Such a layer must never fall through to the untransformed branch: its
+    // coordinates are projected metres, and reading them as degrees silently
+    // places the features about 1e17 metres from where they belong.
+    int layers_total = 0;
+    int layers_failed = 0;
+    // Individual points whose coordinate transformation FAILED. OGR leaves a
+    // failed point at HUGE_VAL, so these are dropped rather than carried.
+    int points_dropped = 0;
+    // Geometries of a type this parser does not handle (the curve types).
+    int geometries_unhandled = 0;
+};
+
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.
 //
-// Geometry coverage: Point / LineString / Polygon and their Multi* collections,
-// each matched after wkbFlatten() so every 25D/Z/M/ZM variant (a GeoJSON point
-// with an elevation is wkbPoint25D) reaches the same case as its 2D form. A
-// geometry type that is still not handled (wkbGeometryCollection, the curve
-// types) is skipped with a qWarning naming the type — never silently dropped.
+// Geometry coverage: Point / LineString / Polygon, their Multi* collections and
+// the heterogeneous wkbGeometryCollection, each matched after wkbFlatten() so
+// every 25D/Z/M/ZM variant (a GeoJSON point with an elevation is wkbPoint25D)
+// reaches the same case as its 2D form. A geometry type that is still not handled
+// (the curve types) is skipped with a qWarning naming the type and counted in
+// ParseDiagnostics::geometries_unhandled — never silently dropped.
+//
+// Coordinates: each point is transformed individually and the per-point success
+// flag is CHECKED. OGR leaves a point that failed to transform at HUGE_VAL, so an
+// unchecked transform quietly emits a coordinate 1.7e308 degrees from anywhere;
+// failed points are dropped and counted instead. Coordinates that transform (or
+// need no transform) are passed through as the file states them — deciding
+// whether a coordinate can be PLACED on the scene belongs to the display layer,
+// which is the one that knows what "placeable" means (see
+// camp::vector::isPlaceable).
 //
 // [#152] For each layer this creates an OGRCoordinateTransformation and, per
 // geometry, OGRPointIterators — and DESTROYS every one of them before
@@ -77,7 +124,11 @@ struct ParsedLayer
 // OGRFeatures are freed via DestroyFeature. The caller retains ownership of
 // `dataset` (open/close is the caller's responsibility); this function opens no
 // dataset of its own.
-std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset);
+//
+// @param diagnostics  optional; filled in with what was skipped and why.
+std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
+                                           const ParseOptions &options = ParseOptions(),
+                                           ParseDiagnostics *diagnostics = nullptr);
 
 }  // namespace camp::vector
 

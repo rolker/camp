@@ -198,6 +198,155 @@ QString writeGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22] A GeoPackage layer whose SRS is a LOCAL_CS — a coordinate system with
+// no path to WGS84. Building a transformation from it fails, and the pre-fix
+// parser fell silently through to the untransformed branch and read its
+// coordinates as degrees.
+QString writeUnprojectableSrsPackage(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+  const QString path = dir.filePath("local_cs.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  if(srs.SetFromUserInput("LOCAL_CS[\"shipboard\",UNIT[\"metre\",1.0]]") != OGRERR_NONE)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  OGRLayer* layer = ds->CreateLayer("local", &srs, wkbUnknown, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+  OGRPoint pt(350000.0, 4800000.0);   // projected metres, NOT degrees
+  f->SetGeometry(&pt);
+  layer->CreateFeature(f);
+  OGRFeature::DestroyFeature(f);
+  GDALClose(ds);
+  return path;
+}
+
+// A GeoPackage layer with NO spatial reference at all — the untransformed branch,
+// where x is longitude and y is latitude. Carries a line and a polygon, which is
+// where the lat/lon swap this issue fixed used to live.
+QString writeNoSrsPackage(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+  const QString path = dir.filePath("no_srs.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRLayer* layer = ds->CreateLayer("plain", nullptr, wkbUnknown, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  {
+    OGRFieldDefn name("name", OFTString);
+    layer->CreateField(&name);
+  }
+  OGRFeatureDefn* defn = layer->GetLayerDefn();
+  {
+    OGRFeature* f = OGRFeature::CreateFeature(defn);
+    f->SetField("name", "line");
+    OGRLineString ls;
+    ls.addPoint(-70.80, 43.10);   // (x = longitude, y = latitude)
+    ls.addPoint(-70.60, 43.20);
+    f->SetGeometry(&ls);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  {
+    OGRFeature* f = OGRFeature::CreateFeature(defn);
+    f->SetField("name", "poly");
+    OGRPolygon poly;
+    OGRLinearRing ring;
+    ring.addPoint(-70.90, 43.00);
+    ring.addPoint(-70.70, 43.00);
+    ring.addPoint(-70.70, 43.30);
+    ring.addPoint(-70.90, 43.30);
+    ring.closeRings();
+    poly.addRing(&ring);
+    f->SetGeometry(&poly);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  GDALClose(ds);
+  return path;
+}
+
+// A GeoPackage carrying a heterogeneous wkbGeometryCollection — what KML emits
+// for a placemark that mixes a point with its outline, and what the parser used
+// to warn-and-drop one line below the recursion that already handled it.
+QString writeGeometryCollectionPackage(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+  const QString path = dir.filePath("collection.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  srs.SetWellKnownGeogCS("WGS84");
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+  OGRLayer* layer = ds->CreateLayer("mixed", &srs, wkbUnknown, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  {
+    OGRFieldDefn name("name", OFTString);
+    layer->CreateField(&name);
+  }
+  OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+  f->SetField("name", "placemark");
+
+  OGRGeometryCollection collection;
+  OGRPoint pt(-70.71, 43.07);
+  collection.addGeometry(&pt);
+  OGRLineString ls;
+  ls.addPoint(-70.70, 43.06);
+  ls.addPoint(-70.69, 43.05);
+  collection.addGeometry(&ls);
+  OGRPolygon poly;
+  OGRLinearRing ring;
+  ring.addPoint(-70.80, 43.00);
+  ring.addPoint(-70.60, 43.00);
+  ring.addPoint(-70.60, 43.20);
+  ring.addPoint(-70.80, 43.20);
+  ring.closeRings();
+  poly.addRing(&ring);
+  collection.addGeometry(&poly);
+  // A nested collection: the recursion has to reach through it too.
+  OGRGeometryCollection nested;
+  OGRPoint nested_pt(-70.65, 43.02);
+  nested.addGeometry(&nested_pt);
+  collection.addGeometry(&nested);
+
+  f->SetGeometry(&collection);
+  layer->CreateFeature(f);
+  OGRFeature::DestroyFeature(f);
+  GDALClose(ds);
+  return path;
+}
+
 const ParsedGeometry* firstNamed(const ParsedLayer& layer, const QString& name)
 {
   for(const auto& g : layer.geometries)
@@ -356,6 +505,206 @@ TEST(VectorParseAttributes, GeoJsonPeaksFixture)
   ASSERT_EQ(peak->exterior.size(), 1u);
   EXPECT_NEAR(peak->exterior.front().latitude(), 42.9925, 1e-6);
   EXPECT_NEAR(peak->exterior.front().longitude(), -71.4361, 1e-6);
+}
+
+// [camp#22 must-fix 9] The lat/lon convention, asserted on a LINE and a POLYGON
+// vertex — the geometries the swap actually affected.
+//
+// readRing() used to build QGeoCoordinate(getX(), getY()) on BOTH branches while
+// the Point path built (getY(), getX()), so line and polygon vertices from a
+// source with no spatial reference came out transposed while points from the same
+// file did not — a 43N/70W survey line drawn through the Indian Ocean. Points were
+// covered by the existing tests; nothing pinned the geometries that were wrong.
+
+// UNTRANSFORMED branch: a layer with no SRS, where x is longitude, y is latitude.
+TEST(VectorParseAttributes, LineAndPolygonVerticesAreLatLonWithoutAnSrs)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeNoSrsPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  const std::vector<ParsedLayer> layers = camp::vector::parseVectorLayers(dataset.get());
+  ASSERT_EQ(layers.size(), 1u);
+  const ParsedLayer& layer = layers.front();
+
+  const ParsedGeometry* line = firstNamed(layer, "line");
+  ASSERT_NE(line, nullptr);
+  ASSERT_EQ(line->type, ParsedGeometry::LineString);
+  ASSERT_EQ(line->exterior.size(), 2u);
+  EXPECT_NEAR(line->exterior.front().latitude(), 43.10, 1e-6);
+  EXPECT_NEAR(line->exterior.front().longitude(), -70.80, 1e-6);
+  EXPECT_NEAR(line->exterior.back().latitude(), 43.20, 1e-6);
+  EXPECT_NEAR(line->exterior.back().longitude(), -70.60, 1e-6);
+
+  const ParsedGeometry* poly = firstNamed(layer, "poly");
+  ASSERT_NE(poly, nullptr);
+  ASSERT_EQ(poly->type, ParsedGeometry::Polygon);
+  ASSERT_GE(poly->exterior.size(), 4u);
+  EXPECT_NEAR(poly->exterior.front().latitude(), 43.00, 1e-6);
+  EXPECT_NEAR(poly->exterior.front().longitude(), -70.90, 1e-6);
+  for(const auto& vertex : poly->exterior)
+  {
+    EXPECT_NEAR(vertex.latitude(), 43.15, 0.16);
+    EXPECT_NEAR(vertex.longitude(), -70.80, 0.11);
+  }
+}
+
+// TRANSFORMED branch: the WGS84 GeoPackage, whose target SRS comes back in
+// authority (latitude, longitude) order.
+TEST(VectorParseAttributes, LineAndPolygonVerticesAreLatLonWhenTransformed)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  const std::vector<ParsedLayer> layers = camp::vector::parseVectorLayers(dataset.get());
+  ASSERT_EQ(layers.size(), 1u);
+  const ParsedLayer& layer = layers.front();
+
+  // The multiline parts run from (-70.60, 43.30) east/north in 0.01 steps.
+  const ParsedGeometry* line = firstNamed(layer, "multiline");
+  ASSERT_NE(line, nullptr);
+  ASSERT_EQ(line->type, ParsedGeometry::LineString);
+  ASSERT_EQ(line->exterior.size(), 3u);
+  for(const auto& vertex : line->exterior)
+  {
+    EXPECT_NEAR(vertex.latitude(), 43.31, 0.02);
+    EXPECT_NEAR(vertex.longitude(), -70.55, 0.07);
+  }
+
+  // The multipoly parts are 0.2-degree boxes anchored near (-70.80, 43.00).
+  const ParsedGeometry* poly = firstNamed(layer, "multipoly");
+  ASSERT_NE(poly, nullptr);
+  ASSERT_EQ(poly->type, ParsedGeometry::Polygon);
+  ASSERT_GE(poly->exterior.size(), 4u);
+  for(const auto& vertex : poly->exterior)
+  {
+    EXPECT_NEAR(vertex.latitude(), 43.10, 0.11);
+    EXPECT_NEAR(vertex.longitude(), -70.45, 0.36);
+  }
+  ASSERT_EQ(poly->interiorRings.size(), 1u);
+  for(const auto& vertex : poly->interiorRings.front())
+  {
+    EXPECT_NEAR(vertex.latitude(), 43.08, 0.03);
+    EXPECT_NEAR(vertex.longitude(), -70.73, 0.02);
+  }
+}
+
+// [camp#22 must-fix 5] A heterogeneous wkbGeometryCollection goes through the SAME
+// recursion as the Multi* collections — including a nested collection — instead of
+// being warn-and-dropped one line below the code that already handled it.
+TEST(VectorParseAttributes, GeometryCollectionIsNotDropped)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeometryCollectionPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  camp::vector::ParseDiagnostics diagnostics;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diagnostics);
+  ASSERT_EQ(layers.size(), 1u);
+  const ParsedLayer& layer = layers.front();
+
+  // Point, line, polygon, and the point inside the nested collection.
+  ASSERT_EQ(layer.geometries.size(), 4u);
+  EXPECT_EQ(diagnostics.geometries_unhandled, 0);
+
+  int points = 0, lines = 0, polygons = 0;
+  for(const auto& g : layer.geometries)
+  {
+    // Every part carries the parent feature's attributes.
+    EXPECT_EQ(g.attributes.value("name").toString(), QStringLiteral("placemark"));
+    switch(g.type)
+    {
+    case ParsedGeometry::Point: ++points; break;
+    case ParsedGeometry::LineString: ++lines; break;
+    case ParsedGeometry::Polygon: ++polygons; break;
+    }
+  }
+  EXPECT_EQ(points, 2);
+  EXPECT_EQ(lines, 1);
+  EXPECT_EQ(polygons, 1);
+}
+
+// [camp#22 must-fix 3] A layer that HAS a spatial reference but from which no
+// transformation to WGS84 can be built is FAILED and reported — never quietly read
+// as if its projected metres were degrees.
+TEST(VectorParseAttributes, LayerWithUnprojectableSrsFailsRatherThanFallingThrough)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeUnprojectableSrsPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  ASSERT_GE(dataset->GetLayerCount(), 1);
+  ASSERT_NE(dataset->GetLayer(0)->GetSpatialRef(), nullptr)
+      << "fixture must declare an SRS, or it exercises the untransformed branch";
+
+  camp::vector::ParseDiagnostics diagnostics;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diagnostics);
+
+  EXPECT_EQ(diagnostics.layers_total, 1);
+  EXPECT_EQ(diagnostics.layers_failed, 1);
+  EXPECT_TRUE(layers.empty()) << "a failed layer must emit no geometry at all";
+}
+
+// [camp#22 must-fix 6] The abort predicate is polled INSIDE the parse, so a
+// destructor that cancels a load is joined in feature time rather than file time.
+TEST(VectorParseAttributes, AbortStopsTheParseAndIsReported)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  // Baseline: the whole file.
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  camp::vector::ParseDiagnostics full_diag;
+  const std::vector<ParsedLayer> full =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &full_diag);
+  ASSERT_EQ(full.size(), 1u);
+  const size_t full_count = full.front().geometries.size();
+  ASSERT_GT(full_count, 2u);
+  EXPECT_FALSE(full_diag.aborted);
+
+  // Aborting before the first layer returns nothing at all.
+  DatasetPtr immediate_ds = openDataset(path);
+  ASSERT_TRUE(immediate_ds);
+  camp::vector::ParseOptions immediate;
+  immediate.aborted = []() { return true; };
+  camp::vector::ParseDiagnostics immediate_diag;
+  const std::vector<ParsedLayer> nothing =
+    camp::vector::parseVectorLayers(immediate_ds.get(), immediate, &immediate_diag);
+  EXPECT_TRUE(nothing.empty());
+  EXPECT_TRUE(immediate_diag.aborted);
+
+  // Aborting after the first feature stops there — it does NOT read the rest of
+  // the file, which is the property the destructor's bounded join depends on.
+  DatasetPtr partial_ds = openDataset(path);
+  ASSERT_TRUE(partial_ds);
+  int polls = 0;
+  camp::vector::ParseOptions after_one;
+  after_one.aborted = [&polls]() { return ++polls > 2; };
+  camp::vector::ParseDiagnostics partial_diag;
+  const std::vector<ParsedLayer> partial =
+    camp::vector::parseVectorLayers(partial_ds.get(), after_one, &partial_diag);
+  EXPECT_TRUE(partial_diag.aborted);
+  ASSERT_EQ(partial.size(), 1u);
+  EXPECT_LT(partial.front().geometries.size(), full_count)
+      << "the abort flag must be read inside the feature loop, not only before it";
 }
 
 int main(int argc, char** argv)

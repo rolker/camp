@@ -1,6 +1,7 @@
 #include "vector_parse.h"
 
 #include <memory>
+#include <optional>
 
 #include <QDebug>
 
@@ -36,11 +37,21 @@ struct OGRCTDeleter
 // QGeoCoordinate(getX(), getY()) on BOTH branches, so line and polygon vertices
 // from a source with no spatial reference came out lat/lon swapped while points
 // from the same file did not.
-QGeoCoordinate toWgs84(double x, double y, OGRCoordinateTransformation *unprojectTransformation)
+//
+// [camp#22] The per-point transform result is CHECKED. OGRCoordinateTransformation
+// leaves a point it could not transform at HUGE_VAL (1.7e308) and reports it in
+// pabSuccess; discarding that flag emitted a coordinate 1.7e308 degrees from
+// anywhere, which then propagated into the scene extent. A failed point is
+// dropped — nullopt — and counted by the caller.
+std::optional<QGeoCoordinate> toWgs84(double x, double y,
+                                      OGRCoordinateTransformation *unprojectTransformation)
 {
     if(unprojectTransformation)
     {
-        unprojectTransformation->Transform(1, &x, &y);
+        int succeeded = FALSE;
+        unprojectTransformation->Transform(1, &x, &y, nullptr, &succeeded);
+        if(!succeeded)
+            return std::nullopt;
         return QGeoCoordinate(x, y);   // transformed: (latitude, longitude)
     }
     return QGeoCoordinate(y, x);       // untransformed: x = longitude, y = latitude
@@ -50,7 +61,9 @@ QGeoCoordinate toWgs84(double x, double y, OGRCoordinateTransformation *unprojec
 // [#152] The OGRPointIterator is always destroyed here — at every call site,
 // including the interior-ring loop where the original code reassigned `pi` per
 // ring and so leaked all but (at most) one.
-std::vector<QGeoCoordinate> readRing(const OGRCurve *ring, OGRCoordinateTransformation *unprojectTransformation)
+std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
+                                    OGRCoordinateTransformation *unprojectTransformation,
+                                    ParseDiagnostics &diagnostics)
 {
     std::vector<QGeoCoordinate> points;
     if(!ring)
@@ -58,7 +71,14 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring, OGRCoordinateTransfor
     OGRPointIterator *pi = ring->getPointIterator();
     OGRPoint p;
     while(pi->getNextPoint(&p))
-        points.push_back(toWgs84(p.getX(), p.getY(), unprojectTransformation));
+    {
+        const std::optional<QGeoCoordinate> coordinate =
+            toWgs84(p.getX(), p.getY(), unprojectTransformation);
+        if(coordinate)
+            points.push_back(*coordinate);
+        else
+            ++diagnostics.points_dropped;
+    }
     OGRPointIterator::destroy(pi);
     return points;
 }
@@ -73,7 +93,8 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring, OGRCoordinateTransfor
 void appendGeometry(const OGRGeometry *geometry,
                     const QMap<QString, QVariant> &attributes,
                     OGRCoordinateTransformation *unprojectTransformation,
-                    std::vector<ParsedGeometry> &out)
+                    std::vector<ParsedGeometry> &out,
+                    ParseDiagnostics &diagnostics)
 {
     if(!geometry)
         return;
@@ -88,7 +109,16 @@ void appendGeometry(const OGRGeometry *geometry,
             ParsedGeometry g;
             g.type = ParsedGeometry::Point;
             g.attributes = attributes;
-            g.exterior.push_back(toWgs84(op->getX(), op->getY(), unprojectTransformation));
+            const std::optional<QGeoCoordinate> coordinate =
+                toWgs84(op->getX(), op->getY(), unprojectTransformation);
+            if(!coordinate)
+            {
+                // The one point this feature had would not transform; emitting the
+                // geometry anyway would produce an empty Point.
+                ++diagnostics.points_dropped;
+                break;
+            }
+            g.exterior.push_back(*coordinate);
             out.push_back(std::move(g));
         }
         break;
@@ -101,7 +131,7 @@ void appendGeometry(const OGRGeometry *geometry,
             ParsedGeometry g;
             g.type = ParsedGeometry::LineString;
             g.attributes = attributes;
-            g.exterior = readRing(ols, unprojectTransformation);
+            g.exterior = readRing(ols, unprojectTransformation, diagnostics);
             out.push_back(std::move(g));
         }
         break;
@@ -115,9 +145,10 @@ void appendGeometry(const OGRGeometry *geometry,
             ParsedGeometry g;
             g.type = ParsedGeometry::Polygon;
             g.attributes = attributes;
-            g.exterior = readRing(op->getExteriorRing(), unprojectTransformation);
+            g.exterior = readRing(op->getExteriorRing(), unprojectTransformation, diagnostics);
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
-                g.interiorRings.push_back(readRing(op->getInteriorRing(ringNum), unprojectTransformation));
+                g.interiorRings.push_back(
+                    readRing(op->getInteriorRing(ringNum), unprojectTransformation, diagnostics));
             out.push_back(std::move(g));
         }
         break;
@@ -125,18 +156,28 @@ void appendGeometry(const OGRGeometry *geometry,
     case wkbMultiPoint:
     case wkbMultiLineString:
     case wkbMultiPolygon:
+    // [camp#22] A heterogeneous wkbGeometryCollection is handled by the SAME
+    // recursion: OGRGeometryCollection is the base of the Multi* classes, each
+    // part comes back through this switch on its own type, and a nested
+    // collection recurses again. It used to be warn-and-dropped one line below
+    // the recursion that already covered it — the very data-loss class this
+    // parser's 25D/Multi* work set out to close. KML in particular emits a
+    // MultiGeometry (= wkbGeometryCollection) whenever a placemark mixes a point
+    // with its outline.
+    case wkbGeometryCollection:
     {
         const OGRGeometryCollection *collection = geometry->toGeometryCollection();
         if(collection)
             for(int part = 0; part < collection->getNumGeometries(); ++part)
                 appendGeometry(collection->getGeometryRef(part), attributes,
-                               unprojectTransformation, out);
+                               unprojectTransformation, out, diagnostics);
         break;
     }
     default:
-        // Documented, LOGGED skip (wkbGeometryCollection, the curve types): the
-        // formats this parser claims to read do not normally emit these, and a
-        // silent drop is what made the 25D/Multi* gap invisible for so long.
+        // Documented, LOGGED skip (the curve types): the formats this parser
+        // claims to read do not normally emit these, and a silent drop is what
+        // made the 25D/Multi* gap invisible for so long.
+        ++diagnostics.geometries_unhandled;
         qWarning() << "camp::vector::parseVectorLayers: skipping unhandled geometry type"
                    << OGRGeometryTypeToName(geometry->getGeometryType());
         break;
@@ -181,17 +222,38 @@ QMap<QString, QVariant> readAttributes(const OGRFeature *feature)
 
 }  // namespace
 
-std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset)
+std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
+                                           const ParseOptions &options,
+                                           ParseDiagnostics *diagnostics)
 {
+    ParseDiagnostics local;
+    ParseDiagnostics &diag = diagnostics ? *diagnostics : local;
+
+    // [camp#22 / #213] One cheap predicate, polled per layer AND per feature, so a
+    // destructor that aborts the worker is joined in feature time rather than
+    // file time. Reading it once before the open — which is what this used to do —
+    // guarantees nothing: the whole parse happens after that read.
+    const auto aborted = [&options]()
+    {
+        return options.aborted && options.aborted();
+    };
+
     std::vector<ParsedLayer> result;
     if(!dataset)
         return result;
 
     for(int i = 0; i < dataset->GetLayerCount(); ++i)
     {
+        if(aborted())
+        {
+            diag.aborted = true;
+            return result;
+        }
+
         OGRLayer *layer = dataset->GetLayer(i);
         if(!layer)
             continue;
+        ++diag.layers_total;
 
         // [#152] One transformation per layer, freed by RAII at end-of-layer.
         // The original destroyed none, leaking one PROJ pipeline per layer.
@@ -201,20 +263,52 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset)
             OGRSpatialReference wgs84;
             wgs84.SetWellKnownGeogCS("WGS84");
             unprojectTransformation.reset(OGRCreateCoordinateTransformation(projected, &wgs84));
+            if(!unprojectTransformation)
+            {
+                // [camp#22] The layer HAS a spatial reference and we could not
+                // build a path from it to WGS84 (a missing PROJ grid, an SRS PROJ
+                // cannot interpret). Falling through to the untransformed branch —
+                // what this used to do — reads the layer's projected metres as
+                // degrees and places every feature about 1e17 metres from where it
+                // belongs, with nothing said. FAIL the layer instead, loudly.
+                ++diag.layers_failed;
+                const char *name = projected->GetName();
+                qWarning() << "camp::vector::parseVectorLayers: skipping layer"
+                           << layer->GetName()
+                           << "- no coordinate transformation to WGS84 could be built from its"
+                           << "spatial reference" << (name ? name : "(unnamed)")
+                           << "; its coordinates cannot be interpreted as latitude/longitude";
+                continue;
+            }
         }
 
         ParsedLayer parsed;
         parsed.name = layer->GetName();
 
+        const int dropped_before = diag.points_dropped;
         layer->ResetReading();
         OGRFeature *feature = layer->GetNextFeature();
         while(feature)
         {
             appendGeometry(feature->GetGeometryRef(), readAttributes(feature),
-                           unprojectTransformation.get(), parsed.geometries);
+                           unprojectTransformation.get(), parsed.geometries, diag);
             OGRFeature::DestroyFeature(feature);
+            if(aborted())
+            {
+                // Return what was parsed so far. The caller knows it is partial
+                // (diagnostics.aborted) and, in the case this exists for, is about
+                // to throw it away anyway.
+                diag.aborted = true;
+                result.push_back(std::move(parsed));
+                return result;
+            }
             feature = layer->GetNextFeature();
         }
+
+        if(diag.points_dropped > dropped_before)
+            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                       << "- dropped" << (diag.points_dropped - dropped_before)
+                       << "point(s) whose coordinate transformation failed";
 
         // unprojectTransformation's RAII deleter frees it here.
         result.push_back(std::move(parsed));
