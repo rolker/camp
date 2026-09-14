@@ -159,3 +159,72 @@ halves) rather than left as an Open Question.
       the click-to-inspect pan-mode gate, or one already exists.
 - [ ] Whether the lat/lon-order fix in `vector_parse.cpp` lands in this PR
       or as a separate follow-up issue — confirm during implementation.
+
+## Plan Review
+**Status**: complete
+**When**: 2026-09-14 11:07 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Plan**: `.agent/work-plans/issue-22/plan.md` at `b4fd5b3` (rev 2)
+**PR**: PR-less (dispatched `--issue 22`, branch `feature/issue-22`)
+**Verdict**: changes-requested
+
+Round 2 — re-review of rev 2 against the round-1 review (9 must-fix + 3
+suggestions) and the operator's plan-review-checkpoint decisions on the issue
+(2026-09-14). Every rev-2 claim below was re-verified against the source, not
+taken from the plan's own account.
+
+Dimension verdicts — Scope: good. Issue alignment: good (both operator
+decisions and the earlier six honoured; "save/restore in the project file" is
+correctly recorded as superseded). File targeting: good (the three missing
+files are listed; the `camp_map` move is link-clean — `vector_parse.h` includes
+only `<QGeoCoordinate>` and forward-declares `GDALDataset`, and camp_map links
+Qt5::Positioning PUBLIC / GDAL PRIVATE, `CMakeLists.txt:345-382`).
+Consequences: good, with one ownership ambiguity (suggestion 1). Documentation
+& instruction impact: good. Principle alignment: good — "test what breaks" is
+the one soft spot (must-fix 1). ADR compliance: good. ROS conventions: N/A.
+
+**Round-1 findings confirmed genuinely resolved (verified in source):**
+1. `openGeometry` premise — confirmed: `missionitem.cpp:186` dispatches
+   `type == "VectorDataset"` to `project->openGeometry(...)` with no parent,
+   and `autonomousvehicleproject.cpp:200-214` does
+   `RowInserter ri(*this, m_currentGroup); vd = new VectorDataset(m_currentGroup)`.
+   Rev 2's re-scope is the real defect. Both `VectorDataset(MissionItem*)` and
+   `RowInserter(…, MissionItem*, int)` already take `MissionItem*`, so
+   `readChildren` passing `this` types cleanly.
+2. The false consequences row is gone from the table.
+3. Library layering — confirmed `vector_parse.cpp` is in the executable's
+   `SOURCES` (`CMakeLists.txt:135`) and `camp_map` is a separate SHARED target
+   (`CMakeLists.txt:295+`); the move resolves it, and the header's include set
+   makes it a clean public camp_map header.
+4. Alt-stack — `camp_crash::install_thread_alt_stack()` as first statement
+   matches `raster_layer.cpp:189`; `cmake/check_worker_alt_stacks.cmake` is a
+   per-file count over `src/**.cpp`, so one call per worker file satisfies it.
+5. Removal half — `Layer::removeFromMap()` (`layer.cpp:54-70`) calls
+   `onRemovedFromMap()` *before* detaching through the model, and
+   `onChartLayerRemoved` is connected at `autonomousvehicleproject.cpp:61`.
+   Both halves in step 7 are correctly placed.
+6. Degenerate styling — matches `grid_map.cpp:203-206`
+   (`src/camp_map/ros/grids/grid_map.cpp`; `min_value -= 1.0` → everything
+   normalizes to 1.0, the outcome the plan states). Missing/NaN → neutral colour
+   is an addition beyond the grid precedent and is the right call.
+7. Geometry coverage — confirmed `vector_parse.cpp:86-140` switches on raw
+   `getGeometryType()` with `default: break`; `wkbFlatten` + multi-part is the
+   right fix.
+8. Click-to-inspect — confirmed `ProjectView::mousePressEvent`
+   (`projectview.cpp:57-196`) runs placement per `mouseMode` and forwards to
+   `QGraphicsView::mousePressEvent` unconditionally at `:196`, with
+   `setDragMode(ScrollHandDrag)` at `:335`. Qt delivers the press to the scene
+   *before* starting hand-scrolling, so "accept in pan mode, `ignore()` in add-*
+   modes" is correct and does not fight the drag.
+9. Missing files — `item_types.h` (enum at `:23-49`, cited as 22-45),
+   `mainwindow.cpp:161` (`restorePersistedBackgrounds()` confirmed there), and
+   the `.agents/README.md` note are all listed. Suggestions 1 and 2 are folded
+   in (`GggsTileLayer::settingsKey()` at `gggs_tile_layer.cpp:1829+` is the
+   right precedent; `itemID()` is parent-path+objectName at `map_item.cpp:53-61`);
+   suggestion 3 is settled by operator decision, not by ADR inference.
+
+### Findings
+- [ ] (must-fix) Step 2's regression test has no harness that exists: no test in `test/` constructs `AutonomousVehicleProject`, and its TU pulls the whole mission-item tree plus `platform_manager/platform.h` and `mission_manager/mission_manager.h` (`autonomousvehicleproject.cpp:16-34`), while every existing `ament_add_gtest` block compiles a narrow source set (`test_astar` + `astar.cpp`, `test_vector_dataset_cleanup` + `vector_parse.cpp`) or links `camp_map`. The plan's escape hatch — "or folded into an existing mission-item test file if a closer fit exists" — points at a file that does not exist. Name the seam in the plan (e.g. extract the insertion-target resolution into a small free function testable without `AutonomousVehicleProject`, or state the source/link set the new target needs) or state the fallback explicitly, so the operator-required regression test is not silently dropped at build time — `plan.md:213-219, 388-393, 437`
+- [ ] (suggestion) Two writers for one settings key: `VectorLayer::onRemovedFromMap()` edits `vectorLayers/files` directly *and* `onVectorLayerRemoved` re-persists the whole key from `m_vectorLayers` moments later (`Layer::removeFromMap()` calls the former first, `layer.cpp:54-70`). The raster precedent it mirrors has two writers over two *different* keys (`GggsRasters/files` in `raster_layer.cpp:754`, `backgrounds/files` in `autonomousvehicleproject.cpp:301`), so the pattern does not carry over unchanged. Net effect is correct today but redundant; name one owner of the key — `plan.md:253-255, 346-358`
+- [ ] (suggestion) "`openGeometry()` gains a parent-group parameter (defaulting to `m_currentGroup`)" is not literally expressible — a default argument cannot name a non-static member. Use a `MissionItem* parent = nullptr` sentinel resolved to `m_currentGroup` in the body, and remember `RowInserter` must take the same resolved parent or the model's insert notification targets the wrong index — `plan.md:209-212, 423-424`
