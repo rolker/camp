@@ -228,3 +228,82 @@ the one soft spot (must-fix 1). ADR compliance: good. ROS conventions: N/A.
 - [ ] (must-fix) Step 2's regression test has no harness that exists: no test in `test/` constructs `AutonomousVehicleProject`, and its TU pulls the whole mission-item tree plus `platform_manager/platform.h` and `mission_manager/mission_manager.h` (`autonomousvehicleproject.cpp:16-34`), while every existing `ament_add_gtest` block compiles a narrow source set (`test_astar` + `astar.cpp`, `test_vector_dataset_cleanup` + `vector_parse.cpp`) or links `camp_map`. The plan's escape hatch — "or folded into an existing mission-item test file if a closer fit exists" — points at a file that does not exist. Name the seam in the plan (e.g. extract the insertion-target resolution into a small free function testable without `AutonomousVehicleProject`, or state the source/link set the new target needs) or state the fallback explicitly, so the operator-required regression test is not silently dropped at build time — `plan.md:213-219, 388-393, 437`
 - [ ] (suggestion) Two writers for one settings key: `VectorLayer::onRemovedFromMap()` edits `vectorLayers/files` directly *and* `onVectorLayerRemoved` re-persists the whole key from `m_vectorLayers` moments later (`Layer::removeFromMap()` calls the former first, `layer.cpp:54-70`). The raster precedent it mirrors has two writers over two *different* keys (`GggsRasters/files` in `raster_layer.cpp:754`, `backgrounds/files` in `autonomousvehicleproject.cpp:301`), so the pattern does not carry over unchanged. Net effect is correct today but redundant; name one owner of the key — `plan.md:253-255, 346-358`
 - [ ] (suggestion) "`openGeometry()` gains a parent-group parameter (defaulting to `m_currentGroup`)" is not literally expressible — a default argument cannot name a non-static member. Use a `MissionItem* parent = nullptr` sentinel resolved to `m_currentGroup` in the body, and remember `RowInserter` must take the same resolved parent or the model's insert notification targets the wrong index — `plan.md:209-212, 423-424`
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-14 11:45 -04:00
+**By**: Claude Opus
+
+**Plan**: `.agent/work-plans/issue-22/plan.md` (rev 4 — implementation notes
+folded in inline, plan-first workflow)
+**Branch**: feature/issue-22 (six commits, unpushed)
+
+### Commits
+- `7111033` vector: move the OGR parser into camp_map — `vector_parse.{h,cpp}`
+  from the executable's SOURCES into `CAMP_MAP_SOURCES` so the new library-side
+  layer can call it (the library-cannot-call-the-executable rule, #217). No
+  behavior change.
+- `9a74003` vector: carry feature attributes and stop dropping geometry —
+  `ParsedGeometry::attributes` (typed, absent-when-unset), `wkbFlatten` +
+  Multi* recursion so 25D and multi-part features are no longer dropped
+  silently (unhandled types now log), and the latent lat/lon swap in
+  `readRing`'s untransformed branch fixed. New `test_vector_parse_attributes`.
+- `16f451f` mission: restore a nested VectorDataset under its own parent —
+  `camp::mission::resolveInsertionParent` seam + `openGeometry`'s nullptr
+  parent sentinel routing both the RowInserter and the new node;
+  `readChildren` passes `this`. New `test_mission_insertion`.
+- `b592118` vector: add the read-only VectorLayer with attribute-driven
+  styling — `VectorLayer` (async load with the alt-stack install and the #213
+  join-in-destructor), `VectorFeatureItem` per feature, `vector_style.{h,cpp}`
+  for the colour/size mapping, `VectorLayerType`, path-keyed `settingsKey()`.
+  New `test_vector_layer_styling`, `test_vector_layer_teardown`.
+- `5851c77` project: open, persist and remove vector display layers —
+  `openVectorLayer` / `persistVectorLayers` / `restorePersistedVectorLayers` /
+  `onVectorLayerRemoved`, the File > Open Vector Layer action and the startup
+  restore call. New `test_vector_layer_persistence`.
+- `762faac` docs: `.agents/README.md` note distinguishing VectorLayer from
+  VectorDataset, and the plan's rev-4 sync.
+
+### Verified
+- **Build**: `./ui_ws/build.sh camp` — Finished, no errors. (marine_colormap
+  and marine_colormap_widgets had to be built in this worktree's ui_ws first;
+  they were not installed there.)
+- **Tests**: `./ui_ws/test.sh camp` — **352 tests, 0 errors, 0 failures, 1
+  skipped** (up from 323 on the branch point; the skip is the pre-existing
+  GL-dependent case). The five new suites: parse attributes 5/5, styling 7/7,
+  teardown 3/3, persistence 5/5, insertion seam 4/4. The #217 guards
+  (`check_worker_alt_stacks`, `check_crash_lib_deps`, `check_camp_exports`)
+  pass, so the new QtConcurrent worker's alt-stack install is accounted for.
+- **Acceptance datasets, off-GUI**: both real files were driven through the
+  shipped parse + styling path in a scratch probe (not committed):
+  `massabesic_mag_peaks.geojson` → 33 features, `analytic_signal_nT_per_m`
+  range 23.16–58.07, the 58.07 peak normalizing to t = 1.000 (top of the ramp);
+  `massabesic_joint_candidates.geojson` → 7 features, candidate C reading back
+  at lat 42.994286 / lon -71.357873 = **307792 E / 4762878 N UTM 19N**
+  (confirmed with `gdaltransform`) carrying its `assessment` text. That covers
+  the coordinate and attribute halves of plan step 9.
+
+### Deferred / not done
+- **The GUI half of step 9's manual acceptance**: on-screen rendering, the
+  click-to-inspect popup in pan mode, and the remove-then-restart check. Not
+  automatable here (a real GUI session); the data path behind all three is
+  covered by the tests and the probe above.
+- **`VectorLayer::onRemovedFromMap()` override — deliberately not added.** The
+  removal half is the project's `onVectorLayerRemoved`, connected to the Map
+  model's `rowsAboutToBeRemoved`; with the round-2 "one owner for the key"
+  decision the override would write nothing and signal nothing new, i.e. dead
+  code. Recorded in plan.md rev 4.
+- **No `ProjectView` change** — pan mode is read from the view's `dragMode()`
+  (ScrollHandDrag), so no accessor was needed and the camp_map layering stays
+  intact. Open Question 2 answered in plan.md rev 4.
+- **Label-by-field and a style-editing UI** remain out of scope per the
+  operator's MVP decision; they are the follow-on issues the plan names.
+- **Note for review**: the pre-commit trailing-whitespace hook cleaned a few
+  pre-existing whitespace-only lines in `src/camp/mainwindow.cpp` as a side
+  effect of editing that file. Mechanical, no code change.
+
+### Actions
+- [ ] Run `/review-code` against the branch diff before opening the PR.
+- [ ] Manual GUI acceptance (render both datasets, colour by
+      `analytic_signal_nT_per_m`, click candidate C, remove a layer and
+      restart) — the operator-side half of step 9.
