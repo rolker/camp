@@ -4,6 +4,7 @@
 #include <memory>
 #include <set>
 
+#include <QDebug>
 #include <QFileInfo>
 #include <QMenu>
 #include <QSettings>
@@ -99,9 +100,25 @@ void VectorLayer::loadFinished()
   }
 
   prepareGeometryChange();
+  int skipped = 0;
   for(const ParsedLayer& layer : result.layers)
     for(const ParsedGeometry& geometry : layer.geometries)
+    {
+      // [camp#22] A feature with no placeable coordinate — a .prj-less shapefile
+      // read as degrees, a NaN from a failed transform — is skipped rather than
+      // placed 1e17 metres away, where it would poison childrenBoundingRect()
+      // (fit-to-extent) and the scene index for every other feature.
+      if(!hasPlaceableCoordinate(geometry))
+      {
+        ++skipped;
+        continue;
+      }
       features_.push_back(new VectorFeatureItem(this, geometry));
+    }
+  if(skipped > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- skipped" << skipped
+               << "feature(s) whose coordinates are not a valid latitude/longitude"
+               << "(a shapefile missing its .prj sidecar is the usual cause)";
 
   loaded_ = !features_.empty();
   if(!loaded_)
@@ -109,10 +126,12 @@ void VectorLayer::loadFinished()
     // The driver opened the file but this parser found nothing it renders. Say
     // so — an empty layer that claims to have loaded is indistinguishable from
     // one drawn off-screen.
-    setStatus("(no features)");
+    setStatus(skipped > 0 ? QString("(no placeable features; %1 skipped)").arg(skipped)
+                          : QString("(no features)"));
     return;
   }
-  setStatus(QString("(%1 features)").arg(features_.size()));
+  setStatus(skipped > 0 ? QString("(%1 features, %2 unplaceable)").arg(features_.size()).arg(skipped)
+                        : QString("(%1 features)").arg(features_.size()));
 
   // readSettings() may have restored a style before the features existed.
   applyStyle();

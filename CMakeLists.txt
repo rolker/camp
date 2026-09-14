@@ -776,6 +776,24 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#22] One vector feature item: click hit-testing (a line's shape must be
+  # STROKED or Qt never picks it, so click-to-inspect silently fails on all line
+  # data) and coordinate validity (a .prj-less shapefile read as degrees, or a NaN
+  # from a failed transform, must not be projected into the scene at all).
+  ament_add_gtest(test_vector_feature_item
+    test/test_vector_feature_item.cpp
+  )
+  target_include_directories(test_vector_feature_item PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_feature_item
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+  )
+
   # [camp#22 / ADR-0003 §4 / camp#90] Vector-layer list persistence: add de-dups,
   # remove drops every entry AND STICKS across a restart (the half whose absence
   # makes a removed layer come back), the settings key round-trips, and per-layer

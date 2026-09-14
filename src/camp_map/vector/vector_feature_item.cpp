@@ -4,6 +4,7 @@
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
 #include <QPainter>
+#include <QPainterPathStroker>
 #include <QStringList>
 #include <QToolTip>
 
@@ -18,11 +19,19 @@ namespace
 {
 
 // Append a ring's vertices to `path`, relative to `origin` (scene metres).
+//
+// [camp#22] Unplaceable vertices are DROPPED rather than projected: one NaN or
+// out-of-range vertex would otherwise stretch the path — and with it the layer's
+// extent and the scene index — across the whole world. Dropping a vertex from a
+// ring is a visible shortcut in the drawn geometry, which is the honest outcome
+// for a file whose coordinates CAMP cannot place; the layer reports the count.
 void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const QPointF& origin)
 {
   bool first = true;
   for(const auto& coordinate : ring)
   {
+    if(!isPlaceable(coordinate))
+      continue;
     const QPointF point = web_mercator::geoToMap(coordinate) - origin;
     if(first)
     {
@@ -34,17 +43,36 @@ void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const 
   }
 }
 
+// [camp#22] Click tolerance for a line feature, in scene metres — see shape().
+constexpr double kClickWidth = 5.0;
+
+// The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
 {
-  if(!geometry.exterior.empty())
-    return &geometry.exterior.front();
+  for(const auto& coordinate : geometry.exterior)
+    if(isPlaceable(coordinate))
+      return &coordinate;
   for(const auto& ring : geometry.interiorRings)
-    if(!ring.empty())
-      return &ring.front();
+    for(const auto& coordinate : ring)
+      if(isPlaceable(coordinate))
+        return &coordinate;
   return nullptr;
 }
 
 }  // namespace
+
+bool isPlaceable(const QGeoCoordinate& coordinate)
+{
+  // QGeoCoordinate::isValid() is exactly the contract documented in the header:
+  // both ordinates set and finite, latitude in [-90, 90], longitude in
+  // [-180, 180]. A default-constructed (unset) coordinate is invalid too.
+  return coordinate.isValid();
+}
+
+bool hasPlaceableCoordinate(const ParsedGeometry& geometry)
+{
+  return firstCoordinate(geometry) != nullptr;
+}
 
 VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry& geometry):
   QGraphicsItem(parent),
@@ -97,23 +125,43 @@ QRectF VectorFeatureItem::boundingRect() const
     const double r = radius_ + 1.0;
     return QRectF(-r, -r, 2.0 * r, 2.0 * r);
   }
+  if(path_.isEmpty())
+    return QRectF();
   // A cosmetic pen is one device pixel wide however far the view is zoomed out,
-  // so the scene-space allowance cannot be derived here; the path's own bounds
-  // plus nothing is correct for hit-testing, and Qt tolerates the one-pixel
-  // overdraw at the edges.
-  return path_.boundingRect();
+  // so the pen's scene-space allowance cannot be derived here and the path's own
+  // bounds are what the paint needs; Qt tolerates the one-pixel overdraw at the
+  // edges. The CLICK shape, however, is wider than the path for a line (see
+  // shape()), and a shape outside boundingRect() is undefined behaviour in Qt —
+  // so the line case is grown by the stroker's half-width.
+  const QRectF bounds = path_.boundingRect();
+  if(polygon_)
+    return bounds;
+  return bounds.adjusted(-kClickWidth / 2.0, -kClickWidth / 2.0,
+                         kClickWidth / 2.0, kClickWidth / 2.0);
 }
 
 QPainterPath VectorFeatureItem::shape() const
 {
   QPainterPath shape;
   if(point_)
+  {
     shape.addEllipse(QPointF(0.0, 0.0), radius_, radius_);
-  else if(path_.isEmpty())
     return shape;
-  else
-    shape = path_;
-  return shape;
+  }
+  if(path_.isEmpty())
+    return shape;
+  if(polygon_)
+    return path_;   // a closed, filled path: Qt's fill-area hit test works on it
+  // [camp#22] A LINE has no fill area, so returning the raw open path means Qt's
+  // hit test never picks it and click-to-inspect is unusable on every line
+  // feature. Stroke it into a thin ribbon, as the mission-tree LineString does
+  // (src/camp/vector/linestring.cpp:66-84). The width is in ITEM coordinates
+  // (scene metres for a line item), so it is deliberately generous: kClickWidth
+  // metres of tolerance is a few pixels at survey zoom levels and still a small
+  // target when zoomed far out, which is the same trade the mission item makes.
+  QPainterPathStroker stroker;
+  stroker.setWidth(kClickWidth);
+  return stroker.createStroke(path_);
 }
 
 void VectorFeatureItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)

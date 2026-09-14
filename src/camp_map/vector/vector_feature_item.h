@@ -2,6 +2,7 @@
 #define CAMP_VECTOR_FEATURE_ITEM_H
 
 #include <QColor>
+#include <QGeoCoordinate>
 #include <QGraphicsItem>
 #include <QMap>
 #include <QPainterPath>
@@ -30,6 +31,25 @@ struct ParsedGeometry;
 /// radius is a screen size that stays constant across zoom, like the mission
 /// items' symbols. Lines and polygons live in scene space and scale with the
 /// view, drawn with a cosmetic pen so the stroke stays one pixel wide.
+/// [camp#22] True when @p coordinate can be placed on the Web-Mercator scene:
+/// both ordinates finite, latitude within +/-90, longitude within +/-180
+/// (`QGeoCoordinate::isValid()`).
+///
+/// This is not a theoretical guard. A shapefile shipped without its `.prj`
+/// sidecar has no spatial reference, so the parser reads its projected eastings
+/// and northings as degrees — a UTM northing of 4 800 000 becomes "latitude
+/// 4800000", and `geoToMap()` turns that into a position ~1e17 scene metres away.
+/// A single such feature poisons the layer's `childrenBoundingRect()` (so
+/// fit-to-extent flies to nowhere) and the scene's spatial index. A NaN ordinate,
+/// which a failed coordinate transform produces, is worse: every comparison
+/// against it is false, and the bounding rect becomes permanently invalid.
+bool isPlaceable(const QGeoCoordinate& coordinate);
+
+/// True when @p geometry has at least one placeable coordinate — i.e. when a
+/// VectorFeatureItem built from it would land somewhere real. The layer checks
+/// this before constructing an item and reports the number of features skipped.
+bool hasPlaceableCoordinate(const ParsedGeometry& geometry);
+
 class VectorFeatureItem: public QGraphicsItem
 {
 public:
