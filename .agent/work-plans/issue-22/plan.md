@@ -6,21 +6,44 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 5** (2026-09-14) — pre-push review round 1 returned changes-requested with
+ten must-fixes; these are the plan-level consequences. The code-level fixes are
+in the branch's commits and the `## Implementation` entry in `progress.md`.
+
+- **Rev 4's "no `onRemovedFromMap()` override" deferral is REVERSED** — it rested
+  on an inaccurate premise and was must-fix 1. Rev 4 argued the override would
+  signal "nothing the model does not already signal". The model signals something
+  *different*: `Map::setMapItemParent()` implements a drag-REORDER as
+  `beginRemoveRows` + `beginInsertRows` (`map.cpp:285-307`), so
+  `rowsAboutToBeRemoved` fires for a reorder too and cannot be told apart from a
+  removal. Dragging a vector layer up or down the Layers tab therefore erased its
+  file from `vectorLayers/files`, and it did not come back on the next launch.
+  `VectorLayer::onRemovedFromMap()` now exists and emits `removedFromMap()`;
+  `AutonomousVehicleProject` connects to that per layer instead of to the model.
+  The "one owner for the key" decision (Plan Review round 2) is UNCHANGED —
+  `persistVectorLayers()` is still the single writer; the override writes nothing.
+  What changed is *which signal* the owner reacts to.
+- **A new ADR** (`docs/decisions/0016-read-only-vector-file-layer.md`, must-fix
+  10): the layer family's design decisions and the persisted schema. Rev 4 had no
+  ADR step; every predecessor layer family has one.
+- **Two new bounds, both reported** (must-fixes 6 and 7):
+  `parseVectorLayers()` takes a `ParseOptions::aborted` predicate polled per
+  feature, so the destructor's join is bounded by the abort rather than by the
+  size of the file; and item construction is capped at
+  `VectorLayer::kMaxFeatureItems`, since it can only run on the GUI thread.
+- **New test file** `test/test_vector_feature_item.cpp` — line hit-testing,
+  coordinate placeability, and the click/drag gating.
+
 **Rev 4** (2026-09-14) — implementation notes, edited inline as the work landed
 (plan-first workflow). Scope is unchanged; these are the points where the
 implementation differs from rev 3's letter, each with its reason:
 
-- **No `VectorLayer::onRemovedFromMap()` override** (steps 3 and 7). Rev 3 kept
-  the override but — answering Plan Review round 2's "one owner for the key" —
-  left it nothing to write. The whole removal half is
+- ~~**No `VectorLayer::onRemovedFromMap()` override**~~ — **reversed in rev 5
+  above; the premise was wrong.** (Kept here so the reasoning that failed stays
+  legible: the argument was that an override would be dead code because
   `AutonomousVehicleProject::onVectorLayerRemoved`, connected to the Map model's
-  `rowsAboutToBeRemoved` (verified: `Layer::removeFromMap()` detaches through
-  `Map::setMapItemParent`, `layer.cpp:54-70`), which drops the bookkeeping entry
-  and re-persists. An override that neither writes the key nor signals anything
-  the model does not already signal would be dead code, so it is not there.
-  `RasterLayer::onRemovedFromMap()` exists because it writes a *different* key
-  (`GggsRasters/files`) from the project's `backgrounds/files`; the vector key
-  has one owner and one writer.
+  `rowsAboutToBeRemoved`, already covered removal. It did not: that signal also
+  fires for a drag-reorder.)
 - **No `ProjectView` change** (step 4; Open Question 2 resolved). The feature
   item reads pan mode from the view's own `dragMode()`
   (`QGraphicsView::ScrollHandDrag`), which `ProjectView::setPanMode()` sets
@@ -326,9 +349,11 @@ rounds of answers directly:
    - `writeSettings()`/`readSettings()` overrides (QSettings, keyed by
      `settingsKey()`) persist per-layer style (`colorField`, `sizeField`,
      `colormap` name) — see step 7 for the file-list half.
-   - `onRemovedFromMap()` override: drop this file from the persisted
-     vector-layer file list (mirrors `RasterLayer::onRemovedFromMap()`,
-     `raster_layer.cpp:749-757`, camp#90/#117) — see step 7.
+   - `onRemovedFromMap()` override (rev 5): emit `removedFromMap()` so the
+     project can drop this file from the persisted list. It writes no key
+     itself — `persistVectorLayers()` is the single writer — but it is the
+     only reorder-SAFE removal signal: the Map model's `rowsAboutToBeRemoved`
+     fires for a drag-reorder too. See step 7 and ADR-0016 D9.
 
 4. **Add feature child-item classes** (new file,
    `src/camp_map/vector/vector_feature_item.{h,cpp}`): lightweight
@@ -414,8 +439,10 @@ rounds of answers directly:
      `AutonomousVehicleProject`, mirroring `persistBackgrounds()`/
      `restorePersistedBackgrounds()` (`autonomousvehicleproject.cpp:
      291-320`) — QSettings key `vectorLayers/files`, de-dup by filename,
-     self-heal on restore (re-persist once if the restored count differs
-     from the stored list, same pattern as backgrounds). Add the
+     self-heal on restore (rev 5: re-persist unconditionally, which collapses
+     duplicates and normalises path spellings; a file that is not reachable
+     right now is REMEMBERED and carried forward rather than dropped — an
+     unmounted share is not the operator asking for a removal). Add the
      `project->restorePersistedVectorLayers();` call in `mainwindow.cpp`
      immediately alongside the existing `restorePersistedBackgrounds()`
      call at `mainwindow.cpp:161`.
@@ -429,10 +456,11 @@ rounds of answers directly:
      the raster precedent has two writers over *two different* keys, so the
      vector key gets **one owner**, `AutonomousVehicleProject::persistVectorLayers()`,
      called from both the add and the remove paths) and an
-     `AutonomousVehicleProject::onVectorLayerRemoved` slot connected to the
-     Map model's `rowsAboutToBeRemoved`, mirroring `onChartLayerRemoved`'s
-     structure (read the filename while the item still exists during
-     `rowsAboutToBeRemoved`, drop the matching `m_vectorLayers` entry,
+     `AutonomousVehicleProject::onVectorLayerRemoved` slot connected
+     **(rev 5) to that per-layer signal, NOT to the Map model's
+     `rowsAboutToBeRemoved`** — which `Map::setMapItemParent()` also fires for a
+     drag-reorder, so reacting to it un-persisted a layer the operator only
+     moved. (Drop the matching `m_vectorLayers` entry,
      re-persist). Without this, a vector layer removed from the Layers tab
      would silently reappear on next launch.
    - Per-layer style (`colorField`, `sizeField`, `colormap` name) persists
@@ -505,7 +533,9 @@ rounds of answers directly:
 | `src/camp_map/vector/vector_layer.h` (new) | `VectorLayer : public map::Layer` — async OGR load (with alt-stack install), style setters, `settingsKey()` override, `onRemovedFromMap()`, persistence hooks |
 | `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute (with degenerate/missing-value handling), readSettings/writeSettings |
 | `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon), click-to-inspect gated on pan mode |
-| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test + `mousePressEvent` attribute popup |
+| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test (rev 5: line shapes are STROKED, or Qt's fill-area test never picks them) + coordinate placeability + the attribute popup on release-without-drag |
+| `docs/decisions/0016-read-only-vector-file-layer.md` (new, rev 5) | ADR for the layer family and the persisted schema |
+| `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability, click/drag gating |
 | `src/camp_map/vector/vector_style.h`/`.cpp` (new) | Colour/size-by-field mapping as free functions — the headless-testable seam step 5's tests need |
 | ~~`src/camp/projectview.h`/`.cpp`~~ | **Not needed** (rev 4): the feature item reads pan mode from the view's `dragMode()` rather than asking ProjectView |
 | `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
