@@ -152,8 +152,9 @@ had to be answered rather than assumed.
      very click that placed a mission item and answered it with a tooltip on top
      of the item just placed. That deferral (commit `e2a56cc`) was introduced for
      this gate alone and rewired the press path of every add-\* mode that returns
-     to pan; it has been reverted, and `ProjectView` is byte-identical to `jazzy`
-     again.
+     to pan; it has been reverted. The only `ProjectView` change this branch
+     carries is the pan-mode arrow cursor of **D16** — the press path itself is
+     back to `jazzy`.
    - There is no click/drag slop. Telling a click from the start of a pan needed a
      screen-pixel threshold between press and release — which a first attempt
      compared against a *scene-metre* delta whenever the event carried no widget,

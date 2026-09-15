@@ -779,9 +779,11 @@ if(BUILD_TESTING)
 
   # [camp#22] One vector feature item: hover hit-testing (a line's shape must be
   # STROKED or Qt never picks it, so hover-to-inspect silently fails on all line
-  # data), the attribute tooltip and the no-mouse-button contract, and coordinate
-  # validity (a .prj-less shapefile read as degrees, or a NaN from a failed
-  # transform, must not be projected into the scene at all).
+  # data), the in-scene attribute LABEL and the no-mouse-button contract, and
+  # coordinate validity (a .prj-less shapefile read as degrees, or a NaN from a
+  # failed transform, must not be projected into the scene at all). The label is
+  # not a tooltip: the tooltip version was tried and rejected in the operator GUI
+  # test of 2026-09-15 (ADR-0016 D5).
   ament_add_gtest(test_vector_feature_item
     test/test_vector_feature_item.cpp
   )

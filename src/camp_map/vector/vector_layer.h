@@ -107,8 +107,8 @@ public:
   QString settingsKey() const override;
 
   /// Attribute field names present on any loaded feature, sorted. Empty until the
-  /// load completes. This is EVERY field — attribute inspection (the click-to-
-  /// inspect popup) and a future label-by-field want them all; the styling menus
+  /// load completes. This is EVERY field — attribute inspection (the hover label,
+  /// ADR-0016 D5) and a future label-by-field want them all; the styling menus
   /// want `numericFields()`.
   QStringList fields() const;
 

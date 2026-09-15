@@ -123,21 +123,24 @@ add-* placement clicks working over a vector layer, and what makes camp#225 fixe
 by construction. Do not give the item a mouse handler without re-reading ADR-0016
 D5.
 
-**`ProjectView` cursors (camp#22 / ADR-0016 D16):** each add-\* mode sets
-`Qt::CrossCursor` **on the view**; pan mode sets `Qt::ArrowCursor` **on the
-viewport**, after `setDragMode(ScrollHandDrag)` and again after
-`QGraphicsView::mouseReleaseEvent()` returns — Qt installs its own
-`Qt::OpenHandCursor` at both points, and the open hand has no visible hotspot, so
-anything aimed at with it (a hover label, a mission item) is aimed at blind. The
-closed hand during an actual drag is left alone. The view-vs-viewport split is
-load-bearing: leaving pan mode calls `setDragMode(NoDrag)`, and Qt unsets the
-viewport's own cursor there, which is what lets the add-\* modes' view cursor
-propagate again. The layer persists as **app state** under `QSettings vectorLayers/files` like the
+The layer persists as **app state** under `QSettings vectorLayers/files` like the
 chart list (ADR-0003 §4), not in the mission file. Both read the file through
 `camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
 which lives in **camp_map** so both the library layer and the executable's
 importer can call it — a library cannot call into the executable that links it
 (the libcamp_crash rule below).
+
+**`ProjectView` cursors (camp#22 / ADR-0016 D16):** each add-\* mode sets
+`Qt::CrossCursor` **on the view**; pan mode sets `Qt::ArrowCursor` **on the
+viewport**, after `setDragMode(ScrollHandDrag)` and again after
+`QGraphicsView::mouseReleaseEvent()` returns from a **left-button** release (the
+only button `ScrollHandDrag` pans with) — Qt installs its own
+`Qt::OpenHandCursor` at both points, and the open hand has no visible hotspot, so
+anything aimed at with it (a hover label, a mission item) is aimed at blind. The
+closed hand during an actual drag is left alone. The view-vs-viewport split is
+load-bearing: leaving pan mode calls `setDragMode(NoDrag)`, and Qt unsets the
+viewport's own cursor there, which is what lets the add-\* modes' view cursor
+propagate again.
 
 The design decisions and the persisted schema are
 [`docs/decisions/0016-read-only-vector-file-layer.md`](../docs/decisions/0016-read-only-vector-file-layer.md).
