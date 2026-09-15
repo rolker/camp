@@ -311,10 +311,19 @@ TEST(VectorFeatureItem, HoverShowsAnInSceneLabelWithTheAttributes)
       << "the label overlaps the marker it labels";
   EXPECT_DOUBLE_EQ(label->pos().y(), 0.0);
 
+  // [camp#22] The hovered item is raised above its siblings. Feature items are
+  // created in file order with no zValue of their own, and Qt stacks a child with
+  // its PARENT's subtree — so without this a label parented to a point paints
+  // under a polygon loaded after it, however high the label's own zValue.
+  EXPECT_GT(item.zValue(), 0.0) << "the hovered feature was not raised";
+  EXPECT_GT(label->zValue(), 0.0);
+
   QGraphicsSceneHoverEvent leave(QEvent::GraphicsSceneHoverLeave);
   item.hoverLeaveEvent(&leave);
   EXPECT_TRUE(labelOf(item)->text().isEmpty())
       << "the label must clear on leave, or every hovered feature keeps one";
+  EXPECT_DOUBLE_EQ(item.zValue(), 0.0)
+      << "a hovered-once feature stays raised above every other feature";
 }
 
 // [camp#22 / ADR-0016 D5] A LINE or POLYGON labels AT THE CURSOR.

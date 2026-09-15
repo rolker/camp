@@ -64,6 +64,10 @@ constexpr double kPointHoverSlackPixels = 4.0;
 // the text does not sit on top of the symbol it describes.
 constexpr double kLabelGapPixels = 4.0;
 
+// [camp#22] zValue given to the hovered feature (and to its label within it)
+// while the cursor is on it — see hoverEnterEvent(). Every other feature item
+// sits at the default 0.0.
+constexpr double kHoveredZValue = 1.0;
 
 // The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
@@ -342,6 +346,15 @@ void VectorFeatureItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
     // item coordinates, which is what setPos() on a child wants.
     label->setPos(event->pos());
   }
+  // [camp#22] Raise the whole ITEM, not just the label. Feature items are
+  // siblings created in file order with no zValue() of their own, and Qt stacks a
+  // child with its parent's SUBTREE: a label parented to a point still paints
+  // under a polygon loaded after that point, however high the label's own
+  // zValue. Lifting the hovered item above its siblings for the duration of the
+  // hover is what actually puts the text on top — and it brings the feature being
+  // inspected to the front with it, which is what the operator asks for by
+  // pointing at it. hoverLeaveEvent() puts it back.
+  setZValue(kHoveredZValue);
   QGraphicsItem::hoverEnterEvent(event);
 }
 
@@ -352,6 +365,7 @@ void VectorFeatureItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
   // on leave, only one label is ever on screen.
   if(label_)
     label_->setText(QString());
+  setZValue(0.0);            // back into file order with its siblings
   QGraphicsItem::hoverLeaveEvent(event);
 }
 
@@ -376,6 +390,10 @@ QGraphicsSimpleTextItem* VectorFeatureItem::labelItem()
   if(label_)
     return label_;
   label_ = new QGraphicsSimpleTextItem(this);
+  // Above the feature it describes. The hovered ITEM is lifted above its siblings
+  // separately (hoverEnterEvent), because Qt stacks a child with its parent's
+  // subtree and a child's own zValue cannot clear a sibling of the parent.
+  label_->setZValue(kHoveredZValue);
   // [camp#22] Settings COPIED from GeoGraphicsItem's constructor
   // (src/camp/geographicsitem.cpp:16-25), which is what the vessel and AIS
   // labels use: screen-sized regardless of zoom, black text outlined in white so
