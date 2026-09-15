@@ -9,6 +9,10 @@
 //     headline "click a feature to see its attributes" silently does not work for
 //     line data (tracklines, contours, cable routes — most of what gets imported).
 //     The mission-tree LineString strokes its path for exactly this reason.
+//  1b. THE NO-DATA MARKER, found in the operator GUI test of 2026-09-15: a hollow
+//     marker stroked with a width-0 hairline is not visible on a chart at all —
+//     the operator reported colouring by a string field (which marks every
+//     feature no-data) as the features DISAPPEARING.
 //  2. UNPLACEABLE COORDINATES. A shapefile shipped without its `.prj` sidecar has
 //     no spatial reference, so projected eastings/northings are read as degrees: a
 //     UTM northing of 4 800 000 becomes "latitude 4800000". A failed coordinate
@@ -24,6 +28,8 @@
 
 #include <QApplication>
 #include <QGraphicsScene>
+#include <QImage>
+#include <QPainter>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
 #include <QToolTip>
@@ -31,6 +37,7 @@
 #include "map_view/web_mercator.h"
 #include "vector/vector_feature_item.h"
 #include "vector/vector_parse.h"
+#include "vector/vector_style.h"
 
 using camp::vector::ParsedGeometry;
 using camp::vector::VectorFeatureItem;
@@ -53,6 +60,35 @@ ParsedGeometry lineThrough(const std::vector<QGeoCoordinate>& vertices)
 QPointF itemPoint(const QGeoCoordinate& coordinate, const QGeoCoordinate& anchor)
 {
   return web_mercator::geoToMap(coordinate) - web_mercator::geoToMap(anchor);
+}
+
+ParsedGeometry pointAt(const QGeoCoordinate& coordinate)
+{
+  ParsedGeometry g;
+  g.type = ParsedGeometry::Point;
+  g.exterior.push_back(coordinate);
+  return g;
+}
+
+// Number of pixels @p item touches when painted onto a transparent 64x64 image
+// centred on its origin. The item paints in device pixels
+// (ItemIgnoresTransformations), so no view transform is needed to make this the
+// size an operator sees.
+int paintedPixelCount(VectorFeatureItem& item)
+{
+  QImage image(64, 64, QImage::Format_ARGB32);
+  image.fill(Qt::transparent);
+  {
+    QPainter painter(&image);
+    painter.translate(32, 32);
+    item.paint(&painter, nullptr, nullptr);
+  }
+  int painted = 0;
+  for(int y = 0; y < image.height(); ++y)
+    for(int x = 0; x < image.width(); ++x)
+      if(qAlpha(image.pixel(x, y)) > 0)
+        ++painted;
+  return painted;
 }
 
 }  // namespace
@@ -283,6 +319,74 @@ TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
   right.setAccepted(false);
   scene.sendEvent(item, &right);
   EXPECT_FALSE(right.isAccepted());
+}
+
+// [camp#22] The NO-DATA marker is visible.
+//
+// A no-data point is drawn hollow and dashed (ADR-0016 D6's second channel), and
+// it used to be stroked with the same width-0 hairline the filled marker gets for
+// contrast. The filled marker has a disc of colour behind that hairline; the
+// hollow one has nothing, so one dashed device pixel of mid grey over a chart
+// background is effectively not there — the operator's GUI test of 2026-09-15
+// reported colouring by a string field (which marks every feature no-data) as the
+// features DISAPPEARING.
+//
+// "Visible" is asserted against a hairline reference the test draws itself —
+// the same ellipse, the same dash, at width 0 — rather than against an absolute
+// pixel count, so the assertion stays true of any marker size and any antialiasing
+// behaviour: what is pinned is that the no-data ring is drawn HEAVIER than a
+// hairline, which is exactly what changed.
+TEST(VectorFeatureItem, NoDataPointMarkerIsDrawnHeavierThanAHairline)
+{
+  VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));
+  item.setColor(camp::vector::noDataColor());
+  item.setNoData(true);
+  ASSERT_TRUE(item.isNoData());
+
+  const int no_data_pixels = paintedPixelCount(item);
+  ASSERT_GT(no_data_pixels, 0) << "the no-data marker painted nothing at all";
+
+  // The reference: the same dashed ring at the old width-0 hairline.
+  QImage reference(64, 64, QImage::Format_ARGB32);
+  reference.fill(Qt::transparent);
+  {
+    QPainter painter(&reference);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.translate(32, 32);
+    QPen pen(camp::vector::noDataColor());
+    pen.setWidth(0);
+    pen.setStyle(Qt::DashLine);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawEllipse(QPointF(0.0, 0.0), camp::vector::kDefaultPointRadius,
+                        camp::vector::kDefaultPointRadius);
+  }
+  int hairline_pixels = 0;
+  for(int y = 0; y < reference.height(); ++y)
+    for(int x = 0; x < reference.width(); ++x)
+      if(qAlpha(reference.pixel(x, y)) > 0)
+        ++hairline_pixels;
+  ASSERT_GT(hairline_pixels, 0) << "harness: the hairline reference painted nothing";
+
+  EXPECT_GT(no_data_pixels, hairline_pixels)
+      << "the no-data marker is still drawn as a hairline: " << no_data_pixels
+      << " px against a hairline's " << hairline_pixels;
+
+  // And it stays HOLLOW — the second channel is a RING, not a filled disc, and a
+  // heavier pen must not have become a fill. Asserted where "hollow" actually
+  // lives: the middle of the marker is untouched. (A pixel budget cannot say
+  // this — a dashed width-2 ring with antialiasing covers about as many pixels
+  // as a solid disc of the same radius.)
+  QImage image(64, 64, QImage::Format_ARGB32);
+  image.fill(Qt::transparent);
+  {
+    QPainter painter(&image);
+    painter.translate(32, 32);
+    item.paint(&painter, nullptr, nullptr);
+  }
+  EXPECT_EQ(qAlpha(image.pixel(32, 32)), 0)
+      << "the no-data marker filled in — hollow is half of what says 'no value'";
+  EXPECT_EQ(qAlpha(image.pixel(34, 32)), 0) << "the marker's interior is painted";
 }
 
 int main(int argc, char** argv)

@@ -141,7 +141,8 @@ QRectF VectorFeatureItem::boundingRect() const
 {
   if(point_)
   {
-    // Device pixels (ItemIgnoresTransformations); one pixel of pen allowance.
+    // Device pixels (ItemIgnoresTransformations); one pixel of pen allowance,
+    // which covers the width-2 cosmetic no-data outline.
     const double r = radius_ + 1.0;
     return QRectF(-r, -r, 2.0 * r, 2.0 * r);
   }
@@ -199,9 +200,23 @@ void VectorFeatureItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     // in the same grey, which no styled marker can look like.
     painter->setBrush(no_data_ ? QBrush(Qt::NoBrush) : QBrush(color_));
     QPen pen(no_data_ ? color_ : QColor(Qt::black));
-    pen.setWidth(0);           // cosmetic: a hairline outline for contrast
     if(no_data_)
+    {
+      // [camp#22] A VISIBLE ring, drawn at the same weight as a line's or a
+      // polygon's outline. The hollow marker used to be stroked with the same
+      // width-0 hairline the filled marker gets for contrast — but the filled
+      // marker has a disc of colour behind that hairline and the hollow one has
+      // nothing, so one dashed device pixel of mid grey over a chart background
+      // is effectively not there. In the operator GUI test of 2026-09-15,
+      // colouring by a free-text field (every feature no-data) read as the
+      // features DISAPPEARING. Hollow and dashed stay: they are the second
+      // channel no palette can imitate (ADR-0016 D6); only the weight changes.
+      pen.setCosmetic(true);
+      pen.setWidth(2);
       pen.setStyle(Qt::DashLine);
+    }
+    else
+      pen.setWidth(0);         // cosmetic: a hairline outline for contrast
     painter->setPen(pen);
     painter->drawEllipse(QPointF(0.0, 0.0), radius_, radius_);
   }
