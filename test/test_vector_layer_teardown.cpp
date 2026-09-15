@@ -25,6 +25,7 @@
 
 #include "map/layer_list.h"
 #include "map/map.h"
+#include "vector/vector_feature_item.h"
 #include "vector/vector_layer.h"
 #include "vector/vector_parse.h"
 
@@ -386,6 +387,64 @@ TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
     GTEST_LOG_(INFO) << "full parse of the 200 000-point fixture took only " << full_ms
                      << " ms; the wall-clock ratio check is unmeasurable here and was"
                      << " skipped (aborted teardown: " << abort_ms << " ms).";
+}
+
+// [camp#22] The no-data SECOND CHANNEL is wired to the layer, not just to the
+// free function. `isNoData()` is unit-tested in test_vector_layer_styling, but
+// nothing asserted that applyStyle() actually sets it on the items — a layer that
+// computed the flag and never delivered it would paint a feature with no value at
+// the bottom of the ramp, the exact misreading this feature exists to prevent.
+// The reverse direction matters just as much: clearing the colour field means
+// "no field, so nothing can be missing", and a stale dashed outline would claim
+// the opposite.
+TEST(VectorLayerTeardown, ApplyStyleFlagsFeaturesWithNoValue)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  auto* layer = new camp::vector::VectorLayer(layers, path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  // The fixture holds one point with no "signal" property; every other feature
+  // carries a numeric one.
+  layer->setColorField("signal");
+  int with_value = 0;
+  int flagged = 0;
+  for(QGraphicsItem* child : layer->childItems())
+  {
+    auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child);
+    if(!feature)
+      continue;
+    if(feature->attributes().contains("signal"))
+    {
+      ++with_value;
+      EXPECT_FALSE(feature->isNoData()) << "a feature WITH a value was flagged no-data";
+    }
+    else
+    {
+      ++flagged;
+      EXPECT_TRUE(feature->isNoData()) << "a feature with no value was not flagged";
+    }
+  }
+  EXPECT_EQ(with_value, 4);
+  EXPECT_EQ(flagged, 1);
+
+  // No colour field at all: nothing is missing, so the flag must clear everywhere.
+  layer->setColorField(QString());
+  for(QGraphicsItem* child : layer->childItems())
+  {
+    auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child);
+    if(feature)
+      EXPECT_FALSE(feature->isNoData()) << "no-data survived clearing the colour field";
+  }
+
+  delete layer;
 }
 
 int main(int argc, char** argv)
