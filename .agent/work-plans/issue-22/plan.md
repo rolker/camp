@@ -6,6 +6,26 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 8** (2026-09-15) — the round-4 fix pass addressed both should-fix findings
+of the 2026-09-15 Integrated Review (round 2) on PR #226. The plan-level
+consequences:
+
+- **The abort poll reaches INSIDE a single ring.** Rev 7 bounded abort latency by
+  one geometry; one geometry can be a ring of millions of vertices, so
+  `readRing()` now takes the `ParseBudget` and polls every 1024 vertices (and
+  once per ring, for a polygon of very many short interior rings). Abort latency
+  is therefore bounded by a poll interval, not by the largest ring in the file
+  (ADR-0016 D11).
+- **`normalizedValue()` stays monotonic across an overflowing span.** A range of
+  -DBL_MAX to DBL_MAX made the span +inf while `(value - min) / inf` stayed
+  finite at 0.0, so the existing `!isfinite` fallback never fired and the ramp
+  ordered features wrongly rather than merely compressing them. The ratio is now
+  computed on halved operands when the span is not finite; the order-based
+  fallback stays last.
+- **Bounding the VERTEX count (as opposed to abort latency) remains deferred** to
+  the ADR-0016 D11 per-attribute-bound decision — truncating a ring draws a wrong
+  shape, so it is a decision, not a mechanical edit.
+
 **Rev 7** (2026-09-15) — the round-3 fix pass (ten commits, `e2a56cc` through `71e56c0`)
 addressed all ten findings of the 2026-09-14 Integrated Review on PR #226. The
 plan-level consequences:
@@ -35,8 +55,9 @@ plan-level consequences:
   stopped the parse between features; a single `MultiPolygon` or nested
   `GeometryCollection` could still materialise unboundedly and delay the
   destructor's join. The budget is checked before every part and spent on every
-  emission, so abort latency is bounded by one geometry rather than one feature
-  (ADR-0016 D11).
+  emission, so abort latency is bounded by one geometry rather than one feature —
+  and, since rev 8, by a 1024-vertex poll interval inside one ring rather than by
+  the whole ring (ADR-0016 D11).
 - **Polar latitudes are CLAMPED, not dropped** (operator decision at the
   round-3 checkpoint). Every conversion in `vector_feature_item.cpp` — ring
   vertices *and* the item's anchor position — goes through `placeableToMap()`,
@@ -351,8 +372,10 @@ rounds of answers directly:
      whole file first (the OOM the cap exists to prevent), and a check made only
      between features would let one huge `MultiPolygon` or nested
      `GeometryCollection` run on after the destructor asked the worker to stop.
-     Abort latency is therefore bounded by one geometry, which is what makes the
-     destructor's join on the GUI thread safe (ADR-0016 D11).
+     Abort latency is therefore bounded by one geometry — and, since rev 8, by a
+     1024-vertex poll interval inside one ring, since a single ring of millions
+     of vertices is itself one geometry — which is what makes the destructor's
+     join on the GUI thread safe (ADR-0016 D11).
    - While in this file: confirm and, if confirmed, fix the pre-existing
      lat/lon-order inconsistency between the Point path (`op->getY(),
      op->getX()` at `vector_parse.cpp:96-104`) and `readRing` (`getX(),

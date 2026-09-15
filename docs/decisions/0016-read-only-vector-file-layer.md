@@ -194,6 +194,15 @@ had to be answered rather than assumed.
     when the cap hit — counting them means reading the file the cap exists to
     stop reading, and an OGR feature count is not a geometry count anyway.
 
+    What is bounded here is abort latency and the geometry COUNT. Neither the
+    vertex count of a single ring (100 M vertices is ~1.6 GB of coordinates) nor
+    the size of a single attribute value is bounded, and both are deliberately
+    left to one deferred decision rather than fixed mechanically: silently
+    truncating a ring draws a WRONG shape, and silently truncating a property
+    reports a wrong value — each worse than the honest geometry cap — so the
+    options (drop and count it in `ParseDiagnostics`, or accept it and say so)
+    are a decision this ADR does not yet make.
+
 12. **A `/vsi` path is refused, and the driver set is pinned.** `GDALOpenEx` is
     handed an operator-supplied string, which OGR treats as a *connection*
     string, so two different things have to be said no to.
