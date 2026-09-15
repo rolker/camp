@@ -736,7 +736,7 @@ All 11 fix-pass commits carry the agent identity; working tree clean.
   actually changed and says it is not vector-layer-scoped; Open Question 2 keeps its
   answer (no accessor needed) but its "ProjectView is untouched" claim is retired;
   step 1 gains the per-geometry budget; step 4 gains the clamp; step 5's no-data
-  bullet is rewritten — `.agent/work-plans/issue-22/plan.md:9`, `:566`, `:640`
+  bullet is rewritten — `.agent/work-plans/issue-22/plan.md:9`, `:639`, `:701`
 - [x] (must-fix) Wrong line citation corrected: `RowInserter`'s unconditional parent
   dereference is at `autonomousvehicleproject.cpp:1473-1480` (verified — the
   constructor body; `:1386-1393` is `dropMimeData`/`readChildren`) —
