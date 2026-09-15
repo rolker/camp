@@ -258,12 +258,23 @@ void VectorLayer::loadFinished()
     // The driver opened the file but this layer shows nothing. Say WHY — an empty
     // layer that claims to have loaded is indistinguishable from one drawn
     // off-screen, and each of these has a different remedy.
+    //
+    // [camp#22 round-4 should-fix] The CAP is said on this path too. "The cap was
+    // hit and every capped geometry was unplaceable" is exactly what a .prj-less
+    // national shapefile does, and reporting it as "(no placeable features; 50000
+    // skipped)" alone reads as a verdict on the whole file when only its first
+    // 50 000 features were ever read. The log line said so; the Layers tab — the
+    // only status the operator actually looks at — did not.
+    const QString capped_note =
+        capped ? QString("; stopped at the %1-feature cap, rest of file not read")
+                     .arg(feature_cap_)
+               : QString();
     if(result.diagnostics.layers_failed > 0)
-      setStatus("(load failed: no usable coordinate system)");
+      setStatus("(load failed: no usable coordinate system" + capped_note + ")");
     else if(skipped > 0)
-      setStatus(QString("(no placeable features; %1 skipped)").arg(skipped));
+      setStatus(QString("(no placeable features; %1 skipped%2)").arg(skipped).arg(capped_note));
     else
-      setStatus("(no features)");
+      setStatus("(no features" + capped_note + ")");
     return;
   }
 

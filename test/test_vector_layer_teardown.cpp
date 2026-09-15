@@ -122,6 +122,33 @@ QString writeGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22] Four features whose coordinates are projected metres in a file that
+// declares no CRS — the .prj-less shapefile case, in the format the harness can
+// write by hand. Every one of them is UNPLACEABLE (longitude 350000), so a capped
+// parse of this file yields a layer with nothing to show.
+QString writeUnplaceableGeoJson(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("unplaceable.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [350000.0, 4800000.0]},
+       "properties": {}},
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [350100.0, 4800100.0]},
+       "properties": {}},
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [350200.0, 4800200.0]},
+       "properties": {}},
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [350300.0, 4800300.0]},
+       "properties": {}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22] Every property is free-text: numericFields() must come back EMPTY,
 // so a stale style field set over this file exercises the contextMenu() guard
 // with field_names.isEmpty() true.
@@ -235,6 +262,18 @@ bool waitForLoad(const camp::vector::VectorLayer* layer, int timeout_ms = 5000)
   while(layer->status() == QStringLiteral("(loading...)") && timer.elapsed() < timeout_ms)
     QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
   return layer->loaded();
+}
+
+// The same wait for a layer that is EXPECTED to end up empty: waitForLoad()
+// answers loaded(), which is false by design for a layer with no drawable
+// feature, so a status assertion needs the settled-status wait on its own.
+bool waitForStatus(const camp::vector::VectorLayer* layer, int timeout_ms = 5000)
+{
+  QElapsedTimer timer;
+  timer.start();
+  while(layer->status() == QStringLiteral("(loading...)") && timer.elapsed() < timeout_ms)
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+  return layer->status() != QStringLiteral("(loading...)");
 }
 
 }  // namespace
@@ -414,6 +453,41 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
   EXPECT_EQ(uncapped->featureCap(), camp::vector::VectorLayer::kMaxFeatureItems);
   EXPECT_EQ(uncapped->featureCount(), 5);
   EXPECT_EQ(uncapped->status(), QStringLiteral("(5 features)"));
+  delete uncapped;
+}
+
+// [camp#22 round-4 should-fix] "The cap was hit AND every capped geometry was
+// unplaceable" must still say the rest of the file was not read.
+//
+// That combination is exactly a .prj-less national shapefile, and the status used
+// to read "(no placeable features; N skipped)" — a verdict on the whole file when
+// only its first N features had been read. The log line said it; the Layers tab,
+// which is the status the operator actually sees, did not.
+TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeUnplaceableGeoJson(dir);   // four unplaceable points
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path, 2);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "no feature of this file can be placed";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_TRUE(layer->status().contains("no placeable features"))
+      << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("not read"))
+      << "a capped-but-empty layer must still say the rest of the file was not read: "
+      << layer->status().toStdString();
+  delete layer;
+
+  // Uncapped, the same file is empty with nothing left unread — and must NOT
+  // claim otherwise.
+  auto* uncapped = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(uncapped));
+  EXPECT_FALSE(uncapped->status().contains("not read")) << uncapped->status().toStdString();
   delete uncapped;
 }
 
