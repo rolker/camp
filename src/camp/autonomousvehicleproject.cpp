@@ -387,13 +387,11 @@ void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, in
 QString AutonomousVehicleProject::canonicalVectorLayerPath(const QString &fname)
 {
     // [camp#22] Identity for de-dup, removal and persistence is the file itself,
-    // not the spelling of the path that reached us. "./survey.geojson", an
-    // absolute path and a symlink all name one file, and without this each
-    // spelling stacks its own layer and its own persisted entry. canonicalFilePath
-    // resolves symlinks and "." / ".." and returns EMPTY for a file that does not
-    // exist, in which case the given path is the best identity available.
-    const QString canonical = QFileInfo(fname).canonicalFilePath();
-    return canonical.isEmpty() ? fname : canonical;
+    // not the spelling of the path that reached us. The rule lives in camp::vector
+    // so it can be exercised alongside withoutVectorLayerFile(), which depends on
+    // its one awkward case (a path that does not resolve keeps its raw spelling);
+    // this class is not constructible in a test harness.
+    return camp::vector::canonicalVectorLayerPath(fname);
 }
 
 void AutonomousVehicleProject::openVectorLayer(const QString &requested)
@@ -432,8 +430,17 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     // unavailable list once this call is certain to track the file as a loaded
     // layer. Dropping it before the topLevelLayers() guard left the file neither
     // unavailable nor loaded, and the next persist forgot it silently.
+    // Purged by canonical-equivalent IDENTITY, not by exact string: an entry is
+    // only canonical when its file resolved at the time it was written. A dangling
+    // symlink is remembered under its RAW spelling (canonicalFilePath is empty for
+    // it), and when the target appears and the operator opens that same symlink,
+    // `fname` is the resolved TARGET — an exact-match removal misses the raw entry,
+    // persistVectorLayers() writes it back on the unavailable branch, and removing
+    // the reopened layer through the Layers tab does not stick. Exact matches are
+    // still dropped; withoutVectorLayerFile() does both.
     if(QFileInfo::exists(fname))
-        m_unavailableVectorLayerFiles.removeAll(fname);
+        m_unavailableVectorLayerFiles =
+            camp::vector::withoutVectorLayerFile(m_unavailableVectorLayerFiles, fname);
     // The layer parses asynchronously; it is recorded (and persisted) immediately,
     // and reports a failed or empty load in its own Layers-tab status rather than
     // being silently dropped here — the operator asked for this file, so a file

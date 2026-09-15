@@ -25,6 +25,7 @@
 #include <QApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QSettings>
 #include <QTemporaryDir>
 
@@ -36,7 +37,9 @@ using camp::vector::VectorLayer;
 using camp::vector::persistedVectorLayerFiles;
 using camp::vector::rebuildPersistedVectorLayerFiles;
 using camp::vector::vectorLayerFilesKey;
+using camp::vector::canonicalVectorLayerPath;
 using camp::vector::withVectorLayerFile;
+using camp::vector::withoutVectorLayerFile;
 using camp::vector::writePersistedVectorLayerFiles;
 
 namespace
@@ -277,6 +280,64 @@ TEST(VectorLayerPersistence, StillMissingFileIsCarriedForward)
                                              QStringList{shared},
                                              QStringList{local}),
             (QStringList{shared, local}));
+}
+
+// [camp#22 round-3 must-fix] The same bug through the one spelling that does not
+// canonicalise: a DANGLING SYMLINK.
+//
+// canonicalFilePath() is empty for a path that does not resolve, so the entry is
+// remembered under its RAW spelling. When the target appears and the operator
+// opens that same symlink, the path in hand is the resolved TARGET — an exact
+// `removeAll(fname)` misses the raw entry, the rebuild keeps finding it on the
+// unavailable branch and writes it back, and removing the reopened layer does not
+// stick. withoutVectorLayerFile() drops by canonical-equivalent identity, which
+// is what openVectorLayer() now calls.
+TEST(VectorLayerPersistence, ReopenedDanglingSymlinkCanBeRemoved)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString target = dir.filePath("survey.geojson");
+  const QString link = dir.filePath("latest.geojson");
+  ASSERT_TRUE(QFile::link(target, link)) << "could not create the symlink fixture";
+
+  // Launch 1: the target does not exist yet, so the link dangles and the entry is
+  // remembered under the raw spelling of the link.
+  ASSERT_FALSE(QFileInfo::exists(link));
+  const QString stored = canonicalVectorLayerPath(link);
+  EXPECT_EQ(stored, link) << "a dangling symlink cannot canonicalise; the raw path is the identity";
+  QStringList unavailable{stored};
+
+  // The target appears. Opening the SAME link now yields the resolved target.
+  {
+    QFile file(target);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+    file.write("{}");
+  }
+  const QString opened = canonicalVectorLayerPath(link);
+  EXPECT_NE(opened, stored) << "the link now resolves, so the identity changed spelling";
+
+  // The purge openVectorLayer() performs.
+  unavailable = withoutVectorLayerFile(unavailable, opened);
+  EXPECT_TRUE(unavailable.isEmpty())
+      << "the raw-spelling entry names the same file and must be dropped";
+
+  // With the list current, removing the reopened layer sticks.
+  const QStringList restoredOrder{stored};
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, QStringList{}),
+            QStringList{})
+      << "a removed layer must not return through the unavailable branch";
+}
+
+// The exact-match removal withoutVectorLayerFile() also has to keep doing, and the
+// entries it must LEAVE ALONE.
+TEST(VectorLayerPersistence, WithoutVectorLayerFileKeepsUnrelatedEntries)
+{
+  const QString shared = QStringLiteral("/mnt/share/survey.geojson");
+  const QString local = QStringLiteral("/home/op/local.geojson");
+  EXPECT_EQ(withoutVectorLayerFile(QStringList{shared, local}, shared), QStringList{local});
+  EXPECT_EQ(withoutVectorLayerFile(QStringList{shared, local}, QStringLiteral("/other.gpkg")),
+            (QStringList{shared, local}))
+      << "an unrelated path must not disturb the list";
 }
 
 int main(int argc, char** argv)

@@ -560,6 +560,34 @@ QStringList withVectorLayerFile(const QStringList& files, const QString& filenam
   return result;
 }
 
+QString canonicalVectorLayerPath(const QString& fname)
+{
+  // Empty for a path that does not resolve (a dangling symlink, an unmounted
+  // share) — see the header: the given spelling is then the best identity there
+  // is, and withoutVectorLayerFile() is what copes with the two spellings one
+  // file can end up stored under.
+  const QString canonical = QFileInfo(fname).canonicalFilePath();
+  return canonical.isEmpty() ? fname : canonical;
+}
+
+QStringList withoutVectorLayerFile(const QStringList& files, const QString& canonicalFile)
+{
+  QStringList result;
+  for(const QString& file : files)
+  {
+    if(file == canonicalFile)
+      continue;
+    // The entry may have been written under a raw spelling that only NOW
+    // resolves — the dangling-symlink-then-target-appears case the header
+    // describes. Resolving each entry as it is tested is what makes the two
+    // spellings one identity.
+    if(canonicalVectorLayerPath(file) == canonicalFile)
+      continue;
+    result << file;
+  }
+  return result;
+}
+
 QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
                                              const QStringList& unavailable,
                                              const QStringList& loadedFiles)

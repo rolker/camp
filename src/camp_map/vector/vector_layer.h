@@ -255,11 +255,40 @@ void writePersistedVectorLayerFiles(const QStringList& files);
 /// @p files with @p filename appended if it is not already present (de-dup by
 /// exact path), preserving order — the chart-list convention.
 ///
-/// There is deliberately no `withoutVectorLayerFile()` counterpart: the key is
-/// rebuilt from scratch on every change, so removal is "do not include it in the
-/// rebuild" rather than an edit. A remove helper existed briefly and had no
-/// production caller, which made the rule it encoded untrue of the running app.
+/// Removal from the persisted key itself is still "do not include it in the
+/// rebuild", not an edit — see `rebuildPersistedVectorLayerFiles()`.
+/// `withoutVectorLayerFile()` below is for the in-memory UNAVAILABLE list, which
+/// is an input to that rebuild.
 QStringList withVectorLayerFile(const QStringList& files, const QString& filename);
+
+/// The identity of a vector-layer file: its canonical path, or the given
+/// spelling when the file does not resolve.
+///
+/// [camp#22] "./survey.geojson", an absolute path and a symlink all name one
+/// file, and de-dup, removal and persistence all key on the file itself rather
+/// than on the spelling that reached us. `QFileInfo::canonicalFilePath()`
+/// resolves symlinks and "." / ".." and returns EMPTY for a path that does not
+/// resolve — a dangling symlink, an unmounted share — in which case the given
+/// path is the best identity available. That fallback is exactly why removal
+/// needs `withoutVectorLayerFile()` below and not a plain string compare.
+QString canonicalVectorLayerPath(const QString& fname);
+
+/// @p files with every entry NAMING THE SAME FILE as @p canonicalFile dropped:
+/// an exact string match, plus any entry whose `canonicalVectorLayerPath()`
+/// resolves to @p canonicalFile. Order of the survivors is preserved.
+///
+/// [camp#22 / camp#90] Why identity and not `removeAll()`: an entry is only
+/// canonical when its file resolved AT THE TIME IT WAS WRITTEN. A dangling
+/// symlink is persisted under its RAW spelling; when the target later appears
+/// and the operator opens that same symlink, the path in hand is now the
+/// resolved target, and an exact-match removal misses the raw entry. The rebuild
+/// then keeps finding it on the unavailable branch and writes it back, so
+/// removing the reopened layer through the Layers tab does not stick and the
+/// layer returns on the next launch — the camp#90/#117 class again. (This is the
+/// counterpart the header once said it deliberately lacked; it now has the
+/// production caller — `AutonomousVehicleProject::openVectorLayer()` — that its
+/// absence was justified by.)
+QStringList withoutVectorLayerFile(const QStringList& files, const QString& canonicalFile);
 
 /// The persisted vector-layer list rebuilt from scratch — the whole rule behind
 /// `AutonomousVehicleProject::persistVectorLayers()`, in one pure function so it
