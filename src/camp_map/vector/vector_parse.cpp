@@ -330,6 +330,15 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
 {
     ParseDiagnostics local;
     ParseDiagnostics &diag = diagnostics ? *diagnostics : local;
+    // [camp#22] RESET a supplied object before binding to it. The header documents
+    // the parameter as "filled in with what was skipped and why" — a description
+    // of THIS parse — but every field is accumulated into, so a caller that reuses
+    // one object across two parses would carry `aborted`, `geometry_cap_reached`,
+    // `layers_total` and every counter into the second result and see an uncapped
+    // parse reported as capped. No live caller reuses one (VectorLayer::load()
+    // builds a fresh LoadResult per load), so this closes a latent API trap rather
+    // than a live defect — at the cost of one assignment per parse.
+    diag = ParseDiagnostics();
 
     // [camp#22 / #213] One cheap predicate, polled per layer AND per feature, so a
     // destructor that aborts the worker is joined in feature time rather than

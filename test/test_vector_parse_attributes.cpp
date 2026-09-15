@@ -804,6 +804,40 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
 }
 
+// [camp#22 round-3 should-fix] A supplied ParseDiagnostics describes THIS parse.
+//
+// The header documents the parameter as "filled in with what was skipped and
+// why", but every field is accumulated into, so reusing one object across two
+// parses used to carry `geometry_cap_reached`, `aborted`, `layers_total` and
+// every counter forward — an uncapped parse reported as capped. The parser now
+// resets a supplied object before binding to it.
+TEST(VectorParseAttributes, SuppliedDiagnosticsAreResetPerParse)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::vector::ParseDiagnostics diag;
+
+  // First parse: capped, so the flag and the counters are set.
+  DatasetPtr capped_ds = openDataset(path);
+  ASSERT_TRUE(capped_ds);
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;
+  camp::vector::parseVectorLayers(capped_ds.get(), capped, &diag);
+  ASSERT_TRUE(diag.geometry_cap_reached);
+  ASSERT_EQ(diag.layers_total, 1);
+
+  // Second parse of the same file with NO cap, through the SAME object.
+  DatasetPtr full_ds = openDataset(path);
+  ASSERT_TRUE(full_ds);
+  camp::vector::parseVectorLayers(full_ds.get(), camp::vector::ParseOptions(), &diag);
+  EXPECT_FALSE(diag.geometry_cap_reached) << "an uncapped parse must not report the previous cap";
+  EXPECT_FALSE(diag.aborted);
+  EXPECT_EQ(diag.layers_total, 1) << "layers_total must count this parse, not both";
+}
+
 // [camp#22 suggestion] The cap and the abort predicate reach INSIDE a multi-part
 // feature, not only between features.
 //

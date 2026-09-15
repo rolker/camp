@@ -152,7 +152,10 @@ struct ParseDiagnostics
 // `dataset` (open/close is the caller's responsibility); this function opens no
 // dataset of its own.
 //
-// @param diagnostics  optional; filled in with what was skipped and why.
+// @param diagnostics  optional; filled in with what was skipped and why. A
+//                     supplied object is RESET first, so it describes this parse
+//                     alone — reusing one across parses cannot carry a counter or
+//                     an `aborted`/`geometry_cap_reached` flag into the next.
 std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                                            const ParseOptions &options = ParseOptions(),
                                            ParseDiagnostics *diagnostics = nullptr);
