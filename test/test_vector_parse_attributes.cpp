@@ -764,6 +764,68 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
 }
 
+// [camp#22 suggestion] The cap and the abort predicate reach INSIDE a multi-part
+// feature, not only between features.
+//
+// appendGeometry() recurses through every part of a Multi* / GeometryCollection
+// (and every nested collection) before returning to the per-feature poll, so a
+// single huge MultiPolygon used to run to its end whatever the cap or the abort
+// flag said. Memory overshoot was bounded by one feature and trimmed afterwards;
+// ABORT LATENCY was unbounded — and bounding abort latency is the whole point of
+// the predicate, since VectorLayer's destructor joins this worker on the GUI
+// thread. The budget is now threaded through the recursion.
+//
+// The fixture is one feature holding four parts (point, line, polygon, nested
+// collection), so every assertion below is about stopping mid-feature: between
+// features there is nowhere to stop.
+TEST(VectorParseAttributes, CapAndAbortStopInsideAMultiPartFeature)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeometryCollectionPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr full_ds = openDataset(path);
+  ASSERT_TRUE(full_ds);
+  const std::vector<ParsedLayer> full =
+    camp::vector::parseVectorLayers(full_ds.get(), camp::vector::ParseOptions(), nullptr);
+  ASSERT_EQ(full.size(), 1u);
+  ASSERT_EQ(full.front().geometries.size(), 4u)
+      << "fixture must be ONE feature of four parts for this test to mean anything";
+
+  // The cap falls in the middle of the feature's parts.
+  DatasetPtr capped_ds = openDataset(path);
+  ASSERT_TRUE(capped_ds);
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;
+  camp::vector::ParseDiagnostics capped_diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(capped_ds.get(), capped, &capped_diag);
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_EQ(layers.front().geometries.size(), 2u);
+  EXPECT_TRUE(capped_diag.geometry_cap_reached);
+
+  // Abort raised before the parse reaches the feature's second part: the
+  // remaining parts are not built at all. Counting the polls is what distinguishes
+  // "stopped inside the feature" from "ran the feature and stopped after it" —
+  // without the budget the predicate is asked once per feature, so a four-part
+  // file would report a single poll and four geometries.
+  DatasetPtr aborting_ds = openDataset(path);
+  ASSERT_TRUE(aborting_ds);
+  int polls = 0;
+  camp::vector::ParseOptions aborting;
+  aborting.aborted = [&polls]() { return ++polls > 2; };
+  camp::vector::ParseDiagnostics abort_diag;
+  const std::vector<ParsedLayer> partial =
+    camp::vector::parseVectorLayers(aborting_ds.get(), aborting, &abort_diag);
+  EXPECT_TRUE(abort_diag.aborted);
+  size_t emitted = 0;
+  for(const ParsedLayer& layer : partial)
+    emitted += layer.geometries.size();
+  EXPECT_LT(emitted, 4u) << "the abort must stop the feature part way, not after it";
+  EXPECT_GT(polls, 2) << "the predicate must be polled inside the feature's parts";
+}
+
 // [camp#22] A polygon with no exterior ring has no outline to draw, so it is
 // dropped — and COUNTED. Every ParseDiagnostics field exists so the caller can
 // report what was deliberately left out; this one used to vanish silently.

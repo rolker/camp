@@ -1,5 +1,7 @@
 #include "vector_parse.h"
 
+#include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 
@@ -83,6 +85,32 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
     return points;
 }
 
+// [camp#22] What is left of the parse's budget, threaded THROUGH the recursion.
+//
+// The cap and the abort predicate are polled per FEATURE by the caller's loop,
+// but a single feature can be a MultiPolygon or a nested GeometryCollection with
+// hundreds of thousands of parts, each one emitting a ParsedGeometry and a copy
+// of the feature's attribute map before control ever returns to that loop. The
+// per-feature poll therefore bounds neither the memory overshoot (one feature's
+// worth) nor — the one that matters — the ABORT LATENCY, and bounding abort
+// latency is the whole reason the predicate exists: VectorLayer's destructor
+// joins this worker on the GUI thread.
+//
+// `remaining` counts geometries this parse may still emit (SIZE_MAX when
+// ParseOptions::max_geometries is unlimited); `aborted` is ParseOptions::aborted.
+struct ParseBudget
+{
+    size_t remaining = std::numeric_limits<size_t>::max();
+    std::function<bool()> aborted;
+
+    bool exhausted() const { return remaining == 0 || (aborted && aborted()); }
+    void spend()
+    {
+        if(remaining != std::numeric_limits<size_t>::max() && remaining > 0)
+            --remaining;
+    }
+};
+
 // [camp#22] Append the geometry (and, for a Multi* collection, each of its
 // parts) to `out`, copying `attributes` onto every emitted part.
 //
@@ -90,13 +118,17 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
 // land on their 2D case instead of the old `default: break` — a GeoJSON point
 // carrying an elevation is wkbPoint25D and used to vanish. Multi* collections
 // recurse one level per part, which also covers e.g. a MultiPolygon25D.
+//
+// `budget` is checked before every part of a collection and before every emission,
+// so a huge multi-part feature stops mid-feature rather than running to its end.
 void appendGeometry(const OGRGeometry *geometry,
                     const QMap<QString, QVariant> &attributes,
                     OGRCoordinateTransformation *unprojectTransformation,
                     std::vector<ParsedGeometry> &out,
-                    ParseDiagnostics &diagnostics)
+                    ParseDiagnostics &diagnostics,
+                    ParseBudget &budget)
 {
-    if(!geometry)
+    if(!geometry || budget.exhausted())
         return;
 
     switch(wkbFlatten(geometry->getGeometryType()))
@@ -120,6 +152,7 @@ void appendGeometry(const OGRGeometry *geometry,
             }
             g.exterior.push_back(*coordinate);
             out.push_back(std::move(g));
+            budget.spend();
         }
         break;
     }
@@ -133,6 +166,7 @@ void appendGeometry(const OGRGeometry *geometry,
             g.attributes = attributes;
             g.exterior = readRing(ols, unprojectTransformation, diagnostics);
             out.push_back(std::move(g));
+            budget.spend();
         }
         break;
     }
@@ -157,6 +191,7 @@ void appendGeometry(const OGRGeometry *geometry,
                 g.interiorRings.push_back(
                     readRing(op->getInteriorRing(ringNum), unprojectTransformation, diagnostics));
             out.push_back(std::move(g));
+            budget.spend();
         }
         break;
     }
@@ -176,8 +211,15 @@ void appendGeometry(const OGRGeometry *geometry,
         const OGRGeometryCollection *collection = geometry->toGeometryCollection();
         if(collection)
             for(int part = 0; part < collection->getNumGeometries(); ++part)
+            {
+                // The budget is what makes a 200 000-part MultiPolygon abortable:
+                // without this the recursion runs the feature to its end and the
+                // destructor's join waits for all of it.
+                if(budget.exhausted())
+                    break;
                 appendGeometry(collection->getGeometryRef(part), attributes,
-                               unprojectTransformation, out, diagnostics);
+                               unprojectTransformation, out, diagnostics, budget);
+            }
         break;
     }
     default:
@@ -303,16 +345,30 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         while(feature)
         {
             const size_t before = parsed.geometries.size();
+            // The remaining budget, recomputed per feature and spent INSIDE the
+            // recursion so a multi-part feature stops where the cap falls rather
+            // than overshooting to the end of the feature and being trimmed.
+            ParseBudget budget;
+            if(options.max_geometries > 0)
+            {
+                const size_t cap = static_cast<size_t>(options.max_geometries);
+                budget.remaining = emitted < cap ? cap - emitted : 0;
+            }
+            budget.aborted = options.aborted;
             appendGeometry(feature->GetGeometryRef(), readAttributes(feature),
-                           unprojectTransformation.get(), parsed.geometries, diag);
+                           unprojectTransformation.get(), parsed.geometries, diag, budget);
             OGRFeature::DestroyFeature(feature);
             emitted += parsed.geometries.size() - before;
             // [camp#22] The cap is checked HERE, per feature, so the rest of the
             // file is never read: the caller's cap on the items it builds bounds
             // the GUI thread, but the memory the parse itself takes is only
-            // bounded by stopping the parse. A multi-part feature can carry the
-            // total past the cap, so the excess is trimmed and the returned count
-            // is exactly the cap.
+            // bounded by stopping the parse.
+            //
+            // The trim below is now a belt-and-braces no-op — the budget threaded
+            // into appendGeometry stops the recursion exactly at the cap, so a
+            // multi-part feature no longer overshoots it. It is kept because it is
+            // the invariant this contract promises ("exactly max_geometries are
+            // returned") and it costs one subtraction per file.
             if(options.max_geometries > 0 &&
                emitted >= static_cast<size_t>(options.max_geometries))
             {
