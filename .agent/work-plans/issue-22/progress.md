@@ -880,6 +880,70 @@ the pre-existing cap/abort ordering, found independently by the lead reviewer an
 by the Lens A adversarial pass.
 
 ### Findings
-- [ ] (must-fix) Cap check precedes the abort check, so a feature whose ring was truncated by the abort poll AND which crosses `max_geometries` returns with `geometry_cap_reached` set and `aborted` UNSET — the truncated ring is then outside the "discard on `diagnostics.aborted`" net and would be drawn as a complete shape (unreachable through `VectorLayer` today, whose only abort source is the destructor, but reachable through the public `parseVectorLayers()` API the tests call directly, and it makes the new comment's claim "Nothing partial is ever drawn" false); check abort before the cap, or have the cap branch set `diag.aborted` when the predicate fired — `src/camp_map/vector/vector_parse.cpp:408-423` (claim at `src/camp_map/vector/vector_parse.cpp:106-109`)
-- [ ] (suggestion) The interior-ring loop does not break on abort the way the sibling `wkbGeometryCollection` part loop does (`vector_parse.cpp:254`), so a polygon with very many short interior rings still spends one mutex-guarded predicate call per ring after the abort; breaking specifically on `budget.aborted && budget.aborted()` (not on `exhausted()`, which would drop holes at the cap) closes the asymmetry — `src/camp_map/vector/vector_parse.cpp:225`
-- [ ] (suggestion) The deferred vertex-count / attribute-size bound is tracked only in ADR prose and the plan, unlike the sibling camp#225 deferral from the same round; file a tracking issue or say in the ADR that it is deliberately tracked there only — `docs/decisions/0016-read-only-vector-file-layer.md:197-203`
+- [x] (must-fix) Cap check precedes the abort check, so a feature whose ring was truncated by the abort poll AND which crosses `max_geometries` returns with `geometry_cap_reached` set and `aborted` UNSET — the truncated ring is then outside the "discard on `diagnostics.aborted`" net and would be drawn as a complete shape (unreachable through `VectorLayer` today, whose only abort source is the destructor, but reachable through the public `parseVectorLayers()` API the tests call directly, and it makes the new comment's claim "Nothing partial is ever drawn" false); check abort before the cap, or have the cap branch set `diag.aborted` when the predicate fired — `src/camp_map/vector/vector_parse.cpp:408-423` (claim at `src/camp_map/vector/vector_parse.cpp:106-109`)
+- [x] (suggestion) The interior-ring loop does not break on abort the way the sibling `wkbGeometryCollection` part loop does (`vector_parse.cpp:254`), so a polygon with very many short interior rings still spends one mutex-guarded predicate call per ring after the abort; breaking specifically on `budget.aborted && budget.aborted()` (not on `exhausted()`, which would drop holes at the cap) closes the asymmetry — `src/camp_map/vector/vector_parse.cpp:225`
+- [x] (suggestion) The deferred vertex-count / attribute-size bound is tracked only in ADR prose and the plan, unlike the sibling camp#225 deferral from the same round; file a tracking issue or say in the ADR that it is deliberately tracked there only — `docs/decisions/0016-read-only-vector-file-layer.md:197-203` (deferred: host-owned — the operator files the tracking issue at the publish step, as with the sibling camp#225 deferral; ADR-0016 is deliberately left untouched)
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 10:04 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `17afcbc`
+**Addressed**: `## Local Review (Pre-Push)` 2026-09-15 09:58 -04:00 (round 4, branch `feature/issue-22` at `644e58c`)
+**Commits**: `6874e2e`, `a6fbf69`, `17afcbc`
+
+The round-4 must-fix and its sibling suggestion are fixed; the third finding is
+checked as host-owned (the tracking issue is the operator's to file at publish,
+matching the camp#225 deferral from round 2 — ADR-0016 deliberately untouched).
+
+Full camp suite rebuilt and re-run on the committed tree: **380 tests, 0
+failures, 1 skipped** (the pre-existing `GggsRenderTest.RealStoreRendersWhenProvided`),
+up one test from 379. Pre-commit hooks clean on all three commits. The only new
+compiler warnings are the `-Wunused-result` on `OGRLayer::CreateFeature` in the
+new fixture, the same warning every existing fixture helper in that file emits.
+
+Negative check worth recording: the new test was run against the PREVIOUS
+ordering (cap branch first) before the fix was restored, and failed exactly as
+predicted — `diag.aborted` false where true was expected. The fix is therefore
+demonstrably the thing the test pins, not an assertion written to the code.
+
+### Actions
+- [x] (must-fix) The per-feature cap check ran before the abort check and
+  returned from its own branch, so a feature that both crossed `max_geometries`
+  and carried a ring truncated by the vertex poll returned `geometry_cap_reached`
+  with `aborted` UNSET — outside `VectorLayer::loadFinished()`'s
+  discard-on-aborted net. The abort is now checked FIRST; a parse that hits both
+  reports `aborted` and is not trimmed to exactly `max_geometries` (it is partial
+  by construction, and its caller discards it). The now-false `readRing()`
+  comment is corrected to name the ordering its safety claim depends on, and
+  `ParseDiagnostics::geometry_cap_reached` documents the precedence. New test
+  `VectorParseAttributes.AbortMidRingAtTheCapIsStillReportedAsAborted`: a
+  one-feature / one-LineString / 4000-vertex fixture parsed with
+  `max_geometries = 1` and a predicate that fires on the in-loop vertex poll,
+  asserting the ring came back truncated (neither empty nor whole — which is what
+  proves the abort fired mid-ring rather than at a coarser poll site) and that
+  `diagnostics.aborted` is set — `src/camp_map/vector/vector_parse.cpp:415`,
+  `src/camp_map/vector/vector_parse.h:108`,
+  `test/test_vector_parse_attributes.cpp:672`
+- [x] (suggestion) The interior-ring loop now breaks on `budget.aborted &&
+  budget.aborted()`, like the sibling geometry-collection part loop, so a polygon
+  of very many short interior rings stops spending one mutex-guarded predicate
+  call per ring once the abort is raised. Deliberately NOT `exhausted()`, which
+  also fires at the geometry cap and would drop the holes of a polygon whose
+  exterior is drawn in full; the `readRing()` comment that said the ring loop is
+  unchecked is updated to state the new rule —
+  `src/camp_map/vector/vector_parse.cpp:231`
+- [x] (suggestion) File a tracking issue for the deferred vertex-count /
+  attribute-size bound (deferred: host-owned — the operator files it at the
+  publish step, as with the sibling camp#225 deferral from round 2; ADR-0016 is
+  deliberately left untouched by this pass) —
+  `docs/decisions/0016-read-only-vector-file-layer.md:197-203`
+
+Plan kept in sync: **rev 9** records the ordering change and what it does and
+does not alter about the rev-8 abort-latency claim
+(`.agent/work-plans/issue-22/plan.md`).
+
+### Next step
+`review-code` re-review of the branch diff (fresh context). Nothing was pushed —
+the host performs pushes.
