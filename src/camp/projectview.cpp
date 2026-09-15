@@ -60,6 +60,15 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
     // scene → WGS84), independent of any loaded chart, so items can be created
     // over OSM/WMTS-only backgrounds. (Was gated on a BackgroundRaster being
     // loaded back when the raster defined the coordinate system.)
+    // [camp#22] The switch back to pan mode is DEFERRED until after the press has
+    // been forwarded to QGraphicsView below. Calling setPanMode() inline set the
+    // view's dragMode to ScrollHandDrag before the scene dispatched the press, so
+    // VectorFeatureItem::viewInPanMode() read "pan" during the very click that
+    // placed a mission item, accepted the press, and answered the release with an
+    // attribute tooltip on top of the item just placed. The add-* mode the
+    // operator clicked in is the mode the press must be dispatched under.
+    bool panModeAfterDispatch = false;
+
     switch(event->button())
     {
     case Qt::LeftButton:
@@ -69,7 +78,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             break;
         case MouseMode::addWaypoint:
             m_project->addWaypoint(web_mercator::mapToGeo(mapToScene(event->pos())));
-            setPanMode();
+            panModeAfterDispatch = true;
             break;
         case MouseMode::addTrackline:
             if(!currentTrackLine)
@@ -94,7 +103,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(pendingSurveyPattern->hasSpacingLocation())
                 {
-                    setPanMode();
+                    panModeAfterDispatch = true;
                 }
                 else
                 {
@@ -135,7 +144,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
             {
                 if(pendingSearchPattern->hasSpacingLocation())
                 {
-                    setPanMode();
+                    panModeAfterDispatch = true;
                 }
                 else
                 {
@@ -176,7 +185,7 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
                 m_project->updateAvoidanceAreas();
                 update();
             }
-            setPanMode();
+            panModeAfterDispatch = true;
             event->accept();
         }
         break;
@@ -194,6 +203,11 @@ void ProjectView::mousePressEvent(QMouseEvent *event)
         break;
     }
     QGraphicsView::mousePressEvent(event);
+
+    // Now that the scene has seen the press under the mode it was made in, the
+    // view can go back to pan.
+    if(panModeAfterDispatch)
+        setPanMode();
 }
 
 void ProjectView::mouseMoveEvent(QMouseEvent *event)

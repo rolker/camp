@@ -249,6 +249,12 @@ void VectorFeatureItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
   // QGraphicsView::mousePressEvent regardless, so its placement logic is
   // unaffected either way.
   //
+  // This gating only holds because ProjectView DEFERS its switch back to pan mode
+  // until after that forward — see the panModeAfterDispatch comment in
+  // ProjectView::mousePressEvent. Switching inline made the view read as pan
+  // during the very press that placed the item, which is what this branch exists
+  // to keep out.
+  //
   // [camp#225] KNOWN COST of accepting the press in pan mode: the press no longer
   // reaches QGraphicsView's ScrollHandDrag, so a pan that starts ON a feature does
   // not pan the map. The item cannot both accept the press (which is what lets the
