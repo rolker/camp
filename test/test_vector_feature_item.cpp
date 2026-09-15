@@ -192,6 +192,34 @@ TEST(VectorFeatureItem, FeatureWithNoPlaceableVertexIsRejected)
                                                   QGeoCoordinate(43.0, -70.0)})));
 }
 
+// [camp#22 round-3 should-fix] A polygon whose EXTERIOR is entirely unplaceable is
+// rejected even when one of its holes has a valid vertex.
+//
+// The anchor search used to fall back to interior rings, so such a polygon was
+// admitted, the constructor closed an empty exterior and only the hole was built
+// — which Qt::OddEvenFill paints as SOLID FILL. A hole drawn as a feature, from a
+// file whose coordinates CAMP has already said it cannot place, is worse than the
+// honest skip: the layer now counts it in its `skipped` tally like any other
+// unplaceable feature.
+TEST(VectorFeatureItem, PolygonWithUnplaceableExteriorIsRejectedDespiteAValidHole)
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  ParsedGeometry g;
+  g.type = ParsedGeometry::Polygon;
+  // Eastings/northings read as degrees — the .prj-less shapefile case.
+  g.exterior = {QGeoCoordinate(4800000.0, 350000.0), QGeoCoordinate(4800100.0, 350100.0),
+                QGeoCoordinate(nan, nan)};
+  g.interiorRings = {{QGeoCoordinate(43.05, -70.75), QGeoCoordinate(43.06, -70.74),
+                      QGeoCoordinate(43.07, -70.76)}};
+  EXPECT_FALSE(hasPlaceableCoordinate(g))
+      << "an interior-ring vertex must not anchor a polygon whose exterior is unplaceable";
+
+  // The counterpart: a placeable exterior still qualifies, holes or not.
+  g.exterior = {QGeoCoordinate(43.00, -70.80), QGeoCoordinate(43.00, -70.60),
+                QGeoCoordinate(43.20, -70.60)};
+  EXPECT_TRUE(hasPlaceableCoordinate(g));
+}
+
 // A partly-unplaceable line drops only the bad vertices: the item is anchored at
 // the first good one and its extent stays local, instead of spanning the world.
 TEST(VectorFeatureItem, UnplaceableVerticesDoNotStretchTheItem)

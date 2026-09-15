@@ -70,15 +70,20 @@ constexpr double kLabelGapPixels = 4.0;
 constexpr double kHoveredZValue = 1.0;
 
 // The first vertex CAMP can place, which is what the item is positioned at.
+//
+// [camp#22 round-3 should-fix] EXTERIOR RINGS ONLY. This used to fall back to an
+// interior-ring vertex, which admitted a polygon whose exterior is entirely
+// unplaceable but whose HOLE has a valid vertex: the constructor then closed an
+// empty exterior and addRing() built only the hole, which Qt::OddEvenFill paints
+// as solid fill — a hole drawn as a feature, in a file CAMP has already said it
+// cannot place. Such a polygon is now skipped and counted in the layer's
+// `skipped` tally like any other unplaceable feature. Points and lines carry no
+// interior rings, so nothing else changes.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
 {
   for(const auto& coordinate : geometry.exterior)
     if(isPlaceable(coordinate))
       return &coordinate;
-  for(const auto& ring : geometry.interiorRings)
-    for(const auto& coordinate : ring)
-      if(isPlaceable(coordinate))
-        return &coordinate;
   return nullptr;
 }
 

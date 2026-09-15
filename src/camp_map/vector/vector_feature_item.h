@@ -52,9 +52,17 @@ bool isPlaceable(const QGeoCoordinate& coordinate);
 /// line is a thing this program should be able to show.
 QPointF placeableToMap(const QGeoCoordinate& coordinate);
 
-/// True when @p geometry has at least one placeable coordinate — i.e. when a
-/// VectorFeatureItem built from it would land somewhere real. The layer checks
-/// this before constructing an item and reports the number of features skipped.
+/// True when @p geometry has at least one placeable coordinate IN ITS EXTERIOR
+/// ring — i.e. when a VectorFeatureItem built from it would land somewhere real.
+/// The layer checks this before constructing an item and reports the number of
+/// features skipped.
+///
+/// [camp#22] Interior rings deliberately do not qualify. A polygon whose exterior
+/// is entirely unplaceable but whose HOLE has a valid vertex would otherwise be
+/// admitted, and the item would be built from the hole alone — which
+/// `Qt::OddEvenFill` paints as solid fill, turning a hole into a feature in a file
+/// whose coordinates CAMP has already said it cannot place. Points and lines have
+/// no interior rings, so this reads the same for them.
 bool hasPlaceableCoordinate(const ParsedGeometry& geometry);
 
 /// [camp#22] One read-only feature of a VectorLayer.
