@@ -436,34 +436,60 @@ void VectorLayer::contextMenu(QMenu* menu)
   // features disappearing (ADR-0016 D14). The Colormap menu is gated on the same
   // list because a palette with no colour field to sample changes nothing.
   const QStringList field_names = numericFields();
+
+  // [camp#22] A PERSISTED field that numericFields() no longer offers. The style
+  // group is keyed on the file path and restored whenever that path is reopened,
+  // so the file on disk may have changed under it (a column re-typed, or a column
+  // dropped). applyStyle() already paints that correctly — as UNSTYLED, see
+  // AColorFieldWithNoNumbersFallsBackToUnstyled — but the menus used to be built
+  // only from field_names, so the stale setting appeared nowhere and there was no
+  // "(none)" to clear it with either: the layer was stuck, silently re-persisting
+  // a field it was not using. It is SHOWN instead of being cleared on load,
+  // because the operator chose it and the same path may be reopened over a file
+  // where it reads as a number again; clearing it here would discard that choice
+  // without anyone seeing it happen.
+  const bool stale_color = !color_field_.isEmpty() && !field_names.contains(color_field_);
+  const bool stale_size = !size_field_.isEmpty() && !field_names.contains(size_field_);
+  if(field_names.isEmpty() && !stale_color && !stale_size)
+    return;   // nothing loaded, no field a ramp can read, and nothing set: nothing to offer
+
+  // The two field submenus are identical but for their title and their setter.
+  auto addFieldMenu = [this, menu, &field_names](const QString& title, const QString& current,
+                                                 void (VectorLayer::*setter)(const QString&))
+  {
+    QMenu* submenu = menu->addMenu(title);
+    QAction* none = submenu->addAction("(none)");
+    none->setCheckable(true);
+    none->setChecked(current.isEmpty());
+    connect(none, &QAction::triggered, this, [this, setter]() { (this->*setter)(QString()); });
+    for(const QString& field : field_names)
+    {
+      QAction* action = submenu->addAction(field);
+      action->setCheckable(true);
+      action->setChecked(field == current);
+      connect(action, &QAction::triggered, this,
+              [this, setter, field]() { (this->*setter)(field); });
+    }
+    if(!current.isEmpty() && !field_names.contains(current))
+    {
+      // The stale persisted field, named and marked so the operator can see WHAT
+      // is set and WHY it is doing nothing. Checked — it is the current setting —
+      // and left selectable rather than greyed out, because a disabled entry is
+      // read as "not available" when the point is that it IS what is in force.
+      // "(none)" above is what clears it.
+      QAction* action = submenu->addAction(current + " (no numbers)");
+      action->setCheckable(true);
+      action->setChecked(true);
+      connect(action, &QAction::triggered, this,
+              [this, setter, current]() { (this->*setter)(current); });
+    }
+  };
+
+  addFieldMenu(QStringLiteral("Color by"), color_field_, &VectorLayer::setColorField);
+  addFieldMenu(QStringLiteral("Size by"), size_field_, &VectorLayer::setSizeField);
+
   if(field_names.isEmpty())
-    return;   // nothing loaded, or no field a ramp can read: nothing to style by
-
-  QMenu* color_menu = menu->addMenu("Color by");
-  QAction* no_color = color_menu->addAction("(none)");
-  no_color->setCheckable(true);
-  no_color->setChecked(color_field_.isEmpty());
-  connect(no_color, &QAction::triggered, this, [this]() { setColorField(QString()); });
-  for(const QString& field : field_names)
-  {
-    QAction* action = color_menu->addAction(field);
-    action->setCheckable(true);
-    action->setChecked(field == color_field_);
-    connect(action, &QAction::triggered, this, [this, field]() { setColorField(field); });
-  }
-
-  QMenu* size_menu = menu->addMenu("Size by");
-  QAction* no_size = size_menu->addAction("(none)");
-  no_size->setCheckable(true);
-  no_size->setChecked(size_field_.isEmpty());
-  connect(no_size, &QAction::triggered, this, [this]() { setSizeField(QString()); });
-  for(const QString& field : field_names)
-  {
-    QAction* action = size_menu->addAction(field);
-    action->setCheckable(true);
-    action->setChecked(field == size_field_);
-    connect(action, &QAction::triggered, this, [this, field]() { setSizeField(field); });
-  }
+    return;   // a palette with no field a ramp can sample changes nothing
 
   // [ADR-0008] The full marine_colormap registry, as the raster layers expose it.
   QMenu* colormap_menu = menu->addMenu("Colormap");

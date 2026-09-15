@@ -32,6 +32,8 @@
 #include <QGraphicsView>
 #include <QGraphicsScene>
 #include <QGraphicsSimpleTextItem>
+#include <QAction>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QTemporaryDir>
 
@@ -44,6 +46,37 @@
 
 namespace
 {
+
+// [camp#22] VectorLayer::contextMenu() is protected (map::Layer declares it so),
+// and the menus it builds are the only way the operator reaches the styling
+// fields — so the probe exposes it rather than the test asserting on something
+// adjacent.
+struct MenuProbe: public camp::vector::VectorLayer
+{
+  using VectorLayer::VectorLayer;
+  using VectorLayer::contextMenu;
+};
+
+// The entries of the submenu titled `title`, or an empty list if there is none.
+QStringList submenuEntries(const QMenu& menu, const QString& title)
+{
+  QStringList entries;
+  for(QAction* action : menu.actions())
+    if(action->menu() && action->text() == title)
+      for(QAction* entry : action->menu()->actions())
+        entries << entry->text();
+  return entries;
+}
+
+QAction* submenuAction(const QMenu& menu, const QString& title, const QString& entry_text)
+{
+  for(QAction* action : menu.actions())
+    if(action->menu() && action->text() == title)
+      for(QAction* entry : action->menu()->actions())
+        if(entry->text() == entry_text)
+          return entry;
+  return nullptr;
+}
 
 int openDatasetCount()
 {
@@ -670,6 +703,75 @@ TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
   // The setting itself is kept — the operator chose it, and it is what would be
   // persisted; only its EFFECT on this data is nothing.
   EXPECT_EQ(layer->colorField(), QStringLiteral("assessment"));
+
+  delete layer;
+}
+
+// [camp#22] A persisted field the file no longer offers is SHOWN in the menu,
+// and can be cleared there.
+//
+// The style group is keyed on the file path, so the same path reopened over a
+// changed file can restore a colour or size field that `numericFields()` no
+// longer lists. `applyStyle()` already paints that correctly (unstyled, above) —
+// but the submenus were built ONLY when `numericFields()` was non-empty and only
+// FROM that list, so a stale field appeared nowhere: no "(none)" to clear it
+// with, no sign of what was set, and `writeSettings()` kept re-persisting it. The
+// setting was stuck. It is shown rather than cleared on load because the operator
+// chose it and the file may read as numeric again next time.
+TEST(VectorLayerStyleFields, AStaleStyleFieldIsShownInTheMenuAndCanBeCleared)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new MenuProbe(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+  ASSERT_FALSE(layer->numericFields().contains("assessment"))
+      << "harness: 'assessment' must be a field no ramp can read";
+
+  // What a restored setting over a changed file looks like.
+  layer->setColorField("assessment");
+  layer->setSizeField("assessment");
+
+  QMenu menu;
+  layer->contextMenu(&menu);
+
+  const QStringList color_entries = submenuEntries(menu, QStringLiteral("Color by"));
+  ASSERT_FALSE(color_entries.isEmpty()) << "no Color by submenu: the setting is unreachable";
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("(none)")))
+      << "nothing in the menu clears the stale field";
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("assessment (no numbers)")))
+      << "the stale field is not named, so the operator cannot see what is set";
+
+  const QStringList size_entries = submenuEntries(menu, QStringLiteral("Size by"));
+  EXPECT_TRUE(size_entries.contains(QStringLiteral("(none)")));
+  EXPECT_TRUE(size_entries.contains(QStringLiteral("assessment (no numbers)")));
+
+  // The stale entry reads as the setting in force, and "(none)" as not-chosen.
+  QAction* stale = submenuAction(menu, QStringLiteral("Color by"),
+                                 QStringLiteral("assessment (no numbers)"));
+  ASSERT_NE(stale, nullptr);
+  EXPECT_TRUE(stale->isChecked());
+  QAction* none = submenuAction(menu, QStringLiteral("Color by"), QStringLiteral("(none)"));
+  ASSERT_NE(none, nullptr);
+  EXPECT_FALSE(none->isChecked());
+
+  // And "(none)" actually clears it — the whole point of showing the submenu.
+  none->trigger();
+  EXPECT_TRUE(layer->colorField().isEmpty()) << "the stale colour field could not be cleared";
+  QAction* none_size = submenuAction(menu, QStringLiteral("Size by"), QStringLiteral("(none)"));
+  ASSERT_NE(none_size, nullptr);
+  none_size->trigger();
+  EXPECT_TRUE(layer->sizeField().isEmpty()) << "the stale size field could not be cleared";
+
+  // Once cleared, the menu is the ordinary one again: no stale entry left behind.
+  QMenu after;
+  layer->contextMenu(&after);
+  const QStringList cleared = submenuEntries(after, QStringLiteral("Color by"));
+  EXPECT_FALSE(cleared.contains(QStringLiteral("assessment (no numbers)")));
+  EXPECT_TRUE(cleared.contains(QStringLiteral("signal")));
 
   delete layer;
 }
