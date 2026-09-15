@@ -53,7 +53,7 @@ struct ParsedGeometry
     //
     // One entry per PART of a multi-part geometry: a MultiPolygon feature emits
     // one ParsedGeometry per polygon, each carrying a copy of the same feature
-    // attributes, so per-feature styling and click-to-inspect work uniformly
+    // attributes, so per-feature styling and hover-to-inspect work uniformly
     // over single- and multi-part sources.
     QMap<QString, QVariant> attributes;
 };

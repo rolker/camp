@@ -15,7 +15,8 @@
 // [camp#22] The file also carries the layer-level styling and interaction cases
 // that need a real, loaded layer rather than a hand-built item: which fields the
 // styling menus may offer (`VectorLayerStyleFields`), and a click delivered
-// through a real QGraphicsView onto a real feature (`VectorLayerInteraction`).
+// through a real QGraphicsView onto a real feature (`VectorLayerInteraction`):
+// the hover tooltip, and a press falling through to the view's pan gesture.
 // Both come from the operator GUI test of 2026-09-15.
 
 #include <gtest/gtest.h>
@@ -29,6 +30,8 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QGraphicsView>
+#include <QGraphicsScene>
+#include <QHelpEvent>
 #include <QMouseEvent>
 #include <QTemporaryDir>
 #include <QToolTip>
@@ -672,23 +675,30 @@ TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
   delete layer;
 }
 
-// [camp#22] A click delivered THROUGH A REAL VIEW onto a real loaded feature
-// shows that feature's attributes.
+// [camp#22 / ADR-0016 D5] A HOVER delivered THROUGH A REAL VIEW onto a real
+// loaded feature shows that feature's attributes — and a PRESS over the same
+// feature is not taken by any item, so the view's pan gesture survives.
 //
-// Every other click test in this repo sends a QGraphicsSceneMouseEvent straight
-// to the item, which skips everything between the operator's mouse and it: the
-// viewport widget, the view's y-flip (CAMP's map view is scaled (1, -1) so north
-// is up), ScrollHandDrag's own press handling, and the scene's hit test against
-// shape(). The operator's GUI test of 2026-09-15 reported never seeing a tooltip
-// with all of that in the path, so the regression test has to have it in the path
-// too: a QGraphicsView over the Map's scene, a synthesized QMouseEvent on its
-// VIEWPORT, and the item found by mapping ITS scene position back to the
-// viewport.
+// Every other interaction test in this repo talks to the item directly, which
+// skips everything between the operator's mouse and it: the viewport widget, the
+// view's y-flip (CAMP's map view is scaled (1, -1) so north is up), and the
+// scene's hit test against shape(). The operator's GUI test of 2026-09-15
+// reported never seeing a popup with all of that in the path, so the regression
+// test has to have it in the path too.
 //
-// The off-centre click is the point of the test: 7 px is outside the 5 px drawn
-// marker and inside the 9 px click target, which is the slack added because the
-// pan cursor is an open hand whose hotspot the operator cannot see.
-TEST(VectorLayerInteraction, ClickThroughARealViewShowsTheAttributes)
+// The hover popup is the item's ordinary Qt tooltip: Qt delivers a
+// QEvent::ToolTip to the viewport when the cursor rests, QGraphicsView turns it
+// into a QGraphicsSceneHelpEvent, and QGraphicsScene::helpEvent() finds the top
+// item under the cursor with a non-empty toolTip() and shows it. Synthesizing the
+// QHelpEvent is therefore exactly what Qt itself does after the hover delay —
+// note that helpEvent() hit-tests from the event's GLOBAL position (it maps it
+// back through the viewport), which is why the global position has to be the real
+// mapToGlobal() of the viewport point.
+//
+// The off-centre case is the point of the test: 7 px is outside the 5 px drawn
+// marker and inside the 9 px hit target, the slack added because the pan cursor
+// is an open hand whose hotspot the operator cannot see.
+TEST(VectorLayerInteraction, HoverThroughARealViewShowsTheAttributes)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
@@ -701,7 +711,7 @@ TEST(VectorLayerInteraction, ClickThroughARealViewShowsTheAttributes)
   ASSERT_EQ(layer->featureCount(), 2);
 
   QGraphicsView view(map.scene());
-  view.setDragMode(QGraphicsView::ScrollHandDrag);   // pan mode: the popup's gate
+  view.setDragMode(QGraphicsView::ScrollHandDrag);   // pan mode, as CAMP idles in
   view.scale(1.0, -1.0);                             // CAMP's map view: north up
   view.resize(800, 600);
   view.show();
@@ -724,49 +734,113 @@ TEST(VectorLayerInteraction, ClickThroughARealViewShowsTheAttributes)
   QCoreApplication::processEvents();
   const QPoint centre = view.mapFromScene(target->scenePos());
 
-  // Press and release at the same viewport point — a click, not a pan.
-  auto clickAt = [&view](const QPoint& viewport_pos)
+  auto hoverAt = [&view](const QPoint& viewport_pos)
   {
-    const QPointF global = view.viewport()->mapToGlobal(viewport_pos);
-    QMouseEvent press(QEvent::MouseButtonPress, QPointF(viewport_pos), global,
-                      Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QApplication::sendEvent(view.viewport(), &press);
-    QMouseEvent release(QEvent::MouseButtonRelease, QPointF(viewport_pos), global,
-                        Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
-    QApplication::sendEvent(view.viewport(), &release);
+    const QPoint global = view.viewport()->mapToGlobal(viewport_pos);
+    QHelpEvent tool_tip(QEvent::ToolTip, viewport_pos, global);
+    QApplication::sendEvent(view.viewport(), &tool_tip);
     QCoreApplication::processEvents();
   };
 
   // Dead centre.
   QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  clickAt(centre);
+  hoverAt(centre);
   EXPECT_EQ(QToolTip::text(), target->attributeText())
-      << "a click on the marker, through a real view, showed no attributes";
+      << "hovering the marker, through a real view, showed no attributes";
 
   // 3 px off-centre: well inside the target, and the kind of aim the operator
   // actually has under a hand cursor.
   QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  clickAt(centre + QPoint(3, 2));
+  hoverAt(centre + QPoint(3, 2));
   EXPECT_EQ(QToolTip::text(), target->attributeText())
-      << "a click 3 px off centre missed the feature";
+      << "hovering 3 px off centre missed the feature";
 
-  // 7 px off-centre: OUTSIDE the drawn 5 px marker, inside the click slack. This
-  // is what the slack is for, and what fails without it.
+  // 7 px off-centre: OUTSIDE the drawn 5 px marker, inside the hit slack. This is
+  // what the slack is for, and what fails without it.
   QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  clickAt(centre + QPoint(7, 0));
+  hoverAt(centre + QPoint(7, 0));
   EXPECT_EQ(QToolTip::text(), target->attributeText())
-      << "a click just outside the marker missed the feature: the click slack is gone";
+      << "hovering just outside the marker missed the feature: the slack is gone";
 
-  // The slack is BOUNDED: a click well away from any feature does not answer with
-  // THIS feature's attributes. Asserted as "not the feature's text" rather than
-  // against a planted sentinel, because a press on empty map is dispatched to the
-  // view, which hides any tooltip standing — so both "the sentinel survived" and
-  // "the tooltip was cleared" are correct outcomes here and only one of them is a
-  // sentinel comparison.
+  // The slack is BOUNDED: hovering well away from any feature does not answer
+  // with THIS feature's attributes. Asserted as "not the feature's text" rather
+  // than against the planted sentinel, because helpEvent() with no tooltip item
+  // under the cursor calls QToolTip::showText() with an EMPTY string — a hide —
+  // and QToolTip::hideText() does not clear QToolTip::text() on the offscreen
+  // platform, so both "the sentinel survived" and "the text was cleared" are
+  // correct outcomes here and only one of them is a sentinel comparison.
   QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  clickAt(centre + QPoint(60, 40));
+  hoverAt(centre + QPoint(60, 40));
   EXPECT_NE(QToolTip::text(), target->attributeText())
-      << "a click nowhere near a feature answered with that feature's attributes";
+      << "hovering nowhere near a feature answered with that feature's attributes";
+
+  delete layer;
+}
+
+// [camp#22 / camp#225] A left PRESS over a feature is not taken by any item, so
+// the view's ScrollHandDrag gets it and a pan that starts on a feature pans.
+//
+// This is the whole of camp#225's fix: the item accepts no mouse button
+// (VectorFeatureItem.AcceptsNoMouseButtonSoThePressReachesTheView), so there is
+// nothing to gate and nothing to get wrong. Asserted through the real view,
+// because what is being claimed is about the scene's dispatch, not about a flag:
+// after the press the scene has NO mouse grabber, which is exactly the state in
+// which QGraphicsView keeps the gesture for itself.
+TEST(VectorLayerInteraction, APressOverAFeatureFallsThroughToTheView)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeTwoPoints(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  QGraphicsView view(map.scene());
+  view.setDragMode(QGraphicsView::ScrollHandDrag);
+  view.scale(1.0, -1.0);
+  view.resize(800, 600);
+  view.show();
+  QCoreApplication::processEvents();
+
+  camp::vector::VectorFeatureItem* target = nullptr;
+  for(QGraphicsItem* child : layer->childItems())
+  {
+    auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child);
+    if(feature && feature->isPoint())
+    {
+      target = feature;
+      break;
+    }
+  }
+  ASSERT_NE(target, nullptr);
+
+  view.centerOn(target->scenePos());
+  QCoreApplication::processEvents();
+  const QPoint centre = view.mapFromScene(target->scenePos());
+
+  // Sanity: the press really is over the feature — the same hit test the tooltip
+  // uses picks it. Without this the assertion below would pass on a miss.
+  // (`items()`, not `itemAt()`: the topmost item at that point may be the layer
+  // itself or a neighbouring feature; what matters is that this feature is under
+  // the cursor and still does not take the press.)
+  ASSERT_TRUE(view.items(centre).contains(static_cast<QGraphicsItem*>(target)))
+      << "harness: the press point is not over the feature";
+
+  const QPointF global = view.viewport()->mapToGlobal(centre);
+  QMouseEvent press(QEvent::MouseButtonPress, QPointF(centre), global,
+                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+  QApplication::sendEvent(view.viewport(), &press);
+  QCoreApplication::processEvents();
+
+  EXPECT_EQ(map.scene()->mouseGrabberItem(), nullptr)
+      << "a feature grabbed the press: the view's pan gesture never starts (camp#225)";
+
+  QMouseEvent release(QEvent::MouseButtonRelease, QPointF(centre), global,
+                      Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+  QApplication::sendEvent(view.viewport(), &release);
+  QCoreApplication::processEvents();
 
   delete layer;
 }

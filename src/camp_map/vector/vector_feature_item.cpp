@@ -1,8 +1,5 @@
 #include "vector_feature_item.h"
 
-#include <QGraphicsScene>
-#include <QGraphicsSceneMouseEvent>
-#include <QGraphicsView>
 #include <QBrush>
 #include <QPainter>
 #include <QPainterPathStroker>
@@ -10,7 +7,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <QToolTip>
 
 #include "../map_view/web_mercator.h"
 #include "vector_parse.h"
@@ -47,19 +43,18 @@ void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const 
   }
 }
 
-// [camp#22] Click tolerance for a line feature, in scene metres — see shape().
-constexpr double kClickWidth = 5.0;
+// [camp#22] Hover tolerance for a line feature, in scene metres — see shape().
+constexpr double kHoverWidth = 5.0;
 
-// [camp#22] Click tolerance ADDED AROUND a point marker, in device pixels — see
+// [camp#22] Hover tolerance ADDED AROUND a point marker, in device pixels — see
 // shape(). The drawn marker is kDefaultPointRadius (5 px) at the default size,
-// and in the operator GUI test of 2026-09-15 nobody could land a click inside it:
-// under the open-hand pan cursor the hotspot is not visible, so a 5 px target is
-// aimed at blind. The slack is a CLICK target only; nothing drawn grows.
-constexpr double kPointClickSlackPixels = 4.0;
-
-// [camp#22] How far the cursor may travel between press and release and still
-// count as a click rather than a pan, in device pixels.
-constexpr double kClickSlopPixels = 4.0;
+// and in the operator GUI test of 2026-09-15 nobody could land the cursor inside
+// it: under the open-hand pan cursor the hotspot is not visible, so a 5 px target
+// is aimed at blind. The slack is a HIT target only; nothing drawn grows. (It was
+// added for click-to-inspect and serves hover-to-inspect for the same reason —
+// what the tooltip answers to is where the cursor can be put, not what the
+// renderer draws.)
+constexpr double kPointHoverSlackPixels = 4.0;
 
 // The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
@@ -106,9 +101,22 @@ VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry
   radius_(kDefaultPointRadius),
   attributes_(geometry.attributes)
 {
-  // Left-press is the only button this item answers to; everything else falls
-  // through to the view (context menu, middle-click) untouched.
-  setAcceptedMouseButtons(Qt::LeftButton);
+  // [camp#22 / ADR-0016 D5] Inspection is on HOVER, so this item answers NO mouse
+  // button at all: every press over a feature falls through to QGraphicsView,
+  // which is what makes a pan gesture that starts on a feature pan (camp#225,
+  // fixed by construction) and what keeps ProjectView's add-* placement clicks
+  // out of this item's hands. QGraphicsItem accepts the left button by default,
+  // so this has to be said.
+  setAcceptedMouseButtons(Qt::NoButton);
+  // The popup is the ordinary Qt tooltip: QGraphicsScene::helpEvent() finds the
+  // top item under the cursor whose toolTip() is non-empty and shows it, after
+  // the usual hover delay, hiding it when the cursor leaves. No event handler of
+  // ours is involved, which is why setAcceptHoverEvents() is deliberately NOT set
+  // — hover events are not what drives a tooltip, and turning per-item hover
+  // tracking on across a layer of up to kMaxFeatureItems items would cost
+  // something for nothing. Attributes are copied once here and never change, so
+  // the text is set once; a mutable attribute would have to refresh it.
+  setToolTip(attributeText());
 
   const QGeoCoordinate* anchor = firstCoordinate(geometry);
   if(!anchor)
@@ -148,11 +156,11 @@ QRectF VectorFeatureItem::boundingRect() const
 {
   if(point_)
   {
-    // Device pixels (ItemIgnoresTransformations). The CLICK shape is the marker
-    // grown by kPointClickSlackPixels (see shape()), and a shape outside
+    // Device pixels (ItemIgnoresTransformations). The HIT shape is the marker
+    // grown by kPointHoverSlackPixels (see shape()), and a shape outside
     // boundingRect() is undefined behaviour in Qt — so the slack is included
     // here too, plus one pixel of allowance for the width-2 no-data outline.
-    const double r = radius_ + kPointClickSlackPixels + 1.0;
+    const double r = radius_ + kPointHoverSlackPixels + 1.0;
     return QRectF(-r, -r, 2.0 * r, 2.0 * r);
   }
   if(path_.isEmpty())
@@ -160,14 +168,14 @@ QRectF VectorFeatureItem::boundingRect() const
   // A cosmetic pen is one device pixel wide however far the view is zoomed out,
   // so the pen's scene-space allowance cannot be derived here and the path's own
   // bounds are what the paint needs; Qt tolerates the one-pixel overdraw at the
-  // edges. The CLICK shape, however, is wider than the path for a line (see
+  // edges. The HIT shape, however, is wider than the path for a line (see
   // shape()), and a shape outside boundingRect() is undefined behaviour in Qt —
   // so the line case is grown by the stroker's half-width.
   const QRectF bounds = path_.boundingRect();
   if(polygon_)
     return bounds;
-  return bounds.adjusted(-kClickWidth / 2.0, -kClickWidth / 2.0,
-                         kClickWidth / 2.0, kClickWidth / 2.0);
+  return bounds.adjusted(-kHoverWidth / 2.0, -kHoverWidth / 2.0,
+                         kHoverWidth / 2.0, kHoverWidth / 2.0);
 }
 
 QPainterPath VectorFeatureItem::shape() const
@@ -175,11 +183,12 @@ QPainterPath VectorFeatureItem::shape() const
   QPainterPath shape;
   if(point_)
   {
-    // [camp#22] The marker PLUS kPointClickSlackPixels, for the same reason a
+    // [camp#22] The marker PLUS kPointHoverSlackPixels, for the same reason a
     // line's shape is stroked wider than its path: the target the operator aims
     // at is the one the cursor can actually be placed on, not the one the
-    // renderer draws. boundingRect() grows with it.
-    const double click_radius = radius_ + kPointClickSlackPixels;
+    // renderer draws. boundingRect() grows with it. shape() is what
+    // QGraphicsScene::helpEvent() hit-tests, so this is the hover target.
+    const double click_radius = radius_ + kPointHoverSlackPixels;
     shape.addEllipse(QPointF(0.0, 0.0), click_radius, click_radius);
     return shape;
   }
@@ -188,14 +197,14 @@ QPainterPath VectorFeatureItem::shape() const
   if(polygon_)
     return path_;   // a closed, filled path: Qt's fill-area hit test works on it
   // [camp#22] A LINE has no fill area, so returning the raw open path means Qt's
-  // hit test never picks it and click-to-inspect is unusable on every line
+  // hit test never picks it and hover-to-inspect is unusable on every line
   // feature. Stroke it into a thin ribbon, as the mission-tree LineString does
   // (src/camp/vector/linestring.cpp:66-84). The width is in ITEM coordinates
-  // (scene metres for a line item), so it is deliberately generous: kClickWidth
+  // (scene metres for a line item), so it is deliberately generous: kHoverWidth
   // metres of tolerance is a few pixels at survey zoom levels and still a small
   // target when zoomed far out, which is the same trade the mission item makes.
   QPainterPathStroker stroker;
-  stroker.setWidth(kClickWidth);
+  stroker.setWidth(kHoverWidth);
   return stroker.createStroke(path_);
 }
 
@@ -290,79 +299,6 @@ QString VectorFeatureItem::attributeText() const
   for(auto it = attributes_.begin(); it != attributes_.end(); ++it)
     lines << it.key() + ": " + it.value().toString();
   return lines.join('\n');
-}
-
-bool VectorFeatureItem::viewInPanMode(const QWidget* widget) const
-{
-  // The event's own view: its widget() is the viewport, whose parent is the view.
-  if(widget)
-    if(const auto* view = qobject_cast<const QGraphicsView*>(widget->parentWidget()))
-      return view->dragMode() == QGraphicsView::ScrollHandDrag;
-  // A synthesized event carries no widget; fall back to the attached views.
-  if(!scene())
-    return false;
-  for(const QGraphicsView* view : scene()->views())
-    if(view->dragMode() == QGraphicsView::ScrollHandDrag)
-      return true;
-  return false;
-}
-
-void VectorFeatureItem::mousePressEvent(QGraphicsSceneMouseEvent* event)
-{
-  // In an add-* mode the operator is placing a mission item; ignore the press so
-  // it is not marked accepted at the item level and no popup fires mid-placement.
-  // ProjectView reads the event position itself and forwards to
-  // QGraphicsView::mousePressEvent regardless, so its placement logic is
-  // unaffected either way.
-  //
-  // This gating only holds because ProjectView DEFERS its switch back to pan mode
-  // until after that forward — see the panModeAfterDispatch comment in
-  // ProjectView::mousePressEvent. Switching inline made the view read as pan
-  // during the very press that placed the item, which is what this branch exists
-  // to keep out.
-  //
-  // [camp#225] KNOWN COST of accepting the press in pan mode: the press no longer
-  // reaches QGraphicsView's ScrollHandDrag, so a pan that starts ON a feature does
-  // not pan the map. The item cannot both accept the press (which is what lets the
-  // release tell a click from a drag) and leave the view's gesture intact; the fix
-  // belongs in ProjectView, which knows about both. Shipped deliberately as-is.
-  if(event->button() != Qt::LeftButton || !viewInPanMode(event->widget()))
-  {
-    event->ignore();
-    return;
-  }
-  // Say nothing yet: whether this is a click or the start of a pan is not known
-  // until the button comes back up. Where the press landed does not need
-  // remembering — the release event carries its own button-down screen position.
-  event->accept();
-}
-
-void VectorFeatureItem::mouseReleaseEvent(QGraphicsSceneMouseEvent* event)
-{
-  if(event->button() != Qt::LeftButton)
-  {
-    event->ignore();
-    return;
-  }
-  // A release far from the press is a drag — the operator was panning across the
-  // map and happened to start on a feature. Answering that with an attribute
-  // tooltip is an answer to a question they did not ask.
-  //
-  // Measured in SCREEN PIXELS, which is the unit kClickSlopPixels is in and the
-  // unit a hand's worth of wobble is constant in: a scene-coordinate slop would
-  // mean a different tolerance at every zoom level. The screen positions are
-  // carried by the event itself and need no widget, so there is no second,
-  // untestable comparison path (this used to fall back to a SCENE-metre delta
-  // whenever the event had no widget, comparing metres against a pixel
-  // threshold).
-  const QPointF moved_px(event->screenPos() - event->buttonDownScreenPos(Qt::LeftButton));
-  if(QPointF::dotProduct(moved_px, moved_px) > kClickSlopPixels * kClickSlopPixels)
-  {
-    event->accept();
-    return;
-  }
-  QToolTip::showText(event->screenPos(), attributeText());
-  event->accept();
 }
 
 }  // namespace camp::vector

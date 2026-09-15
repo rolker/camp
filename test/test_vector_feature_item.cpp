@@ -3,13 +3,14 @@
 // Two defects this pins, both of which are invisible until an operator meets them
 // with a real file:
 //
-//  1. CLICK-TO-INSPECT ON LINES. Qt picks an item by testing the point against
-//     `shape()`'s FILL AREA. A line's path is open and encloses no area, so
-//     returning the raw path means no click ever lands on a line feature and the
-//     headline "click a feature to see its attributes" silently does not work for
-//     line data (tracklines, contours, cable routes — most of what gets imported).
+//  1. HOVER-TO-INSPECT ON LINES. Qt picks an item by testing the point against
+//     `shape()`'s FILL AREA — for the tooltip's own hit test (helpEvent) as much
+//     as for a click. A line's path is open and encloses no area, so returning the
+//     raw path means the cursor never lands on a line feature and the headline
+//     "point at a feature to see its attributes" silently does not work for line
+//     data (tracklines, contours, cable routes — most of what gets imported).
 //     The mission-tree LineString strokes its path for exactly this reason.
-//  1b. THE POINT CLICK TARGET AND THE NO-DATA MARKER, both found in the operator
+//  1b. THE POINT HIT TARGET AND THE NO-DATA MARKER, both found in the operator
 //     GUI test of 2026-09-15: a 5-pixel marker cannot be hit under the open-hand
 //     pan cursor, whose hotspot the operator cannot see, and a hollow no-data
 //     marker stroked with a width-0 hairline is not visible on a chart at all —
@@ -29,12 +30,8 @@
 #include <memory>
 
 #include <QApplication>
-#include <QGraphicsScene>
 #include <QImage>
 #include <QPainter>
-#include <QGraphicsSceneMouseEvent>
-#include <QGraphicsView>
-#include <QToolTip>
 
 #include "map_view/web_mercator.h"
 #include "vector/vector_feature_item.h"
@@ -236,102 +233,56 @@ TEST(VectorFeatureItem, PolarFeatureStaysInsideTheMercatorWorld)
   EXPECT_LE(std::abs(item.pos().y() + bounds.top()), half_extent + slack);
 }
 
-// [camp#22] Click-to-inspect fires on RELEASE WITHOUT MOVEMENT, and only when the
-// view the event came from is in pan mode.
+// [camp#22 / ADR-0016 D5] INSPECTION IS ON HOVER, and the item answers no mouse
+// button at all.
 //
-// ProjectView places waypoints on left-press in its add-* modes, so a popup on
-// press would appear mid-placement; and a press that turns into a drag is the
-// operator panning across the map, not asking about the feature they happened to
-// start on. The mode is read from the EVENT's view rather than from any attached
-// view, which matters as soon as a scene has more than one.
-TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
+// Hover is CAMP's house convention for "tell me what this is" (Platform and
+// AISContact show a label on hover, GeoGraphicsMissionItem brightens on hover);
+// the operator asked for it after the 2026-09-15 GUI test, and it replaced a
+// click gated on the view's pan mode. What is pinned here is the whole mechanism:
+// the popup text is the item's ordinary Qt TOOLTIP, which QGraphicsScene's
+// helpEvent() shows on hover with no code of ours in the path, and NO mouse
+// button is accepted, so a press over a feature always falls through to the
+// view's ScrollHandDrag (camp#225: a pan gesture that starts on a feature pans).
+TEST(VectorFeatureItem, HoverPopupIsTheItemsTooltip)
 {
-  QGraphicsScene scene;
-  QGraphicsView view(&scene);
   ParsedGeometry g;
   g.type = ParsedGeometry::Point;
   g.exterior.push_back(QGeoCoordinate(43.0, -70.0));
-  // An attribute, so the popup has something to say and "shown" is
-  // distinguishable from "suppressed" by the tooltip's TEXT.
   g.attributes["assessment"] = QStringLiteral("candidate C");
-  auto* item = new VectorFeatureItem(nullptr, g);
-  scene.addItem(item);
-  ASSERT_FALSE(item->attributeText().isEmpty());
+  VectorFeatureItem item(nullptr, g);
 
-  auto press = [&](const QPoint& screen)
-  {
-    QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMousePress);
-    event.setButton(Qt::LeftButton);
-    event.setWidget(view.viewport());
-    event.setScenePos(item->pos());
-    event.setScreenPos(screen);
-    event.setButtonDownScreenPos(Qt::LeftButton, screen);
-    event.setAccepted(false);
-    scene.sendEvent(item, &event);
-    return event.isAccepted();
-  };
-  auto release = [&](const QPoint& down, const QPoint& up)
-  {
-    QGraphicsSceneMouseEvent event(QEvent::GraphicsSceneMouseRelease);
-    event.setButton(Qt::LeftButton);
-    event.setWidget(view.viewport());
-    event.setScenePos(item->pos());
-    event.setScreenPos(up);
-    event.setButtonDownScreenPos(Qt::LeftButton, down);
-    event.setAccepted(false);
-    scene.sendEvent(item, &event);
-    return event.isAccepted();
-  };
-
-  // An add-* mode (NoDrag): the press is IGNORED, so placement is untouched.
-  view.setDragMode(QGraphicsView::NoDrag);
-  EXPECT_FALSE(press(QPoint(100, 100)));
-
-  // Pan mode: the press is taken but answers nothing yet — whether this is a
-  // click or the start of a pan is not known until the button comes back up.
-  //
-  // What is asserted on the release is the TOOLTIP, not isAccepted(): the item
-  // accepts the release on both the click and the drag path (a drag it started on
-  // is still its event), so acceptance cannot tell "popup shown" from "popup
-  // suppressed" — the one thing this test exists to distinguish.
-  view.setDragMode(QGraphicsView::ScrollHandDrag);
-  EXPECT_TRUE(press(QPoint(100, 100)));
-  EXPECT_TRUE(release(QPoint(100, 100), QPoint(100, 100)));   // a click
-  EXPECT_EQ(QToolTip::text(), item->attributeText())
-      << "a click without movement must show the feature's attributes";
-  EXPECT_FALSE(QToolTip::text().isEmpty());
-
-  // Now the drag. "No popup" is asserted as "the tooltip text did not change",
-  // against a sentinel planted first: QToolTip::hideText() does not clear
-  // QToolTip::text() on the offscreen platform, so an emptiness assertion here
-  // would be testing the platform rather than the item.
-  const QString sentinel = QStringLiteral("sentinel: no popup was shown");
-  QToolTip::showText(QPoint(0, 0), sentinel);
-  ASSERT_EQ(QToolTip::text(), sentinel) << "harness: the sentinel did not take";
-
-  EXPECT_TRUE(press(QPoint(100, 100)));
-  EXPECT_TRUE(release(QPoint(100, 100), QPoint(400, 250)));   // a drag: no popup
-  EXPECT_EQ(QToolTip::text(), sentinel)
-      << "a release far from the press is a pan, and must not answer with a tooltip";
-
-  // A right-button release is not ours.
-  QGraphicsSceneMouseEvent right(QEvent::GraphicsSceneMouseRelease);
-  right.setButton(Qt::RightButton);
-  right.setWidget(view.viewport());
-  right.setAccepted(false);
-  scene.sendEvent(item, &right);
-  EXPECT_FALSE(right.isAccepted());
+  ASSERT_FALSE(item.attributeText().isEmpty());
+  EXPECT_EQ(item.toolTip(), item.attributeText())
+      << "the tooltip is what the hover popup shows; it must carry the attributes";
+  EXPECT_TRUE(item.toolTip().contains(QStringLiteral("assessment: candidate C")));
 }
 
-// [camp#22] A point marker's CLICK target is wider than the marker itself.
+// [camp#22 / camp#225] A feature accepts NO mouse button, so every press over it
+// reaches the view.
+//
+// This is what makes camp#225 (a pan that starts on a feature does not pan) fixed
+// by construction rather than by a gate: there is nothing left to gate. It is
+// asserted on the ITEM here — QGraphicsItem accepts the left button by default,
+// so the absence of this call is a silent regression — and through a real view in
+// VectorLayerInteraction.APressOverAFeatureFallsThroughToTheView.
+TEST(VectorFeatureItem, AcceptsNoMouseButtonSoThePressReachesTheView)
+{
+  VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));
+  EXPECT_EQ(item.acceptedMouseButtons(), Qt::NoButton);
+}
+
+// [camp#22] A point marker's HIT target is wider than the marker itself.
 //
 // The drawn marker is kDefaultPointRadius = 5 device pixels, and in the operator
-// GUI test of 2026-09-15 nobody managed to land a click inside it: the pan cursor
-// is an open hand whose hotspot is not visible, so a 5 px target is aimed at
-// blind and click-to-inspect read as "there is no tooltip". shape() therefore
-// carries kPointClickSlackPixels (4 px) of slack around the marker. Nothing drawn
-// grows — this is the target, not the symbol.
-TEST(VectorFeatureItem, PointClickTargetIsWiderThanTheDrawnMarker)
+// GUI test of 2026-09-15 nobody managed to land the cursor inside it: the pan
+// cursor is an open hand whose hotspot is not visible, so a 5 px target is aimed
+// at blind and inspection read as "there is no tooltip". shape() therefore
+// carries kPointHoverSlackPixels (4 px) of slack around the marker. Nothing drawn
+// grows — this is the target, not the symbol. The slack was added for a click and
+// serves the hover tooltip unchanged: shape() is what QGraphicsScene::helpEvent()
+// hit-tests too.
+TEST(VectorFeatureItem, PointHoverTargetIsWiderThanTheDrawnMarker)
 {
   VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));
   ASSERT_TRUE(item.isPoint());
@@ -343,9 +294,9 @@ TEST(VectorFeatureItem, PointClickTargetIsWiderThanTheDrawnMarker)
   // 7 px out: OUTSIDE the 5 px marker, inside the 9 px target. This is the case
   // the slack exists for, and the one that fails without it.
   EXPECT_TRUE(shape.contains(QPointF(7.0, 0.0)))
-      << "a click just outside the marker must still hit the feature";
+      << "the cursor just outside the marker must still hit the feature";
   EXPECT_TRUE(shape.contains(QPointF(0.0, -7.0)));
-  // The slack is bounded: a click well away from the marker is not this feature's.
+  // The slack is bounded: a cursor well away from the marker is not this feature's.
   EXPECT_FALSE(shape.contains(QPointF(20.0, 0.0)));
 
   // Qt requires shape() to lie inside boundingRect(); a shape outside it is

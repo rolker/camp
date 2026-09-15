@@ -28,16 +28,19 @@ class VectorFeatureItem;
 ///     the operator can drag, rename and send to the robot. It persists in the
 ///     mission project file.
 ///   - `VectorLayer` (this class, File > Open Vector Layer) DISPLAYS a file as an
-///     ordinary Layers-tab layer with attribute-driven styling and click-to-
+///     ordinary Layers-tab layer with attribute-driven styling and hover-to-
 ///     inspect: nothing about it is editable, nothing reaches the robot, and it
 ///     persists as app state in QSettings alongside the chart list (ADR-0003 §4),
 ///     independent of any mission file.
 /// Both read the file through `camp::vector::parseVectorLayers`.
 ///
-/// Click-to-inspect is a `QToolTip`, shown on left-button RELEASE WITHOUT
-/// MOVEMENT and only while the view is in pan mode — not a persistent panel, and
-/// not available in the add-* modes where a left-press places a mission item. See
-/// VectorFeatureItem::mousePressEvent.
+/// [ADR-0016 D5] Hover-to-inspect is the item's ordinary Qt tooltip, shown when
+/// the cursor rests on a feature — CAMP's house convention for "tell me what this
+/// is" (Platform, AISContact and the mission items all answer to hover), and not
+/// a persistent panel. A feature accepts NO mouse button, so every press over one
+/// falls through to the view: a pan gesture that starts on a feature pans, and a
+/// left-press in one of ProjectView's add-* modes places its mission item with
+/// nothing in the way. See VectorFeatureItem.
 ///
 /// [ADR-0016] The design decisions and the persisted schema (`vectorLayers/files`
 /// plus the per-layer style group) are recorded in
@@ -51,7 +54,7 @@ class VectorFeatureItem;
 /// and the result is turned into one `VectorFeatureItem` child per feature, whose
 /// coordinates are transformed to the Web-Mercator scene once (ADR-0002). Per-
 /// feature child items — rather than RasterLayer's single painted surface — are
-/// what make click-to-inspect Qt's problem instead of ours.
+/// what make hover-to-inspect Qt's problem instead of ours.
 class VectorLayer: public map::Layer
 {
   Q_OBJECT
