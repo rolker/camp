@@ -6,6 +6,38 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 11** (2026-09-15) — **inspection moved from CLICK to HOVER**, an operator
+decision taken at a run-issue checkpoint after the rev-10 fixes were tested in the
+GUI and the layer worked ("It works!"). The remaining oddity was that the vector
+layer was the only thing in CAMP that inspects on a click: `Platform` and
+`AISContact` show their label on hover, `GeoGraphicsMissionItem` brightens on
+hover, and nothing inspects on click. The popup is now the item's ordinary Qt
+tooltip (`setToolTip()`, shown by `QGraphicsScene::helpEvent()`), and a
+`VectorFeatureItem` accepts **no mouse button at all**.
+
+What that deleted rather than added:
+
+- `mousePressEvent`/`mouseReleaseEvent`, `viewInPanMode()` and the click/drag
+  slop constant — all of which existed only to tell a click from a pan and an
+  inspection from a mission-item placement.
+- The `ProjectView` change this branch made for the gate (`e2a56cc`, deferring
+  the switch back to pan mode until after the press was dispatched). With no gate
+  it has no purpose, and it touched the press path of every add-\* mode, so
+  `src/camp/projectview.cpp` is reverted and is byte-identical to `jazzy`.
+- **camp#225** (a pan gesture starting on a feature does not pan) is fixed by
+  construction: the press always reaches the view's ScrollHandDrag now. The host
+  can close it at merge.
+
+The hit slack stays (ADR-0016 D15) — `shape()` is what `QGraphicsScene::helpEvent()`
+hit-tests too, so the tolerance serves hover for the same reason it served the
+click; the constants are renamed `kHoverWidth` / `kPointHoverSlackPixels`. Tests
+follow: the tooltip text, the no-mouse-button contract, a synthesized
+`QHelpEvent(QEvent::ToolTip)` through a real y-flipped view at centre / 3 px /
+7 px off / clear of any feature, and a press through that view leaving the scene
+with no mouse grabber. ADR-0016 D5 is rewritten; D15 and the camp#225 consequence
+are updated; "click to pin the popup open" and "the pan cursor is a CAMP-wide
+choice" are recorded as follow-ons.
+
 **Rev 10** (2026-09-15) — the first OPERATOR GUI TEST of the branch, on 7 real
 magnetic-anomaly candidates
 (`massabesic_joint_candidates.geojson`). Two of the three "must have"
@@ -324,7 +356,8 @@ This issue asks for a second, **read-only** way to view the same kind of
 file: a `map::Layer` in the Layers tab (like `RasterLayer`/backgrounds,
 ADR-0002/ADR-0003) that renders points/lines/polygons with attribute-driven
 styling (colour-by-field via `marine_colormap`, size-by-field) and
-click-to-inspect.
+inspection of a feature's attributes (rev 11: on hover; click-to-inspect
+through rev 10).
 
 The issue review raised six open items; the operator answered all six in a
 follow-up comment on the issue (2026-09-14), and — after Plan Review rev 1
@@ -342,7 +375,7 @@ rounds of answers directly:
    original parent node — with a regression test. The `read()` stub is
    unrelated dead code on this path and is left alone.
 4. Architecture: per-feature `QGraphicsItem` children under the new layer
-   (for free hit-testing / click-to-inspect), transformed to scene
+   (for free hit-testing / hover-to-inspect), transformed to scene
    coordinates once at load — not a single painted surface like
    `RasterLayer`.
 5. Colour-by-field uses `marine_colormap` (already integrated in
@@ -350,7 +383,7 @@ rounds of answers directly:
    `camp::map::ColorMap` / stale #63.
 6. MVP scope for this PR: OGR load (GeoJSON first), points/lines/polygons
    (including multi-part and 25D variants — see step 1) with a default
-   style, colour-by-field, size-by-field, click-to-inspect attributes,
+   style, colour-by-field, size-by-field, hover-to-inspect attributes,
    save/restore in the project (QSettings app state, per operator decision
    2 below), unit tests for the parser attributes and the styling mapping.
    Label-by-field and a style-editing UI are follow-on (new issues, not this
@@ -692,12 +725,12 @@ rounds of answers directly:
 | `src/camp_map/map/item_types.h` | New `VectorLayerType` enum value |
 | `src/camp_map/vector/vector_layer.h` (new) | `VectorLayer : public map::Layer` — async OGR load (with alt-stack install), style setters, `settingsKey()` override, `onRemovedFromMap()`, persistence hooks |
 | `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute (with degenerate/missing-value handling), readSettings/writeSettings |
-| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon), click-to-inspect gated on pan mode |
-| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test (rev 5: line shapes are STROKED, or Qt's fill-area test never picks them) + coordinate placeability + the attribute popup on release-without-drag |
+| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon); rev 11: hover-to-inspect via the item's Qt tooltip, and `setAcceptedMouseButtons(Qt::NoButton)` |
+| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test (rev 5: line shapes are STROKED, or Qt's fill-area test never picks them) + coordinate placeability + (rev 11) `setToolTip(attributeText())` in place of the mouse handlers |
 | `docs/decisions/0016-read-only-vector-file-layer.md` (new, rev 5) | ADR for the layer family and the persisted schema |
-| `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability, click/drag gating |
+| `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability; rev 11: the attribute tooltip and the no-mouse-button contract |
 | `src/camp_map/vector/vector_style.h`/`.cpp` (new) | Colour/size-by-field mapping as free functions — the headless-testable seam step 5's tests need |
-| `src/camp/projectview.cpp` (rev 7) | `mousePressEvent()` DEFERS its switch back to pan mode until after the press is forwarded to `QGraphicsView`, so the scene dispatches the press under the mode the operator clicked in. Applies to all six add-* modes and the right-button cancel — not vector-layer-scoped. No accessor was added: the feature item still reads pan mode from the view's `dragMode()` |
+| `src/camp/projectview.cpp` (rev 7, REVERTED rev 11) | Rev 7 deferred `mousePressEvent()`'s switch back to pan mode until after the press was forwarded, so the item's pan-mode gate read the mode the operator clicked in. Rev 11 removed the gate (hover, no mouse buttons), leaving that change without a purpose, so the file is reverted — **byte-identical to `jazzy`**, and this branch now touches no ProjectView behaviour |
 | `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
 | `CMakeLists.txt` | Move `vector_parse.cpp` from the executable's `SOURCES` to `CAMP_MAP_SOURCES`; add `vector_layer.cpp`/`vector_feature_item.cpp` to `CAMP_MAP_SOURCES`; 5 new `ament_add_gtest` blocks |
 | `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
@@ -757,7 +790,7 @@ rounds of answers directly:
 All three were settled during implementation (rev 4):
 
 - [x] `ParsedGeometry::attributes` container type — **`QMap<QString, QVariant>`**.
-      It also gives the click-to-inspect popup a stable alphabetical field order,
+      It also gives the attribute popup a stable alphabetical field order,
       so the ordered-vector alternative bought nothing.
 - [x] Whether `ProjectView` needs a read-only `mouseMode` accessor — **no**.
       Pan mode is `QGraphicsView::ScrollHandDrag`, which the feature item reads

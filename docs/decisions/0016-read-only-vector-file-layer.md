@@ -29,7 +29,8 @@ sendable to the robot, persisted in the mission project file.
 That is the wrong shape for the job issue #22 describes. The operator wants to
 *see* reference data on the map — a magnetic-anomaly candidate list, a survey
 boundary, a cable route, a shoreline — coloured by one of its attribute fields,
-clickable for its attributes, and back where they left it next time CAMP starts.
+able to tell them its attributes when pointed at, and back where they left it next
+time CAMP starts.
 None of that is mission data:
 
 - It must not be editable. A contact list dragged half a mile by an accidental
@@ -40,7 +41,7 @@ None of that is mission data:
   whether or not a mission is loaded, which is the *chart list's* lifetime
   (ADR-0003 §4), not the mission's.
 - It needs attribute-driven display — colour by field, marker size by field,
-  click for attributes — which `MissionItem` has no notion of at all.
+  hover for attributes — which `MissionItem` has no notion of at all.
 
 Meanwhile all three existing `map::Layer` families were **raster**: charts
 (`RasterLayer`), GGGS tile sets (`GggsTileLayer`), and tile/WMTS backgrounds
@@ -59,7 +60,7 @@ had to be answered rather than assumed.
    sources*: a texture, a geographic extent, a NoData sentinel, a colormap LUT.
    A feature has none of those. Forcing vector data through it would mean
    rasterizing on the CPU and throwing away exactly what makes the data useful —
-   per-feature identity, which is what click-to-inspect and per-feature styling
+   per-feature identity, which is what hover-to-inspect and per-feature styling
    are. ADR-0007's unification is not weakened: it remains the one path for
    raster, and there are still three raster layers and one renderer.
 
@@ -68,7 +69,7 @@ had to be answered rather than assumed.
    feature is not a row in the Layers tree, owns no settings group, needs no
    signal/slot machinery, and a layer holds thousands. Making each feature an
    item makes hit-testing Qt's problem instead of ours — which is the whole
-   mechanism behind click-to-inspect. It also means Qt's scene index, not our
+   mechanism behind hover-to-inspect. It also means Qt's scene index, not our
    code, decides what is drawn at a given viewport.
 
 3. **Both entry points share one parser, and it lives in `camp_map`.**
@@ -93,23 +94,50 @@ had to be answered rather than assumed.
    rather than falling through to the untransformed branch — reading projected
    metres as degrees places features ~1e17 m from where they belong, silently.
 
-5. **Read-only means read-only, everywhere.** No editing, no dragging, no
-   waypoint linking, nothing sent to the robot. The one interaction is
-   click-to-inspect, and it is gated: it fires on left-button *release without
-   movement*, and only when the view the event came from is in pan mode
-   (`ScrollHandDrag`). ProjectView places mission items on left-press in its
-   add-* modes, and a press that becomes a drag is a pan gesture. The mode is
-   read from the view's own drag mode rather than by asking ProjectView, again
-   because camp_map cannot call into the executable.
+5. **Read-only means read-only, everywhere, and the one interaction is HOVER.**
+   No editing, no dragging, no waypoint linking, nothing sent to the robot. A
+   feature answers the cursor resting on it with its attributes, as an ordinary Qt
+   tooltip (`QGraphicsItem::setToolTip()`, shown by `QGraphicsScene::helpEvent()`
+   after the usual delay and hidden on move-away). It is not a persistent panel.
 
-   This gate depends on one thing in `ProjectView`, recorded here because it is
-   invisible from `camp_map`: `ProjectView::mousePressEvent()` must DEFER its
-   switch back to pan mode until after it has forwarded the press to
-   `QGraphicsView`. It used to call `setPanMode()` inline, which set
-   `ScrollHandDrag` before the scene dispatched the press — so the item read "pan"
-   during the very click that placed a mission item, accepted it, and answered the
-   release with a tooltip on top of the item just placed. The press has to be
-   dispatched under the mode the operator clicked in.
+   **Hover, because that is CAMP's house convention for "tell me what this is."**
+   `Platform` and `AISContact` show their label on hover
+   (`setShowLabelFlag(true)` in `hoverEnterEvent`), `GeoGraphicsMissionItem`
+   brightens on hover, and **nothing in CAMP inspects on click**. This layer
+   shipped its first GUI test (2026-09-15) with click-to-inspect, and the operator
+   decided from that test to align it with the rest of the application. Consistency
+   here is not cosmetic: a click means "act on this" everywhere else in the map
+   view — placing a waypoint, starting a pan — and a read-only layer has no action
+   to offer.
+
+   **Hover also costs nothing else, which click did.** A `VectorFeatureItem`
+   accepts **no mouse button at all** (`setAcceptedMouseButtons(Qt::NoButton)`;
+   `QGraphicsItem` accepts the left button by default, so this has to be said), so
+   every press over a feature falls straight through to `QGraphicsView`. That
+   deletes a whole apparatus the click version needed, two pieces of which had
+   already cost a review round each to get right:
+
+   - There is no mode gate. The click version had to read the view's drag mode to
+     tell "the operator is inspecting" from "the operator is placing a waypoint",
+     and it had to read it from the *event's* view rather than by asking
+     ProjectView, because `camp_map` cannot call into the executable that links it
+     (#217).
+   - There is no coupling to `ProjectView`. The gate depended on
+     `ProjectView::mousePressEvent()` deferring its switch back to pan mode until
+     after the press had been forwarded — otherwise the item read "pan" during the
+     very click that placed a mission item and answered it with a tooltip on top
+     of the item just placed. That deferral (commit `e2a56cc`) was introduced for
+     this gate alone and rewired the press path of every add-\* mode that returns
+     to pan; it has been reverted, and `ProjectView` is byte-identical to `jazzy`
+     again.
+   - There is no click/drag slop. Telling a click from the start of a pan needed a
+     screen-pixel threshold between press and release — which a first attempt
+     compared against a *scene-metre* delta whenever the event carried no widget,
+     a different tolerance at every zoom level.
+
+   The one thing an item that accepts no mouse button cannot do is pin the popup
+   open on click. That is a follow-on (see Consequences), and it would have to be
+   built without taking the press away from the view's gesture.
 
 6. **Styling is attribute-driven, through `marine_colormap` (ADR-0008), and
    total.** Colour-by-field samples the selected palette across the field's
@@ -286,8 +314,8 @@ had to be answered rather than assumed.
     something to approximate here.
 
     `fields()` is deliberately unchanged and still reports every field: the
-    click-to-inspect popup shows them all, and label-by-field — the other
-    follow-on — will want them all too.
+    hover popup shows them all, and label-by-field — the other follow-on — will
+    want them all too.
 
     A **persisted** `color_field_` can still name a field no feature has a number
     for, since the style group is keyed on the file path and restored whenever
@@ -299,16 +327,20 @@ had to be answered rather than assumed.
     already behaved this way: `radiusForValue()` returns the default radius on an
     invalid range.)
 
-15. **A point's CLICK target is wider than its drawn marker**, by
-    `kPointClickSlackPixels` (4 device pixels) in `shape()`, with `boundingRect()`
+15. **A point's HIT target is wider than its drawn marker**, by
+    `kPointHoverSlackPixels` (4 device pixels) in `shape()`, with `boundingRect()`
     grown to match because a shape outside the bounding rect is undefined in Qt.
-    The drawn marker is 5 pixels at the default size, and click-to-inspect is
-    gated on pan mode — where the cursor is an **open hand whose hotspot the
-    operator cannot see**. In the 2026-09-15 GUI test nobody landed a click inside
-    5 pixels, and the headline feature read as not working. This is the same trade
-    a line already makes (its shape is stroked to `kClickWidth`, wider than the
-    drawn stroke): the target is what the cursor can be placed on, not what the
-    renderer draws. Nothing about the symbol grows.
+    The drawn marker is 5 pixels at the default size, and CAMP idles in pan mode —
+    where the cursor is an **open hand whose hotspot the operator cannot see**. In
+    the 2026-09-15 GUI test nobody landed the cursor inside 5 pixels, and the
+    headline feature read as not working. This is the same trade a line already
+    makes (its shape is stroked to `kHoverWidth`, wider than the drawn stroke): the
+    target is what the cursor can be placed on, not what the renderer draws.
+    Nothing about the symbol grows.
+
+    The slack was added for click-to-inspect and carries over to hover-to-inspect
+    unchanged, because `shape()` is what `QGraphicsScene::helpEvent()` hit-tests
+    too — the constants are named for hover now, and the tolerance is the same.
 
 ## Consequences
 
@@ -339,14 +371,17 @@ had to be answered rather than assumed.
   split precedent is recorded, not resolved.
 - **A field CAMP cannot ramp is invisible in the styling menus** (D14), so an
   operator whose file carries only text attributes gets no *Color by* menu at all
-  rather than one that does nothing useful. The Layers-tab popup still shows every
+  rather than one that does nothing useful. The hover popup still shows every
   attribute, which is where those fields are readable today. Categorical styling
   and label-by-field are the follow-ons that give them a rendering role.
-- **A pan that starts on a feature does not pan the map** (camp#225). The item
-  accepts the left press in pan mode, which is what lets the release tell a
-  click from a drag, and that press therefore never reaches `QGraphicsView`'s
-  ScrollHandDrag. An item cannot have both; the fix belongs in `ProjectView`,
-  which sees the gesture and the items under it, and is tracked separately.
+- **camp#225 — a pan that starts on a feature does not pan the map — is FIXED BY
+  CONSTRUCTION.** It was the cost of the click version: the item accepted the left
+  press so the release could tell a click from a drag, and that press therefore
+  never reached `QGraphicsView`'s ScrollHandDrag. A feature now accepts no mouse
+  button (D5), so there is no press to take and nothing to gate. Pinned by
+  `VectorLayerInteraction.APressOverAFeatureFallsThroughToTheView` (no mouse
+  grabber after a press through a real view) and
+  `VectorFeatureItem.AcceptsNoMouseButtonSoThePressReachesTheView`.
 - **Cross-antimeridian geometry is a known limitation.** A line or polygon whose
   vertices straddle 180° is drawn the long way round the world and stretches the
   layer's extent with it. The parser reports what the file says; nothing splits
@@ -356,3 +391,16 @@ had to be answered rather than assumed.
 - **Label-by-field and a style-editing dialog are deliberately absent.** The
   context menu offers colour-by, size-by and palette; anything richer is a
   follow-up, per the issue's own MVP scope.
+- **Named follow-ons, not filed as issues here** (the host files them; this list
+  is what they are):
+  - **Categorical styling** (a colour per class with a legend and a stable class
+    order) and **label-by-field** — D14's two, and what a free-text attribute
+    like `assessment` actually wants.
+  - **Click to pin the popup open.** Hover answers "what is this"; an operator
+    comparing two features, or copying a value, wants the popup to stay. It has
+    to be built without taking the press away from the view's pan gesture, which
+    is what D5 just bought back.
+  - **The pan cursor is a CAMP-wide choice, not this layer's.** The open hand
+    whose hotspot the operator cannot see is `ScrollHandDrag`'s, shared by every
+    layer and every mission item; D15's hit slack is this layer working around it.
+    Changing the cursor belongs to the map view, not here.

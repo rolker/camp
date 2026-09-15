@@ -107,11 +107,16 @@ the operator can move, rename and send to the robot — persisted in the mission
 project file. `camp::vector::VectorLayer` (`src/camp_map/vector/`, File > Open
 Vector Layer) **displays** it read-only as an ordinary Layers-tab layer with
 attribute-driven styling (colour-by-field through `marine_colormap`,
-size-by-field on point markers) and click-to-inspect — which is a **`QToolTip`,
-shown on left-button release without movement, and only while the view is in pan
-mode** (ProjectView places mission items on left-press in its add-* modes, and a
-press that becomes a drag is a pan gesture); it is not a persistent panel. The
-layer persists as **app state** under `QSettings vectorLayers/files` like the
+size-by-field on point markers) and **hover-to-inspect** — the item's ordinary Qt
+tooltip, shown when the cursor rests on a feature, matching CAMP's house
+convention (`Platform` and `AISContact` show their label on hover,
+`GeoGraphicsMissionItem` brightens on hover; nothing in CAMP inspects on click).
+It is not a persistent panel. A `VectorFeatureItem` accepts **no mouse button at
+all** (`setAcceptedMouseButtons(Qt::NoButton)`), so every press over a feature
+falls through to the view — which is what keeps the pan gesture and ProjectView's
+add-* placement clicks working over a vector layer, and what makes camp#225 fixed
+by construction. Do not give the item a mouse handler without re-reading ADR-0016
+D5. The layer persists as **app state** under `QSettings vectorLayers/files` like the
 chart list (ADR-0003 §4), not in the mission file. Both read the file through
 `camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
 which lives in **camp_map** so both the library layer and the executable's
