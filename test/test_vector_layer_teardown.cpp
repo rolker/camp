@@ -328,7 +328,39 @@ TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
     ASSERT_EQ(parsed.front().geometries.size(), 200000u);
   }
   const qint64 full_ms = full_timer.elapsed();
-  ASSERT_GT(full_ms, 200) << "fixture is too small to distinguish an aborted parse";
+
+  // [camp#22 suggestion] The OBSERVABLE condition, asserted unconditionally: an
+  // abort raised part way through leaves a PARTIAL parse and says so. This is what
+  // the test is really about, and unlike a wall-clock comparison it means the same
+  // thing on every machine. (The flag is polled per feature and, since the budget
+  // was threaded into the geometry recursion, inside a multi-part feature too.)
+  {
+    GDALAllRegister();
+    std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
+      static_cast<GDALDataset*>(
+        GDALOpenEx(path.toUtf8().constData(), GDAL_OF_READONLY | GDAL_OF_VECTOR,
+                   nullptr, nullptr, nullptr)),
+      gdal_closer);
+    ASSERT_TRUE(dataset);
+    int polls = 0;
+    camp::vector::ParseOptions options;
+    options.aborted = [&polls]() { return ++polls > 10; };
+    camp::vector::ParseDiagnostics diagnostics;
+    const auto parsed = camp::vector::parseVectorLayers(dataset.get(), options, &diagnostics);
+    EXPECT_TRUE(diagnostics.aborted) << "an abort part way through must be reported";
+    size_t emitted = 0;
+    for(const auto& layer : parsed)
+      emitted += layer.geometries.size();
+    EXPECT_LT(emitted, 200000u)
+        << "the parse ran to the end of the file despite the abort flag";
+  }
+
+  // The wall-clock comparison below is a SECOND, weaker signal: it catches an
+  // abort that is honoured but arrives late. It is only meaningful when the full
+  // parse is slow enough for "half of it" to be outside the timer's noise, so on a
+  // machine fast enough to read the fixture in under 200 ms it is reported and
+  // skipped rather than failed — a correct implementation must not fail for being
+  // run on better hardware. The assertion above is the one that always holds.
 
   // Now destroy immediately. The dtor sets the abort flag and joins; with the flag
   // polled inside the parse loop this returns long before the file is read. The
@@ -341,9 +373,19 @@ TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
     delete layer;
   }
   const qint64 abort_ms = abort_timer.elapsed();
-  EXPECT_LT(abort_ms, full_ms / 2)
-      << "aborted teardown took " << abort_ms << " ms against a full parse of " << full_ms
-      << " ms — the abort flag is not being polled inside the parse";
+  // Only meaningful when the full parse is slow enough for "half of it" to sit
+  // outside the timer's noise. On a machine that reads the fixture in under 200 ms
+  // the comparison is reported and skipped rather than failed: a correct
+  // implementation must not fail for being run on faster hardware. The
+  // partial-parse assertion above is the one that always holds.
+  if(full_ms > 200)
+    EXPECT_LT(abort_ms, full_ms / 2)
+        << "aborted teardown took " << abort_ms << " ms against a full parse of " << full_ms
+        << " ms — the abort flag is not being polled inside the parse";
+  else
+    GTEST_LOG_(INFO) << "full parse of the 200 000-point fixture took only " << full_ms
+                     << " ms; the wall-clock ratio check is unmeasurable here and was"
+                     << " skipped (aborted teardown: " << abort_ms << " ms).";
 }
 
 int main(int argc, char** argv)
