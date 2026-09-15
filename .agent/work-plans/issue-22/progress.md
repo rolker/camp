@@ -1468,15 +1468,15 @@ show-don't-clear for a stale style field) except the label-position item below,
 whose actionable half is a stale doc sentence, not the interaction.
 
 ### Findings
-- [ ] (must-fix, Copilot R3+R4) `m_unavailableVectorLayerFiles` is purged by EXACT STRING (`removeAll(fname)`), but its entries are only canonical when the file existed at the time they were written: `canonicalVectorLayerPath()` falls back to the raw spelling for a path that does not resolve. A dangling symlink opened once (the layer is created and persisted even when the file will not open), then persisted, then unavailable at startup, keeps its raw spelling in the list; when the target appears and the operator opens that same symlink, `fname` is now the resolved TARGET and `removeAll` misses the raw entry. `persistVectorLayers()` then keeps writing it back, so removing the reopened layer through the Layers tab does not stick and the layer returns on the next launch — the camp#90/#117 class this PR exists not to repeat, and the same finding round 1 fixed for the non-alias spelling. Purge by canonical-equivalent identity (drop any entry whose `canonicalVectorLayerPath()` equals `fname`, keeping the exact-match removal), with a regression test on the symlink path — `src/camp/autonomousvehicleproject.cpp:435-436`
-- [ ] (should-fix, Copilot R3+R4) `parseVectorLayers()` binds `diag` to the caller's `ParseDiagnostics` and ACCUMULATES into it; the header documents the parameter as "filled in with what was skipped and why". Reusing one object across two parses carries `aborted`, `geometry_cap_reached`, `layers_total` and every counter into the second result, so an uncapped parse can be reported as capped. No live caller reuses one (`VectorLayer::load()` builds a fresh `LoadResult` per load), so this is a latent API trap rather than a current defect — and the fix is one line: reset a supplied object before binding — `src/camp_map/vector/vector_parse.cpp:331-332`, `src/camp_map/vector/vector_parse.h:155`
-- [ ] (should-fix, Copilot R3+R4) `firstCoordinate()` accepts an INTERIOR-ring vertex as a polygon's anchor. For a polygon whose exterior vertices are all unplaceable but whose hole has a valid one, `hasPlaceableCoordinate()` admits the item, the constructor closes an empty exterior and `addRing()` builds only the hole — which `Qt::OddEvenFill` then paints as solid fill, turning a hole into a feature. Require a placeable EXTERIOR vertex for a polygon (points and lines have no interior rings, so nothing else changes); the feature is then skipped and counted in the layer's `skipped` tally like any other unplaceable one — `src/camp_map/vector/vector_feature_item.cpp:72-81,155-166`
-- [ ] (should-fix, Copilot R4) The `!loaded_` status branch never says the file was CAPPED. `capped` comes from `diagnostics.geometry_cap_reached`, so "the cap was hit and every capped geometry was unplaceable" (a `.prj`-less national shapefile is exactly that) reports `(no placeable features; 50000 skipped)` with no hint that the rest of the file was not read — the log line says it, the Layers tab does not. Add the capped note to this path as the loaded path already does — `src/camp_map/vector/vector_layer.cpp:257-268`
-- [ ] (should-fix, Copilot R3) `geometry_cap_reached` is set immediately after the geometry that reaches `max_geometries`, without establishing that anything remains. A file holding exactly `max_geometries` geometries therefore reports "stopped at the cap; rest of file not read" in the Layers tab although the file was read in full — a false partial-read claim in the one status line this design makes load-bearing. Establish that more input exists (a bounded lookahead over this layer's next feature and any remaining layers) before setting the flag — `src/camp_map/vector/vector_parse.cpp:451-461`
-- [ ] (should-fix, Copilot R4) The unhandled-geometry `qWarning()` fires once per geometry, and an unhandled geometry does NOT spend the budget, so `max_geometries` bounds nothing here: a large file of curve types can emit unbounded log I/O while the worker reads all of it. `diagnostics.geometries_unhandled` already counts them — report the count once per layer, as the file already does for `points_dropped` and `polygons_without_exterior_ring` — `src/camp_map/vector/vector_parse.cpp:281-284`, `:469-479`
-- [ ] (should-fix, Copilot R4) The transform path is tested only WGS84 -> WGS84. Every fixture with a spatial reference uses `SetWellKnownGeogCS("WGS84")`, except the `LOCAL_CS` one, which tests transform FAILURE; `LineAndPolygonVerticesAreLatLonWhenTransformed` therefore exercises target-axis order but never reprojection from projected metres. Reading UTM survey data is a must-have of this layer, and a broken projected->WGS84 transform would pass the whole suite today. Add a projected fixture (EPSG:32619 eastings/northings) and assert the resulting lat/lon — `test/test_vector_parse_attributes.cpp:597-637`, `:70,306,370`
-- [ ] (should-fix, Copilot R4) `updateLabelPosition()`'s doc says a line's or polygon's "label follows the cursor"; it is placed at `event->pos()` on hover-ENTER only and then stays put while the cursor travels along the feature. AGENTS.md forbids documenting from assumption, so the sentence has to match the code. Whether the label should track the cursor within a feature is an operator UX question (hover-to-inspect itself is settled; this detail was never put to the operator) — the fix here is the doc correction, with a `hoverMoveEvent()` left as a question for the operator, not a bot-driven change — `src/camp_map/vector/vector_feature_item.h:157-158`, `src/camp_map/vector/vector_feature_item.cpp:340-347`
-- [ ] (suggestion, Copilot R3) `addRing()` drops an unplaceable vertex and keeps the subpath open, so the next valid vertex is joined with `lineTo()` — a straight segment across the missing data rather than a break. This is deliberate and argued at the call site, and Copilot's premises are partly wrong (an out-of-range latitude is CLAMPED by `placeableToMap()`, per ADR-0016 D13, not dropped; the parser drops failed transforms before this code sees them, so only a genuinely invalid coordinate from the no-SRS pass-through branch reaches it). What is missing is the CONSEQUENCE in the ADR: D4/D13 record the drop and the clamp but not that a dropped mid-ring vertex leaves a fabricated segment. Record it in ADR-0016; do not change the drawing (splitting the subpath would break a polygon's fill and is a bigger decision than this MVP) — `src/camp_map/vector/vector_feature_item.cpp:26-46`, `docs/decisions/0016-read-only-vector-file-layer.md:85-95,323-336`
+- [x] (must-fix, Copilot R3+R4) `m_unavailableVectorLayerFiles` is purged by EXACT STRING (`removeAll(fname)`), but its entries are only canonical when the file existed at the time they were written: `canonicalVectorLayerPath()` falls back to the raw spelling for a path that does not resolve. A dangling symlink opened once (the layer is created and persisted even when the file will not open), then persisted, then unavailable at startup, keeps its raw spelling in the list; when the target appears and the operator opens that same symlink, `fname` is now the resolved TARGET and `removeAll` misses the raw entry. `persistVectorLayers()` then keeps writing it back, so removing the reopened layer through the Layers tab does not stick and the layer returns on the next launch — the camp#90/#117 class this PR exists not to repeat, and the same finding round 1 fixed for the non-alias spelling. Purge by canonical-equivalent identity (drop any entry whose `canonicalVectorLayerPath()` equals `fname`, keeping the exact-match removal), with a regression test on the symlink path — `src/camp/autonomousvehicleproject.cpp:435-436`
+- [x] (should-fix, Copilot R3+R4) `parseVectorLayers()` binds `diag` to the caller's `ParseDiagnostics` and ACCUMULATES into it; the header documents the parameter as "filled in with what was skipped and why". Reusing one object across two parses carries `aborted`, `geometry_cap_reached`, `layers_total` and every counter into the second result, so an uncapped parse can be reported as capped. No live caller reuses one (`VectorLayer::load()` builds a fresh `LoadResult` per load), so this is a latent API trap rather than a current defect — and the fix is one line: reset a supplied object before binding — `src/camp_map/vector/vector_parse.cpp:331-332`, `src/camp_map/vector/vector_parse.h:155`
+- [x] (should-fix, Copilot R3+R4) `firstCoordinate()` accepts an INTERIOR-ring vertex as a polygon's anchor. For a polygon whose exterior vertices are all unplaceable but whose hole has a valid one, `hasPlaceableCoordinate()` admits the item, the constructor closes an empty exterior and `addRing()` builds only the hole — which `Qt::OddEvenFill` then paints as solid fill, turning a hole into a feature. Require a placeable EXTERIOR vertex for a polygon (points and lines have no interior rings, so nothing else changes); the feature is then skipped and counted in the layer's `skipped` tally like any other unplaceable one — `src/camp_map/vector/vector_feature_item.cpp:72-81,155-166`
+- [x] (should-fix, Copilot R4) The `!loaded_` status branch never says the file was CAPPED. `capped` comes from `diagnostics.geometry_cap_reached`, so "the cap was hit and every capped geometry was unplaceable" (a `.prj`-less national shapefile is exactly that) reports `(no placeable features; 50000 skipped)` with no hint that the rest of the file was not read — the log line says it, the Layers tab does not. Add the capped note to this path as the loaded path already does — `src/camp_map/vector/vector_layer.cpp:257-268`
+- [x] (should-fix, Copilot R3) `geometry_cap_reached` is set immediately after the geometry that reaches `max_geometries`, without establishing that anything remains. A file holding exactly `max_geometries` geometries therefore reports "stopped at the cap; rest of file not read" in the Layers tab although the file was read in full — a false partial-read claim in the one status line this design makes load-bearing. Establish that more input exists (a bounded lookahead over this layer's next feature and any remaining layers) before setting the flag — `src/camp_map/vector/vector_parse.cpp:451-461`
+- [x] (should-fix, Copilot R4) The unhandled-geometry `qWarning()` fires once per geometry, and an unhandled geometry does NOT spend the budget, so `max_geometries` bounds nothing here: a large file of curve types can emit unbounded log I/O while the worker reads all of it. `diagnostics.geometries_unhandled` already counts them — report the count once per layer, as the file already does for `points_dropped` and `polygons_without_exterior_ring` — `src/camp_map/vector/vector_parse.cpp:281-284`, `:469-479`
+- [x] (should-fix, Copilot R4) The transform path is tested only WGS84 -> WGS84. Every fixture with a spatial reference uses `SetWellKnownGeogCS("WGS84")`, except the `LOCAL_CS` one, which tests transform FAILURE; `LineAndPolygonVerticesAreLatLonWhenTransformed` therefore exercises target-axis order but never reprojection from projected metres. Reading UTM survey data is a must-have of this layer, and a broken projected->WGS84 transform would pass the whole suite today. Add a projected fixture (EPSG:32619 eastings/northings) and assert the resulting lat/lon — `test/test_vector_parse_attributes.cpp:597-637`, `:70,306,370`
+- [x] (should-fix, Copilot R4) `updateLabelPosition()`'s doc says a line's or polygon's "label follows the cursor"; it is placed at `event->pos()` on hover-ENTER only and then stays put while the cursor travels along the feature. AGENTS.md forbids documenting from assumption, so the sentence has to match the code. Whether the label should track the cursor within a feature is an operator UX question (hover-to-inspect itself is settled; this detail was never put to the operator) — the fix here is the doc correction, with a `hoverMoveEvent()` left as a question for the operator, not a bot-driven change — `src/camp_map/vector/vector_feature_item.h:157-158`, `src/camp_map/vector/vector_feature_item.cpp:340-347`
+- [x] (suggestion, Copilot R3) `addRing()` drops an unplaceable vertex and keeps the subpath open, so the next valid vertex is joined with `lineTo()` — a straight segment across the missing data rather than a break. This is deliberate and argued at the call site, and Copilot's premises are partly wrong (an out-of-range latitude is CLAMPED by `placeableToMap()`, per ADR-0016 D13, not dropped; the parser drops failed transforms before this code sees them, so only a genuinely invalid coordinate from the no-SRS pass-through branch reaches it). What is missing is the CONSEQUENCE in the ADR: D4/D13 record the drop and the clamp but not that a dropped mid-ring vertex leaves a fabricated segment. Record it in ADR-0016; do not change the drawing (splitting the subpath would break a polygon's fill and is a bigger decision than this MVP) — `src/camp_map/vector/vector_feature_item.cpp:26-46`, `docs/decisions/0016-read-only-vector-file-layer.md:85-95,323-336`
 
 ### False positives
 - (Copilot R3, `src/camp/autonomousvehicleproject.cpp:451`, flagged critical) "The `destroyed` connection can call `onVectorLayerDestroyed()` after `~AutonomousVehicleProject` has destroyed `m_vectorLayers`, so the slot iterates a destroyed `std::vector`." Repeat of the round-1 claim, dismissed then on measurement and unchanged since: `~QObject` removes every connection in which the object is the RECEIVER before `deleteChildren()` runs, so by the time the child `Map`'s `VectorLayer`s are destroyed there is no connection left to the slot. Verified empirically on this host's Qt 5.15.13 with a minimal parent/child/`destroyed`-slot program — the slot does not fire. The member-vs-child destruction ORDER Copilot describes is correct; the conclusion does not follow from it.
@@ -1484,3 +1484,89 @@ whose actionable half is a stale doc sentence, not the interaction.
 
 ### Previously triaged, unchanged
 - (Copilot R4, `src/camp_map/vector/vector_parse.cpp:146`) "A single ring's vertex count is unbounded, so one-part files defeat the memory bound." Correct, and already triaged in round 2 as a deferred OPERATOR decision: silently truncating a ring draws a wrong shape, which is worse than the honest geometry cap, so the options (drop-and-count vs accept-and-say-so) are folded into the deferred ADR-0016 D11 decision, which states in terms that neither the vertex count nor an attribute value size is bounded. No overclaim to correct and no new action.
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 13:34 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `7c0dfb7`
+**Addressed**: `## Integrated Review` of 2026-09-15 13:07 -04:00 (round 3, PR #226 at `136a505`)
+**Commits**: `9bf8ba6`, `76c0790`, `4433e4a`, `e20c006`, `704c99c`, `17e47d8`, `3d10e9c`, `0120983`, `280402a`, `7c0dfb7`
+
+All nine open findings actioned at the operator's "fix all 9" decision; none
+deferred. The two false positives and the previously-triaged item were left
+alone, and no settled operator decision (hover label, arrow cursor, numeric-only
+ramps) was reopened.
+
+Full camp suite after the last fix: **401 tests, 0 failures, 1 skipped** (up from
+394 — seven new tests).
+
+### Actions
+- [x] (must-fix) Unavailable-layer purge now drops any entry whose
+  `canonicalVectorLayerPath()` equals the opened file, keeping the exact-match
+  removal. `canonicalVectorLayerPath()` and the new `withoutVectorLayerFile()`
+  live in `camp::vector` so the rule is testable (the project is not
+  constructible in a harness) and `AutonomousVehicleProject` delegates to both.
+  Regression test drives the dangling-symlink-then-target-appears lifecycle over
+  a real temporary symlink, plus the exact-match and leave-alone cases —
+  `src/camp/autonomousvehicleproject.cpp:435-445`,
+  `src/camp_map/vector/vector_layer.cpp:563-590`,
+  `test/test_vector_layer_persistence.cpp` (`ReopenedDanglingSymlinkCanBeRemoved`,
+  `WithoutVectorLayerFileKeepsUnrelatedEntries`) — `9bf8ba6`
+- [x] (should-fix) A caller-supplied `ParseDiagnostics` is reset before the
+  parser binds to it, so a reused object cannot carry `aborted`,
+  `geometry_cap_reached` or a counter into the next parse; header contract
+  updated to say so — `src/camp_map/vector/vector_parse.cpp:331-341`,
+  `vector_parse.h`, test `SuppliedDiagnosticsAreResetPerParse` — `76c0790`
+- [x] (should-fix) `firstCoordinate()` no longer falls back to interior rings, so
+  a polygon whose exterior is entirely unplaceable is skipped and counted rather
+  than drawn from its hole (which `Qt::OddEvenFill` paints as fill). Points and
+  lines carry no interior rings, so nothing else changes —
+  `src/camp_map/vector/vector_feature_item.cpp:72-85`, `vector_feature_item.h`,
+  test `PolygonWithUnplaceableExteriorIsRejectedDespiteAValidHole` — `4433e4a`
+- [x] (should-fix) The capped note now rides every branch of the not-loaded
+  status path, so "the cap was hit and every capped geometry was unplaceable"
+  says the rest of the file was not read —
+  `src/camp_map/vector/vector_layer.cpp:257-282`, test
+  `CappedButEmptyLayerStillReportsTheUnreadRemainder` (with a
+  `waitForStatus()` helper, since `waitForLoad()` answers `loaded()`, false by
+  design for an empty layer) — `e20c006`
+- [x] (should-fix) `geometry_cap_reached` is set only once a bounded lookahead
+  establishes that input remains: the current feature's unread parts (new
+  `ParseBudget::input_remaining`), then one feature on the current layer, then at
+  most one per remaining layer — `src/camp_map/vector/vector_parse.cpp:349-386,
+  480-497`, tests `CapAtExactlyTheFileSizeIsNotAPartialRead` and
+  `CapInsideAFeatureReportsOnlyAnActualRemainder` — `704c99c`
+- [x] (should-fix) One unhandled-geometry warning per layer (count + first type
+  seen, carried by the new `ParseDiagnostics::first_unhandled_geometry_type`),
+  following the `points_dropped` pattern, instead of one qWarning per geometry
+  on a path the geometry budget does not bound —
+  `src/camp_map/vector/vector_parse.cpp:281-296, :505-513`, test
+  `UnhandledGeometriesAreReportedOncePerLayer` (counts the messages through a
+  temporary `qInstallMessageHandler`) — `17e47d8`
+- [x] (should-fix) Projected-CRS reprojection fixture: an EPSG:32619 (UTM 19N)
+  GeoPackage whose eastings/northings are asserted back as lat/lon, with the
+  expected values computed through the same PROJ this build links —
+  `test/test_vector_parse_attributes.cpp`
+  (`ProjectedCoordinatesAreReprojectedToLatLon`) — `3d10e9c`
+- [x] (should-fix) The "follows the cursor" claim corrected in
+  `updateLabelPosition()`'s doc, at the `hoverEnterEvent()` call site, in the
+  test's name and message, and in ADR-0016 D5 (which stated label placement
+  nowhere). A `hoverMoveEvent()` is recorded as an open operator question, not
+  made — `src/camp_map/vector/vector_feature_item.h:155-168`,
+  `vector_feature_item.cpp:340-352`, `docs/decisions/0016-*.md` — `0120983`
+- [x] (suggestion) ADR-0016 D13 now records the consequence D4/D13 left unsaid: a
+  dropped mid-ring vertex leaves a fabricated straight segment, bounded by the
+  clamp and by the parser's earlier drop. The drawing is unchanged —
+  `docs/decisions/0016-read-only-vector-file-layer.md` — `280402a`
+
+### Documents kept in sync
+- `plan.md` — **rev 14** (the plan's head was rev 13; no rev 14 existed) records
+  the five behaviour changes and the new tests.
+- `.agents/README.md` — the vector paragraph's "three of them bite" list gains
+  the canonical-identity purge and the capped-but-empty status, and is now four.
+
+### Next step
+Lifecycle: **Implementation** -> **review-code** (re-review the fixes). Not
+dispatched from here; the host orchestrator drives. Nothing was pushed.
