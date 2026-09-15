@@ -305,10 +305,99 @@ TEST(VectorFeatureItem, HoverShowsAnInSceneLabelWithTheAttributes)
   EXPECT_EQ(label->pen().color(), QColor("white"));
   EXPECT_TRUE(label->font().bold());
 
+  // The point branch: the label sits BESIDE the marker, clear of it and of the
+  // hit slack, never on top of the symbol it describes.
+  EXPECT_GT(label->pos().x(), camp::vector::kDefaultPointRadius)
+      << "the label overlaps the marker it labels";
+  EXPECT_DOUBLE_EQ(label->pos().y(), 0.0);
+
   QGraphicsSceneHoverEvent leave(QEvent::GraphicsSceneHoverLeave);
   item.hoverLeaveEvent(&leave);
   EXPECT_TRUE(labelOf(item)->text().isEmpty())
       << "the label must clear on leave, or every hovered feature keeps one";
+}
+
+// [camp#22 / ADR-0016 D5] A LINE or POLYGON labels AT THE CURSOR.
+//
+// The other branch of hoverEnterEvent(): a line may cross the whole view and a
+// polygon may fill it, so neither has an anchor worth labelling beside — the text
+// goes where the operator is pointing. Untested until now: the point branch is
+// the one HoverShowsAnInSceneLabelWithTheAttributes exercises, and a line that
+// labelled itself at its first vertex could be metres or kilometres off screen
+// from the cursor with nothing failing.
+TEST(VectorFeatureItem, HoverOnALineOrPolygonLabelsAtTheCursor)
+{
+  const QGeoCoordinate a(43.00, -70.80);
+  ParsedGeometry line = lineThrough({a, QGeoCoordinate(43.00, -70.60)});
+  line.attributes["survey"] = QStringLiteral("line 7");
+  HoverProbe item(nullptr, line);
+  ASSERT_FALSE(item.isPoint());
+
+  // Item coordinates: scene metres relative to the first vertex, which is where
+  // the item is positioned — so a cursor part-way along the line is well away
+  // from the item's own origin.
+  const QPointF cursor(4210.0, -3.0);
+  QGraphicsSceneHoverEvent enter(QEvent::GraphicsSceneHoverEnter);
+  enter.setPos(cursor);
+  item.hoverEnterEvent(&enter);
+
+  QGraphicsSimpleTextItem* label = labelOf(item);
+  ASSERT_NE(label, nullptr) << "hovering the line created no label";
+  EXPECT_TRUE(label->text().contains(QStringLiteral("survey: line 7")));
+  EXPECT_EQ(label->pos(), cursor)
+      << "a line's label must follow the cursor, not sit at the item's origin";
+
+  // A second hover elsewhere on the same line moves it.
+  const QPointF elsewhere(120.0, 2.0);
+  QGraphicsSceneHoverEvent leave(QEvent::GraphicsSceneHoverLeave);
+  item.hoverLeaveEvent(&leave);
+  QGraphicsSceneHoverEvent again(QEvent::GraphicsSceneHoverEnter);
+  again.setPos(elsewhere);
+  item.hoverEnterEvent(&again);
+  EXPECT_EQ(label->pos(), elsewhere);
+
+  // A polygon takes the same branch.
+  ParsedGeometry poly;
+  poly.type = ParsedGeometry::Polygon;
+  poly.exterior = {a, QGeoCoordinate(43.00, -70.60), QGeoCoordinate(43.05, -70.60)};
+  poly.attributes["zone"] = QStringLiteral("A");
+  HoverProbe area(nullptr, poly);
+  ASSERT_TRUE(area.isPolygon());
+  QGraphicsSceneHoverEvent in_area(QEvent::GraphicsSceneHoverEnter);
+  in_area.setPos(cursor);
+  area.hoverEnterEvent(&in_area);
+  ASSERT_NE(labelOf(area), nullptr);
+  EXPECT_EQ(labelOf(area)->pos(), cursor);
+}
+
+// [camp#22] A size-by-field restyle under a PARKED cursor moves the label with
+// the marker.
+//
+// The point label's gap is computed from radius_, and applyStyle() can call
+// setRadius() at any time — including while the cursor is sitting on the feature,
+// which is exactly when the operator is looking at the label. Recomputed at every
+// prepareGeometryChange() site rather than only at hover-enter, or a grown marker
+// paints over its own text until the operator hovers away and back.
+TEST(VectorFeatureItem, RestylingUnderAParkedCursorMovesTheLabel)
+{
+  ParsedGeometry g = pointAt(QGeoCoordinate(43.07, -70.71));
+  g.attributes["depth"] = 12.5;
+  HoverProbe item(nullptr, g);
+
+  QGraphicsSceneHoverEvent enter(QEvent::GraphicsSceneHoverEnter);
+  enter.setPos(QPointF(0.0, 0.0));
+  item.hoverEnterEvent(&enter);
+  QGraphicsSimpleTextItem* label = labelOf(item);
+  ASSERT_NE(label, nullptr);
+  const double at_default = label->pos().x();
+
+  // The cursor has not moved; only the styling has.
+  item.setRadius(camp::vector::kDefaultPointRadius + 15.0);
+  EXPECT_DOUBLE_EQ(label->pos().x(), at_default + 15.0)
+      << "the label kept the gap of the OLD radius and now sits on the marker";
+
+  item.setRadius(camp::vector::kDefaultPointRadius);
+  EXPECT_DOUBLE_EQ(label->pos().x(), at_default);
 }
 
 // [camp#22 / camp#225] A feature accepts NO mouse button, so every press over it

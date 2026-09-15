@@ -154,6 +154,12 @@ private:
   /// and outline pen as `GeoGraphicsItem`'s label.
   QGraphicsSimpleTextItem* labelItem();
 
+  /// Place an existing POINT label beside its marker, at the current radius.
+  /// No-op for a line or polygon (their label follows the cursor) and before the
+  /// first hover (no label exists yet). Called on hover-enter and from
+  /// `setRadius()`, so a restyle under a parked cursor leaves no stale gap.
+  void updateLabelPosition();
+
   /// Rebuild `shape_` from the current geometry and radius. Called from the
   /// constructor and from every `prepareGeometryChange()` site — never from
   /// `shape()`, which the scene calls on every mouse-move now that inspection is

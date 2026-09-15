@@ -64,6 +64,7 @@ constexpr double kPointHoverSlackPixels = 4.0;
 // the text does not sit on top of the symbol it describes.
 constexpr double kLabelGapPixels = 4.0;
 
+
 // The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
 {
@@ -315,10 +316,12 @@ void VectorFeatureItem::setRadius(double radius)
     return;
   prepareGeometryChange();     // the radius IS the bounding rect for a point
   radius_ = radius;
-  // The radius is also the hit shape, which is cached: every
-  // prepareGeometryChange() site has to refresh it or a restyled marker keeps the
-  // old hover target until something else rebuilds it.
+  // The radius is also the hit shape and the label's gap, and both are derived
+  // rather than recomputed on demand: every prepareGeometryChange() site has to
+  // refresh them or a restyled marker keeps the old hover target — and, while the
+  // cursor is parked on it, the old label offset.
   rebuildShape();
+  updateLabelPosition();
   update();
 }
 
@@ -331,13 +334,7 @@ void VectorFeatureItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
   QGraphicsSimpleTextItem* label = labelItem();
   label->setText(attributeText());
   if(point_)
-  {
-    // A point ignores the view transform, so its own coordinates are already
-    // device pixels around setPos(): put the label just beside the marker, clear
-    // of the hit slack. The existing labels are placed relative to their anchor
-    // the same way (GeoGraphicsItem::setLabelPosition()).
-    label->setPos(radius_ + kPointHoverSlackPixels + kLabelGapPixels, 0.0);
-  }
+    updateLabelPosition();
   else
   {
     // A line or polygon has no single anchor worth labelling — it may cross the
@@ -356,6 +353,22 @@ void VectorFeatureItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
   if(label_)
     label_->setText(QString());
   QGraphicsItem::hoverLeaveEvent(event);
+}
+
+void VectorFeatureItem::updateLabelPosition()
+{
+  // A point ignores the view transform, so its own coordinates are already
+  // device pixels around setPos(): put the label just beside the marker, clear
+  // of the hit slack. The existing labels are placed relative to their anchor
+  // the same way (GeoGraphicsItem::setLabelPosition()).
+  //
+  // Called from setRadius() as well as from hover-enter: a size-by-field restyle
+  // while the cursor is parked on a feature changes the marker under the text,
+  // and without this the gap stays sized for the OLD radius until the operator
+  // hovers away and back.
+  if(!point_ || !label_)
+    return;
+  label_->setPos(radius_ + kPointHoverSlackPixels + kLabelGapPixels, 0.0);
 }
 
 QGraphicsSimpleTextItem* VectorFeatureItem::labelItem()
