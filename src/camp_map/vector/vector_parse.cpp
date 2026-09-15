@@ -124,8 +124,9 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
         return points;
     // One poll per ring as well as one per kVertexPollInterval vertices: a polygon
     // with a very large number of SHORT interior rings never reaches the in-loop
-    // poll, and its ring loop is not budget-checked (breaking it on the geometry
-    // cap would drop the holes of a polygon that is otherwise drawn in full).
+    // poll. The interior-ring loop itself breaks on the ABORT flag only, never on
+    // the geometry cap (see the wkbPolygon case) — breaking it on the cap would
+    // drop the holes of a polygon that is otherwise drawn in full.
     if(budget.aborted && budget.aborted())
         return points;
     OGRPointIterator *pi = ring->getPointIterator();
@@ -228,9 +229,20 @@ void appendGeometry(const OGRGeometry *geometry,
             g.exterior = readRing(op->getExteriorRing(), unprojectTransformation, diagnostics,
                                   budget);
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
+            {
+                // [camp#22] Break on ABORT, the way the geometry-collection part
+                // loop below does — a polygon with very many short interior rings
+                // otherwise spends one mutex-guarded predicate call per ring after
+                // the abort has already been raised. Deliberately NOT
+                // budget.exhausted(): that also fires at the geometry cap, which
+                // would drop the holes of a polygon whose exterior is drawn in
+                // full.
+                if(budget.aborted && budget.aborted())
+                    break;
                 g.interiorRings.push_back(
                     readRing(op->getInteriorRing(ringNum), unprojectTransformation, diagnostics,
                              budget));
+            }
             out.push_back(std::move(g));
             budget.spend();
         }
