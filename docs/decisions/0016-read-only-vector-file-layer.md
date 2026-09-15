@@ -113,6 +113,16 @@ had to be answered rather than assumed.
    **first hover**, not at load: a layer may hold `kMaxFeatureItems` (50 000)
    features and the operator hovers a handful.
 
+   **The hovered feature is also raised above its siblings, not just its
+   label.** Feature items are siblings created in file order with no `zValue()`
+   of their own, and Qt stacks a child with its parent's subtree, so a label
+   parented to a point would still paint under a polygon loaded after that
+   point no matter how high the label's own `zValue()` is set. `hoverEnterEvent()`
+   raises the whole item instead; `hoverLeaveEvent()` puts it back into file
+   order. This is operator-visible: the feature under the cursor comes to the
+   front of its layer for the duration of the hover — which is also what an
+   operator pointing at a feature wants.
+
    **A Qt tooltip was tried first, and the operator rejected it after testing
    it.** The first hover implementation was `setToolTip(attributeText())`, shown
    by `QGraphicsScene::helpEvent()`. It works, and it costs no per-item hover
