@@ -684,3 +684,31 @@ enumeration itself is small.
 Raised by the 2026-09-14 Integrated Review on camp#226 (Copilot), and deferred
 there by operator decision because the change is larger than the one-liner the
 checkpoint allowed inline.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-15 08:48 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `8bb6469`
+**Mode**: pre-push
+**Depth**: Deep (reason: 32 files / +6486-236, new ADR, cross-layer camp ↔ camp_map, GDAL input handling)
+**Must-fix**: 2 | **Suggestions**: 6
+**Round**: 3 | **Ship**: recommended — must-fix count flat vs round 2 (2 → 2), both are one-line documentation corrections with an obvious fix; no code defect survived the fix pass.
+
+Specialists: Static Analysis (cppcheck + repo pre-commit, both clean), Governance,
+Plan Drift, Claude Adversarial Lens A + Lens B. Copilot and local review off (default).
+Build and tests re-run here: `./ui_ws/build.sh camp` clean, `./ui_ws/test.sh camp`
+→ **376 tests, 0 errors, 0 failures, 1 skipped**, matching the Implementation entry's claim.
+All 11 fix-pass commits carry the agent identity; working tree clean.
+
+### Findings
+- [ ] (must-fix) Plan is 11 commits stale: the Files-to-Change row still says `projectview.{h,cpp}` "Not needed (rev 4)" and Open Question 2 still says "ProjectView is untouched", both falsified by `e2a56cc`; step 5's no-data text still describes a colour-only answer and step 1 predates `ParseBudget`; no mention of the polar clamp (D13) or the deferred layer-order item — `.agent/work-plans/issue-22/plan.md:563`, `:625`
+- [ ] (must-fix) Doc comment cites the wrong code: `RowInserter`'s unconditional parent dereference is at `autonomousvehicleproject.cpp:1473-1480`, not `:1386-1393` (which is `openProject`/`readChildren`) — a reference other agents will follow to the wrong function — `src/camp/mission_insertion.h:33`
+- [ ] (suggestion) `openVectorLayer()` drops the path from `m_unavailableVectorLayerFiles` before the `if(!layers) return;` guard, so on that (defensive, effectively unreachable) path the entry is neither unavailable nor loaded and the next rebuild silently forgets it; move the `removeAll` to after the layer is tracked, or note the guard-order dependency — `src/camp/autonomousvehicleproject.cpp:421`
+- [ ] (suggestion) `applyStyle()`'s no-data wiring is untested — `isNoData()` is covered as a free function, but nothing asserts that the layer sets it, including the `color_field_.isEmpty()` branch that clears it — `src/camp_map/vector/vector_layer.cpp:360-377`
+- [ ] (suggestion) No per-attribute size bound: the feature cap bounds geometry count, but a single feature carrying a multi-hundred-MB string property is read whole — low severity for an operator-chosen local file, worth a line in ADR-0016 D11 — `src/camp_map/vector/vector_parse.cpp:239`
+- [ ] (suggestion) The KML `NetworkLink` safety claim is a measurement against GDAL 3.8.4 with nothing but comment discipline to catch a regression on a version bump; a test that fails loudly if a NetworkLink is ever followed would make it self-enforcing — `src/camp_map/vector/vector_layer.cpp:47`, `docs/decisions/0016-read-only-vector-file-layer.md:219`
+- [ ] (suggestion) Two already-drafted follow-ups are still unfiled in `rolker/camp`: the persisted layer-order issue (full text in the Implementation entry) and the "Open Geometry" vs "Open Vector Layer" menu-label near-collision the ADR names as a live operator footgun — `docs/decisions/0016-read-only-vector-file-layer.md:259`
+- [ ] (suggestion) `e2a56cc` changes mission-placement dispatch order for **all six** add-* modes, not just the vector-layer interaction; correctly generalised and no path bypasses the deferred switch, but the PR body should say so, since it is not vector-layer-scoped — `src/camp/projectview.cpp:57-211`
