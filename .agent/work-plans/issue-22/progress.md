@@ -947,3 +947,94 @@ does not alter about the rev-8 abort-latency claim
 ### Next step
 `review-code` re-review of the branch diff (fresh context). Nothing was pushed —
 the host performs pushes.
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 10:53 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `85da773`
+**Addressed**: operator GUI test of 2026-09-15 (Roland, CAMP built from this
+branch, `~/data/logs/analysis/2026-09-14_massabesic_mag/massabesic_joint_candidates.geojson`
+— 7 Point features, free-text `assessment`, numeric `tfa_nT`/`rank`)
+**Commits**: `7f0cb66`, `9ef6953`, `ec78f6a`, `85da773`
+
+The first time an operator drove this branch, two of the three "must have"
+behaviours did not work in his hands, and neither was visible to any test
+written so far. Both reports were reproduced and fixed.
+
+**Finding 1 — "changing the colour-by field to `assessment` makes the features
+disappear."** Two defects compounded. `numericAttribute()` returns nullopt for
+every string value, so the field range was invalid, `isNoData()` was true for
+every feature, and the layer went entirely no-data; the hollow no-data point
+marker was then stroked with the same width-0 hairline the FILLED marker gets
+for contrast — but the filled marker has a disc of colour behind that hairline
+and the hollow one has nothing, so one dashed device pixel of mid grey over a
+chart is not visible. Fixed at all three levels: the marker is stroked at
+cosmetic width 2 (hollow and dashed unchanged — ADR-0016 D6's second channel,
+only its weight changes); the styling menus offer `VectorLayer::numericFields()`
+rather than `fields()`, so a field no ramp can read is not selectable; and
+`applyStyle()` treats an invalid colour range as NO colour field for that pass
+(default colour, nothing flagged) rather than marking the whole layer no-data,
+which is the fallback a PERSISTED `color_field_` can still reach since the style
+group is keyed on the file path and the file may have changed.
+
+**Finding 2 — "I never see a tooltip for the targets... not sure where the
+hotspot is on the hand icon."** The point hit `shape()` was exactly the drawn
+5 px marker, aimed at under an open-hand pan cursor whose hotspot is not
+visible. `shape()` now carries `kPointClickSlackPixels` (4 px) of slack, with
+`boundingRect()` grown to match (a shape outside the bounding rect is undefined
+in Qt) — the same trade a line already makes with `kClickWidth`. Nothing drawn
+grows.
+
+Why no test caught either: every click test in the repo sends a
+`QGraphicsSceneMouseEvent` straight to the item, skipping the viewport widget,
+the view's (1, -1) y-flip, ScrollHandDrag and the scene's hit test against
+`shape()`; and nothing looked at what a marker actually paints. The new
+`VectorLayerInteraction` test puts a real `QGraphicsView` over a real loaded
+layer and sends synthesized `QMouseEvent`s to its viewport.
+
+Full camp suite rebuilt and re-run on the committed tree: **385 tests, 0
+failures, 1 skipped** (the pre-existing `GggsRenderTest.RealStoreRendersWhenProvided`),
+up five from 380. Pre-commit hooks clean on all four commits; no new compiler
+warnings.
+
+Negative check recorded: all three new tests were run against the pre-fix
+behaviour (slack set to 0, pen back to width 0) and fail exactly as predicted —
+the no-data marker covers 42 px against a hairline's 42 (pixel-identical, so the
+test really is pinning the pen weight), the 7 px off-centre click misses, and
+the centre and 3 px clicks still pass, which is the boundary the slack moves.
+
+### Actions
+- [x] (finding 1) The hollow no-data point marker is stroked at cosmetic width 2
+  instead of a width-0 hairline — `src/camp_map/vector/vector_feature_item.cpp`
+  `paint()`. New test
+  `VectorFeatureItem.NoDataPointMarkerIsDrawnHeavierThanAHairline`: paints the
+  item into a QImage and compares coverage against a hairline reference the test
+  draws itself (no magic pixel count), and separately asserts the interior is
+  still untouched — a pixel budget cannot say "hollow", since a dashed width-2
+  ring with antialiasing covers about as many pixels as a solid disc.
+- [x] (finding 1) `VectorLayer::numericFields()` added and used by the Color by /
+  Size by / Colormap menus; `fields()` unchanged (the attribute popup and a future
+  label-by-field want every field) — `src/camp_map/vector/vector_layer.{h,cpp}`.
+  New test `VectorLayerStyleFields.NumericFieldsExcludeAStringOnlyField`
+  (string-only excluded, mixed numeric/text included, `fields()` still complete).
+- [x] (finding 1) `applyStyle()` falls back to UNSTYLED on an invalid colour
+  range rather than marking every feature no-data — new test
+  `VectorLayerStyleFields.AColorFieldWithNoNumbersFallsBackToUnstyled`, which
+  also checks the colour is the default and not the no-data grey.
+- [x] (finding 2) Point `shape()` and `boundingRect()` carry 4 px of click slack
+  — new tests `VectorFeatureItem.PointClickTargetIsWiderThanTheDrawnMarker` and
+  `VectorLayerInteraction.ClickThroughARealViewShowsTheAttributes` (through a
+  y-flipped ScrollHandDrag `QGraphicsView`, at centre / 3 px / 7 px off, plus a
+  click clear of any feature that must not answer).
+- [x] ADR-0016: D6 gains the marker-weight reason; new D14 (numeric-only ramps,
+  categorical styling a follow-on, the invalid-range fallback) and D15 (the
+  click slack), plus a consequence for what D14 costs. Plan rev 10 records the
+  GUI test as the source.
+- [ ] (operator's call) **Categorical styling is now an explicit follow-on** —
+  a distinct colour per class with a legend, which is what `assessment` actually
+  wants. ADR-0016 D14 names it; no issue filed, matching the camp#225 deferral
+  convention on this branch.
+- [ ] (operator's call) **Label-by-field** remains the other named follow-on, and
+  is the reason `fields()` was kept whole rather than narrowed.
