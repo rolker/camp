@@ -36,6 +36,7 @@ using camp::vector::ParsedGeometry;
 using camp::vector::VectorFeatureItem;
 using camp::vector::hasPlaceableCoordinate;
 using camp::vector::isPlaceable;
+using camp::vector::placeableToMap;
 
 namespace
 {
@@ -150,6 +151,51 @@ TEST(VectorFeatureItem, UnplaceableVerticesDoNotStretchTheItem)
   EXPECT_TRUE(std::isfinite(item.pos().x()));
   EXPECT_TRUE(std::isfinite(item.pos().y()));
   EXPECT_EQ(item.pos(), web_mercator::geoToMap(a));
+}
+
+// [camp#22 should-fix] A polar vertex is CLAMPED to the Web-Mercator limit, not
+// projected and not dropped.
+//
+// isPlaceable() admits latitude +/-90 (it is a perfectly valid WGS84 coordinate),
+// but Web Mercator does not converge there: geoToMap() stays finite only because
+// tan(pi/2) is 1.633e16 rather than inf in double, and returns y ~ 2.425e8 m —
+// about twelve times the world half-extent. One such vertex blows out the layer's
+// extent, fit-to-extent and the scene index, exactly as a .prj-less shapefile's
+// eastings do. Clamping draws the feature at the edge of the Mercator world,
+// which is where the projection puts everything at that latitude anyway.
+TEST(VectorFeatureItem, PolarLatitudeIsClampedToTheWebMercatorLimit)
+{
+  const double half_extent = M_PI * web_mercator::earth_radius_at_equator;  // 2.0037e7 m
+
+  // The raw projection is the problem this clamps.
+  ASSERT_GT(std::abs(web_mercator::geoToMap(QGeoCoordinate(90.0, 0.0)).y()), 10.0 * half_extent);
+
+  EXPECT_NEAR(placeableToMap(QGeoCoordinate(90.0, 0.0)).y(), half_extent, 1.0);
+  EXPECT_NEAR(placeableToMap(QGeoCoordinate(-90.0, 0.0)).y(), -half_extent, 1.0);
+  // Longitude is untouched by the clamp.
+  EXPECT_DOUBLE_EQ(placeableToMap(QGeoCoordinate(90.0, -70.71)).x(),
+                   web_mercator::geoToMap(QGeoCoordinate(0.0, -70.71)).x());
+  // Everything inside the limit is the plain projection.
+  const QGeoCoordinate here(43.07, -70.71);
+  EXPECT_EQ(placeableToMap(here), web_mercator::geoToMap(here));
+}
+
+// And the item built from polar geometry stays inside the Mercator world rather
+// than dragging the scene index across twelve worlds of empty space.
+TEST(VectorFeatureItem, PolarFeatureStaysInsideTheMercatorWorld)
+{
+  const double half_extent = M_PI * web_mercator::earth_radius_at_equator;
+  VectorFeatureItem item(nullptr, lineThrough({QGeoCoordinate(89.0, -70.8),
+                                               QGeoCoordinate(90.0, -70.6)}));
+  EXPECT_LE(std::abs(item.pos().y()), half_extent + 1.0);
+  const QRectF bounds = item.boundingRect();
+  EXPECT_TRUE(std::isfinite(bounds.height()));
+  // A line's boundingRect is grown by the click-tolerance half-width (see
+  // boundingRect()), so the allowance is a few metres rather than exact — the
+  // assertion is about world scale, not about metres.
+  const double slack = 10.0;
+  EXPECT_LE(std::abs(item.pos().y() + bounds.bottom()), half_extent + slack);
+  EXPECT_LE(std::abs(item.pos().y() + bounds.top()), half_extent + slack);
 }
 
 // [camp#22] Click-to-inspect fires on RELEASE WITHOUT MOVEMENT, and only when the

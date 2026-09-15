@@ -4,6 +4,7 @@
 #include <QColor>
 #include <QGeoCoordinate>
 #include <QGraphicsItem>
+#include <QPointF>
 #include <QMap>
 #include <QPainterPath>
 #include <QRectF>
@@ -44,6 +45,25 @@ struct ParsedGeometry;
 /// which a failed coordinate transform produces, is worse: every comparison
 /// against it is false, and the bounding rect becomes permanently invalid.
 bool isPlaceable(const QGeoCoordinate& coordinate);
+
+/// [camp#22] @p coordinate in Web-Mercator scene metres, with its latitude
+/// CLAMPED to the projection's own limit (`web_mercator::maximum_latitude`,
+/// 85.0511 deg) first. Every geometry conversion in this file goes through here.
+///
+/// `isPlaceable()` admits latitude +/-90, where Web Mercator does not converge:
+/// `geoToMap()` is finite there only because `tan(pi/2)` is 1.633e16 rather than
+/// inf in double, and it yields y = +/-2.425e8 m — about twelve times the
+/// Web-Mercator world half-extent of 2.004e7 m. A single polar vertex therefore
+/// blows out the layer's `childrenBoundingRect()`, fit-to-extent and the scene
+/// index just as a `.prj`-less shapefile's eastings do, without being invalid in
+/// any way the parser can see.
+///
+/// The clamp is deliberate and matches what the projection does everywhere else
+/// it is used (tile schemes truncate at the same latitude): a polar feature is
+/// drawn at the top or bottom edge of the Mercator world rather than being
+/// dropped, because dropping it would silently lose real data — a polar survey
+/// line is a thing this program should be able to show.
+QPointF placeableToMap(const QGeoCoordinate& coordinate);
 
 /// True when @p geometry has at least one placeable coordinate — i.e. when a
 /// VectorFeatureItem built from it would land somewhere real. The layer checks

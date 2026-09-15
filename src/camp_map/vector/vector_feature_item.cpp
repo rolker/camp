@@ -6,6 +6,9 @@
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QStringList>
+
+#include <algorithm>
+#include <cmath>
 #include <QToolTip>
 
 #include "../map_view/web_mercator.h"
@@ -32,7 +35,7 @@ void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const 
   {
     if(!isPlaceable(coordinate))
       continue;
-    const QPointF point = web_mercator::geoToMap(coordinate) - origin;
+    const QPointF point = placeableToMap(coordinate) - origin;
     if(first)
     {
       path.moveTo(point);
@@ -73,6 +76,15 @@ bool isPlaceable(const QGeoCoordinate& coordinate)
   return coordinate.isValid();
 }
 
+QPointF placeableToMap(const QGeoCoordinate& coordinate)
+{
+  // maximum_latitude is in RADIANS; QGeoCoordinate carries degrees.
+  constexpr double kMaximumLatitudeDegrees = web_mercator::maximum_latitude * 180.0 / M_PI;
+  const double latitude =
+      std::max(-kMaximumLatitudeDegrees, std::min(kMaximumLatitudeDegrees, coordinate.latitude()));
+  return web_mercator::geoToMap(QGeoCoordinate(latitude, coordinate.longitude()));
+}
+
 bool hasPlaceableCoordinate(const ParsedGeometry& geometry)
 {
   return firstCoordinate(geometry) != nullptr;
@@ -96,7 +108,10 @@ VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry
   // [ADR-0002] Transform to Web-Mercator scene metres ONCE, here, at load —
   // never per paint. The parent layer is untransformed at the scene origin, so
   // parent-local coordinates are scene coordinates.
-  const QPointF origin = web_mercator::geoToMap(*anchor);
+  // placeableToMap, not geoToMap: the anchor is a vertex like any other, and a
+  // polar one must be clamped here too or the item's POSITION is what blows the
+  // extent out, with the path's own numbers staying small and innocent.
+  const QPointF origin = placeableToMap(*anchor);
   setPos(origin);
 
   if(point_)
