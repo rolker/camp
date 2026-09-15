@@ -457,4 +457,26 @@ QStringList withVectorLayerFile(const QStringList& files, const QString& filenam
   return result;
 }
 
+QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
+                                             const QStringList& unavailable,
+                                             const QStringList& loadedFiles)
+{
+  QStringList files;
+  for(const QString& restored : restoredOrder)
+  {
+    if(unavailable.contains(restored))
+    {
+      files = withVectorLayerFile(files, restored);
+      continue;
+    }
+    if(loadedFiles.contains(restored))
+      files = withVectorLayerFile(files, restored);
+  }
+  // withVectorLayerFile is append-if-absent, so a layer already placed above
+  // keeps its slot.
+  for(const QString& loaded : loadedFiles)
+    files = withVectorLayerFile(files, loaded);
+  return files;
+}
+
 }  // namespace camp::vector

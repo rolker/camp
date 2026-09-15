@@ -237,6 +237,30 @@ void writePersistedVectorLayerFiles(const QStringList& files);
 /// production caller, which made the rule it encoded untrue of the running app.
 QStringList withVectorLayerFile(const QStringList& files, const QString& filename);
 
+/// The persisted vector-layer list rebuilt from scratch — the whole rule behind
+/// `AutonomousVehicleProject::persistVectorLayers()`, in one pure function so it
+/// can be exercised (the project itself is not constructible in a test harness).
+///
+/// @p restoredOrder is the order of record read at startup, @p unavailable the
+/// subset of it whose files could not be opened THEN and are carried forward
+/// rather than forgotten, and @p loadedFiles the filenames of the layers tracked
+/// right now, in load order.
+///
+/// Order comes from @p restoredOrder first, so one launch with a share unmounted
+/// cannot reshuffle the operator's layers; an entry in it that is neither loaded
+/// nor unavailable was REMOVED through the Layers tab and is dropped. Anything
+/// opened since the restore follows, in load order.
+///
+/// [camp#22 / camp#90] The caller owes this function an @p unavailable list that
+/// has been kept CURRENT: an entry must be dropped from it as soon as its file is
+/// successfully opened, or removing that layer afterwards will not stick — the
+/// rebuild would keep finding it on the unavailable branch and write it back on
+/// every launch, which is the camp#90/#117 bug this whole mechanism exists to
+/// avoid. `AutonomousVehicleProject::openVectorLayer()` is where that happens.
+QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
+                                             const QStringList& unavailable,
+                                             const QStringList& loadedFiles);
+
 }  // namespace camp::vector
 
 #endif  // CAMP_VECTOR_LAYER_H

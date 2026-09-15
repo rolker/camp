@@ -33,6 +33,7 @@
 
 using camp::vector::VectorLayer;
 using camp::vector::persistedVectorLayerFiles;
+using camp::vector::rebuildPersistedVectorLayerFiles;
 using camp::vector::vectorLayerFilesKey;
 using camp::vector::withVectorLayerFile;
 using camp::vector::writePersistedVectorLayerFiles;
@@ -215,6 +216,66 @@ TEST(VectorLayerPersistence, ReorderKeepsFilePersistedRemovalDropsIt)
 
   // removeFromMap() defers the delete; let it run before the Map goes away.
   QCoreApplication::processEvents();
+}
+
+// [camp#22 must-fix 2] A layer that was UNAVAILABLE at startup and has since been
+// reopened must be removable — and stay removed.
+//
+// The unavailable list exists so that "the network share was not mounted when CAMP
+// started" does not silently delete the operator's layer: the entry is carried
+// forward and written back on every rebuild. The trap is that it was written back
+// FOREVER. Nothing dropped the path once the file came back, so after the operator
+// reopened it and then removed it through the Layers tab, the rebuild still found
+// it on the unavailable branch, re-persisted it, and the layer returned on the next
+// launch — camp#90/#117's exact bug class, in the mechanism added to avoid it.
+//
+// The fix is in AutonomousVehicleProject::openVectorLayer(): a path confirmed to
+// exist leaves the unavailable list. The sequence below is that lifecycle driven
+// against the rule the project now calls.
+TEST(VectorLayerPersistence, ReopenedUnavailableFileCanBeRemoved)
+{
+  const QString shared = QStringLiteral("/mnt/share/survey.geojson");
+  const QString local = QStringLiteral("/home/op/local.geojson");
+
+  // Launch 1: the share is not mounted. The entry is remembered, in its position.
+  QStringList restoredOrder{shared, local};
+  QStringList unavailable{shared};
+  QStringList loaded{local};
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, loaded),
+            (QStringList{shared, local}))
+      << "an unreachable file keeps its slot rather than being forgotten";
+
+  // The share is mounted and the operator opens the file. openVectorLayer() drops
+  // it from the unavailable list because it now exists.
+  unavailable.removeAll(shared);
+  loaded << shared;
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, loaded),
+            (QStringList{shared, local}))
+      << "reopening must not move the layer";
+
+  // Now the removal that used not to stick.
+  loaded.removeAll(shared);
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, loaded),
+            QStringList{local})
+      << "a removed layer must not be written back through the unavailable branch";
+
+  // And it stays gone on the next launch, which restores from what was written.
+  const QStringList relaunchOrder{local};
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(relaunchOrder, QStringList{}, QStringList{local}),
+            QStringList{local});
+}
+
+// The counterpart that must keep working: an entry still unavailable at removal
+// time has no layer to remove, so it is carried forward — the deliberate
+// consequence documented on restorePersistedVectorLayers().
+TEST(VectorLayerPersistence, StillMissingFileIsCarriedForward)
+{
+  const QString shared = QStringLiteral("/mnt/share/survey.geojson");
+  const QString local = QStringLiteral("/home/op/local.geojson");
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(QStringList{shared, local},
+                                             QStringList{shared},
+                                             QStringList{local}),
+            (QStringList{shared, local}));
 }
 
 int main(int argc, char** argv)

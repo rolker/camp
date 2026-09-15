@@ -411,6 +411,15 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
         return;
     }
     const QString fname = canonicalVectorLayerPath(requested);
+    // [camp#22 / camp#90] The file is reachable now, so it is no longer an
+    // unavailable-at-startup entry. Dropping it here is what lets a LATER removal
+    // through the Layers tab stick: while the path stayed in
+    // m_unavailableVectorLayerFiles, persistVectorLayers() kept finding it on the
+    // unavailable branch and wrote it back, so the layer returned on every launch
+    // — the camp#90/#117 bug in a new place. Still-missing paths keep their
+    // entries, which is what carries an unmounted share across a session.
+    if(QFileInfo::exists(fname))
+        m_unavailableVectorLayerFiles.removeAll(fname);
     // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
     // identical layers, and without this the restore path plus a command-line or
     // menu open of the same file would accumulate a duplicate on every launch.
@@ -446,33 +455,16 @@ void AutonomousVehicleProject::persistVectorLayers() const
     // beside the chart list. Per-layer style (colour/size field, palette) persists
     // separately through the layer's own settings group; this records which layers
     // to recreate. Single writer of the key — see the header.
-    QStringList files;
-    // [camp#22] ORDER FIRST, from the list as restored: a file that could not be
-    // opened at restore time (an unmounted share) is carried forward — see
-    // restorePersistedVectorLayers() — and it has to keep its POSITION while it
-    // does. Appending the unavailable entries at the end, which is what this did
-    // first, means one launch with the share unmounted permanently reshuffles the
-    // operator's layer order. Entries in the restored order that are now neither
-    // loaded nor unavailable were REMOVED through the Layers tab, and are skipped.
-    for(const auto& restored : m_restoredVectorLayerOrder)
-    {
-        if(m_unavailableVectorLayerFiles.contains(restored))
-        {
-            files = camp::vector::withVectorLayerFile(files, restored);
-            continue;
-        }
-        for(auto* layer : m_vectorLayers)
-            if(layer->filename() == restored)
-            {
-                files = camp::vector::withVectorLayerFile(files, restored);
-                break;
-            }
-    }
-    // Then anything opened since the restore, in load order. withVectorLayerFile
-    // is append-if-absent, so a layer already placed above keeps its slot.
+    //
+    // The rule itself lives in camp::vector::rebuildPersistedVectorLayerFiles so
+    // it can be tested: this class is not constructible in a test harness, and a
+    // rule that cannot be exercised is a rule that silently regresses.
+    QStringList loaded;
     for(auto* layer : m_vectorLayers)
-        files = camp::vector::withVectorLayerFile(files, layer->filename());
-    camp::vector::writePersistedVectorLayerFiles(files);
+        loaded << layer->filename();
+    camp::vector::writePersistedVectorLayerFiles(
+        camp::vector::rebuildPersistedVectorLayerFiles(
+            m_restoredVectorLayerOrder, m_unavailableVectorLayerFiles, loaded));
 }
 
 void AutonomousVehicleProject::restorePersistedVectorLayers()
