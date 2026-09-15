@@ -1137,3 +1137,124 @@ accepted — not against the flag alone, which is what the item-level test pins.
   CAMP-wide choice (`ScrollHandDrag`'s open hand, shared by every layer and
   mission item), not this layer's; D15's hit slack is this layer working around
   it.
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 11:47 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `2857e45`
+**Addressed**: two operator decisions taken at a run-issue checkpoint,
+2026-09-15, after a GUI test of the rev-11 build
+**Commits**: `5811cfd`, `670f7ef`, `2857e45`
+
+**Neither of these is a defect report.** The rev-11 build works; the operator
+tested it and decided two things about how it should feel.
+
+**1. The hover popup is now an IN-SCENE LABEL, and it is instant.** Rev 11 made
+the popup the item's ordinary Qt tooltip. Testing that, the operator's verdict
+was "similar to what was existing, but not the same": CAMP's own items show
+their info INSTANTLY. They do it with a label, not a tooltip —
+`GeoGraphicsItem` (`src/camp/geographicsitem.cpp:14-26`) owns a child
+`QGraphicsSimpleTextItem` with `ItemIgnoresTransformations`, a 20 pt bold font,
+a black brush and a width-0 white pen, and `Platform::hoverEnterEvent`
+(`platform.cpp:170`) / `AISContact::hoverEnterEvent` (`ais_contact.cpp:272`)
+fill it via `setShowLabelFlag(true)`, clearing it on leave. No delay, no tooltip
+window.
+
+`VectorFeatureItem` REPLICATES that rather than inheriting it: it lives in
+`camp_map` and cannot depend on `GeoGraphicsItem` in the `camp` executable (the
+same rule that put `parseVectorLayers()` in `camp_map`). So:
+`setAcceptHoverEvents(true)`; a child `QGraphicsSimpleTextItem` carrying the
+settings copied from `geographicsitem.cpp:16-25` with that source named in the
+comment; `hoverEnterEvent()` sets its text to `attributeText()` and positions it
+— for a point just beside the marker in device pixels, clear of the hit slack;
+for a line or polygon at `event->pos()`, since those have no single anchor worth
+labelling — and `hoverLeaveEvent()` empties it. `setToolTip()` is REMOVED, so
+there is no second, delayed popup. Only one label is ever on screen, because
+every item clears its own on leave.
+
+Two things were weighed rather than assumed. The label item is created on the
+**first hover**, not in the constructor: a layer may hold `kMaxFeatureItems`
+(50 000) features, and a text child per feature would be 50 000 scene items,
+index entries and font metrics created at load for the handful the operator ever
+hovers. And `setAcceptHoverEvents(true)` is a real cost the tooltip did not have
+— per-item hover tracking across the layer — which rev 11's comment had cited as
+a reason NOT to accept hover events. It is paid deliberately now: the reason for
+choosing hover at all was consistency with the application, and a popup that
+behaves differently from every other popup does not deliver it. The hit slack
+(ADR-0016 D15) is untouched; `shape()` is what the scene hit-tests to dispatch
+hover events too.
+
+**2. Pan mode shows an ARROW cursor, CAMP-wide.** Recorded last round as a
+follow-on ("the pan cursor is a CAMP-wide choice, not this layer's"); the
+operator decided it instead, in this PR, because it is four lines. `Qt::ArrowCursor`
+goes on the **viewport** at the two points Qt installs its own open hand: after
+`setDragMode(ScrollHandDrag)` in `setPanMode()`, and after
+`QGraphicsView::mouseReleaseEvent()` returns, which restores the open hand at the
+end of every drag. The CLOSED hand during an actual drag stays — there it is
+feedback, not something being aimed. The add-\* modes keep `Qt::CrossCursor`.
+
+The view-vs-viewport split is load-bearing and was checked rather than assumed:
+the add-\* modes call `setCursor()` on the VIEW, which a viewport with no cursor
+of its own inherits, and leaving pan mode calls `setDragMode(NoDrag)`, where Qt
+unsets the viewport's own cursor so that inheritance resumes. Setting the arrow
+on the view would simply be overridden by Qt's viewport cursor. `projectview.h`
+is unchanged. This is now the branch's only `ProjectView` change — rev 11's
+revert to `jazzy` otherwise stands.
+
+**Tests.** Full camp suite rebuilt and re-run on the committed tree: **387
+tests, 0 failures, 1 skipped** (the pre-existing
+`GggsRenderTest.RealStoreRendersWhenProvided`) — unchanged in count, because two
+tooltip-based tests were replaced one-for-one:
+
+- `VectorFeatureItem.HoverPopupIsTheItemsTooltip` →
+  `VectorFeatureItem.HoverShowsAnInSceneLabelWithTheAttributes`: no label child
+  exists before the first hover; a `QGraphicsSceneHoverEvent(GraphicsSceneHoverEnter)`
+  creates one carrying `attributeText()` and the vessel/AIS flag, brush, pen and
+  bold font; `GraphicsSceneHoverLeave` clears it; and `toolTip()` is empty. The
+  handlers are protected and a `QGraphicsItem` is not a `QObject`, so there is no
+  `QApplication::sendEvent()` path to them — a four-line `HoverProbe` subclass
+  re-exposes them, which is stated in the test.
+- `VectorLayerInteraction.HoverThroughARealViewShowsTheAttributes` rewritten: the
+  synthesized `QHelpEvent` is replaced by a buttonless
+  `QMouseEvent(QEvent::MouseMove, ...)` sent to the viewport of a real y-flipped
+  ScrollHandDrag `QGraphicsView` under a `camp::map::Map` — what the operator's
+  hand actually produces, and what the scene turns into hover enter/leave. At
+  centre and 3 px off the label carries the attributes; moved clear of any
+  feature it is empty, which is what keeps exactly one label on screen.
+- `VectorFeatureItem.AcceptsNoMouseButtonSoThePressReachesTheView` and
+  `VectorLayerInteraction.APressOverAFeatureFallsThroughToTheView` are unchanged.
+
+Negative check recorded: with `setAcceptHoverEvents(true)` commented out, both
+new hover tests fail; restored and re-verified green.
+
+**The cursor change has NO test.** `ProjectView` is not constructible in a test
+harness — it needs the application's status bar and project, which is the same
+reason `test_mission_insertion` exercises the model rather than the view. It is
+verified in the GUI, and D16 says so.
+
+### Actions
+- [x] Hover label replacing the tooltip: `setAcceptHoverEvents(true)`, a lazily
+  created child `QGraphicsSimpleTextItem` with `GeoGraphicsItem`'s settings,
+  `hoverEnterEvent()`/`hoverLeaveEvent()`, `setToolTip()` removed —
+  `src/camp_map/vector/vector_feature_item.{h,cpp}`.
+- [x] `Qt::ArrowCursor` on the viewport in pan mode and after the release —
+  `src/camp/projectview.cpp` only; `projectview.h` untouched.
+- [x] Tests: `VectorFeatureItem.HoverShowsAnInSceneLabelWithTheAttributes` and a
+  rewritten `VectorLayerInteraction.HoverThroughARealViewShowsTheAttributes`;
+  the two press/no-mouse-button tests kept.
+- [x] ADR-0016 D5 rewritten (the label, why instant, and the rejected tooltip);
+  new **D16** for the arrow cursor; D15 points at it; two new consequences (the
+  CAMP-wide cursor, the hover-tracking cost); the "pan cursor is a CAMP-wide
+  choice" follow-on REMOVED because it was decided. `.agents/README.md` gains a
+  ProjectView cursor convention; `vector_layer.h` and plan rev 12 follow.
+- [ ] (operator) **Confirm in the GUI**: the label appears the instant the cursor
+  reaches a feature and reads like the vessel/AIS labels, and the arrow cursor in
+  pan mode is what you wanted — including that the add-\* modes still show the
+  cross and a real drag still shows the closed hand. Neither the label's
+  placement nor the cursor can be judged from a test.
+- [ ] (host) **Close camp#225 at merge** — still fixed by construction, unchanged
+  by this round.
+- [ ] (host, follow-ons recorded in ADR-0016, no issues filed) Categorical
+  styling, label-by-field, and click-to-pin-the-popup-open.
