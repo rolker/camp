@@ -326,7 +326,11 @@ had to be answered rather than assumed.
     offer only the fields a ramp can read.** `VectorLayer::numericFields()` — the
     subset of `fields()` for which at least one feature holds a finite numeric
     value, asked through the same `numericAttribute()` the ramp itself reads
-    values through — is what the *Color by* and *Size by* menus list.
+    values through — is what the *Color by* and *Size by* menus list, plus two
+    entries `numericFields()` never contributes: "(none)" to clear the field,
+    and, when the persisted field below is stale, `<field> (no numbers)` so
+    that setting is still visible and reachable from the menu rather than
+    stuck.
 
     Offering every field made a free-text field selectable, and a ramp cannot read
     one: the field range came back invalid, *every* feature was marked no-data,
