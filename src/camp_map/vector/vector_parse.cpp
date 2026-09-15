@@ -72,10 +72,17 @@ std::optional<QGeoCoordinate> toWgs84(double x, double y,
 //
 // `remaining` counts geometries this parse may still emit (SIZE_MAX when
 // ParseOptions::max_geometries is unlimited); `aborted` is ParseOptions::aborted.
+//
+// `input_remaining` is an OUTPUT: set when a collection's part loop stopped with
+// parts still unread, so the caller can tell "the cap fell exactly at the end of
+// this feature" from "the cap cut this feature short". It is what keeps
+// ParseDiagnostics::geometry_cap_reached from claiming an unread remainder that
+// does not exist.
 struct ParseBudget
 {
     size_t remaining = std::numeric_limits<size_t>::max();
     std::function<bool()> aborted;
+    bool input_remaining = false;
 
     bool exhausted() const { return remaining == 0 || (aborted && aborted()); }
     void spend()
@@ -269,7 +276,12 @@ void appendGeometry(const OGRGeometry *geometry,
                 // without this the recursion runs the feature to its end and the
                 // destructor's join waits for all of it.
                 if(budget.exhausted())
+                {
+                    // Parts of this feature were never read — input remains
+                    // whatever the rest of the file holds.
+                    budget.input_remaining = true;
                     break;
+                }
                 appendGeometry(collection->getGeometryRef(part), attributes,
                                unprojectTransformation, out, diagnostics, budget);
             }
@@ -356,6 +368,43 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
     size_t emitted = 0;
     if(!dataset)
         return result;
+
+    // [camp#22] Is there anything left to read once the geometry cap has been
+    // reached? BOUNDED by construction: the current feature's own unread parts
+    // (reported by the budget), then ONE lookahead feature on the current layer,
+    // then at most one feature per remaining layer. That is the smallest amount of
+    // reading that can distinguish "stopped at the cap with the file unread" from
+    // "the file happened to hold exactly max_geometries geometries" — and the
+    // status line built on this flag is worth that much I/O.
+    //
+    // A remaining layer whose spatial reference yields no transformation to WGS84
+    // counts as input remaining: it is data this parse did not read, and the
+    // layers_failed diagnostic is what says why a layer was skipped.
+    const auto moreInputRemains = [dataset](OGRLayer *current, int layerIndex,
+                                            const ParseBudget &budget)
+    {
+        if(budget.input_remaining)
+            return true;
+        if(current)
+            if(OGRFeature *next = current->GetNextFeature())
+            {
+                OGRFeature::DestroyFeature(next);
+                return true;
+            }
+        for(int j = layerIndex + 1; j < dataset->GetLayerCount(); ++j)
+        {
+            OGRLayer *remaining = dataset->GetLayer(j);
+            if(!remaining)
+                continue;
+            remaining->ResetReading();
+            if(OGRFeature *f = remaining->GetNextFeature())
+            {
+                OGRFeature::DestroyFeature(f);
+                return true;
+            }
+        }
+        return false;
+    };
 
     for(int i = 0; i < dataset->GetLayerCount(); ++i)
     {
@@ -464,7 +513,16 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 const size_t excess = emitted - static_cast<size_t>(options.max_geometries);
                 if(excess > 0)
                     parsed.geometries.resize(parsed.geometries.size() - excess);
-                diag.geometry_cap_reached = true;
+                // [camp#22 round-3 should-fix] The flag means "the rest of the
+                // file was NOT READ", and VectorLayer puts exactly that sentence
+                // in the Layers tab. A file holding exactly max_geometries
+                // geometries reaches this branch having been read in full, so
+                // setting the flag unconditionally made the one status line this
+                // design leans on claim a partial read that never happened.
+                // Establish that input actually remains first — see
+                // moreInputRemains(), which is bounded at one feature per
+                // remaining layer.
+                diag.geometry_cap_reached = moreInputRemains(layer, i, budget);
                 result.push_back(std::move(parsed));
                 return result;
             }

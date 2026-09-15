@@ -804,6 +804,82 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
 }
 
+// [camp#22 round-3 should-fix] `geometry_cap_reached` means "the rest of the file
+// was NOT READ" — the sentence VectorLayer puts in the Layers tab.
+//
+// It used to be set the moment the running total reached max_geometries, without
+// establishing that anything remained, so a file holding EXACTLY max_geometries
+// geometries reported a partial read of a file it had read in full — a false
+// claim in the one status line this design leans on.
+TEST(VectorParseAttributes, CapAtExactlyTheFileSizeIsNotAPartialRead)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  // How many geometries the fixture holds.
+  DatasetPtr baseline_ds = openDataset(path);
+  ASSERT_TRUE(baseline_ds);
+  const std::vector<ParsedLayer> full =
+    camp::vector::parseVectorLayers(baseline_ds.get(), camp::vector::ParseOptions(), nullptr);
+  ASSERT_EQ(full.size(), 1u);
+  const size_t full_count = full.front().geometries.size();
+  ASSERT_GT(full_count, 1u);
+
+  // Cap set to EXACTLY that: every geometry comes back and nothing was left.
+  DatasetPtr exact_ds = openDataset(path);
+  ASSERT_TRUE(exact_ds);
+  camp::vector::ParseOptions exact;
+  exact.max_geometries = static_cast<int>(full_count);
+  camp::vector::ParseDiagnostics exact_diag;
+  const std::vector<ParsedLayer> all =
+    camp::vector::parseVectorLayers(exact_ds.get(), exact, &exact_diag);
+  ASSERT_EQ(all.size(), 1u);
+  EXPECT_EQ(all.front().geometries.size(), full_count);
+  EXPECT_FALSE(exact_diag.geometry_cap_reached)
+      << "the file was read in full; claiming an unread remainder is a false partial read";
+
+  // One below: the same cap branch, but a geometry really is left unread.
+  DatasetPtr short_ds = openDataset(path);
+  ASSERT_TRUE(short_ds);
+  camp::vector::ParseOptions one_short;
+  one_short.max_geometries = static_cast<int>(full_count) - 1;
+  camp::vector::ParseDiagnostics short_diag;
+  const std::vector<ParsedLayer> most =
+    camp::vector::parseVectorLayers(short_ds.get(), one_short, &short_diag);
+  ASSERT_EQ(most.size(), 1u);
+  EXPECT_EQ(most.front().geometries.size(), full_count - 1);
+  EXPECT_TRUE(short_diag.geometry_cap_reached) << "input remains, so the cap IS a partial read";
+}
+
+// The same rule INSIDE one multi-part feature: a cap that falls on the feature's
+// last part left nothing unread, while one that falls mid-feature did.
+TEST(VectorParseAttributes, CapInsideAFeatureReportsOnlyAnActualRemainder)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeometryCollectionPackage(dir);   // ONE feature, four parts
+  ASSERT_FALSE(path.isEmpty());
+
+  DatasetPtr mid_ds = openDataset(path);
+  ASSERT_TRUE(mid_ds);
+  camp::vector::ParseOptions mid;
+  mid.max_geometries = 2;
+  camp::vector::ParseDiagnostics mid_diag;
+  camp::vector::parseVectorLayers(mid_ds.get(), mid, &mid_diag);
+  EXPECT_TRUE(mid_diag.geometry_cap_reached) << "two parts of the feature went unread";
+
+  DatasetPtr exact_ds = openDataset(path);
+  ASSERT_TRUE(exact_ds);
+  camp::vector::ParseOptions exact;
+  exact.max_geometries = 4;
+  camp::vector::ParseDiagnostics exact_diag;
+  camp::vector::parseVectorLayers(exact_ds.get(), exact, &exact_diag);
+  EXPECT_FALSE(exact_diag.geometry_cap_reached)
+      << "the cap fell on the feature's last part; nothing was left unread";
+}
+
 // [camp#22 round-3 should-fix] A supplied ParseDiagnostics describes THIS parse.
 //
 // The header documents the parameter as "filled in with what was skipped and

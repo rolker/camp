@@ -98,11 +98,19 @@ struct ParseDiagnostics
 {
     // The parse stopped early because ParseOptions::aborted returned true.
     bool aborted = false;
-    // The parse stopped early because ParseOptions::max_geometries was reached.
-    // What is returned is the first `max_geometries` geometries of the file; how
-    // many more the file holds is deliberately NOT reported, because reading that
-    // far is the cost the cap exists to avoid (and an OGR feature count is not a
-    // geometry count — one multi-part feature emits several).
+    // The parse stopped early because ParseOptions::max_geometries was reached
+    // AND input was left unread. What is returned is the first `max_geometries`
+    // geometries of the file; how many more the file holds is deliberately NOT
+    // reported, because reading that far is the cost the cap exists to avoid (and
+    // an OGR feature count is not a geometry count — one multi-part feature emits
+    // several).
+    //
+    // [camp#22] "And input was left unread" is load-bearing: a file holding
+    // exactly `max_geometries` geometries has been read IN FULL, and this flag is
+    // what puts "rest of file not read" in the layer's status. A bounded lookahead
+    // (the current feature's own unread parts, one feature on the current layer,
+    // one per remaining layer) establishes that something remains before the flag
+    // is set.
     //
     // [camp#22] A parse that hits BOTH the cap and the abort reports `aborted`,
     // not this: an abort can truncate a ring mid-way, and `aborted` is the flag
