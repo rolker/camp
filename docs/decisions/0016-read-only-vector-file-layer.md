@@ -273,6 +273,22 @@ had to be answered rather than assumed.
     when the cap hit — counting them means reading the file the cap exists to
     stop reading, and an OGR feature count is not a geometry count anyway.
 
+    **The cap flag means input was ACTUALLY left unread.**
+    `ParseDiagnostics::geometry_cap_reached` — the flag the Layers-tab status
+    sentence is built on — is not "the running total reached `max_geometries`".
+    A file holding exactly `max_geometries` geometries reaches that point having
+    been read in full, and reporting a partial read of it is a false statement in
+    the one status line this design leans on. The parser therefore establishes
+    that something remains before setting the flag, by a **bounded lookahead**:
+    the current feature's own unread parts (the parse budget reports them), then
+    one feature on the current layer, then at most one feature per remaining
+    layer — and it stops early if an abort has been requested, since an aborted
+    result is discarded whole. That is the least reading that can distinguish
+    "stopped with the file unread" from "the file held exactly that many", and
+    the honesty of the status line is worth it. A layer whose spatial reference
+    yields no transformation to WGS84 counts as input remaining: it is data this
+    parse did not read, and `layers_failed` is what says why.
+
     What is bounded here is abort latency and the geometry COUNT. Neither the
     vertex count of a single ring (100 M vertices is ~1.6 GB of coordinates) nor
     the size of a single attribute value is bounded, and both are deliberately
