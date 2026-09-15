@@ -6,6 +6,18 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 9** (2026-09-15) — the round-4 pre-push review's must-fix. Rev 8's
+vertex-level poll TRUNCATES a ring, and the only thing keeping a truncated ring
+off the screen is `ParseDiagnostics::aborted`; the per-feature cap check ran
+first and returned from its own branch, so a feature that both crossed
+`max_geometries` and carried a truncated ring reported `geometry_cap_reached`
+with `aborted` unset. The abort is now checked BEFORE the cap — an aborted
+result is reported as aborted and is not trimmed to exactly `max_geometries`,
+being partial by construction — and the interior-ring loop breaks on the abort
+flag (never on the cap, which would drop the holes of a polygon drawn in full).
+"Abort latency bounded by a poll interval" is unchanged; what changes is which
+flag a parse that hits both reports.
+
 **Rev 8** (2026-09-15) — the round-4 fix pass addressed both should-fix findings
 of the 2026-09-15 Integrated Review (round 2) on PR #226. The plan-level
 consequences:
