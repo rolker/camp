@@ -128,8 +128,13 @@ struct ParseDiagnostics
     // Individual points whose coordinate transformation FAILED. OGR leaves a
     // failed point at HUGE_VAL, so these are dropped rather than carried.
     int points_dropped = 0;
-    // Geometries of a type this parser does not handle (the curve types).
+    // Geometries of a type this parser does not handle (the curve types), and the
+    // name of the FIRST such type seen — the parser logs one summary line per
+    // layer rather than one per geometry (an unhandled geometry does not spend the
+    // geometry budget, so a file of curve types would otherwise emit unbounded log
+    // I/O), and the type name is the part of that message worth keeping.
     int geometries_unhandled = 0;
+    QString first_unhandled_geometry_type;
     // Polygons dropped because they carry no exterior ring — there is no outline
     // to draw and no ring to close, so nothing can be emitted for them.
     int polygons_without_exterior_ring = 0;
@@ -141,8 +146,9 @@ struct ParseDiagnostics
 // the heterogeneous wkbGeometryCollection, each matched after wkbFlatten() so
 // every 25D/Z/M/ZM variant (a GeoJSON point with an elevation is wkbPoint25D)
 // reaches the same case as its 2D form. A geometry type that is still not handled
-// (the curve types) is skipped with a qWarning naming the type and counted in
-// ParseDiagnostics::geometries_unhandled — never silently dropped.
+// (the curve types) is skipped and counted in ParseDiagnostics::geometries_unhandled
+// — never silently dropped — and reported in ONE qWarning per layer naming the
+// count and the first type seen.
 //
 // Coordinates: each point is transformed individually and the per-point success
 // flag is CHECKED. OGR leaves a point that failed to transform at HUGE_VAL, so an

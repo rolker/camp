@@ -288,12 +288,21 @@ void appendGeometry(const OGRGeometry *geometry,
         break;
     }
     default:
-        // Documented, LOGGED skip (the curve types): the formats this parser
-        // claims to read do not normally emit these, and a silent drop is what
-        // made the 25D/Multi* gap invisible for so long.
+        // Documented skip (the curve types): the formats this parser claims to
+        // read do not normally emit these, and a silent drop is what made the
+        // 25D/Multi* gap invisible for so long.
+        //
+        // [camp#22 round-4 should-fix] COUNTED here, REPORTED once per layer by
+        // the caller — the way points_dropped and polygons_without_exterior_ring
+        // already are. This used to qWarning() per geometry, and an unhandled
+        // geometry does not spend the budget, so max_geometries bounded nothing
+        // here: a large file of curve types emitted unbounded log I/O while the
+        // worker read all of it. The TYPE NAME is kept (first one seen), which is
+        // the part of the message that was worth having.
         ++diagnostics.geometries_unhandled;
-        qWarning() << "camp::vector::parseVectorLayers: skipping unhandled geometry type"
-                   << OGRGeometryTypeToName(geometry->getGeometryType());
+        if(diagnostics.first_unhandled_geometry_type.isEmpty())
+            if(const char *name = OGRGeometryTypeToName(geometry->getGeometryType()))
+                diagnostics.first_unhandled_geometry_type = QString::fromUtf8(name);
         break;
     }
 }
@@ -451,6 +460,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
 
         const int dropped_before = diag.points_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
+        const int unhandled_before = diag.geometries_unhandled;
         layer->ResetReading();
         OGRFeature *feature = layer->GetNextFeature();
         while(feature)
@@ -539,6 +549,15 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
             qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
                        << "- dropped" << (diag.points_dropped - dropped_before)
                        << "point(s) whose coordinate transformation failed";
+
+        if(diag.geometries_unhandled > unhandled_before)
+            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                       << "- skipped" << (diag.geometries_unhandled - unhandled_before)
+                       << "geometry(ies) of an unhandled type (first:"
+                       << (diag.first_unhandled_geometry_type.isEmpty()
+                               ? QStringLiteral("unnamed")
+                               : diag.first_unhandled_geometry_type)
+                       << ")";
 
         // unprojectTransformation's RAII deleter frees it here.
         result.push_back(std::move(parsed));

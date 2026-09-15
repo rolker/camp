@@ -30,6 +30,7 @@
 
 #include <QFile>
 #include <QTemporaryDir>
+#include <QtGlobal>
 
 #include "vector/vector_parse.h"
 
@@ -802,6 +803,65 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   ASSERT_EQ(all.size(), 1u);
   EXPECT_EQ(all.front().geometries.size(), full_count);
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
+}
+
+// [camp#22 round-4 should-fix] An unhandled geometry type is reported ONCE PER
+// LAYER, not once per geometry.
+//
+// An unhandled geometry does not spend the geometry budget, so max_geometries
+// bounds nothing on this path: a large file of curve types could emit unbounded
+// log I/O while the worker read all of it. The count already existed in
+// ParseDiagnostics; the message now follows points_dropped's pattern and names
+// the first type seen.
+TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr);
+  DatasetPtr ds(driver->Create("unhandled", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(ds);
+
+  OGRSpatialReference srs;
+  srs.SetWellKnownGeogCS("WGS84");
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+  OGRLayer* layer = ds->CreateLayer("curves", &srs, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+
+  // Three curve geometries — a type the parser documents as unhandled.
+  for(int i = 0; i < 3; ++i)
+  {
+    OGRCircularString curve;
+    curve.addPoint(-70.80 + 0.01 * i, 43.00);
+    curve.addPoint(-70.79 + 0.01 * i, 43.01);
+    curve.addPoint(-70.78 + 0.01 * i, 43.00);
+    OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+    f->SetGeometry(&curve);
+    ASSERT_EQ(layer->CreateFeature(f), OGRERR_NONE);
+    OGRFeature::DestroyFeature(f);
+  }
+
+  // Count the warnings the parse emits about them.
+  static int unhandled_warnings = 0;
+  unhandled_warnings = 0;
+  QtMessageHandler previous = qInstallMessageHandler(
+      [](QtMsgType, const QMessageLogContext&, const QString& message)
+      {
+        if(message.contains("unhandled type"))
+          ++unhandled_warnings;
+      });
+
+  camp::vector::ParseDiagnostics diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(ds.get(), camp::vector::ParseOptions(), &diag);
+  qInstallMessageHandler(previous);
+
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_TRUE(layers.front().geometries.empty()) << "a curve type is not drawn";
+  EXPECT_EQ(diag.geometries_unhandled, 3) << "every skipped geometry is still COUNTED";
+  EXPECT_FALSE(diag.first_unhandled_geometry_type.isEmpty())
+      << "the type name is the part of the message worth keeping";
+  EXPECT_EQ(unhandled_warnings, 1)
+      << "one summary line per layer, not one per geometry: " << unhandled_warnings;
 }
 
 // [camp#22 round-3 should-fix] `geometry_cap_reached` means "the rest of the file
