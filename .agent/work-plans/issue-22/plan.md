@@ -6,6 +6,56 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 7** (2026-09-15) — the round-3 fix pass (ten commits, `e2a56cc` through `71e56c0`)
+addressed all ten findings of the 2026-09-14 Integrated Review on PR #226. The
+plan-level consequences:
+
+- **`ProjectView` IS touched after all**, reversing rev 4's Open Question 2 and
+  the struck-out Files-to-Change row. Not for a `mouseMode` accessor — the
+  feature item still reads pan mode from the view's `dragMode()` — but because
+  the gating did not work: `mousePressEvent()` switched back to pan mode
+  *before* forwarding the press, so the item read "pan" mid-placement and the
+  attribute popup fired while the operator was placing a mission item. The
+  switch is now DEFERRED until after the forward, for all six add-* modes and
+  the right-button cancel alike. The coupling is recorded from both sides
+  (`vector_feature_item.cpp`'s gate comment and ADR-0016 D5) because it is
+  invisible from `camp_map`. Follow-up camp#225 (an item accepting the left
+  press takes it from the view's pan gesture) is unchanged by this.
+- **No-data is a SECOND CHANNEL, not a colour.** Step 5's "a fixed neutral
+  colour distinct from any position on the active palette" was not achievable:
+  grayscale is a palette the operator can pick *and* the unknown-name fallback,
+  and its midpoint is that same grey. A no-data feature is now drawn with a
+  DASHED outline and a HATCHED fill (a hollow marker for a point) — channels no
+  palette touches, which survive colour-blind vision and a monochrome printout.
+  `camp::vector::isNoData()` names the state as exactly the branch
+  `colorForValue()` answers with `noDataColor()`, so the two cannot drift
+  (ADR-0016 D6).
+- **The cap and the abort predicate are threaded INTO the geometry recursion**
+  as a `ParseBudget`, one step beyond rev 6's "carried into the parse". Rev 6
+  stopped the parse between features; a single `MultiPolygon` or nested
+  `GeometryCollection` could still materialise unboundedly and delay the
+  destructor's join. The budget is checked before every part and spent on every
+  emission, so abort latency is bounded by one geometry rather than one feature
+  (ADR-0016 D11).
+- **Polar latitudes are CLAMPED, not dropped** (operator decision at the
+  round-3 checkpoint). Every conversion in `vector_feature_item.cpp` — ring
+  vertices *and* the item's anchor position — goes through `placeableToMap()`,
+  which clamps to `web_mercator::maximum_latitude` (85.0511°) before projecting.
+  The anchor mattered as much as the vertices: clamping only the path would have
+  left the item's position 2.4e8 m out behind an innocent-looking local path
+  (ADR-0016 D13).
+- **One item deferred to a follow-up**: persisted layer ORDER does not follow a
+  Layers-tab drag. It is not the small change it looks: the live order lives in
+  the map's child list while an unavailable-at-startup entry has no map item and
+  holds its slot only from the restored order, so the two sequences must be
+  merged — and `persistBackgrounds()` has the identical limitation, which is why
+  one issue covering both charts and vector layers is the honest remedy. Issue
+  text is drafted in the 2026-09-15 `## Implementation` entry in `progress.md`
+  for the host to file.
+- Round 3 itself returned *ship: recommended* with two documentation must-fixes
+  (this revision, and a wrong line citation in `mission_insertion.h`) and no
+  surviving code defect.
+
 **Rev 6** (2026-09-14) — pre-push review round 2 returned *ship: recommended*
 with two must-fixes and nine suggestions. The plan-level consequences:
 
@@ -293,6 +343,16 @@ rounds of answers directly:
      a silent one — since the issue's format claims (shapefile/GeoPackage/
      KML) are then honestly met for the geometry types those formats
      actually emit.
+   - **Bound the parse itself, per geometry** (rev 6/7): `ParseOptions` carries
+     `max_geometries` (the layer's feature cap) and an `aborted` predicate, and
+     both travel into `appendGeometry()`'s collection recursion as a
+     `ParseBudget` — checked before every part and spent on every emission. A
+     cap applied to the parse's RESULT would leave the worker materialising the
+     whole file first (the OOM the cap exists to prevent), and a check made only
+     between features would let one huge `MultiPolygon` or nested
+     `GeometryCollection` run on after the destructor asked the worker to stop.
+     Abort latency is therefore bounded by one geometry, which is what makes the
+     destructor's join on the GUI thread safe (ADR-0016 D11).
    - While in this file: confirm and, if confirmed, fix the pre-existing
      lat/lon-order inconsistency between the Point path (`op->getY(),
      op->getX()` at `vector_parse.cpp:96-104`) and `readRing` (`getX(),
@@ -411,6 +471,15 @@ rounds of answers directly:
      currently reads a private `mouseMode` member — check for an existing
      accessor or add a minimal read-only one, since only pan mode should
      show the popup).
+   - **Latitudes beyond the Mercator limit are CLAMPED, not dropped** (rev 7,
+     operator decision): every conversion — ring vertices and the item's ANCHOR
+     position alike — goes through `placeableToMap()`, which clamps to
+     `web_mercator::maximum_latitude` (85.0511°) before projecting. Mercator
+     sends 90° to infinity, and clamping only the path would leave the item's
+     position 2.4e8 m from the data behind a locally-sane-looking path
+     (ADR-0016 D13). Coordinates that are not placeable at all (NaN, a
+     shapefile read without its `.prj` so northings arrive as degrees) are still
+     rejected rather than clamped.
    - `boundingRect()`/`shape()` from the transformed geometry, in the
      parent layer's local (scene-mercator) coordinates.
 
@@ -429,10 +498,17 @@ rounds of answers directly:
        to 1.0 (top of the ramp) instead of dividing by zero, rather than
        falling back to the default style.
      - **Field missing on a feature, or present but non-numeric/NaN**:
-       paint that feature in a fixed neutral/"no data" color (documented
-       constant, distinct from any position on the active palette) so it
-       is visually distinguishable from a real low-end value — never
-       silently reuses palette index 0.
+       say so in a channel the PALETTE DOES NOT USE (rev 7). Rev 1's "a
+       colour distinct from any position on the active palette" is not
+       achievable — grayscale is both a selectable palette and the
+       unknown-name fallback, and its midpoint is `noDataColor()`'s grey. The
+       feature keeps that neutral grey *and* is drawn with a dashed outline
+       and a hatched fill (a hollow marker for a point), which no palette can
+       imitate and which survive colour-blind vision and a monochrome
+       printout. `camp::vector::isNoData()` names the state as exactly the
+       branch `colorForValue()` answers with `noDataColor()`, so the colour
+       and the outline cannot drift apart. Never silently reuses palette
+       index 0.
      - No field set → the existing per-layer default style color.
    - `setSizeField(const QString& field)`: same min/max normalization and
      the same degenerate/missing/non-numeric handling as colour-by-field
@@ -560,7 +636,7 @@ rounds of answers directly:
 | `docs/decisions/0016-read-only-vector-file-layer.md` (new, rev 5) | ADR for the layer family and the persisted schema |
 | `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability, click/drag gating |
 | `src/camp_map/vector/vector_style.h`/`.cpp` (new) | Colour/size-by-field mapping as free functions — the headless-testable seam step 5's tests need |
-| ~~`src/camp/projectview.h`/`.cpp`~~ | **Not needed** (rev 4): the feature item reads pan mode from the view's `dragMode()` rather than asking ProjectView |
+| `src/camp/projectview.cpp` (rev 7) | `mousePressEvent()` DEFERS its switch back to pan mode until after the press is forwarded to `QGraphicsView`, so the scene dispatches the press under the mode the operator clicked in. Applies to all six add-* modes and the right-button cancel — not vector-layer-scoped. No accessor was added: the feature item still reads pan mode from the view's `dragMode()` |
 | `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
 | `CMakeLists.txt` | Move `vector_parse.cpp` from the executable's `SOURCES` to `CAMP_MAP_SOURCES`; add `vector_layer.cpp`/`vector_feature_item.cpp` to `CAMP_MAP_SOURCES`; 5 new `ament_add_gtest` blocks |
 | `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
@@ -624,8 +700,13 @@ All three were settled during implementation (rev 4):
       so the ordered-vector alternative bought nothing.
 - [x] Whether `ProjectView` needs a read-only `mouseMode` accessor — **no**.
       Pan mode is `QGraphicsView::ScrollHandDrag`, which the feature item reads
-      from the view directly; every add-* mode sets `NoDrag`. ProjectView is
-      untouched, which also keeps the camp_map layering rule intact.
+      from the view directly; every add-* mode sets `NoDrag`, so the layering
+      rule is kept without an accessor. **`ProjectView` is NOT untouched,
+      however** (rev 7): reading `dragMode()` only works if the view has not
+      already switched back to pan mode by the time the press reaches the item,
+      and it had. `mousePressEvent()` now defers that switch until after the
+      forward. The accessor question stands answered; the "untouched" claim
+      does not.
 - [x] Whether the Point-vs-`readRing` lat/lon-order inconsistency is fixed here
       or filed as a follow-up — **fixed in this PR**. Only the untransformed
       branch was wrong, and both branches now share one `toWgs84()` helper.
