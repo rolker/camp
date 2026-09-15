@@ -340,6 +340,22 @@ had to be answered rather than assumed.
     truncation the tile schemes make. Clamping rather than dropping is deliberate:
     a polar survey line is real data this program should be able to show.
 
+    **The consequence of the drop that D4 and this decision leave unsaid: a
+    dropped MID-RING vertex leaves a fabricated straight segment.** `addRing()`
+    skips an unplaceable vertex and keeps the subpath open, so the next valid
+    vertex is joined to the previous one with `lineTo()` — a straight line across
+    the missing stretch rather than a break in the outline. That is deliberate
+    and argued at the call site (splitting the subpath would break a polygon's
+    fill, which is a bigger decision than this MVP), but it is a shape the file
+    does not contain, and it is recorded here rather than left to be rediscovered.
+    Two things bound how often it can happen: an out-of-range latitude is
+    **clamped** by `placeableToMap()` (above), not dropped, and a vertex whose
+    transform failed is dropped by the parser before this code ever sees it
+    (**D4**) — so what reaches `addRing()` is only a genuinely invalid coordinate
+    from the no-SRS pass-through branch. The layer reports the count of features
+    skipped for having no placeable vertex at all; a *partly* unplaceable feature
+    is drawn, with the shortcut. Revisit if a real file produces one.
+
 14. **Colour and size ramps are NUMERIC-ONLY in this MVP, and the styling menus
     offer only the fields a ramp can read.** `VectorLayer::numericFields()` — the
     subset of `fields()` for which at least one feature holds a finite numeric
