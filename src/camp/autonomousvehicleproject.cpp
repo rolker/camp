@@ -411,15 +411,6 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
         return;
     }
     const QString fname = canonicalVectorLayerPath(requested);
-    // [camp#22 / camp#90] The file is reachable now, so it is no longer an
-    // unavailable-at-startup entry. Dropping it here is what lets a LATER removal
-    // through the Layers tab stick: while the path stayed in
-    // m_unavailableVectorLayerFiles, persistVectorLayers() kept finding it on the
-    // unavailable branch and wrote it back, so the layer returned on every launch
-    // — the camp#90/#117 bug in a new place. Still-missing paths keep their
-    // entries, which is what carries an unmounted share across a session.
-    if(QFileInfo::exists(fname))
-        m_unavailableVectorLayerFiles.removeAll(fname);
     // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
     // identical layers, and without this the restore path plus a command-line or
     // menu open of the same file would accumulate a duplicate on every launch.
@@ -430,6 +421,19 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     auto layers = m_map->topLevelLayers();
     if(!layers)
         return;
+    // [camp#22 / camp#90] The file is reachable now, so it is no longer an
+    // unavailable-at-startup entry. Dropping it here is what lets a LATER removal
+    // through the Layers tab stick: while the path stayed in
+    // m_unavailableVectorLayerFiles, persistVectorLayers() kept finding it on the
+    // unavailable branch and wrote it back, so the layer returned on every launch
+    // — the camp#90/#117 bug in a new place. Still-missing paths keep their
+    // entries, which is what carries an unmounted share across a session.
+    // Deliberately AFTER every early return: the path may only leave the
+    // unavailable list once this call is certain to track the file as a loaded
+    // layer. Dropping it before the topLevelLayers() guard left the file neither
+    // unavailable nor loaded, and the next persist forgot it silently.
+    if(QFileInfo::exists(fname))
+        m_unavailableVectorLayerFiles.removeAll(fname);
     // The layer parses asynchronously; it is recorded (and persisted) immediately,
     // and reports a failed or empty load in its own Layers-tab status rather than
     // being silently dropped here — the operator asked for this file, so a file
