@@ -144,13 +144,19 @@ propagate again.
 
 The design decisions and the persisted schema are
 [`docs/decisions/0016-read-only-vector-file-layer.md`](../docs/decisions/0016-read-only-vector-file-layer.md).
-Three of them bite when editing this code: **`persistVectorLayers()` is the single
+Four of them bite when editing this code: **`persistVectorLayers()` is the single
 writer** of `vectorLayers/files` (the layer never writes it); **removal is
 observed through `Layer::onRemovedFromMap()`, never the Map model's
 `rowsAboutToBeRemoved`**, because `Map::setMapItemParent()` implements a
 drag-REORDER as remove+insert and the model signal cannot tell the two apart; and
 **feature-item construction is capped** (`VectorLayer::kMaxFeatureItems`) because
-it runs on the GUI thread, with the shortfall reported in the Layers-tab status.
+it runs on the GUI thread, with the shortfall reported in the Layers-tab status
+(including when the capped features were all unplaceable, so the layer shows
+nothing); and **the unavailable-at-startup list is purged by canonical-equivalent
+identity** (`camp::vector::withoutVectorLayerFile()`), never by exact string — an
+entry whose path did not resolve when it was written keeps its RAW spelling (a
+dangling symlink), so once the target appears the path in hand is the resolved
+one and an exact-match removal would write the entry back on every launch.
 
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,

@@ -6,6 +6,45 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 14** (2026-09-15) — **round-3 PR triage fixes.** No design change: the
+hover label, the pan-mode arrow cursor and numeric-only ramp fields all stand as
+rev 12 settled them. The plan-level behaviour changes are:
+
+- **The unavailable-at-startup list is purged by canonical-equivalent identity**,
+  not by exact string. An entry is only canonical when its file resolved at the
+  time it was written, so a dangling symlink is remembered under its RAW
+  spelling; once the target appears, the path in hand is the resolved target and
+  `removeAll()` missed the entry, which the rebuild then wrote back forever — the
+  camp#90/#117 class the mechanism exists to avoid.
+  `camp::vector::withoutVectorLayerFile()` (with `canonicalVectorLayerPath()`
+  moved beside it so both can be tested) does the exact and the equivalent drop.
+- **A polygon must be anchored by an EXTERIOR vertex.** The anchor search fell
+  back to interior rings, so a polygon whose exterior was entirely unplaceable
+  but whose hole held a valid vertex was built from the hole alone — which
+  `Qt::OddEvenFill` paints as solid fill, a hole drawn as a feature. It is now
+  skipped and counted in the layer's `skipped` tally.
+- **`geometry_cap_reached` means input was actually left unread.** It used to be
+  set the moment the total reached `max_geometries`, so a file holding exactly
+  that many geometries claimed "rest of file not read" about a file read in full.
+  A bounded lookahead (the current feature's unread parts, one feature on this
+  layer, one per remaining layer) establishes the remainder first. The capped
+  note is also now said on the **no-features** status path, which a `.prj`-less
+  national shapefile lands on.
+- **Unhandled geometry types are logged once per layer**, with the count and the
+  first type seen, instead of once per geometry — an unhandled geometry does not
+  spend the geometry budget, so the cap bounded nothing on that path.
+- A caller-supplied `ParseDiagnostics` is **reset** before the parser binds to
+  it, so one object reused across parses cannot carry a flag or a counter
+  forward. Doc corrections: a line's or polygon's label is placed where the
+  cursor ENTERED and does not track it (header, call site, test name, ADR-0016
+  D5), and ADR-0016 D13 now records that a dropped mid-ring vertex leaves a
+  fabricated straight segment.
+- New tests: the dangling-symlink purge lifecycle, the polygon-with-a-valid-hole
+  rejection, a capped-but-empty layer's status, cap-at-exactly-the-file-size (and
+  its mid-feature counterpart), one-warning-per-layer for unhandled types, the
+  diagnostics reset, and a projected-CRS (EPSG:32619, UTM 19N) reprojection
+  fixture — the transform path was previously only ever exercised WGS84 -> WGS84.
+
 **Rev 13** (2026-09-15) — **round-5 pre-push review fixes.** No design change:
 the hover popup, the in-scene label, the pan-mode arrow and numeric-only ramp
 fields all stand as rev 12 settled them.
