@@ -102,6 +102,15 @@ had to be answered rather than assumed.
    read from the view's own drag mode rather than by asking ProjectView, again
    because camp_map cannot call into the executable.
 
+   This gate depends on one thing in `ProjectView`, recorded here because it is
+   invisible from `camp_map`: `ProjectView::mousePressEvent()` must DEFER its
+   switch back to pan mode until after it has forwarded the press to
+   `QGraphicsView`. It used to call `setPanMode()` inline, which set
+   `ScrollHandDrag` before the scene dispatched the press — so the item read "pan"
+   during the very click that placed a mission item, accepted it, and answered the
+   release with a tooltip on top of the item just placed. The press has to be
+   dispatched under the mode the operator clicked in.
+
 6. **Styling is attribute-driven, through `marine_colormap` (ADR-0008), and
    total.** Colour-by-field samples the selected palette across the field's
    extent *over the features that have a value*; size-by-field scales point
@@ -110,10 +119,20 @@ had to be answered rather than assumed.
    defined, documented result for a field that is missing on a feature, holds a
    non-numeric or NaN value, or is identical across every feature — and the one
    thing none of them may do is look like a legitimate low value. A missing value
-   is painted in a fixed no-data grey that is not a position on any palette; a
-   degenerate range maps to the palette midpoint (not an extreme, and not a NaN:
-   the offset-the-low-bound guard used elsewhere is a no-op above 2^53, which
-   OGR int64 ids and nanosecond timestamps reach).
+   is painted in a fixed no-data grey; a degenerate range maps to the palette
+   midpoint (not an extreme, and not a NaN: the offset-the-low-bound guard used
+   elsewhere is a no-op above 2^53, which OGR int64 ids and nanosecond timestamps
+   reach).
+
+   **Colour alone cannot carry "no data".** The grey is distinct from both ends of
+   every shipped palette, but not from the MIDDLE of `grayscale` — a palette the
+   operator can select, and the fallback for an unknown palette name — so under it
+   a missing value would be indistinguishable from a mid-range measurement. A
+   no-data feature is therefore also drawn with a **dashed outline and a hatched
+   fill** (a hollow marker for a point): channels the palette does not touch,
+   which hold up under grayscale, colour-blind vision and a monochrome printout
+   alike. The predicate is `camp::vector::isNoData()`, so the colour and the
+   outline cannot drift apart.
 
 7. **Persistence is APP STATE, and its schema is one key.** The layer list is
    `QSettings` `vectorLayers/files` — a `QStringList` of canonical file paths, in
@@ -184,7 +203,13 @@ had to be answered rather than assumed.
       `/vsizip/`, `/vsis3/` … in its virtual file system *before* a driver is
       selected, so `/vsicurl/https://host/x.geojson` is fetched and then read
       by the perfectly-allowed GeoJSON driver — confirmed against GDAL 3.8.4
-      with exactly this allowlist. The restore path is the one that matters:
+      with exactly this allowlist. The prefixes are asked of GDAL
+      (`VSIGetFileSystemsPrefixes()`) rather than matched as the raw characters
+      `/vsi`: that spelling also refused any ordinary local directory whose name
+      begins with them (`/vsidata/survey.geojson`), and a prefix-*boundary* check
+      does not help, since `/vsidata/` is still `/vsi<word>/`. The registered
+      handler list is what GDAL itself dispatches on, so the refusal now tracks
+      GDAL's real behaviour instead of approximating it. The restore path is the one that matters:
       `restorePersistedVectorLayers()` reopens every persisted entry at startup
       with no operator present, so a `/vsi` entry is dropped from the list
       rather than remembered.
@@ -211,6 +236,18 @@ had to be answered rather than assumed.
     re-derive. Should it ever become true, disabling network access at the GDAL
     configuration level (`GDAL_HTTP_*`/`CPL_VSIL_CURL_*`) is the lever that closes
     it without dropping the KML formats.
+
+13. **Polar vertices are clamped to the projection's limit, not dropped.**
+    `isPlaceable()` admits latitude ±90 — a perfectly valid WGS84 coordinate —
+    where Web Mercator does not converge: `geoToMap()` stays finite only because
+    `tan(π/2)` is 1.633e16 rather than inf in double, and yields y ≈ ±2.425e8 m,
+    about twelve times the world half-extent of 2.004e7 m. One such vertex poisons
+    the layer's `childrenBoundingRect()`, fit-to-extent and the scene index exactly
+    as a `.prj`-less shapefile's eastings do. Every geometry conversion in
+    `vector_feature_item.cpp` therefore goes through `placeableToMap()`, which
+    clamps to `web_mercator::maximum_latitude` (85.0511°) first — the same
+    truncation the tile schemes make. Clamping rather than dropping is deliberate:
+    a polar survey line is real data this program should be able to show.
 
 ## Consequences
 
