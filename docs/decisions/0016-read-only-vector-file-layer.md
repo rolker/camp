@@ -96,9 +96,33 @@ had to be answered rather than assumed.
 
 5. **Read-only means read-only, everywhere, and the one interaction is HOVER.**
    No editing, no dragging, no waypoint linking, nothing sent to the robot. A
-   feature answers the cursor resting on it with its attributes, as an ordinary Qt
-   tooltip (`QGraphicsItem::setToolTip()`, shown by `QGraphicsScene::helpEvent()`
-   after the usual delay and hidden on move-away). It is not a persistent panel.
+   feature answers the cursor arriving on it with its attributes, **instantly**,
+   in an **in-scene label** — a child `QGraphicsSimpleTextItem` filled by
+   `hoverEnterEvent()` and emptied by `hoverLeaveEvent()`. It is not a persistent
+   panel.
+
+   **The label is the vessel/AIS mechanism, replicated.** `GeoGraphicsItem`
+   (`src/camp/geographicsitem.cpp:14-26`) owns a child `QGraphicsSimpleTextItem`
+   with `ItemIgnoresTransformations`, a 20 pt bold font, a black brush and a
+   width-0 white pen; `Platform` and `AISContact` fill it in `hoverEnterEvent()`
+   and clear it in `hoverLeaveEvent()`. `VectorFeatureItem` lives in `camp_map`
+   and cannot depend on `GeoGraphicsItem` in the `camp` executable (the same rule
+   that put `parseVectorLayers()` in `camp_map`), so those settings are **copied,
+   with the source named in the comment**. Only one label is ever on screen
+   because every item clears its own on leave. The label item is created on the
+   **first hover**, not at load: a layer may hold `kMaxFeatureItems` (50 000)
+   features and the operator hovers a handful.
+
+   **A Qt tooltip was tried first, and the operator rejected it after testing
+   it.** The first hover implementation was `setToolTip(attributeText())`, shown
+   by `QGraphicsScene::helpEvent()`. It works, and it costs no per-item hover
+   tracking — but it waits out Qt's tooltip delay, and the operator's verdict on
+   the 2026-09-15 GUI test of it was "similar to what was existing, but not the
+   same": every other CAMP item answers the cursor at once. The reason for
+   choosing hover in the first place was consistency with the rest of the
+   application, and a popup that behaves differently from every other popup does
+   not deliver it. Accepting hover events across the layer's items is the price,
+   and it is paid deliberately.
 
    **Hover, because that is CAMP's house convention for "tell me what this is."**
    `Platform` and `AISContact` show their label on hover
@@ -339,8 +363,37 @@ had to be answered rather than assumed.
     Nothing about the symbol grows.
 
     The slack was added for click-to-inspect and carries over to hover-to-inspect
-    unchanged, because `shape()` is what `QGraphicsScene::helpEvent()` hit-tests
-    too — the constants are named for hover now, and the tolerance is the same.
+    unchanged, because `shape()` is what the scene hit-tests to dispatch hover
+    events too — the constants are named for hover now, and the tolerance is the
+    same. D16 attacks the same problem from the other end (the cursor now has a
+    visible hotspot); the slack stays, because aim is never exact.
+
+16. **In pan mode the cursor is an ARROW, CAMP-wide**, not `ScrollHandDrag`'s
+    open hand. `ProjectView::setPanMode()` sets `Qt::ArrowCursor` on the
+    **viewport** after `setDragMode(ScrollHandDrag)`, and `mouseReleaseEvent()`
+    sets it again after `QGraphicsView::mouseReleaseEvent()` returns, because Qt
+    installs the open hand at both of those points. The closed hand during an
+    actual drag is left alone — there it is feedback about what is happening, not
+    something being aimed. The add-\* modes keep their `Qt::CrossCursor`.
+
+    This is an **operator decision** taken with D5's label in front of him
+    (2026-09-15), and it is deliberately not scoped to this layer: the open hand's
+    hotspot is invisible, so everything in CAMP that answers the cursor — a vessel
+    or AIS hover label, a mission item's highlight, and now a vector feature — is
+    aimed at blind, and CAMP idles in pan mode. It was recorded as a CAMP-wide
+    follow-on in the previous revision of this ADR and then decided rather than
+    deferred, because the change is four lines in one file.
+
+    The view-vs-viewport split is load-bearing. Cross-cursor modes call
+    `setCursor()` on the **view**, which a viewport with no cursor of its own
+    inherits; leaving pan mode calls `setDragMode(NoDrag)`, and Qt unsets the
+    viewport's cursor there, so the inheritance resumes. Setting the arrow on the
+    view instead would be overridden by Qt's own viewport cursor.
+
+    `ProjectView` is not constructible in a test harness (it needs the
+    application's status bar and project — the same reason `test_mission_insertion`
+    exercises the model rather than the view), so this decision carries **no
+    automated test**. It is verified in the GUI.
 
 ## Consequences
 
@@ -374,6 +427,16 @@ had to be answered rather than assumed.
   rather than one that does nothing useful. The hover popup still shows every
   attribute, which is where those fields are readable today. Categorical styling
   and label-by-field are the follow-ons that give them a rendering role.
+- **The pan cursor changed for the whole application** (D16), which is the one
+  thing in this branch an operator meets outside the vector layer: pan mode shows
+  an arrow instead of an open hand. It is a deliberate CAMP-wide change, made
+  because the open hand's hotspot is invisible and every hover-answering item in
+  CAMP suffers for it, and it carries no automated test because `ProjectView`
+  cannot be built in a harness.
+- **Hover events are now accepted on every feature item** (D5), where the tooltip
+  version needed none. That is per-item hover tracking across up to 50 000 items —
+  the scene's ordinary dispatch, but not free. The label item itself is created
+  lazily on first hover so the load path does not pay for it.
 - **camp#225 — a pan that starts on a feature does not pan the map — is FIXED BY
   CONSTRUCTION.** It was the cost of the click version: the item accepted the left
   press so the release could tell a click from a drag, and that press therefore
@@ -400,7 +463,3 @@ had to be answered rather than assumed.
     comparing two features, or copying a value, wants the popup to stay. It has
     to be built without taking the press away from the view's pan gesture, which
     is what D5 just bought back.
-  - **The pan cursor is a CAMP-wide choice, not this layer's.** The open hand
-    whose hotspot the operator cannot see is `ScrollHandDrag`'s, shared by every
-    layer and every mission item; D15's hit slack is this layer working around it.
-    Changing the cursor belongs to the map view, not here.

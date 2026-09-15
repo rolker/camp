@@ -34,10 +34,12 @@ class VectorFeatureItem;
 ///     independent of any mission file.
 /// Both read the file through `camp::vector::parseVectorLayers`.
 ///
-/// [ADR-0016 D5] Hover-to-inspect is the item's ordinary Qt tooltip, shown when
-/// the cursor rests on a feature — CAMP's house convention for "tell me what this
-/// is" (Platform, AISContact and the mission items all answer to hover), and not
-/// a persistent panel. A feature accepts NO mouse button, so every press over one
+/// [ADR-0016 D5] Hover-to-inspect shows an IN-SCENE LABEL the instant the cursor
+/// reaches a feature — CAMP's house convention for "tell me what this is"
+/// (Platform, AISContact and the mission items all answer to hover), by the same
+/// mechanism GeoGraphicsItem gives them, and not a persistent panel. A Qt tooltip
+/// was tried first and rejected by the operator in the 2026-09-15 GUI test: it
+/// waits out Qt's hover delay, and nothing else in CAMP does. A feature accepts NO mouse button, so every press over one
 /// falls through to the view: a pan gesture that starts on a feature pans, and a
 /// left-press in one of ProjectView's add-* modes places its mission item with
 /// nothing in the way. See VectorFeatureItem.

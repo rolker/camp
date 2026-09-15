@@ -107,16 +107,32 @@ the operator can move, rename and send to the robot — persisted in the mission
 project file. `camp::vector::VectorLayer` (`src/camp_map/vector/`, File > Open
 Vector Layer) **displays** it read-only as an ordinary Layers-tab layer with
 attribute-driven styling (colour-by-field through `marine_colormap`,
-size-by-field on point markers) and **hover-to-inspect** — the item's ordinary Qt
-tooltip, shown when the cursor rests on a feature, matching CAMP's house
+size-by-field on point markers) and **hover-to-inspect** — an in-scene label that
+appears the instant the cursor reaches a feature, matching CAMP's house
 convention (`Platform` and `AISContact` show their label on hover,
 `GeoGraphicsMissionItem` brightens on hover; nothing in CAMP inspects on click).
-It is not a persistent panel. A `VectorFeatureItem` accepts **no mouse button at
+The mechanism is `GeoGraphicsItem`'s, replicated rather than inherited: a child
+`QGraphicsSimpleTextItem` with the same flag/font/brush/pen, filled in
+`hoverEnterEvent()` and emptied in `hoverLeaveEvent()`, because `camp_map` cannot
+depend on `GeoGraphicsItem` in the `camp` executable. A Qt tooltip was tried first
+and rejected in the 2026-09-15 GUI test — it waits out Qt's delay, and nothing
+else in CAMP does. It is not a persistent panel. A `VectorFeatureItem` accepts **no mouse button at
 all** (`setAcceptedMouseButtons(Qt::NoButton)`), so every press over a feature
 falls through to the view — which is what keeps the pan gesture and ProjectView's
 add-* placement clicks working over a vector layer, and what makes camp#225 fixed
 by construction. Do not give the item a mouse handler without re-reading ADR-0016
-D5. The layer persists as **app state** under `QSettings vectorLayers/files` like the
+D5.
+
+**`ProjectView` cursors (camp#22 / ADR-0016 D16):** each add-\* mode sets
+`Qt::CrossCursor` **on the view**; pan mode sets `Qt::ArrowCursor` **on the
+viewport**, after `setDragMode(ScrollHandDrag)` and again after
+`QGraphicsView::mouseReleaseEvent()` returns — Qt installs its own
+`Qt::OpenHandCursor` at both points, and the open hand has no visible hotspot, so
+anything aimed at with it (a hover label, a mission item) is aimed at blind. The
+closed hand during an actual drag is left alone. The view-vs-viewport split is
+load-bearing: leaving pan mode calls `setDragMode(NoDrag)`, and Qt unsets the
+viewport's own cursor there, which is what lets the add-\* modes' view cursor
+propagate again. The layer persists as **app state** under `QSettings vectorLayers/files` like the
 chart list (ADR-0003 §4), not in the mission file. Both read the file through
 `camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
 which lives in **camp_map** so both the library layer and the executable's

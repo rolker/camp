@@ -6,6 +6,38 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 12** (2026-09-15) — **the hover popup becomes an in-scene LABEL, and pan
+mode gets an ARROW cursor CAMP-wide.** Both are operator decisions taken at a
+run-issue checkpoint after testing the rev-11 build in the GUI.
+
+- Rev 11's popup was the item's ordinary Qt tooltip. Tested, the operator's
+  verdict was "similar to what was existing, but not the same": CAMP's own items
+  answer the cursor **instantly**. `VectorFeatureItem` now replicates
+  `GeoGraphicsItem`'s mechanism — `setAcceptHoverEvents(true)`, a child
+  `QGraphicsSimpleTextItem` carrying the same flag/font/brush/pen as
+  `geographicsitem.cpp:16-25`, filled in `hoverEnterEvent()` and emptied in
+  `hoverLeaveEvent()` — rather than inheriting it, because `camp_map` cannot
+  depend on the `camp` executable. `setToolTip()` is gone, so there is no second,
+  delayed popup. The label item is created on the **first hover**, not one per
+  feature at load (up to 50 000 of them). ADR-0016 D5 rewritten.
+- `ProjectView` shows `Qt::ArrowCursor` on the **viewport** in pan mode — after
+  `setDragMode(ScrollHandDrag)` and again after `QGraphicsView::mouseReleaseEvent()`
+  returns, the two places Qt installs its open hand. The closed hand during a real
+  drag stays; the add-\* modes keep `Qt::CrossCursor`. Rev 11 recorded this as a
+  CAMP-wide follow-on; the operator decided it instead, because the open hand's
+  invisible hotspot makes every hover-answering item in CAMP hard to aim at. New
+  ADR-0016 **D16**; the follow-on line is removed. `projectview.h` is unchanged,
+  and this is the branch's only ProjectView change (rev 11's revert stands).
+- Tests: the two tooltip-based tests are replaced by label-based ones —
+  `VectorFeatureItem.HoverShowsAnInSceneLabelWithTheAttributes` (hover-enter fills
+  the child label, hover-leave clears it, and there is no tooltip) and
+  `VectorLayerInteraction.HoverThroughARealViewShowsTheAttributes` (rewritten
+  around a synthesized buttonless `QMouseEvent(MouseMove)` on the viewport of a
+  real y-flipped ScrollHandDrag view, at centre / 3 px off / clear of any
+  feature). The no-mouse-button and press-falls-through tests are unchanged.
+  **The cursor change has no test**: `ProjectView` is not constructible in a
+  harness (the `test_mission_insertion` precedent). It is verified in the GUI.
+
 **Rev 11** (2026-09-15) — **inspection moved from CLICK to HOVER**, an operator
 decision taken at a run-issue checkpoint after the rev-10 fixes were tested in the
 GUI and the layer worked ("It works!"). The remaining oddity was that the vector
@@ -356,8 +388,8 @@ This issue asks for a second, **read-only** way to view the same kind of
 file: a `map::Layer` in the Layers tab (like `RasterLayer`/backgrounds,
 ADR-0002/ADR-0003) that renders points/lines/polygons with attribute-driven
 styling (colour-by-field via `marine_colormap`, size-by-field) and
-inspection of a feature's attributes (rev 11: on hover; click-to-inspect
-through rev 10).
+inspection of a feature's attributes (rev 12: on hover, as an in-scene label;
+rev 11: on hover, as a Qt tooltip; click-to-inspect through rev 10).
 
 The issue review raised six open items; the operator answered all six in a
 follow-up comment on the issue (2026-09-14), and — after Plan Review rev 1
@@ -725,12 +757,12 @@ rounds of answers directly:
 | `src/camp_map/map/item_types.h` | New `VectorLayerType` enum value |
 | `src/camp_map/vector/vector_layer.h` (new) | `VectorLayer : public map::Layer` — async OGR load (with alt-stack install), style setters, `settingsKey()` override, `onRemovedFromMap()`, persistence hooks |
 | `src/camp_map/vector/vector_layer.cpp` (new) | Load worker, scene-coordinate transform, style recompute (with degenerate/missing-value handling), readSettings/writeSettings |
-| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon); rev 11: hover-to-inspect via the item's Qt tooltip, and `setAcceptedMouseButtons(Qt::NoButton)` |
-| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test (rev 5: line shapes are STROKED, or Qt's fill-area test never picks them) + coordinate placeability + (rev 11) `setToolTip(attributeText())` in place of the mouse handlers |
+| `src/camp_map/vector/vector_feature_item.h` (new) | Read-only per-feature `QGraphicsItem` (point/line/polygon); rev 12: hover-to-inspect via a lazily created child `QGraphicsSimpleTextItem` label (the `GeoGraphicsItem` mechanism, replicated), and `setAcceptedMouseButtons(Qt::NoButton)` |
+| `src/camp_map/vector/vector_feature_item.cpp` (new) | Paint + hit-test (rev 5: line shapes are STROKED, or Qt's fill-area test never picks them) + coordinate placeability + (rev 12) `setAcceptHoverEvents(true)` with `hoverEnterEvent()`/`hoverLeaveEvent()` driving the label, replacing rev 11's `setToolTip()` and rev 10's mouse handlers |
 | `docs/decisions/0016-read-only-vector-file-layer.md` (new, rev 5) | ADR for the layer family and the persisted schema |
-| `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability; rev 11: the attribute tooltip and the no-mouse-button contract |
+| `test/test_vector_feature_item.cpp` (new, rev 5) | Line hit-testing, coordinate placeability; rev 12: the hover LABEL (text, settings, cleared on leave, none before the first hover) and the no-mouse-button contract |
 | `src/camp_map/vector/vector_style.h`/`.cpp` (new) | Colour/size-by-field mapping as free functions — the headless-testable seam step 5's tests need |
-| `src/camp/projectview.cpp` (rev 7, REVERTED rev 11) | Rev 7 deferred `mousePressEvent()`'s switch back to pan mode until after the press was forwarded, so the item's pan-mode gate read the mode the operator clicked in. Rev 11 removed the gate (hover, no mouse buttons), leaving that change without a purpose, so the file is reverted — **byte-identical to `jazzy`**, and this branch now touches no ProjectView behaviour |
+| `src/camp/projectview.cpp` (rev 7, REVERTED rev 11, rev 12 cursor) | Rev 12 sets `Qt::ArrowCursor` on the viewport in pan mode (ADR-0016 D16) — the only ProjectView change this branch now carries. Rev 7 deferred `mousePressEvent()`'s switch back to pan mode until after the press was forwarded, so the item's pan-mode gate read the mode the operator clicked in. Rev 11 removed the gate (hover, no mouse buttons), leaving that change without a purpose, so the file is reverted — **byte-identical to `jazzy`**, and this branch now touches no ProjectView behaviour |
 | `src/camp/mainwindow.cpp` | "Open vector layer" action wiring; `restorePersistedVectorLayers()` call alongside `restorePersistedBackgrounds()` at `mainwindow.cpp:161` |
 | `CMakeLists.txt` | Move `vector_parse.cpp` from the executable's `SOURCES` to `CAMP_MAP_SOURCES`; add `vector_layer.cpp`/`vector_feature_item.cpp` to `CAMP_MAP_SOURCES`; 5 new `ament_add_gtest` blocks |
 | `test/test_vector_parse_attributes.cpp` (new) | Attribute parse round trip + multi-part/25D geometry coverage |
