@@ -384,7 +384,8 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
     // then at most one feature per remaining layer. That is the smallest amount of
     // reading that can distinguish "stopped at the cap with the file unread" from
     // "the file happened to hold exactly max_geometries geometries" — and the
-    // status line built on this flag is worth that much I/O.
+    // status line built on this flag is worth that much I/O. An abort request
+    // cuts it shorter still — see the poll at the top of the lambda.
     //
     // A remaining layer whose spatial reference yields no transformation to WGS84
     // counts as input remaining: it is data this parse did not read, and the
@@ -392,6 +393,16 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
     const auto moreInputRemains = [dataset](OGRLayer *current, int layerIndex,
                                             const ParseBudget &budget)
     {
+        // [camp#22 round-7 must-fix] Poll the abort predicate, and poll it again
+        // between layers. This lookahead sits on the path the destructor's
+        // GUI-thread join waits for, so without the poll an aborted worker still
+        // ran up to one unabortable GetNextFeature() per remaining layer before
+        // the join could complete. The answer is cosmetic once an abort has been
+        // requested — VectorLayer discards an aborted result whole — so report
+        // "nothing left" and get out.
+        const auto giveUp = [&budget]() { return budget.aborted && budget.aborted(); };
+        if(giveUp())
+            return false;
         if(budget.input_remaining)
             return true;
         if(current)
@@ -402,6 +413,8 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
             }
         for(int j = layerIndex + 1; j < dataset->GetLayerCount(); ++j)
         {
+            if(giveUp())
+                return false;
             OGRLayer *remaining = dataset->GetLayer(j);
             if(!remaining)
                 continue;
