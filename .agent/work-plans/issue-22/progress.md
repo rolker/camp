@@ -1369,3 +1369,51 @@ would discard that choice where nobody sees it happen. Pinned by
 - [x] (suggestion) cppcheck `useStlAlgorithm` on the two label-finding helpers
   (deferred: style-only, in test helpers whose explicit loops read more plainly
   than a `std::find_if` over a `dynamic_cast` predicate)
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-15 12:30 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `22ff76d`
+**Mode**: pre-push
+**Depth**: Deep (branch-level risk unchanged), scoped to the 8-commit delta since `5471f06` (+546 -118) — a targeted re-read on an already deeply reviewed branch
+**Must-fix**: 1 | **Suggestions**: 5
+**Round**: 6 | **Ship**: recommended — the one must-fix is a single stale sentence in ADR-0016 D14 with an obvious correction; must-fix fell 8 -> 1, no code finding survived three independent reads, and no design question is open.
+
+Build green (`ui_ws/build.sh camp`, exit 0, no new warnings). Full suite green:
+**391 tests, 0 errors, 0 failures, 1 skipped** — the skip is the pre-existing
+environment-gated `GggsRenderTest.RealStoreRendersWhenProvided`; 387 -> 391 matches
+the four tests this delta added. Specialists: Static Analysis (cppcheck; cpplint
+still unavailable on this host — a named gap, not a clean bill), Governance +
+Plan Drift, Claude Adversarial Lens A + Lens B. Copilot and local-model reviews off.
+
+All eight round-5 must-fixes verified closed by reading the current file content,
+not the diff: the cached hit shape, the stale-style-field menu, and the six
+doc/plan/comment corrections. A repo-wide grep for present-tense "click-to-inspect",
+"tooltip" and "byte-identical" claims found only historical, past-tense mentions.
+Lens A and Lens B independently confirmed the two code fixes: `path_` and `radius_`
+have no mutator that skips `rebuildShape()`, and the hover z-raise/restore, the
+`addFieldMenu` by-reference capture, the `QAction` connect contexts and the
+left-button cursor scoping are all sound. The four deferrals from round 5
+(numericFields cache, the destroyed-while-hovered test, the two `useStlAlgorithm`
+nits) are unchanged and remain reasonable; cppcheck reports nothing else.
+
+Not re-litigated, per the dispatch: hover-to-inspect, the instant in-scene label,
+the pan-mode arrow cursor, numeric-only ramp fields, and show-don't-clear for a
+stale persisted style field.
+
+### Findings
+- [ ] (must-fix) ADR-0016 D14 still states that `numericFields()` "is what the *Color by* and *Size by* menus list" and that the menus "offer only the fields a ramp can read" — as of 852e720 they also list a stale persisted field as "`<field>` (no numbers)" plus "(none)" to clear it. D14's own persisted-field paragraph below stops at what `applyStyle()` does, so a reader concludes the very thing the fix removed: that a stale setting is unreachable from the menu — `docs/decisions/0016-read-only-vector-file-layer.md:325-329,345-353`
+- [ ] (suggestion) ADR-0016 D16 describes the release-side cursor reset without the left-button scoping that 32c8906 added; `.agents/README.md:130-139` already carries it, so the ADR is now the less precise of the two — `docs/decisions/0016-read-only-vector-file-layer.md:374-376`
+- [ ] (suggestion) The hover z-raise is an operator-visible behaviour — the hovered feature comes to the front of its layer, not just its label — and is recorded only in the code comment; D5 documents every other part of the hover interaction — `docs/decisions/0016-read-only-vector-file-layer.md:97-113`
+- [ ] (suggestion, Lens A + Lens B) The geometry-cache contract is inferable only from its two call sites: make it greppable, and state the `setZValue(0.0)` reset's implicit invariant (nothing else may give a feature item a non-default zValue) before someone adds a selected-feature highlight — `src/camp_map/vector/vector_feature_item.h:157-171`, `src/camp_map/vector/vector_feature_item.cpp:368`
+- [ ] (suggestion, Lens A) No test covers an empty `numericFields()` WITH a stale style field set — the combination the two-part guard in `contextMenu()` is most likely to regress on silently; correct by inspection today — `test/test_vector_layer_teardown.cpp:721`, `src/camp_map/vector/vector_layer.cpp:445-491`
+- [ ] (suggestion, Lens B) `label_->setZValue(kHoveredZValue)` is a no-op: the label is the item's only child, and Qt compares zValue only among siblings — the item-level lift is what does the work — `src/camp_map/vector/vector_feature_item.cpp:396`
+
+### Dismissed (checked, not findings)
+- Governance reported the z-value convention as already recorded in ADR-0016; it is not — `grep -niE "zvalue|raise"` over the ADR returns nothing. Kept as the suggestion above rather than as a pass.
+- The stale-field menu entry re-triggers its own setter, which early-returns on an unchanged value (`vector_layer.cpp` `setColorField`/`setSizeField`): clicking it is a visual toggle that does nothing and is rebuilt on the next open. Cosmetic, not a defect.
+- The restructured constructor's always-run `rebuildShape()` on a null-anchor item: `loadFinished()` filters through `hasPlaceableCoordinate()` before construction, so the path is unreachable in production and degrades to an empty shape in a unit test — identical to the prior behaviour.
+- The hovered item's zValue 1.0 cannot collide with CAMP's other z users (measuring tool 10, platform 6, ship track 5, mission items 3): those are top-level scene items, and zValue orders only siblings under the same parent — here, the features of one vector layer.
