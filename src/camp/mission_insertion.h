@@ -30,7 +30,7 @@ namespace camp::mission
 ///                      result is null. A null result is NOT "insert at top
 ///                      level": `AutonomousVehicleProject::RowInserter`
 ///                      dereferences the parent it is handed
-///                      (`autonomousvehicleproject.cpp:1386-1393`), so a caller
+///                      (`autonomousvehicleproject.cpp:1473-1480`), so a caller
 ///                      that may see a null current group must check before
 ///                      inserting. In the running application m_currentGroup is
 ///                      set in the constructor and never cleared, so the null
