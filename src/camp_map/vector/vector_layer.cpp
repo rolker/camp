@@ -306,6 +306,24 @@ QStringList VectorLayer::fields() const
   return list;
 }
 
+QStringList VectorLayer::numericFields() const
+{
+  // [camp#22] "Numeric" is asked of numericAttribute() — the same function the
+  // ramp itself reads values through — rather than of the QVariant's declared
+  // type, so the menu and the ramp cannot disagree about what a field is. A
+  // GeoJSON writer that quotes its numbers produces a string QVariant that
+  // numericAttribute() reads as a measurement, and that field must be offerable.
+  std::set<QString> names;
+  for(const VectorFeatureItem* feature : features_)
+    for(auto it = feature->attributes().begin(); it != feature->attributes().end(); ++it)
+      if(numericAttribute(feature->attributes(), it.key()))
+        names.insert(it.key());
+  QStringList list;
+  for(const QString& name : names)
+    list << name;
+  return list;
+}
+
 void VectorLayer::setColorField(const QString& field)
 {
   if(field == color_field_)
@@ -357,9 +375,22 @@ void VectorLayer::applyStyle()
   const marine_colormap::Palette* palette = resolvePalette(colormap_);
   const QColor default_color(Qt::darkCyan);
 
+  // [camp#22] A colour field NO feature has a numeric value for is treated as no
+  // colour field at all for this pass — not as "every feature is missing its
+  // value". No-data means "this feature has no value where its neighbours do",
+  // and with an invalid range there is no ramp for anything to be missing from;
+  // marking the whole layer no-data painted every feature a hollow grey ring,
+  // which the operator's GUI test of 2026-09-15 read as the features
+  // disappearing. The styling menu offers numericFields() only, so the reachable
+  // way in is a PERSISTED color_field_: the style group is keyed on the file path
+  // and restored whenever that path is reopened, and the file on disk may have
+  // changed since. (Size-by-field already falls back this way —
+  // radiusForValue() returns the default radius on an invalid range.)
+  const bool color_by_field = !color_field_.isEmpty() && color_range.valid;
+
   for(VectorFeatureItem* feature : features_)
   {
-    if(color_field_.isEmpty())
+    if(!color_by_field)
     {
       // Not styled by a field at all: the layer's default colour, and nothing is
       // "missing" — there is no field to be missing from.
@@ -400,9 +431,13 @@ void VectorLayer::contextMenu(QMenu* menu)
 {
   map::Layer::contextMenu(menu);
 
-  const QStringList field_names = fields();
+  // [camp#22] NUMERIC fields only — a ramp cannot read a free-text one, and
+  // offering it produced a layer of hollow grey rings the operator read as the
+  // features disappearing (ADR-0016 D14). The Colormap menu is gated on the same
+  // list because a palette with no colour field to sample changes nothing.
+  const QStringList field_names = numericFields();
   if(field_names.isEmpty())
-    return;   // nothing loaded, or a file with no attributes: nothing to style by
+    return;   // nothing loaded, or no field a ramp can read: nothing to style by
 
   QMenu* color_menu = menu->addMenu("Color by");
   QAction* no_color = color_menu->addAction("(none)");

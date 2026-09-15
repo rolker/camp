@@ -12,10 +12,11 @@
 // The dataset-count baseline additionally proves the worker's RAII closes the
 // GDAL handle on every path, including the aborted one.
 //
-// [camp#22] The file also carries the interaction case that needs a real, loaded
-// layer rather than a hand-built item: a click delivered through a real
-// QGraphicsView onto a real feature (`VectorLayerInteraction`), from the operator
-// GUI test of 2026-09-15.
+// [camp#22] The file also carries the layer-level styling and interaction cases
+// that need a real, loaded layer rather than a hand-built item: which fields the
+// styling menus may offer (`VectorLayerStyleFields`), and a click delivered
+// through a real QGraphicsView onto a real feature (`VectorLayerInteraction`).
+// Both come from the operator GUI test of 2026-09-15.
 
 #include <gtest/gtest.h>
 
@@ -37,6 +38,7 @@
 #include "vector/vector_feature_item.h"
 #include "vector/vector_layer.h"
 #include "vector/vector_parse.h"
+#include "vector/vector_style.h"
 
 namespace
 {
@@ -61,10 +63,10 @@ QString writeGeoJson(const QTemporaryDir& dir)
     "features": [
       {"type": "Feature",
        "geometry": {"type": "Point", "coordinates": [-70.71, 43.07]},
-       "properties": {"signal": 58.0, "assessment": "candidate C"}},
+       "properties": {"signal": 58.0, "assessment": "candidate C", "depth_m": 12.5}},
       {"type": "Feature",
        "geometry": {"type": "Point", "coordinates": [-70.70, 43.06]},
-       "properties": {"signal": 10.0, "assessment": "background"}},
+       "properties": {"signal": 10.0, "assessment": "background", "depth_m": "n/a"}},
       {"type": "Feature",
        "geometry": {"type": "Point", "coordinates": [-70.69, 43.05]},
        "properties": {"assessment": "no signal field"}},
@@ -572,6 +574,100 @@ TEST(VectorLayerTeardown, ApplyStyleFlagsFeaturesWithNoValue)
     if(feature)
       EXPECT_FALSE(feature->isNoData()) << "no-data survived clearing the colour field";
   }
+
+  delete layer;
+}
+
+// [camp#22] The styling menus may offer only fields a RAMP CAN READ.
+//
+// The operator's GUI test of 2026-09-15 coloured by `assessment`, a free-text
+// field: no feature has a numeric value for it, so the range came back invalid,
+// every feature was marked no-data, and the layer went hollow grey — which read
+// as the features disappearing. `numericFields()` is what the menus offer now.
+// `fields()` is deliberately unchanged: the attribute popup and a future
+// label-by-field want every field.
+TEST(VectorLayerStyleFields, NumericFieldsExcludeAStringOnlyField)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  const QStringList all = layer->fields();
+  const QStringList numeric = layer->numericFields();
+
+  // Every field is still reported by fields() — that accessor did not narrow.
+  EXPECT_TRUE(all.contains("signal"));
+  EXPECT_TRUE(all.contains("assessment"));
+  EXPECT_TRUE(all.contains("depth_m"));
+
+  // A field every feature holds a number for: offerable.
+  EXPECT_TRUE(numeric.contains("signal"));
+  // A MIXED field — one feature has 12.5, another the string "n/a". A ramp reads
+  // it fine (the string feature is simply no-data against the others), so it is
+  // offerable; excluding it would hide a real measurement because of one bad row.
+  EXPECT_TRUE(numeric.contains("depth_m"));
+  // Free text on every feature: nothing for a ramp to read, so not offered.
+  EXPECT_FALSE(numeric.contains("assessment"))
+      << "a string-only field was offered as a colour/size ramp";
+
+  EXPECT_TRUE(std::is_sorted(numeric.begin(), numeric.end()));
+
+  delete layer;
+}
+
+// [camp#22] A colour field NO feature has a number for falls back to UNSTYLED,
+// not to "everything is no-data".
+//
+// The menus cannot produce this any more, but a persisted style can: the style
+// group is keyed on the file path and restored whenever that path is reopened,
+// and the file on disk may have changed. Marking the whole layer no-data is the
+// wrong answer — no-data means "this feature lacks a value its neighbours have",
+// and here there is no ramp for anything to be missing from.
+TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  // Style by a real field first, so the fallback has something to undo: the
+  // feature with no "signal" IS no-data here, which is the correct answer there.
+  layer->setColorField("signal");
+  bool saw_no_data = false;
+  for(QGraphicsItem* child : layer->childItems())
+    if(auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child))
+      saw_no_data = saw_no_data || feature->isNoData();
+  ASSERT_TRUE(saw_no_data) << "harness: the numeric field should flag one feature";
+
+  // Now the string-only field. Every feature must come back unstyled.
+  layer->setColorField("assessment");
+  int checked = 0;
+  for(QGraphicsItem* child : layer->childItems())
+  {
+    auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child);
+    if(!feature)
+      continue;
+    ++checked;
+    EXPECT_FALSE(feature->isNoData())
+        << "a field no feature has a number for marked the whole layer no-data";
+    EXPECT_EQ(feature->color(), QColor(Qt::darkCyan))
+        << "the fallback must be the layer's default colour, not the no-data grey";
+    EXPECT_NE(feature->color(), camp::vector::noDataColor());
+  }
+  EXPECT_EQ(checked, 5);
+
+  // The setting itself is kept — the operator chose it, and it is what would be
+  // persisted; only its EFFECT on this data is nothing.
+  EXPECT_EQ(layer->colorField(), QStringLiteral("assessment"));
 
   delete layer;
 }

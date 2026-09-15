@@ -102,13 +102,32 @@ public:
   QString settingsKey() const override;
 
   /// Attribute field names present on any loaded feature, sorted. Empty until the
-  /// load completes.
+  /// load completes. This is EVERY field — attribute inspection (the click-to-
+  /// inspect popup) and a future label-by-field want them all; the styling menus
+  /// want `numericFields()`.
   QStringList fields() const;
+
+  /// [camp#22] The subset of `fields()` a colour or size ramp can read: a field
+  /// is included when at least one loaded feature holds a finite numeric value
+  /// for it (`numericAttribute()`). Sorted; empty until the load completes.
+  ///
+  /// The styling menus offer THESE. Offering every field let the operator colour
+  /// by a free-text field, which no ramp can read: the range came back invalid,
+  /// every feature was marked no-data, and the whole layer went hollow grey — in
+  /// the GUI test of 2026-09-15 that read as the features DISAPPEARING. A ramp
+  /// over categories is a different mapping (a distinct colour per class, a
+  /// legend), not a degenerate case of this one; it is a follow-on, and until it
+  /// exists a field no ramp can read is not offered as one (ADR-0016 D14).
+  QStringList numericFields() const;
 
   /// Colour each feature by its value for @p field, sampled from the active
   /// palette across the field's extent over the features that HAVE a value.
   /// Empty field -> the layer's default colour. A feature whose value is missing
   /// or non-numeric is painted in `noDataColor()`, never at the bottom of the ramp.
+  ///
+  /// A field NO feature has a numeric value for (a persisted style whose file has
+  /// changed, say) is treated as an empty field — default colour, nothing marked
+  /// no-data — rather than marking the entire layer no-data. See applyStyle().
   void setColorField(const QString& field);
   const QString& colorField() const { return color_field_; }
 
