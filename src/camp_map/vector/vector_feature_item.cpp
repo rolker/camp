@@ -396,10 +396,10 @@ QGraphicsSimpleTextItem* VectorFeatureItem::labelItem()
   if(label_)
     return label_;
   label_ = new QGraphicsSimpleTextItem(this);
-  // Above the feature it describes. The hovered ITEM is lifted above its siblings
-  // separately (hoverEnterEvent), because Qt stacks a child with its parent's
-  // subtree and a child's own zValue cannot clear a sibling of the parent.
-  label_->setZValue(kHoveredZValue);
+  // No zValue set here: the label is this item's ONLY child, and Qt compares
+  // zValue only among siblings, so a child-level zValue would do nothing. What
+  // actually puts the label above a sibling feature is hoverEnterEvent()
+  // lifting the whole ITEM.
   // [camp#22] Settings COPIED from GeoGraphicsItem's constructor
   // (src/camp/geographicsitem.cpp:16-25), which is what the vessel and AIS
   // labels use: screen-sized regardless of zoom, black text outlined in white so
