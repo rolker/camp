@@ -1258,3 +1258,42 @@ verified in the GUI, and D16 says so.
   by this round.
 - [ ] (host, follow-ons recorded in ADR-0016, no issues filed) Categorical
   styling, label-by-field, and click-to-pin-the-popup-open.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-15 12:07 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `ce3f65a`
+**Mode**: pre-push
+**Depth**: Deep (reason: 13 commits / ~1430 lines across camp and camp_map, a CAMP-wide cursor change, and Qt event-dispatch/lifecycle surface)
+**Must-fix**: 8 | **Suggestions**: 7
+**Round**: 5 | **Ship**: continue — no design question is open and every fix is precise, but two are code findings on the newly hover-driven hit path (an uncached stroker called per mouse-move; a persisted style the menu can neither show nor clear) and six are doc/comment corrections; must-fix rose 1 -> 8 because 13 commits of NEW implementation landed after round 4's fix pass, so this is effectively a first read of that work, not a failure to converge.
+
+Build green (`ui_ws/build.sh camp`, exit 0, no new warnings). Full suite green: **387 tests, 0 errors, 0 failures, 1 skipped** — the skip is the pre-existing environment-gated `GggsRenderTest.RealStoreRendersWhenProvided`. Specialists: Static Analysis (cppcheck; cpplint unavailable on this host — a named gap, not a clean bill), Governance, Plan Drift, Claude Adversarial Lens A + Lens B. Copilot and local-model reviews off.
+
+Not re-litigated, per the dispatch: hover-to-inspect, the instant in-scene label, the pan-mode arrow cursor, and numeric-only ramp fields are settled operator decisions from the 2026-09-15 GUI test.
+
+### Findings
+- [ ] (must-fix) `shape()` rebuilds a `QPainterPathStroker` and re-strokes the whole path on EVERY call; with inspection now on hover the scene calls it per mouse-move for every candidate under the cursor (a long polyline's bounding rect makes it a candidate across most of the map), where the click version paid it once per click — cache the stroke, invalidated when `path_` changes — `src/camp_map/vector/vector_feature_item.cpp:210-219`
+- [ ] (must-fix, cross-confirmed Lens A + Lens B) A persisted `color_field_`/`size_field_` that is not in `numericFields()` (the file changed since, or a column was re-typed) leaves the context menu with no Color by / Size by submenu at all, so neither "(none)" nor the stale field is shown or clearable; `applyStyle()` paints it correctly as unstyled, but the setting is stuck and silently re-persisted — build the menus (or at least "(none)") whenever a field is set — `src/camp_map/vector/vector_layer.cpp:438-440`
+- [ ] (must-fix) `fields()` doc still says "attribute inspection (the click-to-inspect popup)"; click-to-inspect was deleted this round — `src/camp_map/vector/vector_layer.h:110-111`
+- [ ] (must-fix) Test-target comment still says "the attribute tooltip"; the tooltip was tried and rejected in favour of the in-scene label (D5) — `CMakeLists.txt:782`
+- [ ] (must-fix) ADR-0016 D5 claims "`ProjectView` is byte-identical to `jazzy` again", which D16 in the same document contradicts — the file carries 18 added lines vs `jazzy` — `docs/decisions/0016-read-only-vector-file-layer.md:155`
+- [ ] (must-fix) Files-to-Change row is self-contradictory: it names the rev-12 cursor change as "the only ProjectView change this branch now carries" and then says the file is "byte-identical to `jazzy`, and this branch now touches no ProjectView behaviour" — `.agent/work-plans/issue-22/plan.md:765`
+- [ ] (must-fix) Approach step 3 still specifies click-to-inspect in the present tense — `setAcceptedMouseButtons(Qt::LeftButton)`, `QToolTip::showText()` only in pan mode, `event->ignore()` in the add-* modes, and a possible `ProjectView` `mouseMode` accessor — all of which rev 11/12 deleted — `.agent/work-plans/issue-22/plan.md:580-599`
+- [ ] (must-fix) The new "`ProjectView` cursors" paragraph was inserted INSIDE the vector-layer paragraph, so its closing sentence "The layer persists as **app state** under `QSettings vectorLayers/files`..." now reads as a statement about the cursor convention — move the cursor paragraph after the vector-layer one — `.agents/README.md:124-135`
+- [ ] (suggestion) No test hovers a LINE or POLYGON feature: the label branch that positions at `event->pos()` (rather than beside the marker) is entirely uncovered, and `HoverShowsAnInSceneLabelWithTheAttributes` never asserts the label's position at all — `test/test_vector_feature_item.cpp:275`, `src/camp_map/vector/vector_feature_item.cpp:312-326`
+- [ ] (suggestion) The point label's offset is computed from `radius_` at hover-enter and never recomputed, so a `setRadius()` from `applyStyle()` while the cursor is parked on a feature leaves the label at a stale gap until the next hover-enter — `src/camp_map/vector/vector_feature_item.cpp:319`
+- [ ] (suggestion) The hover label is a child of the hovered feature, and feature items are unordered siblings with no `zValue()`, so a label can paint underneath a feature stacked above its parent (a polygon loaded after a point it covers) — `src/camp_map/vector/vector_feature_item.cpp:350`, `src/camp_map/vector/vector_layer.cpp:229`
+- [ ] (suggestion) `numericFields()` is O(features x attributes) with a `QVariant` conversion each, recomputed synchronously on every right-click; at the 50 000-feature cap that is a real per-menu-open cost in a file whose own comments guard the GUI thread at that same count — cache it beside `features_`, invalidated at load — `src/camp_map/vector/vector_layer.cpp:309-325`
+- [ ] (suggestion) The arrow-cursor reset fires on ANY release while `dragMode() == ScrollHandDrag`, including the middle-button measuring-tool release — wider than the comment's "at the end of every drag", and it would silently clobber a future gesture that wants its own idle cursor — `src/camp/projectview.cpp:270-274`
+- [ ] (suggestion) No test covers a layer removed while the cursor is over one of its features (a hover-leave that never arrives because the item is gone); Lens B traced the teardown and found no crash path, but the case is unpinned — `test/test_vector_layer_teardown.cpp`
+- [ ] (suggestion) cppcheck `useStlAlgorithm` on the two new label-finding helper loops; style only — `test/test_vector_feature_item.cpp:115`, `test/test_vector_layer_teardown.cpp:740`
+
+### Dismissed (checked, not findings)
+- Lens A's claim that an `ItemIgnoresTransformations` label under a non-ignoring line/polygon parent is an unsupported Qt nesting: it is precisely what `GeoGraphicsItem` does for every vessel and AIS label (`src/camp/geographicsitem.cpp:16-17` on a scene-space parent) and what `camp_map/ros/markers/marker.cpp:93-97` documents. Repo precedent, not a defect. The associated TEST gap is kept above as a suggestion.
+- Concurrency on `features_`: populated only in `loadFinished()` (a `QFutureWatcher::finished` slot on the GUI thread); the worker touches only `abort_flag_`, consistently under `abort_flag_mutex_`. No race.
+- `setAcceptedMouseButtons(Qt::NoButton)` side effects: context menus arrive via `ProjectView::contextMenuEvent`, and the items are not `ItemIsSelectable`. None found.
+- camp#225 "fixed by construction" wording: identical and accurate in ADR-0016 consequences, `.agents/README.md:122`, both `vector_feature_item` doc comments and the two pinning tests. camp#225 is still OPEN — closing it is already recorded as a host action at merge.
