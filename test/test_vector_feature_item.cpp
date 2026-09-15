@@ -9,10 +9,12 @@
 //     headline "click a feature to see its attributes" silently does not work for
 //     line data (tracklines, contours, cable routes — most of what gets imported).
 //     The mission-tree LineString strokes its path for exactly this reason.
-//  1b. THE NO-DATA MARKER, found in the operator GUI test of 2026-09-15: a hollow
+//  1b. THE POINT CLICK TARGET AND THE NO-DATA MARKER, both found in the operator
+//     GUI test of 2026-09-15: a 5-pixel marker cannot be hit under the open-hand
+//     pan cursor, whose hotspot the operator cannot see, and a hollow no-data
 //     marker stroked with a width-0 hairline is not visible on a chart at all —
-//     the operator reported colouring by a string field (which marks every
-//     feature no-data) as the features DISAPPEARING.
+//     the operator reported colouring by a string field as the features
+//     DISAPPEARING.
 //  2. UNPLACEABLE COORDINATES. A shapefile shipped without its `.prj` sidecar has
 //     no spatial reference, so projected eastings/northings are read as degrees: a
 //     UTM northing of 4 800 000 becomes "latitude 4800000". A failed coordinate
@@ -319,6 +321,36 @@ TEST(VectorFeatureItem, PopupIsGatedOnPanModeAndOnAClickNotADrag)
   right.setAccepted(false);
   scene.sendEvent(item, &right);
   EXPECT_FALSE(right.isAccepted());
+}
+
+// [camp#22] A point marker's CLICK target is wider than the marker itself.
+//
+// The drawn marker is kDefaultPointRadius = 5 device pixels, and in the operator
+// GUI test of 2026-09-15 nobody managed to land a click inside it: the pan cursor
+// is an open hand whose hotspot is not visible, so a 5 px target is aimed at
+// blind and click-to-inspect read as "there is no tooltip". shape() therefore
+// carries kPointClickSlackPixels (4 px) of slack around the marker. Nothing drawn
+// grows — this is the target, not the symbol.
+TEST(VectorFeatureItem, PointClickTargetIsWiderThanTheDrawnMarker)
+{
+  VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));
+  ASSERT_TRUE(item.isPoint());
+
+  const QPainterPath shape = item.shape();
+  // Dead centre, and inside the drawn marker: both always worked.
+  EXPECT_TRUE(shape.contains(QPointF(0.0, 0.0)));
+  EXPECT_TRUE(shape.contains(QPointF(3.0, 0.0)));
+  // 7 px out: OUTSIDE the 5 px marker, inside the 9 px target. This is the case
+  // the slack exists for, and the one that fails without it.
+  EXPECT_TRUE(shape.contains(QPointF(7.0, 0.0)))
+      << "a click just outside the marker must still hit the feature";
+  EXPECT_TRUE(shape.contains(QPointF(0.0, -7.0)));
+  // The slack is bounded: a click well away from the marker is not this feature's.
+  EXPECT_FALSE(shape.contains(QPointF(20.0, 0.0)));
+
+  // Qt requires shape() to lie inside boundingRect(); a shape outside it is
+  // undefined behaviour, so the slack has to be carried into both.
+  EXPECT_TRUE(item.boundingRect().contains(shape.boundingRect()));
 }
 
 // [camp#22] The NO-DATA marker is visible.

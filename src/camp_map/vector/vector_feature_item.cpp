@@ -50,6 +50,13 @@ void addRing(QPainterPath& path, const std::vector<QGeoCoordinate>& ring, const 
 // [camp#22] Click tolerance for a line feature, in scene metres — see shape().
 constexpr double kClickWidth = 5.0;
 
+// [camp#22] Click tolerance ADDED AROUND a point marker, in device pixels — see
+// shape(). The drawn marker is kDefaultPointRadius (5 px) at the default size,
+// and in the operator GUI test of 2026-09-15 nobody could land a click inside it:
+// under the open-hand pan cursor the hotspot is not visible, so a 5 px target is
+// aimed at blind. The slack is a CLICK target only; nothing drawn grows.
+constexpr double kPointClickSlackPixels = 4.0;
+
 // [camp#22] How far the cursor may travel between press and release and still
 // count as a click rather than a pan, in device pixels.
 constexpr double kClickSlopPixels = 4.0;
@@ -141,9 +148,11 @@ QRectF VectorFeatureItem::boundingRect() const
 {
   if(point_)
   {
-    // Device pixels (ItemIgnoresTransformations); one pixel of pen allowance,
-    // which covers the width-2 cosmetic no-data outline.
-    const double r = radius_ + 1.0;
+    // Device pixels (ItemIgnoresTransformations). The CLICK shape is the marker
+    // grown by kPointClickSlackPixels (see shape()), and a shape outside
+    // boundingRect() is undefined behaviour in Qt — so the slack is included
+    // here too, plus one pixel of allowance for the width-2 no-data outline.
+    const double r = radius_ + kPointClickSlackPixels + 1.0;
     return QRectF(-r, -r, 2.0 * r, 2.0 * r);
   }
   if(path_.isEmpty())
@@ -166,7 +175,12 @@ QPainterPath VectorFeatureItem::shape() const
   QPainterPath shape;
   if(point_)
   {
-    shape.addEllipse(QPointF(0.0, 0.0), radius_, radius_);
+    // [camp#22] The marker PLUS kPointClickSlackPixels, for the same reason a
+    // line's shape is stroked wider than its path: the target the operator aims
+    // at is the one the cursor can actually be placed on, not the one the
+    // renderer draws. boundingRect() grows with it.
+    const double click_radius = radius_ + kPointClickSlackPixels;
+    shape.addEllipse(QPointF(0.0, 0.0), click_radius, click_radius);
     return shape;
   }
   if(path_.isEmpty())
