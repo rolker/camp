@@ -29,6 +29,7 @@
 #include <ogrsf_frmts.h>
 
 #include <QFile>
+#include <QStringList>
 #include <QTemporaryDir>
 #include <QtGlobal>
 
@@ -871,6 +872,12 @@ QString writeUtmGeoPackage(const QTemporaryDir& dir)
 // log I/O while the worker read all of it. The count already existed in
 // ParseDiagnostics; the message now follows points_dropped's pattern and names
 // the first type seen.
+//
+// [camp#22 round-7 must-fix] TWO layers, of two different unhandled types: the
+// name each summary line carries must be that LAYER's first type, not the
+// parse's. `first_unhandled_geometry_type` accumulates across the whole parse,
+// so layer 2 used to be reported with layer 1's type beside its own per-layer
+// count. The parse-wide field keeps its documented whole-parse meaning.
 TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
 {
   GDALAllRegister();
@@ -882,10 +889,10 @@ TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
   OGRSpatialReference srs;
   srs.SetWellKnownGeogCS("WGS84");
   srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+  // Layer 1: three circular strings — a type the parser documents as unhandled.
   OGRLayer* layer = ds->CreateLayer("curves", &srs, wkbUnknown, nullptr);
   ASSERT_NE(layer, nullptr);
-
-  // Three curve geometries — a type the parser documents as unhandled.
   for(int i = 0; i < 3; ++i)
   {
     OGRCircularString curve;
@@ -898,14 +905,40 @@ TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
     OGRFeature::DestroyFeature(f);
   }
 
-  // Count the warnings the parse emits about them.
-  static int unhandled_warnings = 0;
-  unhandled_warnings = 0;
+  // Layer 2: two compound curves — a DIFFERENT unhandled type, so the name in
+  // this layer's line cannot be inherited from layer 1 without the test noticing.
+  OGRLayer* second = ds->CreateLayer("compound", &srs, wkbUnknown, nullptr);
+  ASSERT_NE(second, nullptr);
+  for(int i = 0; i < 2; ++i)
+  {
+    OGRCircularString arc;
+    arc.addPoint(-70.60 + 0.01 * i, 43.00);
+    arc.addPoint(-70.59 + 0.01 * i, 43.01);
+    arc.addPoint(-70.58 + 0.01 * i, 43.00);
+    OGRCompoundCurve curve;
+    ASSERT_EQ(curve.addCurve(&arc), OGRERR_NONE);
+    OGRFeature* f = OGRFeature::CreateFeature(second->GetLayerDefn());
+    f->SetGeometry(&curve);
+    ASSERT_EQ(second->CreateFeature(f), OGRERR_NONE);
+    OGRFeature::DestroyFeature(f);
+  }
+
+  // The type names as OGR spells them — asserted against the library rather than
+  // hard-coded, so a GDAL wording change is not a test failure.
+  const QString circular_name = QString::fromUtf8(OGRGeometryTypeToName(wkbCircularString));
+  const QString compound_name = QString::fromUtf8(OGRGeometryTypeToName(wkbCompoundCurve));
+  ASSERT_FALSE(circular_name.isEmpty());
+  ASSERT_FALSE(compound_name.isEmpty());
+  ASSERT_NE(circular_name, compound_name) << "the two layers must differ in type name";
+
+  // Collect the warnings the parse emits about them.
+  static QStringList unhandled_warnings;
+  unhandled_warnings.clear();
   QtMessageHandler previous = qInstallMessageHandler(
       [](QtMsgType, const QMessageLogContext&, const QString& message)
       {
         if(message.contains("unhandled type"))
-          ++unhandled_warnings;
+          unhandled_warnings.append(message);
       });
 
   camp::vector::ParseDiagnostics diag;
@@ -913,13 +946,29 @@ TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
     camp::vector::parseVectorLayers(ds.get(), camp::vector::ParseOptions(), &diag);
   qInstallMessageHandler(previous);
 
-  ASSERT_EQ(layers.size(), 1u);
+  ASSERT_EQ(layers.size(), 2u);
   EXPECT_TRUE(layers.front().geometries.empty()) << "a curve type is not drawn";
-  EXPECT_EQ(diag.geometries_unhandled, 3) << "every skipped geometry is still COUNTED";
-  EXPECT_FALSE(diag.first_unhandled_geometry_type.isEmpty())
-      << "the type name is the part of the message worth keeping";
-  EXPECT_EQ(unhandled_warnings, 1)
-      << "one summary line per layer, not one per geometry: " << unhandled_warnings;
+  EXPECT_TRUE(layers.back().geometries.empty());
+  EXPECT_EQ(diag.geometries_unhandled, 5) << "every skipped geometry is still COUNTED";
+  EXPECT_EQ(diag.first_unhandled_geometry_type, circular_name)
+      << "the field is PARSE-wide: the first type the whole parse saw";
+
+  ASSERT_EQ(unhandled_warnings.size(), 2)
+      << "one summary line per layer, not one per geometry: "
+      << unhandled_warnings.join(" | ").toStdString();
+
+  const QString& first_line = unhandled_warnings.at(0);
+  const QString& second_line = unhandled_warnings.at(1);
+  EXPECT_TRUE(first_line.contains("curves")) << first_line.toStdString();
+  EXPECT_TRUE(first_line.contains("3")) << "layer 1 skipped three: " << first_line.toStdString();
+  EXPECT_TRUE(first_line.contains(circular_name)) << first_line.toStdString();
+
+  EXPECT_TRUE(second_line.contains("compound")) << second_line.toStdString();
+  EXPECT_TRUE(second_line.contains("2")) << "layer 2 skipped two: " << second_line.toStdString();
+  EXPECT_TRUE(second_line.contains(compound_name))
+      << "layer 2 must name ITS OWN first type, not layer 1's: " << second_line.toStdString();
+  EXPECT_FALSE(second_line.contains(circular_name))
+      << "layer 1's type leaked into layer 2's line: " << second_line.toStdString();
 }
 
 // Projected metres in, latitude/longitude out — the UTM survey file this layer

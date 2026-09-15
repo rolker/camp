@@ -133,6 +133,11 @@ struct ParseDiagnostics
     // layer rather than one per geometry (an unhandled geometry does not spend the
     // geometry budget, so a file of curve types would otherwise emit unbounded log
     // I/O), and the type name is the part of that message worth keeping.
+    //
+    // SCOPE: the count and the name below are PARSE-WIDE (every layer), while the
+    // per-layer summary line names that layer's own first unhandled type — the
+    // parser scopes the field to the layer for the duration of the layer body and
+    // restores the parse-wide first type afterwards.
     int geometries_unhandled = 0;
     QString first_unhandled_geometry_type;
     // Polygons dropped because they carry no exterior ring — there is no outline

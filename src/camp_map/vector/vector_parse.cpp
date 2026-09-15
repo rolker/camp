@@ -415,6 +415,35 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         return false;
     };
 
+    // [camp#22 round-7 must-fix] Scopes ParseDiagnostics::first_unhandled_geometry_type
+    // to one layer for the duration of that layer's body, then restores the
+    // parse-wide first type. Written as a guard rather than a pair of statements
+    // because the layer body has two early returns (abort, geometry cap) that
+    // would otherwise leave the field holding a layer-scoped value — or nothing at
+    // all, if the layer that returned early saw no unhandled geometry and an
+    // earlier one did.
+    struct LayerUnhandledTypeScope
+    {
+        ParseDiagnostics &diagnostics;
+        QString previous;
+
+        explicit LayerUnhandledTypeScope(ParseDiagnostics &d)
+          : diagnostics(d), previous(d.first_unhandled_geometry_type)
+        {
+            diagnostics.first_unhandled_geometry_type.clear();
+        }
+        ~LayerUnhandledTypeScope()
+        {
+            // The parse-wide first type is the earlier one when there was one;
+            // otherwise whatever this layer found (possibly still empty).
+            if(!previous.isEmpty())
+                diagnostics.first_unhandled_geometry_type = previous;
+        }
+
+        LayerUnhandledTypeScope(const LayerUnhandledTypeScope &) = delete;
+        LayerUnhandledTypeScope &operator=(const LayerUnhandledTypeScope &) = delete;
+    };
+
     for(int i = 0; i < dataset->GetLayerCount(); ++i)
     {
         if(aborted())
@@ -458,6 +487,16 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         ParsedLayer parsed;
         parsed.name = layer->GetName();
 
+        // [camp#22 round-7 must-fix] The type NAME in the summary line is
+        // per-layer, exactly like the counts it sits beside.
+        // `first_unhandled_geometry_type` accumulates across the whole parse, so
+        // layer 2 of a mixed dataset used to print layer 1's type next to its own
+        // per-layer count. Snapshot and clear it at layer entry the way
+        // `unhandled_before` snapshots the count; the guard restores the
+        // parse-wide first type on EVERY exit from the layer body — including the
+        // early returns at the abort check and the geometry cap — so the field
+        // keeps the whole-parse meaning its header documents for callers.
+        LayerUnhandledTypeScope unhandled_type_scope(diag);
         const int dropped_before = diag.points_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
         const int unhandled_before = diag.geometries_unhandled;
