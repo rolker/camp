@@ -1038,3 +1038,102 @@ the centre and 3 px clicks still pass, which is the boundary the slack moves.
   convention on this branch.
 - [ ] (operator's call) **Label-by-field** remains the other named follow-on, and
   is the reason `fields()` was kept whole rather than narrowed.
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 11:25 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `dd0c6ba`
+**Addressed**: operator decision at a run-issue checkpoint, 2026-09-15, taken
+after the GUI test of the rev-10 fixes succeeded ("It works!")
+**Commits**: `dde15dd`, `78c75b4`, `dd0c6ba`
+
+**The decision, and it is not a defect report.** With the layer working in the
+operator's hands, the remaining oddity was that it was the only thing in CAMP
+that inspects on a CLICK. The house convention is hover: `Platform` and
+`AISContact` show their label with `setShowLabelFlag(true)` in
+`hoverEnterEvent` (verified in `platform.cpp:170`, `ais_contact.cpp:272`),
+`GeoGraphicsMissionItem` brightens on hover (`geographicsmissionitem.cpp:32`),
+and nothing inspects on click. The operator decided to switch the attribute
+popup to hover in this PR and to delete the click machinery that existed only
+to tell a click from a pan.
+
+**Hover is the item's ordinary Qt tooltip.** `setToolTip(attributeText())` in
+the constructor; `QGraphicsScene::helpEvent()` finds the top item under the
+cursor with a non-empty `toolTip()` and shows it after the usual delay, hiding
+it on move-away. No event code of ours is in the path, and the fallback the
+brief allowed (`hoverEnterEvent` + `QToolTip::showText`) was not needed: the
+`ItemIgnoresTransformations` concern does not bite, because `helpEvent()`
+hit-tests through `QGraphicsScenePrivate::itemsAtPosition()`, which passes the
+view's own `viewportTransform()` as the device transform. Verified by the new
+through-a-real-view test rather than by reading, which is why it was written
+first. `setAcceptHoverEvents()` is deliberately NOT set — hover events are not
+what drives a tooltip, and per-item hover tracking across up to
+`kMaxFeatureItems` (50 000) items would cost something for nothing.
+
+**What was deleted.** `mousePressEvent`, `mouseReleaseEvent`,
+`viewInPanMode()` and `kClickSlopPixels` are gone, and the item now sets
+`setAcceptedMouseButtons(Qt::NoButton)` (`QGraphicsItem` accepts the left
+button by default, so it has to be said). **camp#225 — a pan gesture that starts
+on a feature does not pan — is therefore fixed by construction**, not worked
+around: the press always reaches `QGraphicsView`'s ScrollHandDrag. The host can
+close camp#225 at merge.
+
+**ProjectView is reverted.** `e2a56cc` ("dispatch the press under the mode it
+was made in") existed only so the pan-mode gate would read the mode the operator
+clicked in. With no gate it has no purpose, and it rewired the press path of
+every add-\* mode that returns to pan, so `src/camp/projectview.cpp` is restored
+to its `jazzy` content — **byte-identical**, checked with
+`git diff jazzy -- src/camp/projectview.cpp src/camp/projectview.h` (empty).
+This branch now changes no ProjectView behaviour at all.
+`src/camp/mission_insertion.h` was checked and references nothing about the
+deferral.
+
+**What was kept.** The hit slack from rev 10 (ADR-0016 D15): `shape()` is what
+`helpEvent()` hit-tests too, so the 4 px around a point marker and the stroked
+ribbon around a line serve hover for exactly the reason they served the click.
+The constants are renamed `kPointHoverSlackPixels` / `kHoverWidth`.
+
+**Tests.** Full camp suite rebuilt and re-run on the committed tree: **387
+tests, 0 failures, 1 skipped** (the pre-existing
+`GggsRenderTest.RealStoreRendersWhenProvided`), up two from 385 — one click
+test replaced by two hover tests at the item level, one at the view level
+replaced by two. Pre-commit hooks clean on all three commits; no new compiler
+warnings.
+
+Negative check recorded: with `setToolTip()` commented out and
+`setAcceptedMouseButtons(Qt::LeftButton)` restored, three of the four new tests
+fail — `HoverPopupIsTheItemsTooltip`, `AcceptsNoMouseButtonSoThePressReachesTheView`
+and `HoverThroughARealViewShowsTheAttributes`. The fourth,
+`APressOverAFeatureFallsThroughToTheView`, still passes in that state, and this
+is worth saying plainly: accepting the left button is not by itself enough to
+grab the press, because `QGraphicsItem::mousePressEvent()`'s default ignores it.
+It discriminates against what was actually there before — an override that
+accepted — not against the flag alone, which is what the item-level test pins.
+
+### Actions
+- [x] Hover-to-inspect via `setToolTip(attributeText())`; the mouse handlers,
+  `viewInPanMode()` and `kClickSlopPixels` deleted;
+  `setAcceptedMouseButtons(Qt::NoButton)` — `src/camp_map/vector/vector_feature_item.{h,cpp}`.
+- [x] `src/camp/projectview.cpp` reverted to `jazzy`; verified byte-identical.
+- [x] Tests: `VectorFeatureItem.HoverPopupIsTheItemsTooltip`,
+  `VectorFeatureItem.AcceptsNoMouseButtonSoThePressReachesTheView`,
+  `VectorLayerInteraction.HoverThroughARealViewShowsTheAttributes` (synthesized
+  `QHelpEvent` through a y-flipped view at centre / 3 px / 7 px off / clear),
+  `VectorLayerInteraction.APressOverAFeatureFallsThroughToTheView` (no scene
+  mouse grabber). `PointClickTargetIsWiderThanTheDrawnMarker` renamed
+  `PointHoverTargetIsWiderThanTheDrawnMarker` and kept — it is about the shape.
+- [x] ADR-0016 D5 rewritten (hover, the convention, and the three things the
+  click version needed that are now gone); D15 kept as hover tolerance; the
+  camp#225 consequence is now "fixed by construction". `.agents/README.md` and
+  `vector_layer.h` updated; plan rev 11.
+- [ ] (host) **Close camp#225 at merge** — fixed by construction, pinned by two
+  tests.
+- [ ] (host, follow-ons recorded in ADR-0016, no issues filed) **Click to pin the
+  popup open** — hover answers "what is this"; comparing two features or copying
+  a value wants the popup to stay, and it must be built without taking the press
+  back from the view's pan gesture. **The pan cursor's invisible hotspot** is a
+  CAMP-wide choice (`ScrollHandDrag`'s open hand, shared by every layer and
+  mission item), not this layer's; D15's hit slack is this layer working around
+  it.
