@@ -52,10 +52,14 @@ const marine_colormap::Palette* resolvePalette(const std::string& name)
 // the allowed GeoJSON driver. `isVirtualFileSystemPath()` is what blocks that,
 // and it is checked before this call (see the constructor).
 //
-// Remaining limitation, documented in ADR-0016 D12: KML/LIBKML are file drivers
-// that can carry a NetworkLink, and nothing here stops the driver following one.
-// The formats are on the list because operators are handed KML routinely; the
-// exposure is a fetch initiated by file CONTENT, not by the path CAMP was given.
+// KML/LIBKML are on the list because operators are handed KML routinely. A KML
+// file can carry a NetworkLink pointing anywhere, and this list would not stop a
+// driver following one — but MEASURED against GDAL 3.8.4, the version CAMP builds
+// on, neither driver does: a NetworkLink with a relative local href, and one with
+// an http:// href, both come back as the local placemark alone with no fetch
+// attempted. This comment used to assert the fetch as a live limitation, which
+// was derived from the format rather than read off the software. See ADR-0016 D12
+// — and re-measure there when the GDAL version moves, rather than re-deriving.
 const char* const kAllowedDrivers[] = {
   "GeoJSON", "GeoJSONSeq", "TopoJSON", "ESRI Shapefile", "GPKG", "SQLite",
   "KML", "LIBKML", "GML", "GMT", "CSV", "DXF", "FlatGeobuf", "OpenFileGDB",

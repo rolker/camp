@@ -194,13 +194,23 @@ had to be answered rather than assumed.
       the network, is what the list buys. Adding a format is a deliberate edit
       to it.
 
-    **Known limitation:** `KML`/`LIBKML` are on the allowlist — operators are
-    handed KML routinely — and a KML file can carry a `NetworkLink` that the
-    driver may follow. Nothing here blocks that: the exposure is a fetch
-    initiated by file *content*, after the operator chose to open that file,
-    rather than by the path CAMP was given. Dropping the KML drivers, or
-    disabling network access at the GDAL configuration level
-    (`GDAL_HTTP_*`/`CPL_VSIL_CURL_*`), would close it and is not done here.
+    **Measured, not assumed — `NetworkLink` is not followed on open:**
+    `KML`/`LIBKML` are on the allowlist (operators are handed KML routinely) and
+    a KML file can carry a `NetworkLink` pointing anywhere. An earlier draft of
+    this ADR said the driver "may follow" one during `GDALOpenEx`; that was
+    written from the format's capabilities rather than from the software, and it
+    is not what either driver does. Tested against GDAL 3.8.4, the version CAMP
+    builds on, with a `NetworkLink` carrying a relative local `href` and again
+    with an `http://127.0.0.1:9/` one: both drivers return only the local
+    placemark, immediately, with no fetch attempted. There is no content-initiated
+    fetch to report here.
+
+    The drivers stay named in this section because the claim is about a *version*,
+    not about the format: a future GDAL could resolve `NetworkLink` hrefs on open,
+    and whoever bumps the GDAL CAMP builds against should re-measure rather than
+    re-derive. Should it ever become true, disabling network access at the GDAL
+    configuration level (`GDAL_HTTP_*`/`CPL_VSIL_CURL_*`) is the lever that closes
+    it without dropping the KML formats.
 
 ## Consequences
 
