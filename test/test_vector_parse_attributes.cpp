@@ -1090,6 +1090,72 @@ TEST(VectorParseAttributes, CapInsideAFeatureReportsOnlyAnActualRemainder)
       << "the cap fell on the feature's last part; nothing was left unread";
 }
 
+// [camp#22 round-7 suggestion] The lookahead's MULTI-LAYER branch: the cap falls
+// on the last feature of layer 0, so whether anything was left unread is decided
+// entirely by what the remaining layers hold. Every other cap test uses a
+// single-layer fixture, which never reaches this loop.
+TEST(VectorParseAttributes, CapOnALayerBoundaryLooksAtTheRemainingLayers)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr);
+
+  OGRSpatialReference srs;
+  srs.SetWellKnownGeogCS("WGS84");
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+  // Two layers: `first` always holds two points; `second` holds `tail_features`.
+  auto build = [&driver, &srs](const char* name, int tail_features)
+  {
+    DatasetPtr ds(driver->Create(name, 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+    if(!ds)
+      return ds;
+    auto addPoints = [](OGRLayer* layer, int count, double base)
+    {
+      for(int i = 0; i < count; ++i)
+      {
+        OGRPoint pt(base + 0.01 * i, 43.00);
+        OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+        f->SetGeometry(&pt);
+        layer->CreateFeature(f);
+        OGRFeature::DestroyFeature(f);
+      }
+    };
+    addPoints(ds->CreateLayer("first", &srs, wkbUnknown, nullptr), 2, -70.80);
+    // The second layer EXISTS in both cases — an empty layer is not the same
+    // thing as no layer, and it is the empty one the flag used to lie about.
+    addPoints(ds->CreateLayer("second", &srs, wkbUnknown, nullptr), tail_features, -70.60);
+    return ds;
+  };
+
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;   // exactly what layer `first` holds
+
+  // Trailing layer EMPTY: the cap fell on the last geometry of the file, so
+  // nothing was left unread.
+  DatasetPtr empty_tail = build("empty_tail", 0);
+  ASSERT_TRUE(empty_tail);
+  camp::vector::ParseDiagnostics empty_diag;
+  const std::vector<ParsedLayer> stopped_at_end =
+    camp::vector::parseVectorLayers(empty_tail.get(), capped, &empty_diag);
+  ASSERT_EQ(stopped_at_end.size(), 1u) << "the parse returns at the cap, before layer 2";
+  EXPECT_EQ(stopped_at_end.front().geometries.size(), 2u);
+  EXPECT_FALSE(empty_diag.geometry_cap_reached)
+      << "the remaining layer is empty; claiming an unread remainder is a false partial read";
+
+  // Trailing layer holding ONE feature: that feature is the unread remainder,
+  // and only the cross-layer lookahead can see it.
+  DatasetPtr one_tail = build("one_tail", 1);
+  ASSERT_TRUE(one_tail);
+  camp::vector::ParseDiagnostics one_diag;
+  const std::vector<ParsedLayer> stopped_short =
+    camp::vector::parseVectorLayers(one_tail.get(), capped, &one_diag);
+  ASSERT_EQ(stopped_short.size(), 1u);
+  EXPECT_EQ(stopped_short.front().geometries.size(), 2u);
+  EXPECT_TRUE(one_diag.geometry_cap_reached)
+      << "a feature in a LATER layer went unread, so the cap IS a partial read";
+}
+
 // [camp#22 round-3 should-fix] A supplied ParseDiagnostics describes THIS parse.
 //
 // The header documents the parameter as "filled in with what was skipped and
