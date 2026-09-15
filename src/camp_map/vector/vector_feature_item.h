@@ -164,6 +164,13 @@ private:
   /// constructor and from every `prepareGeometryChange()` site — never from
   /// `shape()`, which the scene calls on every mouse-move now that inspection is
   /// on hover.
+  ///
+  /// GEOMETRY-CACHE CONTRACT: `shape_` is a cache of `path_` (and, for a point,
+  /// `radius_`). Anything that changes either MUST call `rebuildShape()` before
+  /// the next `shape()` call reads a stale hit target — there are two call
+  /// sites today, the constructor (after building `path_`) and `setRadius()`
+  /// (after `prepareGeometryChange()`). A future setter that mutates `path_` or
+  /// `radius_` needs the same pairing.
   void rebuildShape();
 
   bool point_ = false;

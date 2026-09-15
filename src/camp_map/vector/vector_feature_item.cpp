@@ -365,6 +365,12 @@ void VectorFeatureItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
   // on leave, only one label is ever on screen.
   if(label_)
     label_->setText(QString());
+  // ZVALUE INVARIANT: 0.0 is every feature item's file-order resting value.
+  // hoverEnterEvent()'s kHoveredZValue lift is the ONLY thing that gives an
+  // item a non-default zValue, and this reset is the only thing that puts it
+  // back — so a future selected-feature highlight (or anything else that wants
+  // an item on top) must not leave a non-zero zValue set when it is done, or a
+  // feature could get stuck above its siblings after the highlight clears.
   setZValue(0.0);            // back into file order with its siblings
   QGraphicsItem::hoverLeaveEvent(event);
 }
