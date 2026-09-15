@@ -1590,10 +1590,53 @@ Build and tests re-run here: `./ui_ws/build.sh camp` clean, `./ui_ws/test.sh cam
 All 11 commits carry the agent identity; working tree clean.
 
 ### Findings
-- [ ] (must-fix) `first_unhandled_geometry_type` is set once per PARSE but printed as that LAYER's first type, beside a count that is per-layer — layer 2 of a mixed dataset logs layer 1's type; reset/snapshot it at layer entry like `unhandled_before` and extend the test to two layers — `src/camp_map/vector/vector_parse.cpp:303-305`, `:553-560`, `src/camp_map/vector/vector_parse.h:137`
-- [ ] (must-fix) `moreInputRemains()` polls no abort predicate, so after an abort is requested the worker still runs up to one unabortable `GetNextFeature()` per remaining layer on the path the destructor's GUI-thread join depends on; take `budget.aborted` and return early (the value is cosmetic — an aborted result is discarded) — `src/camp_map/vector/vector_parse.cpp:392-415`, called at `:535`
-- [ ] (suggestion) The lookahead's multi-layer branch is untested — all three cap tests use a single-layer fixture; add a 2-layer case with the cap on layer 0's last feature, layer 1 empty vs. one feature — `src/camp_map/vector/vector_parse.cpp:401-412`
-- [ ] (suggestion) `withoutVectorLayerFile()` runs a `canonicalFilePath()` stat/readlink per unavailable entry synchronously on the GUI thread, and its own docstring's motivating case is an unmounted share; bounded by list length and an amplification of the adjacent pre-existing `QFileInfo::exists()`, worth acknowledging — `src/camp/autonomousvehicleproject.cpp:437-443`
-- [ ] (suggestion) ADR-0016 D11 does not record that `geometry_cap_reached` now means input was actually left unread, established by a bounded lookahead — the rule the Layers-tab status leans on lives only in code comments and plan rev 14 — `docs/decisions/0016-read-only-vector-file-layer.md:252-284`
-- [ ] (suggestion) Plan rev 14's new-tests bullet omits `WithoutVectorLayerFileKeepsUnrelatedEntries` — `.agent/work-plans/issue-22/plan.md:42-46`
-- [ ] (suggestion) Plan step 1's "documented, logged skip" passage still reads as the pre-round-3 per-geometry warning; not false, but a reader working from the Approach section would miss the change — `.agent/work-plans/issue-22/plan.md:519-532`
+- [x] (must-fix) `first_unhandled_geometry_type` is set once per PARSE but printed as that LAYER's first type, beside a count that is per-layer — layer 2 of a mixed dataset logs layer 1's type; reset/snapshot it at layer entry like `unhandled_before` and extend the test to two layers — `src/camp_map/vector/vector_parse.cpp:303-305`, `:553-560`, `src/camp_map/vector/vector_parse.h:137`
+- [x] (must-fix) `moreInputRemains()` polls no abort predicate, so after an abort is requested the worker still runs up to one unabortable `GetNextFeature()` per remaining layer on the path the destructor's GUI-thread join depends on; take `budget.aborted` and return early (the value is cosmetic — an aborted result is discarded) — `src/camp_map/vector/vector_parse.cpp:392-415`, called at `:535`
+- [x] (suggestion) The lookahead's multi-layer branch is untested — all three cap tests use a single-layer fixture; add a 2-layer case with the cap on layer 0's last feature, layer 1 empty vs. one feature — `src/camp_map/vector/vector_parse.cpp:401-412`
+- [x] (suggestion) `withoutVectorLayerFile()` runs a `canonicalFilePath()` stat/readlink per unavailable entry synchronously on the GUI thread, and its own docstring's motivating case is an unmounted share; bounded by list length and an amplification of the adjacent pre-existing `QFileInfo::exists()`, worth acknowledging — `src/camp/autonomousvehicleproject.cpp:437-443`
+- [x] (suggestion) ADR-0016 D11 does not record that `geometry_cap_reached` now means input was actually left unread, established by a bounded lookahead — the rule the Layers-tab status leans on lives only in code comments and plan rev 14 — `docs/decisions/0016-read-only-vector-file-layer.md:252-284`
+- [x] (suggestion) Plan rev 14's new-tests bullet omits `WithoutVectorLayerFileKeepsUnrelatedEntries` — `.agent/work-plans/issue-22/plan.md:42-46`
+- [x] (suggestion) Plan step 1's "documented, logged skip" passage still reads as the pre-round-3 per-geometry warning; not false, but a reader working from the Approach section would miss the change — `.agent/work-plans/issue-22/plan.md:519-532`
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 13:56 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**Branch**: feature/issue-22 at `ac14fd8`
+**PR**: #226
+**Addressed**: `## Local Review (Pre-Push)` (2026-09-15 13:42 -04:00, Round 7, verdict changes-requested, at `faa58a1`) — all 7 open findings: 2 must-fix + 5 suggestions, per the host-decided scope.
+**Commits**: e5eddb1, f9f25a5, 5c2f703, 246f0cd, e4fa456, ac14fd8
+
+Build clean (`./ui_ws/build.sh camp`); `./ui_ws/test.sh camp` →
+**402 tests, 0 errors, 0 failures, 1 skipped** (401 before; the new two-layer
+cap-lookahead test is the +1, the two-layer unhandled-type case extended an
+existing test rather than adding one).
+
+The per-layer scope fix was verified to be load-bearing: with the guard
+commented out and everything else unchanged, the extended test fails on
+`layer compound - skipped 2 geometry(ies) of an unhandled type (first: "Circular String")`
+— layer 1's type on layer 2's line, exactly the defect reported.
+
+Two judgement calls, both recorded in the commits that made them:
+
+- **No test for the abort poll in `moreInputRemains()`.** The feature loop's
+  abort branch runs *before* the cap branch, so reaching the lookahead with the
+  flag already raised means it rose inside that window. Driving that from the
+  public API needs a predicate keyed to the parser's internal poll count, which
+  pins an implementation detail rather than the contract.
+- **The GUI-thread stat in `withoutVectorLayerFile()` is documented, not
+  mitigated.** The only mitigation is an asynchronous purge, which would race
+  `persistVectorLayers()` and let the camp#90/#117 write-back return — a worse
+  trade than a bounded stat over an operator-sized list. The cost, its bound,
+  and that reasoning are now on the function's declaration, with a pointer at
+  the call site.
+
+### Actions
+- [x] (must-fix) `first_unhandled_geometry_type` scoped per layer — RAII guard at layer entry restores the parse-wide first type on every exit, including the abort and cap early returns; test extended to two layers of two curve types — `src/camp_map/vector/vector_parse.cpp`, `vector_parse.h`, `test/test_vector_parse_attributes.cpp` (e5eddb1)
+- [x] (must-fix) `moreInputRemains()` polls `budget.aborted` on entry and between layers, returning false — `src/camp_map/vector/vector_parse.cpp` (f9f25a5)
+- [x] (suggestion) Two-layer cap fixture covers the lookahead's multi-layer branch: cap on layer 0's last feature, trailing layer empty vs. one feature — `test/test_vector_parse_attributes.cpp` (5c2f703)
+- [x] (suggestion) GUI-thread `canonicalFilePath()` cost documented with its bound and why an async purge is not the trade — `src/camp_map/vector/vector_layer.h`, `src/camp/autonomousvehicleproject.cpp` (246f0cd)
+- [x] (suggestion) ADR-0016 D11 records the "cap flag means input was ACTUALLY left unread" rule and its bounded lookahead — `docs/decisions/0016-read-only-vector-file-layer.md` (e4fa456)
+- [x] (suggestion) Plan rev 14's new-tests bullet now lists `WithoutVectorLayerFileKeepsUnrelatedEntries` — `.agent/work-plans/issue-22/plan.md` (ac14fd8)
+- [x] (suggestion) Plan step 1's "documented, logged skip" passage corrected (per-layer summary, and `wkbGeometryCollection` is handled), plus a rev 15 entry for this round — `.agent/work-plans/issue-22/plan.md` (ac14fd8)
