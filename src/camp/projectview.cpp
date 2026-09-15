@@ -1,5 +1,6 @@
 #include "projectview.h"
 
+#include <QCursor>
 #include <QWheelEvent>
 #include <QLabel>
 #include <QStatusBar>
@@ -266,6 +267,11 @@ void ProjectView::mouseReleaseEvent(QMouseEvent *event)
         measuringTool = nullptr;
     }
     QGraphicsView::mouseReleaseEvent(event);
+    // [camp#22] Qt restores ScrollHandDrag's OPEN HAND on the viewport here, at
+    // the end of every drag, so the arrow set in setPanMode() has to be put back
+    // once the release has been handled. See setPanMode() for why the arrow.
+    if(dragMode() == ScrollHandDrag)
+        viewport()->setCursor(Qt::ArrowCursor);
 }
 
 void ProjectView::setAddWaypointMode()
@@ -336,6 +342,18 @@ void ProjectView::setPanMode()
     mouseMode = MouseMode::pan;
     modeLabel->setText("Mode: pan");
     unsetCursor();
+    // [camp#22] ARROW, not ScrollHandDrag's open hand, whenever the view is in
+    // pan mode and not actively dragging. The open hand has no visible hotspot,
+    // so anything the operator aims at with it — a vector feature's attributes, a
+    // vessel's or contact's hover label, a mission item — is aimed at blind; the
+    // arrow's tip is exactly where the cursor is. CAMP-wide and deliberate
+    // (operator decision, 2026-09-15 GUI test). setDragMode() is what installs
+    // the hand, so this follows it. The CLOSED hand during a real drag stays —
+    // there it is feedback, not aim — and mouseReleaseEvent() puts the arrow back
+    // afterwards. The add-* modes keep their own Qt::CrossCursor: they set it on
+    // the VIEW, and leaving pan mode calls setDragMode(NoDrag), which unsets the
+    // viewport's own cursor so the view's propagates again.
+    viewport()->setCursor(Qt::ArrowCursor);
     pendingSurveyPattern = nullptr;
     currentTrackLine = nullptr;
     pendingSearchPattern = nullptr;
