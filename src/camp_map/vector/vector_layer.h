@@ -288,6 +288,23 @@ QString canonicalVectorLayerPath(const QString& fname);
 /// counterpart the header once said it deliberately lacked; it now has the
 /// production caller — `AutonomousVehicleProject::openVectorLayer()` — that its
 /// absence was justified by.)
+///
+/// [camp#22 round-7 suggestion] COST, and why it is accepted. Resolving each
+/// surviving entry means one `canonicalFilePath()` — a stat/readlink — per entry,
+/// on the GUI thread, and the motivating case in the paragraph above is an
+/// UNMOUNTED SHARE, the kind of path that can block for a mount's timeout rather
+/// than returning promptly. Accepted because:
+///  * it is bounded by the length of the in-memory unavailable list, which is
+///    operator-sized (the files they opened and could not load), not file-sized;
+///  * the call site already stats the same class of path immediately before, via
+///    `QFileInfo::exists(fname)`, so this amplifies an existing exposure by the
+///    list length rather than introducing a new one; and
+///  * the alternative is making the purge asynchronous, which would race
+///    `persistVectorLayers()` — the purge has to have happened before the next
+///    persist, or the removed entry is written back and the camp#90/#117 bug
+///    returns. A latency risk on a list of a few entries is the smaller cost.
+/// If the unavailable list ever grows unbounded (it is not persisted per-session
+/// today), this is the site to revisit.
 QStringList withoutVectorLayerFile(const QStringList& files, const QString& canonicalFile);
 
 /// The persisted vector-layer list rebuilt from scratch — the whole rule behind

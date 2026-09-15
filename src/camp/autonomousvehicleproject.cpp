@@ -438,6 +438,9 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     // persistVectorLayers() writes it back on the unavailable branch, and removing
     // the reopened layer through the Layers tab does not stick. Exact matches are
     // still dropped; withoutVectorLayerFile() does both.
+    // That resolve costs one stat per unavailable entry, here on the GUI thread,
+    // on paths that may be unmounted shares — a bounded, deliberately accepted
+    // cost; the reasoning is on withoutVectorLayerFile()'s declaration.
     if(QFileInfo::exists(fname))
         m_unavailableVectorLayerFiles =
             camp::vector::withoutVectorLayerFile(m_unavailableVectorLayerFiles, fname);
