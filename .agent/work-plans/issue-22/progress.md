@@ -788,9 +788,67 @@ by reading the current code at each cited site (the `ParseBudget` recursion, the
 unavailable-path `removeAll` ordering, `isPlaceable`, `noDataColor`).
 
 ### Findings
-- [ ] (should-fix, Copilot R2) `readRing()` consumes EVERY vertex of a ring before returning: `ParseBudget` is polled at geometry/part boundaries only, so one LineString or ring with millions of points is an unbounded stretch inside a worker whose join runs on the GUI thread (`VectorLayer::~VectorLayer()` → `waitForFinished()`). This is the same failure class round 1 fixed one level up — the per-feature poll was too coarse for a 200 000-part MultiPolygon; the per-part poll is too coarse for a 200 000-vertex ring. `budget` is already in scope at all three `readRing()` call sites (`vector_parse.cpp:167`, `:189`, `:192`), so the fix is to pass it in and poll `budget.aborted` every N vertices (N ~1024 — `isAborted()` takes a mutex, so per-vertex polling is not free) and break out. A truncated ring is safe: the next feature-boundary check sets `diagnostics.aborted` and `loadFinished()` discards the whole result on that flag. The existing abort test does not cover this path — its fixture is 200 000 SEPARATE points, so every poll site it exercises is a part boundary; add a single-huge-ring fixture — `src/camp_map/vector/vector_parse.cpp:75`, `test/test_vector_layer_teardown.cpp:304`
-- [ ] (should-fix, Copilot R2) `normalizedValue()` mis-maps interior values when the span overflows: with `range.min = -DBL_MAX` and `range.max = DBL_MAX`, `span` is `+inf` but `(0 - range.min) / span` is the FINITE value `0`, so the `!std::isfinite(t)` fallback never fires. Verified by direct execution of the function's arithmetic: `0 → 0.0`, `-1e100 → 0.0`, `1e100 → 0.0`, while `1e307 → 0.5` and `-1e307 → 0.0` — not merely compressed, but non-monotonic, so colours and marker radii are ordered wrongly, not just squeezed. Reachable from an operator-chosen file: `numericAttribute()` admits any finite double, and a GeoJSON property may legitimately hold `1e308`. Fix: when `span` is not finite, compute on halved operands — `(value/2 - range.min/2) / (range.max/2 - range.min/2)` is finite for every finite min/max — keeping the existing order-based fallback as the last resort — `src/camp_map/vector/vector_style.cpp:87`
-- [ ] (suggestion, Copilot R2) Second half of the `readRing` comment: bound VERTEX count, not just geometry count, so one ring cannot materialise an arbitrarily large coordinate vector (100M vertices ≈ 1.6 GB). Unlike the cancellation half this is a DECISION, not a mechanical edit — silently truncating a ring draws a wrong shape, which is worse than the documented geometry cap, so the honest options are drop-the-geometry-and-count-it in `ParseDiagnostics` or accept it and say so. Fold into the already-deferred ADR-0016 D11 item on per-attribute size bounds (`## Local Review (Pre-Push)` 2026-09-15 08:48) rather than opening a second decision thread — `src/camp_map/vector/vector_parse.cpp:75`, `docs/decisions/0016-read-only-vector-file-layer.md`
+- [x] (should-fix, Copilot R2) `readRing()` consumes EVERY vertex of a ring before returning: `ParseBudget` is polled at geometry/part boundaries only, so one LineString or ring with millions of points is an unbounded stretch inside a worker whose join runs on the GUI thread (`VectorLayer::~VectorLayer()` → `waitForFinished()`). This is the same failure class round 1 fixed one level up — the per-feature poll was too coarse for a 200 000-part MultiPolygon; the per-part poll is too coarse for a 200 000-vertex ring. `budget` is already in scope at all three `readRing()` call sites (`vector_parse.cpp:167`, `:189`, `:192`), so the fix is to pass it in and poll `budget.aborted` every N vertices (N ~1024 — `isAborted()` takes a mutex, so per-vertex polling is not free) and break out. A truncated ring is safe: the next feature-boundary check sets `diagnostics.aborted` and `loadFinished()` discards the whole result on that flag. The existing abort test does not cover this path — its fixture is 200 000 SEPARATE points, so every poll site it exercises is a part boundary; add a single-huge-ring fixture — `src/camp_map/vector/vector_parse.cpp:75`, `test/test_vector_layer_teardown.cpp:304`
+- [x] (should-fix, Copilot R2) `normalizedValue()` mis-maps interior values when the span overflows: with `range.min = -DBL_MAX` and `range.max = DBL_MAX`, `span` is `+inf` but `(0 - range.min) / span` is the FINITE value `0`, so the `!std::isfinite(t)` fallback never fires. Verified by direct execution of the function's arithmetic: `0 → 0.0`, `-1e100 → 0.0`, `1e100 → 0.0`, while `1e307 → 0.5` and `-1e307 → 0.0` — not merely compressed, but non-monotonic, so colours and marker radii are ordered wrongly, not just squeezed. Reachable from an operator-chosen file: `numericAttribute()` admits any finite double, and a GeoJSON property may legitimately hold `1e308`. Fix: when `span` is not finite, compute on halved operands — `(value/2 - range.min/2) / (range.max/2 - range.min/2)` is finite for every finite min/max — keeping the existing order-based fallback as the last resort — `src/camp_map/vector/vector_style.cpp:87`
+- [x] (suggestion, Copilot R2) Second half of the `readRing` comment: bound VERTEX count, not just geometry count, so one ring cannot materialise an arbitrarily large coordinate vector (100M vertices ≈ 1.6 GB). Unlike the cancellation half this is a DECISION, not a mechanical edit — silently truncating a ring draws a wrong shape, which is worse than the documented geometry cap, so the honest options are drop-the-geometry-and-count-it in `ParseDiagnostics` or accept it and say so. Fold into the already-deferred ADR-0016 D11 item on per-attribute size bounds (`## Local Review (Pre-Push)` 2026-09-15 08:48) rather than opening a second decision thread — `src/camp_map/vector/vector_parse.cpp:75`, `docs/decisions/0016-read-only-vector-file-layer.md` (deferred: operator decision — folded into the already-deferred ADR-0016 D11 per-attribute-bound decision; a sentence recording that the vertex count belongs to the same deferred decision was added to D11)
 
 ### False positives
 - (none this round — both new Copilot comments describe failure modes that the current code genuinely has)
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-15 09:47 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `9336b5f`
+**Addressed**: `## Integrated Review` 2026-09-15 09:31 -04:00 (round 2, PR #226 at `14d61c6`)
+**Commits**: `382c05a`, `4ed30ef`, `9336b5f`
+
+Both should-fix findings fixed, each with the test the review asked for; the
+suggestion deferred per the operator's decision at the host checkpoint. Full camp
+suite rebuilt and run: **379 tests, 0 failures, 1 skipped** (the pre-existing
+skip). The only compiler warning is the pre-existing `-Wdangling-else` in
+`test_vector_layer_teardown.cpp:539`, untouched by this pass.
+
+Verification worth recording: the old `normalizedValue()` arithmetic was executed
+directly against the new fixture's values before the fix, confirming
+`-1e307 → 0.0`, `0 → 0.0`, `1e100 → 0.0`, `1e307 → 0.5` — the bottom of the ramp
+swallows everything up to ~1e308, which is why a test asserting only
+finite/in-range/not-NaN (the existing wide-range test) passed over it. The new
+test asserts ORDER and the midpoint, and `EXPECT_NEAR(normalizedValue(0.0), 0.5)`
+is the assertion that fails against the old code.
+
+### Actions
+- [x] (should-fix, Copilot R2) `readRing()` polled the budget at geometry/part
+  boundaries only, so one ring of millions of vertices was an unbounded stretch
+  inside the worker the destructor joins on the GUI thread — `readRing()` now
+  takes the `ParseBudget` and polls every 1024 vertices, plus once per ring so a
+  polygon of very many SHORT interior rings is bounded too (that loop is not
+  budget-checked, and breaking it on the geometry cap would drop the holes of a
+  polygon drawn in full). New fixture `writeOneHugeLineString()` and test
+  `VectorLayerTeardown.AbortCutsShortASingleHugeRing`: ONE feature of ONE part
+  with 400 000 vertices, where the vertex loop is the only place an abort can be
+  honoured — the existing 200 000-point fixture exercises part boundaries only —
+  `src/camp_map/vector/vector_parse.cpp:112`,
+  `test/test_vector_layer_teardown.cpp:435`
+- [x] (should-fix, Copilot R2) `normalizedValue()` now computes on halved
+  operands when the span is not finite, keeping the order-based fallback last;
+  new test `VectorLayerStyling.OverflowingSpanStaysMonotonic` over
+  min=-DBL_MAX/max=DBL_MAX asserts monotonic ordering across -DBL_MAX, -1e307,
+  -1e100, 0, 1e100, 1e307, DBL_MAX and that the midpoint is not pinned to an end
+  — `src/camp_map/vector/vector_style.cpp:87`,
+  `test/test_vector_layer_styling.cpp:199`
+- [x] (suggestion, Copilot R2) Bound the VERTEX count, not just the geometry
+  count (deferred: operator decision at the 2026-09-15 host checkpoint — folded
+  into the already-deferred ADR-0016 D11 per-attribute-bound decision rather than
+  opened as a second thread. D11 now names the two together and says why each is
+  a decision and not a mechanical edit: truncating a ring draws a wrong shape,
+  truncating a property reports a wrong value) —
+  `docs/decisions/0016-read-only-vector-file-layer.md:191`
+
+Plan kept in sync: **rev 8** records the round-4 pass and corrects the two places
+that said abort latency is bounded by one geometry — one geometry can be one ring
+of millions of vertices (`.agent/work-plans/issue-22/plan.md`).
+
+### Next step
+`review-code` re-review of the branch diff (fresh context).
