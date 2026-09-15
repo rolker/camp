@@ -805,6 +805,64 @@ TEST(VectorParseAttributes, GeometryCapStopsTheParse)
   EXPECT_FALSE(generous_diag.geometry_cap_reached);
 }
 
+// [camp#22 round-4 should-fix] REPROJECTION from a projected CRS.
+//
+// Every other fixture with a spatial reference is WGS84 -> WGS84 (the one
+// exception, LOCAL_CS, tests transform FAILURE), so the transform path was only
+// ever exercised for target-axis order — a broken projected->WGS84 transform
+// would have passed the whole suite. Reading UTM survey data is a must-have of
+// this layer, so it gets a fixture of its own: EPSG:32619 (UTM zone 19N, the zone
+// covering the Gulf of Maine) eastings/northings, asserted back as the lat/lon
+// they stand for.
+QString writeUtmGeoPackage(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+  const QString path = dir.filePath("utm19n.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  if(srs.importFromEPSG(32619) != OGRERR_NONE)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);   // easting, northing
+
+  OGRLayer* layer = ds->CreateLayer("survey", &srs, wkbUnknown, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+
+  // (350000 E, 4769000 N) in zone 19N is off the New Hampshire coast, near the
+  // Isles of Shoals: 43.0589 N, 70.8420 W (computed with the same PROJ this build
+  // links). The second point is 1 km east.
+  {
+    OGRPoint p(350000.0, 4769000.0);
+    OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+    f->SetGeometry(&p);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  {
+    OGRLineString ls;
+    ls.addPoint(350000.0, 4769000.0);
+    ls.addPoint(351000.0, 4769000.0);
+    OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+    f->SetGeometry(&ls);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  GDALClose(ds);
+  return path;
+}
+
 // [camp#22 round-4 should-fix] An unhandled geometry type is reported ONCE PER
 // LAYER, not once per geometry.
 //
@@ -862,6 +920,49 @@ TEST(VectorParseAttributes, UnhandledGeometriesAreReportedOncePerLayer)
       << "the type name is the part of the message worth keeping";
   EXPECT_EQ(unhandled_warnings, 1)
       << "one summary line per layer, not one per geometry: " << unhandled_warnings;
+}
+
+// Projected metres in, latitude/longitude out — the UTM survey file this layer
+// exists to read.
+TEST(VectorParseAttributes, ProjectedCoordinatesAreReprojectedToLatLon)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeUtmGeoPackage(dir);
+  ASSERT_FALSE(path.isEmpty()) << "could not build the EPSG:32619 fixture";
+
+  DatasetPtr dataset = openDataset(path);
+  ASSERT_TRUE(dataset);
+  camp::vector::ParseDiagnostics diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diag);
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_EQ(diag.layers_failed, 0) << "a transformation to WGS84 must be available for UTM 19N";
+  EXPECT_EQ(diag.points_dropped, 0);
+
+  const ParsedLayer& layer = layers.front();
+  ASSERT_EQ(layer.geometries.size(), 2u);
+
+  // Tight tolerances: this is the assertion that would fail if the eastings were
+  // passed through as degrees, or the axis order of the target were wrong.
+  const ParsedGeometry& point = layer.geometries.front();
+  ASSERT_EQ(point.type, ParsedGeometry::Point);
+  ASSERT_EQ(point.exterior.size(), 1u);
+  EXPECT_NEAR(point.exterior.front().latitude(), 43.05888, 0.0005);
+  EXPECT_NEAR(point.exterior.front().longitude(), -70.84204, 0.0005);
+
+  const ParsedGeometry& line = layer.geometries.back();
+  ASSERT_EQ(line.type, ParsedGeometry::LineString);
+  ASSERT_EQ(line.exterior.size(), 2u);
+  EXPECT_NEAR(line.exterior.front().latitude(), 43.05888, 0.0005);
+  EXPECT_NEAR(line.exterior.front().longitude(), -70.84204, 0.0005);
+  // 1 km east is about 0.0123 degrees of longitude at this latitude, and the
+  // latitude barely moves — a vertex read in the wrong axis order or left in
+  // metres cannot satisfy both.
+  EXPECT_NEAR(line.exterior.back().latitude(), 43.05908, 0.0005);
+  EXPECT_NEAR(line.exterior.back().longitude(), -70.82977, 0.0005);
+  EXPECT_GT(line.exterior.back().longitude(), line.exterior.front().longitude())
+      << "the second vertex is EAST of the first";
 }
 
 // [camp#22 round-3 should-fix] `geometry_cap_reached` means "the rest of the file
