@@ -59,32 +59,6 @@ std::optional<QGeoCoordinate> toWgs84(double x, double y,
     return QGeoCoordinate(y, x);       // untransformed: x = longitude, y = latitude
 }
 
-// Read one ring's vertices, transforming to WGS84, and destroy the iterator.
-// [#152] The OGRPointIterator is always destroyed here — at every call site,
-// including the interior-ring loop where the original code reassigned `pi` per
-// ring and so leaked all but (at most) one.
-std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
-                                    OGRCoordinateTransformation *unprojectTransformation,
-                                    ParseDiagnostics &diagnostics)
-{
-    std::vector<QGeoCoordinate> points;
-    if(!ring)
-        return points;
-    OGRPointIterator *pi = ring->getPointIterator();
-    OGRPoint p;
-    while(pi->getNextPoint(&p))
-    {
-        const std::optional<QGeoCoordinate> coordinate =
-            toWgs84(p.getX(), p.getY(), unprojectTransformation);
-        if(coordinate)
-            points.push_back(*coordinate);
-        else
-            ++diagnostics.points_dropped;
-    }
-    OGRPointIterator::destroy(pi);
-    return points;
-}
-
 // [camp#22] What is left of the parse's budget, threaded THROUGH the recursion.
 //
 // The cap and the abort predicate are polled per FEATURE by the caller's loop,
@@ -110,6 +84,66 @@ struct ParseBudget
             --remaining;
     }
 };
+
+// Read one ring's vertices, transforming to WGS84, and destroy the iterator.
+// [#152] The OGRPointIterator is always destroyed here — at every call site,
+// including the interior-ring loop where the original code reassigned `pi` per
+// ring and so leaked all but (at most) one.
+//
+// [camp#22] The budget is polled INSIDE the vertex loop. Polling it per geometry
+// and per collection part bounds abort latency by the number of parts, which says
+// nothing about a single LineString or ring carrying millions of vertices — the
+// same failure the per-feature poll had one level up, one level down. The
+// destructor joins this worker on the GUI thread, so an unbounded stretch here is
+// an unbounded freeze there.
+//
+// Polled every kVertexPollInterval vertices rather than every vertex: the
+// predicate takes a mutex (ParseOptions::aborted reads the layer's abort flag),
+// so a per-vertex poll would cost more than the parse. 1024 vertices is well
+// inside a frame on any machine that can run CAMP, and far below the part counts
+// the coarser polls already bound.
+//
+// A truncated ring is SAFE, not a wrong shape on screen: the abort that truncated
+// it is still set at the next feature-boundary check, which sets
+// ParseDiagnostics::aborted, and VectorLayer::loadFinished() discards the whole
+// parse result on that flag. Nothing partial is ever drawn.
+constexpr int kVertexPollInterval = 1024;
+
+std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
+                                    OGRCoordinateTransformation *unprojectTransformation,
+                                    ParseDiagnostics &diagnostics,
+                                    ParseBudget &budget)
+{
+    std::vector<QGeoCoordinate> points;
+    if(!ring)
+        return points;
+    // One poll per ring as well as one per kVertexPollInterval vertices: a polygon
+    // with a very large number of SHORT interior rings never reaches the in-loop
+    // poll, and its ring loop is not budget-checked (breaking it on the geometry
+    // cap would drop the holes of a polygon that is otherwise drawn in full).
+    if(budget.aborted && budget.aborted())
+        return points;
+    OGRPointIterator *pi = ring->getPointIterator();
+    OGRPoint p;
+    int since_poll = 0;
+    while(pi->getNextPoint(&p))
+    {
+        if(++since_poll >= kVertexPollInterval)
+        {
+            since_poll = 0;
+            if(budget.aborted && budget.aborted())
+                break;
+        }
+        const std::optional<QGeoCoordinate> coordinate =
+            toWgs84(p.getX(), p.getY(), unprojectTransformation);
+        if(coordinate)
+            points.push_back(*coordinate);
+        else
+            ++diagnostics.points_dropped;
+    }
+    OGRPointIterator::destroy(pi);
+    return points;
+}
 
 // [camp#22] Append the geometry (and, for a Multi* collection, each of its
 // parts) to `out`, copying `attributes` onto every emitted part.
@@ -164,7 +198,7 @@ void appendGeometry(const OGRGeometry *geometry,
             ParsedGeometry g;
             g.type = ParsedGeometry::LineString;
             g.attributes = attributes;
-            g.exterior = readRing(ols, unprojectTransformation, diagnostics);
+            g.exterior = readRing(ols, unprojectTransformation, diagnostics, budget);
             out.push_back(std::move(g));
             budget.spend();
         }
@@ -186,10 +220,12 @@ void appendGeometry(const OGRGeometry *geometry,
             ParsedGeometry g;
             g.type = ParsedGeometry::Polygon;
             g.attributes = attributes;
-            g.exterior = readRing(op->getExteriorRing(), unprojectTransformation, diagnostics);
+            g.exterior = readRing(op->getExteriorRing(), unprojectTransformation, diagnostics,
+                                  budget);
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
                 g.interiorRings.push_back(
-                    readRing(op->getInteriorRing(ringNum), unprojectTransformation, diagnostics));
+                    readRing(op->getInteriorRing(ringNum), unprojectTransformation, diagnostics,
+                             budget));
             out.push_back(std::move(g));
             budget.spend();
         }

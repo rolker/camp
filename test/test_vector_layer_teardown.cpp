@@ -103,6 +103,36 @@ QString writeManyPoints(const QTemporaryDir& dir, int count)
   return path;
 }
 
+// [camp#22] A GeoJSON holding ONE feature: a single LineString of `count`
+// vertices. The many-points fixture above exercises only PART boundaries — every
+// poll site it reaches is a feature or a collection part — so it cannot tell a
+// parser that polls the abort flag per part from one that also polls it per
+// vertex. This fixture has exactly one part, so the only place an abort can be
+// honoured is inside the vertex loop.
+QString writeOneHugeLineString(const QTemporaryDir& dir, int count)
+{
+  const QString path = dir.filePath("huge_ring.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  QByteArray json = R"({"type": "FeatureCollection", "features": [{"type": "Feature", )"
+                    R"("properties": {"n": 1}, "geometry": {"type": "LineString", )"
+                    R"("coordinates": [)";
+  for(int i = 0; i < count; ++i)
+  {
+    if(i)
+      json += ',';
+    json += QStringLiteral("[%1,%2]")
+              .arg(-70.8 + (i % 1000) * 0.0001, 0, 'f', 6)
+              .arg(43.0 + (i / 1000) * 0.0001, 0, 'f', 6)
+              .toUtf8();
+  }
+  json += "]}}]}";
+  file.write(json);
+  file.close();
+  return path;
+}
+
 // The parse is async; the status leaves "(loading...)" when it completes.
 bool waitForLoad(const camp::vector::VectorLayer* layer, int timeout_ms = 5000)
 {
@@ -387,6 +417,72 @@ TEST(VectorLayerTeardown, DestroyDuringLoadDoesNotWaitOutTheWholeParse)
     GTEST_LOG_(INFO) << "full parse of the 200 000-point fixture took only " << full_ms
                      << " ms; the wall-clock ratio check is unmeasurable here and was"
                      << " skipped (aborted teardown: " << abort_ms << " ms).";
+}
+
+// [camp#22 should-fix, round 2] One ring must not be an unbounded stretch inside
+// the worker the destructor joins. readRing used to consume EVERY vertex before
+// returning, so the abort flag — polled per feature and per collection part —
+// bounded nothing for a single LineString or ring of millions of points. The poll
+// now also runs inside the vertex loop (every kVertexPollInterval vertices; the
+// predicate takes a mutex, so per-vertex polling is not free).
+//
+// The fixture is deliberately ONE feature with ONE part: every poll site the
+// 200 000-point fixture above exercises is a part boundary, so it passes whether
+// or not the vertex loop polls anything.
+TEST(VectorLayerTeardown, AbortCutsShortASingleHugeRing)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  constexpr int kVertices = 400000;
+  const QString path = writeOneHugeLineString(dir, kVertices);
+  ASSERT_FALSE(path.isEmpty());
+
+  const auto gdal_closer = [](GDALDataset* d){ if(d) GDALClose(d); };
+  GDALAllRegister();
+
+  // The fixture really is one feature of kVertices vertices — otherwise the
+  // truncation asserted below would prove nothing.
+  {
+    std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
+      static_cast<GDALDataset*>(
+        GDALOpenEx(path.toUtf8().constData(), GDAL_OF_READONLY | GDAL_OF_VECTOR,
+                   nullptr, nullptr, nullptr)),
+      gdal_closer);
+    ASSERT_TRUE(dataset);
+    const auto parsed = camp::vector::parseVectorLayers(dataset.get());
+    ASSERT_EQ(parsed.size(), 1u);
+    ASSERT_EQ(parsed.front().geometries.size(), 1u);
+    ASSERT_EQ(parsed.front().geometries.front().exterior.size(),
+              static_cast<size_t>(kVertices));
+  }
+
+  // Now abort a few polls in. With the flag polled only at part boundaries this
+  // ring is read to its last vertex; with the in-loop poll it stops within one
+  // poll interval of where the flag was raised.
+  {
+    std::unique_ptr<GDALDataset, decltype(gdal_closer)> dataset(
+      static_cast<GDALDataset*>(
+        GDALOpenEx(path.toUtf8().constData(), GDAL_OF_READONLY | GDAL_OF_VECTOR,
+                   nullptr, nullptr, nullptr)),
+      gdal_closer);
+    ASSERT_TRUE(dataset);
+    int polls = 0;
+    camp::vector::ParseOptions options;
+    options.aborted = [&polls]() { return ++polls > 4; };
+    camp::vector::ParseDiagnostics diagnostics;
+    const auto parsed = camp::vector::parseVectorLayers(dataset.get(), options, &diagnostics);
+    EXPECT_TRUE(diagnostics.aborted) << "an abort raised inside the ring must be reported";
+    size_t vertices = 0;
+    for(const auto& layer : parsed)
+      for(const auto& geometry : layer.geometries)
+        vertices += geometry.exterior.size();
+    // Generous against the poll interval (1024) and the handful of polls the
+    // layer/feature/geometry checks spend before the ring is reached, but two
+    // orders of magnitude below a ring read to its end — which is the failure.
+    EXPECT_LT(vertices, 20000u)
+        << "the ring was read to " << vertices
+        << " vertices despite the abort flag — the vertex loop is not polling it";
+  }
 }
 
 // [camp#22] The no-data SECOND CHANNEL is wired to the layer, not just to the

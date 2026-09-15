@@ -172,8 +172,11 @@ had to be answered rather than assumed.
 
 11. **Two bounded resources, both reported rather than silently clipped.** The
     parse runs on a QtConcurrent worker whose abort flag is polled *per feature*,
-    so the destructor's join is bounded by the abort and not by the size of the
-    file (camp#213). And the file is read only as far as
+    per part of a multi-part feature, and every 1024 vertices inside a single
+    ring — each coarser level bounds only the number of the next one down, and a
+    file may be one feature, of one part, of millions of vertices — so the
+    destructor's join is bounded by the abort and not by the size of the file
+    (camp#213). And the file is read only as far as
     `VectorLayer::kMaxFeatureItems` (50 000) — an unbounded file dialog plus a
     national coastline shapefile is otherwise a frozen CAMP with no message.
 
