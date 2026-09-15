@@ -122,6 +122,30 @@ QString writeGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22] Every property is free-text: numericFields() must come back EMPTY,
+// so a stale style field set over this file exercises the contextMenu() guard
+// with field_names.isEmpty() true.
+QString writeStringOnlyGeoJson(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("string_only.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature",
+       "geometry": {"type": "Point", "coordinates": [-70.71, 43.07]},
+       "properties": {"assessment": "candidate C"}},
+      {"type": "Feature",
+       "geometry": {"type": "Point", "coordinates": [-70.70, 43.06]},
+       "properties": {"assessment": "background"}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22] Two point features far enough apart that neither marker is anywhere
 // near the other, and NO polygon or line over them: what a click lands on is then
 // decided by the point's own shape() and not by which item happens to be on top.
@@ -772,6 +796,55 @@ TEST(VectorLayerStyleFields, AStaleStyleFieldIsShownInTheMenuAndCanBeCleared)
   const QStringList cleared = submenuEntries(after, QStringLiteral("Color by"));
   EXPECT_FALSE(cleared.contains(QStringLiteral("assessment (no numbers)")));
   EXPECT_TRUE(cleared.contains(QStringLiteral("signal")));
+
+  delete layer;
+}
+
+// [camp#22] The combination the two-part guard in contextMenu() is most likely
+// to regress on silently: numericFields() EMPTY (no field a ramp can read at
+// all) AND a stale style field set. `field_names.isEmpty() && !stale_color &&
+// !stale_size` is the only early return — if a future edit dropped either
+// `stale_color`/`stale_size` term, or reordered the guard, this is the file
+// that would go back to offering no submenu at all with the setting stuck
+// (ADR-0016 D14's original defect), exactly when there is also nothing else in
+// the menu to notice its absence next to.
+TEST(VectorLayerStyleFields, AStaleFieldIsShownEvenWhenNumericFieldsIsEmpty)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeStringOnlyGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new MenuProbe(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+  ASSERT_TRUE(layer->numericFields().isEmpty())
+      << "harness: this file must offer no field a ramp can read";
+
+  // What a restored setting over a now-all-text file looks like.
+  layer->setColorField("assessment");
+
+  QMenu menu;
+  layer->contextMenu(&menu);
+
+  const QStringList color_entries = submenuEntries(menu, QStringLiteral("Color by"));
+  ASSERT_FALSE(color_entries.isEmpty())
+      << "numericFields() being empty must not suppress the submenu: the stale "
+         "setting would be unreachable and stuck";
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("(none)")));
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("assessment (no numbers)")));
+
+  // No colormap menu: a palette with no field a ramp can sample changes nothing.
+  bool saw_colormap = false;
+  for(QAction* action : menu.actions())
+    if(action->menu() && action->text() == QStringLiteral("Colormap"))
+      saw_colormap = true;
+  EXPECT_FALSE(saw_colormap);
+
+  QAction* none = submenuAction(menu, QStringLiteral("Color by"), QStringLiteral("(none)"));
+  ASSERT_NE(none, nullptr);
+  none->trigger();
+  EXPECT_TRUE(layer->colorField().isEmpty()) << "the stale colour field could not be cleared";
 
   delete layer;
 }
