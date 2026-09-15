@@ -27,6 +27,7 @@ using camp::vector::ParsedGeometry;
 using camp::vector::accumulateValue;
 using camp::vector::colorForValue;
 using camp::vector::fieldRange;
+using camp::vector::isNoData;
 using camp::vector::kDefaultPointRadius;
 using camp::vector::kMaxPointRadius;
 using camp::vector::kMinPointRadius;
@@ -248,6 +249,42 @@ TEST(VectorLayerStyling, RadiusSpansTheMarkerRange)
   EXPECT_DOUBLE_EQ(
     radiusForValue(2.0, invalid, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
     kDefaultPointRadius);
+}
+
+// [camp#22 should-fix] No-data is a STATE, not just a colour.
+//
+// noDataColor() is mid grey, and the grayscale palette — selectable by the
+// operator, and the fallback for an unknown palette name — samples to very nearly
+// that same grey at its midpoint. Under grayscale a missing value would therefore
+// be indistinguishable from a mid-range measurement, which is two different kinds
+// of thing looking alike. isNoData() names the state so VectorFeatureItem can also
+// draw it with a dashed outline and a hatched fill, channels no palette touches.
+//
+// The predicate must agree exactly with the branch colorForValue() answers with
+// noDataColor(), or the outline and the colour would disagree on some feature.
+TEST(VectorLayerStyling, NoDataIsCarriedAsAStateNotOnlyAColour)
+{
+  FieldRange range;
+  accumulateValue(range, 1.0);
+  accumulateValue(range, 5.0);
+  ASSERT_TRUE(range.valid);
+  const FieldRange invalid;
+  const QColor fallback(Qt::darkCyan);
+
+  // The field is missing from this feature, or holds something non-numeric.
+  EXPECT_TRUE(isNoData(std::nullopt, range));
+  // No feature in the layer has a value: the whole layer is no-data.
+  EXPECT_TRUE(isNoData(3.0, invalid));
+  EXPECT_TRUE(isNoData(std::nullopt, invalid));
+  // A real measurement inside a real range is not.
+  EXPECT_FALSE(isNoData(3.0, range));
+
+  // The predicate and the colour answer the same question the same way — with no
+  // palette, colorForValue falls back to default_color for a REAL value, so the
+  // grey is reached only on the no-data branch.
+  EXPECT_EQ(colorForValue(nullptr, std::nullopt, range, fallback), noDataColor());
+  EXPECT_EQ(colorForValue(nullptr, 3.0, invalid, fallback), noDataColor());
+  EXPECT_EQ(colorForValue(nullptr, 3.0, range, fallback), fallback);
 }
 
 int main(int argc, char** argv)

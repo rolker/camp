@@ -3,6 +3,7 @@
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
 #include <QGraphicsView>
+#include <QBrush>
 #include <QPainter>
 #include <QPainterPathStroker>
 #include <QStringList>
@@ -187,11 +188,20 @@ void VectorFeatureItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
 {
   painter->save();
   painter->setRenderHint(QPainter::Antialiasing, true);
+  // [camp#22] No data is carried in the OUTLINE and the FILL PATTERN, not only in
+  // the colour: noDataColor()'s grey and the middle of the grayscale palette are
+  // the same grey, so a colour-only answer would make "no value here" look like a
+  // mid-range measurement under a palette the operator can select. A dash pattern
+  // and a hatch are channels no palette touches.
   if(point_)
   {
-    painter->setBrush(color_);
-    QPen pen(Qt::black);
+    // A point's marker is its fill, so no-data is drawn HOLLOW: an unfilled ring
+    // in the same grey, which no styled marker can look like.
+    painter->setBrush(no_data_ ? QBrush(Qt::NoBrush) : QBrush(color_));
+    QPen pen(no_data_ ? color_ : QColor(Qt::black));
     pen.setWidth(0);           // cosmetic: a hairline outline for contrast
+    if(no_data_)
+      pen.setStyle(Qt::DashLine);
     painter->setPen(pen);
     painter->drawEllipse(QPointF(0.0, 0.0), radius_, radius_);
   }
@@ -200,12 +210,16 @@ void VectorFeatureItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*
     QPen pen(color_);
     pen.setCosmetic(true);     // one device pixel at every zoom
     pen.setWidth(2);
+    if(no_data_)
+      pen.setStyle(Qt::DashLine);
     painter->setPen(pen);
     if(polygon_)
     {
       QColor fill = color_;
       fill.setAlpha(80);       // a filled polygon must not hide what is under it
-      painter->setBrush(fill);
+      // Hatched rather than solid: the same distinction the outline makes, in the
+      // channel a filled polygon is mostly read by.
+      painter->setBrush(no_data_ ? QBrush(fill, Qt::BDiagPattern) : QBrush(fill));
     }
     else
       painter->setBrush(Qt::NoBrush);
@@ -219,6 +233,14 @@ void VectorFeatureItem::setColor(const QColor& color)
   if(color == color_)
     return;
   color_ = color;
+  update();
+}
+
+void VectorFeatureItem::setNoData(bool no_data)
+{
+  if(no_data == no_data_)
+    return;
+  no_data_ = no_data;
   update();
 }
 

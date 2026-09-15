@@ -329,11 +329,22 @@ void VectorLayer::applyStyle()
   for(VectorFeatureItem* feature : features_)
   {
     if(color_field_.isEmpty())
+    {
+      // Not styled by a field at all: the layer's default colour, and nothing is
+      // "missing" — there is no field to be missing from.
       feature->setColor(default_color);
+      feature->setNoData(false);
+    }
     else
-      feature->setColor(colorForValue(palette,
-                                      numericAttribute(feature->attributes(), color_field_),
-                                      color_range, default_color));
+    {
+      const auto value = numericAttribute(feature->attributes(), color_field_);
+      feature->setColor(colorForValue(palette, value, color_range, default_color));
+      // [camp#22] The second channel: a dashed outline and a hatched fill, which
+      // no palette can imitate. noDataColor()'s grey is the same grey as the
+      // middle of grayscale — a palette the operator can pick and the fallback
+      // for an unknown name — so colour alone cannot say "this has no value".
+      feature->setNoData(isNoData(value, color_range));
+    }
     if(!feature->isPoint())
       continue;   // size-by-field is meaningless for lines and polygons
     if(size_field_.isEmpty())

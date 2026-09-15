@@ -89,9 +89,17 @@ double normalizedValue(double value, const FieldRange& range)
 
 QColor noDataColor()
 {
-  // Mid grey at full opacity: distinct from both ends of every shipped palette
-  // and from the default unstyled colour below.
+  // Mid grey at full opacity: distinct from the default unstyled colour, and from
+  // both ends of every shipped palette — but NOT from the MIDDLE of grayscale,
+  // which is a palette the operator can select and the fallback for an unknown
+  // name. Colour is therefore only half the answer; isNoData() carries the other
+  // half into the outline and fill pattern, where no palette reaches.
   return QColor(128, 128, 128);
+}
+
+bool isNoData(const std::optional<double>& value, const FieldRange& range)
+{
+  return !value || !range.valid;
 }
 
 QColor colorForValue(const marine_colormap::Palette* palette,
@@ -99,7 +107,7 @@ QColor colorForValue(const marine_colormap::Palette* palette,
                      const FieldRange& range,
                      const QColor& default_color)
 {
-  if(!value || !range.valid)
+  if(isNoData(value, range))
     return noDataColor();
   if(!palette)
     return default_color;

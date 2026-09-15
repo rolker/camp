@@ -91,6 +91,19 @@ public:
   /// from an attribute), which is stated here rather than dropped silently.
   void setRadius(double radius);
 
+  /// [camp#22] Draw this feature as NO DATA — its styling field is missing, or
+  /// its value is not a finite number (`camp::vector::isNoData()`).
+  ///
+  /// This is a SECOND channel, not a repeat of the colour. `noDataColor()`'s grey
+  /// is indistinguishable from the middle of the grayscale palette, which the
+  /// operator can select and which is the fallback for an unknown palette name, so
+  /// a colour-only answer lets a missing value read as a mid-range measurement.
+  /// A no-data feature is drawn with a DASHED outline and a HATCHED fill (a hollow
+  /// marker for a point) — channels no palette touches, and which survive
+  /// grayscale, colour-blind vision and a black-and-white printout alike.
+  void setNoData(bool no_data);
+  bool isNoData() const { return no_data_; }
+
   const QMap<QString, QVariant>& attributes() const { return attributes_; }
   bool isPoint() const { return point_; }
   bool isPolygon() const { return polygon_; }
@@ -118,6 +131,7 @@ protected:
 private:
   bool point_ = false;
   bool polygon_ = false;
+  bool no_data_ = false;
   // Line / polygon outline in item-local coordinates (the item is positioned at
   // the geometry's first vertex, so the path's numbers stay small instead of
   // being millions of Web-Mercator metres).

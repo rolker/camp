@@ -76,10 +76,27 @@ FieldRange fieldRange(const std::vector<ParsedGeometry>& geometries, const QStri
 double normalizedValue(double value, const FieldRange& range);
 
 /// The fixed "no data" colour: a feature whose styling field is missing or
-/// non-numeric. Deliberately a neutral grey that is NOT a position on any
-/// palette, so "this feature has no value" never reads as "this feature is at
-/// the bottom of the ramp".
+/// non-numeric. A neutral grey, which is distinct from both ends of most shipped
+/// palettes — but NOT from all of them, and that is why colour is not the only
+/// channel it is carried in. See `isNoData()`.
 QColor noDataColor();
+
+/// [camp#22] True when a feature must be drawn as NO DATA — @p value is empty
+/// (the styling field is missing from this feature, or its value is not a finite
+/// number) or @p range is invalid (no feature in the layer has a value for the
+/// field). Exactly the two cases `colorForValue()` answers with `noDataColor()`,
+/// named once so the item can carry the state in a second channel.
+///
+/// Colour ALONE cannot say it. `resolvePalette()` falls back to — and the
+/// operator can select — `grayscale`, whose midpoint samples to very nearly the
+/// same neutral grey `noDataColor()` returns, so under that palette a missing
+/// value would be indistinguishable from a mid-range measurement. A missing value
+/// and a measured one are different kinds of thing and must not be able to look
+/// alike under any palette, so `VectorFeatureItem` also draws no-data features
+/// with a dashed outline and a hatched (rather than solid) fill — channels the
+/// palette does not touch, which survive grayscale, colour-blind vision and a
+/// black-and-white printout alike.
+bool isNoData(const std::optional<double>& value, const FieldRange& range);
 
 /// Resolved fill colour for one feature.
 /// - @p value empty (field missing / non-numeric) -> noDataColor()
