@@ -72,12 +72,28 @@ double normalizedValue(double value, const FieldRange& range)
   // every finite double AND for a NaN span, which no arithmetic offset can be.
   if(!(span > 0.0))
     return 0.5;
-  const double t = (value - range.min) / span;
+  // [camp#22] An OVERFLOWED span is not a NaN case, and must not be left to the
+  // order-based fallback below: with range.min = -DBL_MAX and range.max = DBL_MAX
+  // the span is +inf, yet (value - min) / inf is the perfectly FINITE 0.0 for
+  // every value up to ~1e308 — so the !isfinite(t) guard never fired and the
+  // mapping came out NON-monotonic (0 -> 0.0, 1e100 -> 0.0, but 1e307 -> 0.5).
+  // Colours and marker radii were then ordered wrongly, not merely compressed,
+  // which is worse than a coarse ramp: it says the opposite of the data.
+  //
+  // Halving both operands is exact (a power-of-two scaling of a finite double is
+  // exact barring underflow, which only reaches values already indistinguishable
+  // at ramp resolution) and puts every finite min/max inside the double range, so
+  // the ratio is the same one the unscaled arithmetic would have produced had it
+  // not overflowed. A GeoJSON property may legitimately hold 1e308, and
+  // numericAttribute() admits any finite double, so this is reachable from an
+  // operator-chosen file.
+  const double t = std::isfinite(span) ? (value - range.min) / span
+                                       : (value / 2 - range.min / 2) /
+                                             (range.max / 2 - range.min / 2);
   if(!std::isfinite(t))
   {
-    // Reachable when the span or the numerator overflows to infinity (a range
-    // spanning most of the double line, e.g. -DBL_MAX to DBL_MAX). Fall back to
-    // the ORDER, which is still meaningful, rather than emitting a NaN.
+    // Last resort: the halved form still did not produce a finite ratio. Fall
+    // back to the ORDER, which is still meaningful, rather than emitting a NaN.
     if(value >= range.max)
       return 1.0;
     if(value <= range.min)

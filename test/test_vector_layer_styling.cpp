@@ -195,6 +195,47 @@ TEST(VectorLayerStyling, DegenerateRangeIsTotalAboveTwoToTheFiftyThree)
   }
 }
 
+// [camp#22 should-fix, round 2] An overflowing span must still ORDER the data.
+//
+// With min = -DBL_MAX and max = DBL_MAX the span is +inf, and (value - min)/inf is
+// the finite value 0.0 for everything up to about 1e308 — so the !isfinite(t)
+// guard never fired and the result was not merely compressed but NON-monotonic:
+// 0 -> 0.0, -1e100 -> 0.0, 1e100 -> 0.0, yet 1e307 -> 0.5. A colour ramp and a
+// marker radius built on that say the opposite of the data for some pairs of
+// features, which is worse than a coarse ramp. The test above only asserts the
+// result is finite and in [0, 1], which the broken arithmetic also satisfied;
+// ORDER is the property that catches it.
+TEST(VectorLayerStyling, OverflowingSpanStaysMonotonic)
+{
+  FieldRange huge;
+  accumulateValue(huge, -std::numeric_limits<double>::max());
+  accumulateValue(huge, std::numeric_limits<double>::max());
+  ASSERT_TRUE(huge.valid);
+
+  const std::vector<double> ascending = {-std::numeric_limits<double>::max(),
+                                         -1e307, -1e100, 0.0, 1e100, 1e307,
+                                         std::numeric_limits<double>::max()};
+  double previous = -1.0;
+  for(const double v : ascending)
+  {
+    const double t = normalizedValue(v, huge);
+    EXPECT_FALSE(std::isnan(t)) << "value " << v;
+    EXPECT_GE(t, 0.0) << "value " << v;
+    EXPECT_LE(t, 1.0) << "value " << v;
+    EXPECT_GE(t, previous) << "value " << v
+                           << " normalised BELOW a smaller value — the ramp is"
+                              " ordered wrongly, not just compressed";
+    previous = t;
+  }
+
+  // The ends still reach the ends of the ramp, and the middle is not pinned to
+  // either of them: a monotonic-but-constant mapping would pass the loop above.
+  EXPECT_DOUBLE_EQ(normalizedValue(-std::numeric_limits<double>::max(), huge), 0.0);
+  EXPECT_DOUBLE_EQ(normalizedValue(std::numeric_limits<double>::max(), huge), 1.0);
+  EXPECT_NEAR(normalizedValue(0.0, huge), 0.5, 1e-12);
+  EXPECT_GT(normalizedValue(1e307, huge), normalizedValue(-1e307, huge));
+}
+
 // The ends of the data map to the ends of the palette.
 TEST(VectorLayerStyling, ColorSpansThePalette)
 {
