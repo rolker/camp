@@ -11,6 +11,9 @@
 #include <QString>
 #include <QVariant>
 
+class QGraphicsSceneHoverEvent;
+class QGraphicsSimpleTextItem;
+
 namespace camp::vector
 {
 
@@ -81,10 +84,13 @@ bool hasPlaceableCoordinate(const ParsedGeometry& geometry);
 /// (camp#225, fixed by construction) and a press in one of ProjectView's add-*
 /// modes places its mission item with nothing in the way.
 ///
-/// The popup is the item's ordinary Qt TOOLTIP (`setToolTip()`), shown by
-/// `QGraphicsScene::helpEvent()` after the usual hover delay and hidden when the
-/// cursor moves away — no event handler of our own, and the behaviour every other
-/// tooltip in the application already has.
+/// The popup is an IN-SCENE LABEL — a child `QGraphicsSimpleTextItem` filled in
+/// by `hoverEnterEvent()` and emptied by `hoverLeaveEvent()` — which is the very
+/// mechanism `GeoGraphicsItem` gives `Platform` and `AISContact`, copied because
+/// `camp_map` cannot depend on the `camp` app layer where that base class lives.
+/// It appears INSTANTLY, with no tooltip delay: in the operator GUI test of
+/// 2026-09-15 a delayed Qt tooltip read as "similar to what was existing, but not
+/// the same", because every other CAMP item answers the cursor at once.
 class VectorFeatureItem: public QGraphicsItem
 {
 public:
@@ -123,12 +129,31 @@ public:
   bool isPoint() const { return point_; }
   bool isPolygon() const { return polygon_; }
 
-  /// The text shown by the hover-to-inspect popup: one "name: value" line per
-  /// attribute. Exposed for tests, and set as the item's tooltip in the
-  /// constructor — attributes never change after construction, so it is set once.
+  /// The text shown by the hover-to-inspect label: one "name: value" line per
+  /// attribute. Attributes never change after construction, so this is stable
+  /// for the item's lifetime; the label is filled from it on every hover-enter.
   QString attributeText() const;
 
+protected:
+  /// [camp#22 / ADR-0016 D5] Show / hide the attribute label. The same pair
+  /// `Platform::hoverEnterEvent()` and `AISContact::hoverEnterEvent()` use, with
+  /// `setShowLabelFlag()` spelled out because this item has no `GeoGraphicsItem`
+  /// base to inherit it from.
+  void hoverEnterEvent(QGraphicsSceneHoverEvent* event) override;
+  void hoverLeaveEvent(QGraphicsSceneHoverEvent* event) override;
+
 private:
+  /// The hover label, created on FIRST HOVER and kept afterwards — never one per
+  /// feature at load. A layer may hold up to `kMaxFeatureItems` (50 000) features
+  /// and the operator hovers a handful of them, so creating a text item per
+  /// feature up front would cost 50 000 scene items, their index entries and
+  /// their font metrics for nothing. Owned by this item as a child.
+  QGraphicsSimpleTextItem* label_ = nullptr;
+
+  /// The hover label, created on first call. Carries the same flag, font, brush
+  /// and outline pen as `GeoGraphicsItem`'s label.
+  QGraphicsSimpleTextItem* labelItem();
+
   bool point_ = false;
   bool polygon_ = false;
   bool no_data_ = false;

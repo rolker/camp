@@ -1,8 +1,12 @@
 #include "vector_feature_item.h"
 
 #include <QBrush>
+#include <QFont>
+#include <QGraphicsSceneHoverEvent>
+#include <QGraphicsSimpleTextItem>
 #include <QPainter>
 #include <QPainterPathStroker>
+#include <QPen>
 #include <QStringList>
 
 #include <algorithm>
@@ -52,9 +56,13 @@ constexpr double kHoverWidth = 5.0;
 // it: under the open-hand pan cursor the hotspot is not visible, so a 5 px target
 // is aimed at blind. The slack is a HIT target only; nothing drawn grows. (It was
 // added for click-to-inspect and serves hover-to-inspect for the same reason —
-// what the tooltip answers to is where the cursor can be put, not what the
+// what the popup answers to is where the cursor can be put, not what the
 // renderer draws.)
 constexpr double kPointHoverSlackPixels = 4.0;
+
+// [camp#22] Gap in device pixels between a point marker and its hover label, so
+// the text does not sit on top of the symbol it describes.
+constexpr double kLabelGapPixels = 4.0;
 
 // The first vertex CAMP can place, which is what the item is positioned at.
 const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
@@ -108,15 +116,18 @@ VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry
   // out of this item's hands. QGraphicsItem accepts the left button by default,
   // so this has to be said.
   setAcceptedMouseButtons(Qt::NoButton);
-  // The popup is the ordinary Qt tooltip: QGraphicsScene::helpEvent() finds the
-  // top item under the cursor whose toolTip() is non-empty and shows it, after
-  // the usual hover delay, hiding it when the cursor leaves. No event handler of
-  // ours is involved, which is why setAcceptHoverEvents() is deliberately NOT set
-  // — hover events are not what drives a tooltip, and turning per-item hover
-  // tracking on across a layer of up to kMaxFeatureItems items would cost
-  // something for nothing. Attributes are copied once here and never change, so
-  // the text is set once; a mutable attribute would have to refresh it.
-  setToolTip(attributeText());
+  // [camp#22 / ADR-0016 D5] The popup is an IN-SCENE LABEL, shown on hover-enter
+  // and cleared on hover-leave — the mechanism GeoGraphicsItem gives Platform and
+  // AISContact, not a Qt tooltip. A tooltip waits out Qt's delay before it
+  // appears; every other CAMP item answers the cursor instantly, and in the
+  // operator GUI test of 2026-09-15 that difference was the whole of the
+  // complaint. Hover events have to be accepted for that, which a tooltip did not
+  // need: the per-item hover tracking is the price of matching the application.
+  //
+  // The label item itself is NOT created here — see labelItem(). At up to
+  // kMaxFeatureItems (50 000) features a text child per feature would be 50 000
+  // scene items created at load for the handful the operator ever hovers.
+  setAcceptHoverEvents(true);
 
   const QGeoCoordinate* anchor = firstCoordinate(geometry);
   if(!anchor)
@@ -187,7 +198,7 @@ QPainterPath VectorFeatureItem::shape() const
     // line's shape is stroked wider than its path: the target the operator aims
     // at is the one the cursor can actually be placed on, not the one the
     // renderer draws. boundingRect() grows with it. shape() is what
-    // QGraphicsScene::helpEvent() hit-tests, so this is the hover target.
+    // the scene hit-tests to dispatch hover events, so this is the hover target.
     const double click_radius = radius_ + kPointHoverSlackPixels;
     shape.addEllipse(QPointF(0.0, 0.0), click_radius, click_radius);
     return shape;
@@ -289,6 +300,65 @@ void VectorFeatureItem::setRadius(double radius)
   prepareGeometryChange();     // the radius IS the bounding rect for a point
   radius_ = radius;
   update();
+}
+
+void VectorFeatureItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
+{
+  // [camp#22 / ADR-0016 D5] Exactly what Platform::hoverEnterEvent() and
+  // AISContact::hoverEnterEvent() do (platform.cpp:170, ais_contact.cpp:272):
+  // set the label's text. setShowLabelFlag() is spelled out here because
+  // camp_map cannot depend on the camp app layer that GeoGraphicsItem lives in.
+  QGraphicsSimpleTextItem* label = labelItem();
+  label->setText(attributeText());
+  if(point_)
+  {
+    // A point ignores the view transform, so its own coordinates are already
+    // device pixels around setPos(): put the label just beside the marker, clear
+    // of the hit slack. The existing labels are placed relative to their anchor
+    // the same way (GeoGraphicsItem::setLabelPosition()).
+    label->setPos(radius_ + kPointHoverSlackPixels + kLabelGapPixels, 0.0);
+  }
+  else
+  {
+    // A line or polygon has no single anchor worth labelling — it may cross the
+    // whole view — so the label goes where the cursor is. event->pos() is in
+    // item coordinates, which is what setPos() on a child wants.
+    label->setPos(event->pos());
+  }
+  QGraphicsItem::hoverEnterEvent(event);
+}
+
+void VectorFeatureItem::hoverLeaveEvent(QGraphicsSceneHoverEvent* event)
+{
+  // Emptying the text is how GeoGraphicsItem hides its label too
+  // (setShowLabelFlag(false) -> setText("")). Because every item clears its own
+  // on leave, only one label is ever on screen.
+  if(label_)
+    label_->setText(QString());
+  QGraphicsItem::hoverLeaveEvent(event);
+}
+
+QGraphicsSimpleTextItem* VectorFeatureItem::labelItem()
+{
+  if(label_)
+    return label_;
+  label_ = new QGraphicsSimpleTextItem(this);
+  // [camp#22] Settings COPIED from GeoGraphicsItem's constructor
+  // (src/camp/geographicsitem.cpp:16-25), which is what the vessel and AIS
+  // labels use: screen-sized regardless of zoom, black text outlined in white so
+  // it stays readable over a chart. Copied rather than shared because
+  // GeoGraphicsItem is in the camp executable and this item is in camp_map,
+  // which must not depend on it.
+  label_->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+  QFont font = label_->font();
+  font.setPointSize(20);
+  font.setBold(true);
+  label_->setFont(font);
+  label_->setBrush(QBrush(QColor("black")));
+  QPen outline(QColor("white"));
+  outline.setWidth(0);
+  label_->setPen(outline);
+  return label_;
 }
 
 QString VectorFeatureItem::attributeText() const

@@ -4,8 +4,8 @@
 // with a real file:
 //
 //  1. HOVER-TO-INSPECT ON LINES. Qt picks an item by testing the point against
-//     `shape()`'s FILL AREA — for the tooltip's own hit test (helpEvent) as much
-//     as for a click. A line's path is open and encloses no area, so returning the
+//     `shape()`'s FILL AREA — for the scene's hover dispatch as much as for a
+//     click. A line's path is open and encloses no area, so returning the
 //     raw path means the cursor never lands on a line feature and the headline
 //     "point at a feature to see its attributes" silently does not work for line
 //     data (tracklines, contours, cable routes — most of what gets imported).
@@ -30,6 +30,8 @@
 #include <memory>
 
 #include <QApplication>
+#include <QGraphicsSceneHoverEvent>
+#include <QGraphicsSimpleTextItem>
 #include <QImage>
 #include <QPainter>
 
@@ -88,6 +90,31 @@ int paintedPixelCount(VectorFeatureItem& item)
       if(qAlpha(image.pixel(x, y)) > 0)
         ++painted;
   return painted;
+}
+
+// The hover label a VectorFeatureItem creates on its first hover-enter, or
+// nullptr before that. Found through childItems() rather than through a
+// test-only accessor: the label is an ordinary child item, which is exactly what
+// the vessel and AIS labels are.
+//
+// HoverProbe exists because hoverEnterEvent()/hoverLeaveEvent() are protected
+// (as Qt declares them) and a QGraphicsItem is not a QObject, so there is no
+// QApplication::sendEvent() path to them from outside. Delivering the events
+// through a scene is what VectorLayerInteraction does in
+// test_vector_layer_teardown.cpp; here the handlers themselves are the subject.
+struct HoverProbe: public camp::vector::VectorFeatureItem
+{
+  using VectorFeatureItem::VectorFeatureItem;
+  using VectorFeatureItem::hoverEnterEvent;
+  using VectorFeatureItem::hoverLeaveEvent;
+};
+
+QGraphicsSimpleTextItem* labelOf(const QGraphicsItem& item)
+{
+  for(QGraphicsItem* child : item.childItems())
+    if(auto* text = dynamic_cast<QGraphicsSimpleTextItem*>(child))
+      return text;
+  return nullptr;
 }
 
 }  // namespace
@@ -233,29 +260,55 @@ TEST(VectorFeatureItem, PolarFeatureStaysInsideTheMercatorWorld)
   EXPECT_LE(std::abs(item.pos().y() + bounds.top()), half_extent + slack);
 }
 
-// [camp#22 / ADR-0016 D5] INSPECTION IS ON HOVER, and the item answers no mouse
-// button at all.
+// [camp#22 / ADR-0016 D5] INSPECTION IS ON HOVER, and the popup is an IN-SCENE
+// LABEL that appears instantly — the vessel/AIS mechanism, not a Qt tooltip.
 //
-// Hover is CAMP's house convention for "tell me what this is" (Platform and
-// AISContact show a label on hover, GeoGraphicsMissionItem brightens on hover);
-// the operator asked for it after the 2026-09-15 GUI test, and it replaced a
-// click gated on the view's pan mode. What is pinned here is the whole mechanism:
-// the popup text is the item's ordinary Qt TOOLTIP, which QGraphicsScene's
-// helpEvent() shows on hover with no code of ours in the path, and NO mouse
-// button is accepted, so a press over a feature always falls through to the
-// view's ScrollHandDrag (camp#225: a pan gesture that starts on a feature pans).
-TEST(VectorFeatureItem, HoverPopupIsTheItemsTooltip)
+// Hover is CAMP's house convention for "tell me what this is", and the operator
+// asked for it after the 2026-09-15 GUI test. A first implementation used the
+// item's ordinary Qt tooltip; testing THAT, the operator's verdict was "similar
+// to what was existing, but not the same" — CAMP's own items answer the cursor
+// with no delay, because `Platform::hoverEnterEvent()` and
+// `AISContact::hoverEnterEvent()` set the text of a child QGraphicsSimpleTextItem
+// (`GeoGraphicsItem::setShowLabelFlag()`). This pins the replicated mechanism:
+// a hover-enter fills a child text item with the attributes, a hover-leave empties
+// it — which is also what keeps only ONE label on screen at a time.
+TEST(VectorFeatureItem, HoverShowsAnInSceneLabelWithTheAttributes)
 {
   ParsedGeometry g;
   g.type = ParsedGeometry::Point;
   g.exterior.push_back(QGeoCoordinate(43.0, -70.0));
   g.attributes["assessment"] = QStringLiteral("candidate C");
-  VectorFeatureItem item(nullptr, g);
+  HoverProbe item(nullptr, g);
 
   ASSERT_FALSE(item.attributeText().isEmpty());
-  EXPECT_EQ(item.toolTip(), item.attributeText())
-      << "the tooltip is what the hover popup shows; it must carry the attributes";
-  EXPECT_TRUE(item.toolTip().contains(QStringLiteral("assessment: candidate C")));
+  EXPECT_TRUE(item.acceptHoverEvents())
+      << "without hover events the label is never filled in";
+  EXPECT_TRUE(item.toolTip().isEmpty())
+      << "a tooltip would be a SECOND, delayed popup beside the label";
+
+  // No label item exists before the first hover: a layer may hold up to 50 000
+  // features and would otherwise carry 50 000 text items created at load.
+  EXPECT_EQ(labelOf(item), nullptr);
+
+  QGraphicsSceneHoverEvent enter(QEvent::GraphicsSceneHoverEnter);
+  enter.setPos(QPointF(0.0, 0.0));
+  item.hoverEnterEvent(&enter);
+
+  QGraphicsSimpleTextItem* label = labelOf(item);
+  ASSERT_NE(label, nullptr) << "hovering the feature created no label";
+  EXPECT_EQ(label->text(), item.attributeText());
+  EXPECT_TRUE(label->text().contains(QStringLiteral("assessment: candidate C")));
+  // The same settings GeoGraphicsItem gives the vessel and AIS labels
+  // (geographicsitem.cpp:16-25) — screen-sized, black on a white outline.
+  EXPECT_TRUE(label->flags().testFlag(QGraphicsItem::ItemIgnoresTransformations));
+  EXPECT_EQ(label->brush().color(), QColor("black"));
+  EXPECT_EQ(label->pen().color(), QColor("white"));
+  EXPECT_TRUE(label->font().bold());
+
+  QGraphicsSceneHoverEvent leave(QEvent::GraphicsSceneHoverLeave);
+  item.hoverLeaveEvent(&leave);
+  EXPECT_TRUE(labelOf(item)->text().isEmpty())
+      << "the label must clear on leave, or every hovered feature keeps one";
 }
 
 // [camp#22 / camp#225] A feature accepts NO mouse button, so every press over it
@@ -277,11 +330,12 @@ TEST(VectorFeatureItem, AcceptsNoMouseButtonSoThePressReachesTheView)
 // The drawn marker is kDefaultPointRadius = 5 device pixels, and in the operator
 // GUI test of 2026-09-15 nobody managed to land the cursor inside it: the pan
 // cursor is an open hand whose hotspot is not visible, so a 5 px target is aimed
-// at blind and inspection read as "there is no tooltip". shape() therefore
+// at blind and inspection read as "there is no popup". shape() therefore
 // carries kPointHoverSlackPixels (4 px) of slack around the marker. Nothing drawn
 // grows — this is the target, not the symbol. The slack was added for a click and
-// serves the hover tooltip unchanged: shape() is what QGraphicsScene::helpEvent()
-// hit-tests too.
+// serves hover unchanged: shape() is what the scene hit-tests to dispatch hover
+// events too. (ADR-0016 D16 attacks the same problem from the other end — the pan
+// cursor is an arrow now — and the slack stays, because aim is never exact.)
 TEST(VectorFeatureItem, PointHoverTargetIsWiderThanTheDrawnMarker)
 {
   VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));

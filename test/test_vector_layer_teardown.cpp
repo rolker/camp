@@ -16,7 +16,7 @@
 // that need a real, loaded layer rather than a hand-built item: which fields the
 // styling menus may offer (`VectorLayerStyleFields`), and a click delivered
 // through a real QGraphicsView onto a real feature (`VectorLayerInteraction`):
-// the hover tooltip, and a press falling through to the view's pan gesture.
+// the hover label, and a press falling through to the view's pan gesture.
 // Both come from the operator GUI test of 2026-09-15.
 
 #include <gtest/gtest.h>
@@ -31,10 +31,9 @@
 #include <QFile>
 #include <QGraphicsView>
 #include <QGraphicsScene>
-#include <QHelpEvent>
+#include <QGraphicsSimpleTextItem>
 #include <QMouseEvent>
 #include <QTemporaryDir>
-#include <QToolTip>
 
 #include "map/layer_list.h"
 #include "map/map.h"
@@ -676,8 +675,9 @@ TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
 }
 
 // [camp#22 / ADR-0016 D5] A HOVER delivered THROUGH A REAL VIEW onto a real
-// loaded feature shows that feature's attributes — and a PRESS over the same
-// feature is not taken by any item, so the view's pan gesture survives.
+// loaded feature shows that feature's attributes as an IN-SCENE LABEL — and a
+// PRESS over the same feature is not taken by any item, so the view's pan
+// gesture survives.
 //
 // Every other interaction test in this repo talks to the item directly, which
 // skips everything between the operator's mouse and it: the viewport widget, the
@@ -686,18 +686,17 @@ TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
 // reported never seeing a popup with all of that in the path, so the regression
 // test has to have it in the path too.
 //
-// The hover popup is the item's ordinary Qt tooltip: Qt delivers a
-// QEvent::ToolTip to the viewport when the cursor rests, QGraphicsView turns it
-// into a QGraphicsSceneHelpEvent, and QGraphicsScene::helpEvent() finds the top
-// item under the cursor with a non-empty toolTip() and shows it. Synthesizing the
-// QHelpEvent is therefore exactly what Qt itself does after the hover delay —
-// note that helpEvent() hit-tests from the event's GLOBAL position (it maps it
-// back through the viewport), which is why the global position has to be the real
-// mapToGlobal() of the viewport point.
+// What is synthesized here is an ordinary mouse MOVE with no buttons held, which
+// is what the operator's hand produces: QGraphicsView turns it into a scene mouse
+// move, and QGraphicsScene dispatches hover enter/leave from that to the item
+// under the cursor (there is no mouse grabber, so nothing intercepts it).
+// QGraphicsView enables mouse tracking on its viewport itself, so a move arrives
+// with no button pressed. This is deliberately NOT a QHelpEvent any more: the
+// popup is no longer a tooltip, and the operator's complaint about the tooltip
+// version was precisely that it waited.
 //
-// The off-centre case is the point of the test: 7 px is outside the 5 px drawn
-// marker and inside the 9 px hit target, the slack added because the pan cursor
-// is an open hand whose hotspot the operator cannot see.
+// The off-centre case is the point of the test: 3 px of aim is what an operator
+// actually has, and the cursor must not have to be dead centre on a 5 px marker.
 TEST(VectorLayerInteraction, HoverThroughARealViewShowsTheAttributes)
 {
   QTemporaryDir dir;
@@ -734,45 +733,41 @@ TEST(VectorLayerInteraction, HoverThroughARealViewShowsTheAttributes)
   QCoreApplication::processEvents();
   const QPoint centre = view.mapFromScene(target->scenePos());
 
-  auto hoverAt = [&view](const QPoint& viewport_pos)
+  // The label is an ordinary child text item, created on the first hover.
+  auto labelText = [target]() -> QString
   {
-    const QPoint global = view.viewport()->mapToGlobal(viewport_pos);
-    QHelpEvent tool_tip(QEvent::ToolTip, viewport_pos, global);
-    QApplication::sendEvent(view.viewport(), &tool_tip);
+    for(QGraphicsItem* child : target->childItems())
+      if(auto* text = dynamic_cast<QGraphicsSimpleTextItem*>(child))
+        return text->text();
+    return QString();
+  };
+
+  auto moveTo = [&view](const QPoint& viewport_pos)
+  {
+    const QPointF global = view.viewport()->mapToGlobal(viewport_pos);
+    QMouseEvent move(QEvent::MouseMove, QPointF(viewport_pos), global,
+                     Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &move);
     QCoreApplication::processEvents();
   };
 
   // Dead centre.
-  QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  hoverAt(centre);
-  EXPECT_EQ(QToolTip::text(), target->attributeText())
+  moveTo(centre);
+  EXPECT_EQ(labelText(), target->attributeText())
       << "hovering the marker, through a real view, showed no attributes";
 
   // 3 px off-centre: well inside the target, and the kind of aim the operator
-  // actually has under a hand cursor.
-  QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  hoverAt(centre + QPoint(3, 2));
-  EXPECT_EQ(QToolTip::text(), target->attributeText())
+  // actually has.
+  moveTo(centre + QPoint(3, 2));
+  EXPECT_EQ(labelText(), target->attributeText())
       << "hovering 3 px off centre missed the feature";
 
-  // 7 px off-centre: OUTSIDE the drawn 5 px marker, inside the hit slack. This is
-  // what the slack is for, and what fails without it.
-  QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  hoverAt(centre + QPoint(7, 0));
-  EXPECT_EQ(QToolTip::text(), target->attributeText())
-      << "hovering just outside the marker missed the feature: the slack is gone";
-
-  // The slack is BOUNDED: hovering well away from any feature does not answer
-  // with THIS feature's attributes. Asserted as "not the feature's text" rather
-  // than against the planted sentinel, because helpEvent() with no tooltip item
-  // under the cursor calls QToolTip::showText() with an EMPTY string — a hide —
-  // and QToolTip::hideText() does not clear QToolTip::text() on the offscreen
-  // platform, so both "the sentinel survived" and "the text was cleared" are
-  // correct outcomes here and only one of them is a sentinel comparison.
-  QToolTip::showText(QPoint(0, 0), QStringLiteral("sentinel: no popup was shown"));
-  hoverAt(centre + QPoint(60, 40));
-  EXPECT_NE(QToolTip::text(), target->attributeText())
-      << "hovering nowhere near a feature answered with that feature's attributes";
+  // Moving clear of every feature clears the label — this is what keeps exactly
+  // one label on screen, and what a missing hoverLeaveEvent() would break by
+  // leaving a trail of attribute text behind the cursor.
+  moveTo(centre + QPoint(60, 40));
+  EXPECT_TRUE(labelText().isEmpty())
+      << "the label survived the cursor leaving the feature";
 
   delete layer;
 }
@@ -820,8 +815,8 @@ TEST(VectorLayerInteraction, APressOverAFeatureFallsThroughToTheView)
   QCoreApplication::processEvents();
   const QPoint centre = view.mapFromScene(target->scenePos());
 
-  // Sanity: the press really is over the feature — the same hit test the tooltip
-  // uses picks it. Without this the assertion below would pass on a miss.
+  // Sanity: the press really is over the feature — the same hit test the hover
+  // dispatch uses picks it. Without this the assertion below would pass on a miss.
   // (`items()`, not `itemAt()`: the topmost item at that point may be the layer
   // itself or a neighbouring feature; what matters is that this feature is under
   // the cursor and still does not take the press.)
