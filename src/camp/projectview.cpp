@@ -268,9 +268,15 @@ void ProjectView::mouseReleaseEvent(QMouseEvent *event)
     }
     QGraphicsView::mouseReleaseEvent(event);
     // [camp#22] Qt restores ScrollHandDrag's OPEN HAND on the viewport here, at
-    // the end of every drag, so the arrow set in setPanMode() has to be put back
-    // once the release has been handled. See setPanMode() for why the arrow.
-    if(dragMode() == ScrollHandDrag)
+    // the end of a LEFT-button drag — the only button ScrollHandDrag pans with —
+    // so the arrow set in setPanMode() has to be put back once that release has
+    // been handled. See setPanMode() for why the arrow.
+    //
+    // Scoped to the left button deliberately: a middle-button release is the
+    // measuring tool's, and a right-button release opens the context menu.
+    // Neither is a pan, neither disturbs the cursor, and a blanket reset here
+    // would silently overwrite a cursor some future gesture had set for itself.
+    if(event->button() == Qt::LeftButton && dragMode() == ScrollHandDrag)
         viewport()->setCursor(Qt::ArrowCursor);
 }
 
