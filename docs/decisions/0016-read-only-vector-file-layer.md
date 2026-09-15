@@ -376,10 +376,15 @@ had to be answered rather than assumed.
 16. **In pan mode the cursor is an ARROW, CAMP-wide**, not `ScrollHandDrag`'s
     open hand. `ProjectView::setPanMode()` sets `Qt::ArrowCursor` on the
     **viewport** after `setDragMode(ScrollHandDrag)`, and `mouseReleaseEvent()`
-    sets it again after `QGraphicsView::mouseReleaseEvent()` returns, because Qt
-    installs the open hand at both of those points. The closed hand during an
-    actual drag is left alone — there it is feedback about what is happening, not
-    something being aimed. The add-\* modes keep their `Qt::CrossCursor`.
+    sets it again after `QGraphicsView::mouseReleaseEvent()` returns from a
+    **left-button** release — the only button `ScrollHandDrag` pans with — because
+    Qt installs the open hand at both of those points. The reset is scoped to the
+    left button deliberately: a middle-button release is the measuring tool's and
+    a right-button release opens the context menu, neither a pan, so a blanket
+    reset would clobber a cursor either of those set for itself. The closed hand
+    during an actual drag is left alone — there it is feedback about what is
+    happening, not something being aimed. The add-\* modes keep their
+    `Qt::CrossCursor`.
 
     This is an **operator decision** taken with D5's label in front of him
     (2026-09-15), and it is deliberately not scoped to this layer: the open hand's
