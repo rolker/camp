@@ -163,9 +163,17 @@ private:
   QGraphicsSimpleTextItem* labelItem();
 
   /// Place an existing POINT label beside its marker, at the current radius.
-  /// No-op for a line or polygon (their label follows the cursor) and before the
-  /// first hover (no label exists yet). Called on hover-enter and from
-  /// `setRadius()`, so a restyle under a parked cursor leaves no stale gap.
+  /// No-op for a line or polygon and before the first hover (no label exists
+  /// yet). Called on hover-enter and from `setRadius()`, so a restyle under a
+  /// parked cursor leaves no stale gap.
+  ///
+  /// [camp#22] A line's or polygon's label is placed by `hoverEnterEvent()` at
+  /// the point where the cursor ENTERED the feature, and stays there for the rest
+  /// of the hover — it does not track the cursor along the feature, which would
+  /// need a `hoverMoveEvent()` this item deliberately does not implement. Whether
+  /// it should is an operator UX question (hover-to-inspect itself is settled;
+  /// this detail was never put to the operator), not a change to make from a
+  /// review comment.
   void updateLabelPosition();
 
   /// Rebuild `shape_` from the current geometry and radius. Called from the

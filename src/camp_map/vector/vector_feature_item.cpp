@@ -347,8 +347,11 @@ void VectorFeatureItem::hoverEnterEvent(QGraphicsSceneHoverEvent* event)
   else
   {
     // A line or polygon has no single anchor worth labelling — it may cross the
-    // whole view — so the label goes where the cursor is. event->pos() is in
-    // item coordinates, which is what setPos() on a child wants.
+    // whole view — so the label goes where the cursor ENTERED the feature and
+    // stays there for the hover; there is no hoverMoveEvent() and the label does
+    // not track the cursor along the feature (see updateLabelPosition()).
+    // event->pos() is in item coordinates, which is what setPos() on a child
+    // wants.
     label->setPos(event->pos());
   }
   // [camp#22] Raise the whole ITEM, not just the label. Feature items are

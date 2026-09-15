@@ -113,6 +113,14 @@ had to be answered rather than assumed.
    **first hover**, not at load: a layer may hold `kMaxFeatureItems` (50 000)
    features and the operator hovers a handful.
 
+   **Where the label sits.** A point's label is placed beside its marker, at the
+   current marker radius. A line's or polygon's has no anchor worth sitting
+   beside — either may cross the whole view — so it is placed at the point where
+   the cursor **entered** the feature, by `hoverEnterEvent()`, and stays there
+   for the rest of the hover: there is no `hoverMoveEvent()` and the label does
+   not track the cursor along the feature. Whether it should is an open operator
+   question, not a settled decision.
+
    **The hovered feature is also raised above its siblings, not just its
    label.** Feature items are siblings created in file order with no `zValue()`
    of their own, and Qt stacks a child with its parent's subtree, so a label

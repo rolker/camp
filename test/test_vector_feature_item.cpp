@@ -358,15 +358,16 @@ TEST(VectorFeatureItem, HoverShowsAnInSceneLabelWithTheAttributes)
       << "a hovered-once feature stays raised above every other feature";
 }
 
-// [camp#22 / ADR-0016 D5] A LINE or POLYGON labels AT THE CURSOR.
+// [camp#22 / ADR-0016 D5] A LINE or POLYGON labels WHERE THE CURSOR ENTERED IT.
 //
 // The other branch of hoverEnterEvent(): a line may cross the whole view and a
 // polygon may fill it, so neither has an anchor worth labelling beside — the text
 // goes where the operator is pointing. Untested until now: the point branch is
 // the one HoverShowsAnInSceneLabelWithTheAttributes exercises, and a line that
 // labelled itself at its first vertex could be metres or kilometres off screen
-// from the cursor with nothing failing.
-TEST(VectorFeatureItem, HoverOnALineOrPolygonLabelsAtTheCursor)
+// from the cursor with nothing failing. The label is placed once, on hover-enter,
+// and stays there for the hover — there is no hoverMoveEvent().
+TEST(VectorFeatureItem, HoverOnALineOrPolygonLabelsWhereTheCursorEntered)
 {
   const QGeoCoordinate a(43.00, -70.80);
   ParsedGeometry line = lineThrough({a, QGeoCoordinate(43.00, -70.60)});
@@ -386,7 +387,7 @@ TEST(VectorFeatureItem, HoverOnALineOrPolygonLabelsAtTheCursor)
   ASSERT_NE(label, nullptr) << "hovering the line created no label";
   EXPECT_TRUE(label->text().contains(QStringLiteral("survey: line 7")));
   EXPECT_EQ(label->pos(), cursor)
-      << "a line's label must follow the cursor, not sit at the item's origin";
+      << "a line's label must be placed where the cursor ENTERED, not at the item's origin";
 
   // A second hover elsewhere on the same line moves it.
   const QPointF elsewhere(120.0, 2.0);
