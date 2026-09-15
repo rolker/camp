@@ -23,6 +23,7 @@
 #include <vector>
 
 #include <QApplication>
+#include <QDir>
 #include <QFile>
 #include <QSettings>
 #include <QTemporaryDir>
