@@ -6,6 +6,32 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 10** (2026-09-15) — the first OPERATOR GUI TEST of the branch, on 7 real
+magnetic-anomaly candidates
+(`massabesic_joint_candidates.geojson`). Two of the three "must have"
+behaviours did not work in the operator's hands, and neither was visible to any
+test written so far because every click test bypassed the view and no test looked
+at what a marker actually paints:
+
+- **Colouring by a free-text field made the features disappear.** No feature has
+  a number for `assessment`, so the range was invalid, every feature was flagged
+  no-data, and the hollow no-data marker was stroked with a width-0 hairline —
+  one dashed device pixel of mid grey, no fill behind it, over a chart. The
+  styling menus now offer `VectorLayer::numericFields()` only, the hollow marker
+  is stroked at width 2 like every other outline, and an invalid colour range
+  falls back to UNSTYLED rather than marking the whole layer no-data (ADR-0016
+  D6, D14). **Categorical styling is explicitly a follow-on**, not an MVP gap
+  being papered over: a colour per class with a legend is a different mapping,
+  not a degenerate ramp.
+- **The point click target was the drawn 5 px marker**, aimed at under an
+  open-hand pan cursor whose hotspot is not visible, so no tooltip was ever
+  obtained. `shape()` now carries 4 px of slack (ADR-0016 D15), as a line's
+  shape already carries `kClickWidth`.
+- **The regression test goes through a real `QGraphicsView`** — y-flipped,
+  ScrollHandDrag, synthesized `QMouseEvent` on the viewport — because everything
+  between the mouse and the item is precisely what the existing tests skipped.
+  All three new tests were run against the pre-fix behaviour and fail there.
+
 **Rev 9** (2026-09-15) — the round-4 pre-push review's must-fix. Rev 8's
 vertex-level poll TRUNCATES a ring, and the only thing keeping a truncated ring
 off the screen is `ParseDiagnostics::aborted`; the per-feature cap check ran

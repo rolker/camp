@@ -134,6 +134,14 @@ had to be answered rather than assumed.
    alike. The predicate is `camp::vector::isNoData()`, so the colour and the
    outline cannot drift apart.
 
+   The hollow point marker is stroked at **width 2**, the same weight a line or a
+   polygon outline is drawn at — not the width-0 hairline the *filled* marker gets
+   for contrast. The filled marker has a disc of colour behind that hairline and
+   the hollow one has nothing, so one dashed device pixel of mid grey over a chart
+   background is not visible at all: in the operator GUI test of 2026-09-15 a
+   layer of no-data points read as the features having **disappeared**. A second
+   channel that cannot be seen is not a second channel.
+
 7. **Persistence is APP STATE, and its schema is one key.** The layer list is
    `QSettings` `vectorLayers/files` — a `QStringList` of canonical file paths, in
    layer order, de-duplicated — the same shape as `backgrounds/files` for charts
@@ -261,6 +269,47 @@ had to be answered rather than assumed.
     truncation the tile schemes make. Clamping rather than dropping is deliberate:
     a polar survey line is real data this program should be able to show.
 
+14. **Colour and size ramps are NUMERIC-ONLY in this MVP, and the styling menus
+    offer only the fields a ramp can read.** `VectorLayer::numericFields()` — the
+    subset of `fields()` for which at least one feature holds a finite numeric
+    value, asked through the same `numericAttribute()` the ramp itself reads
+    values through — is what the *Color by* and *Size by* menus list.
+
+    Offering every field made a free-text field selectable, and a ramp cannot read
+    one: the field range came back invalid, *every* feature was marked no-data,
+    and the whole layer went hollow grey. That is what the operator met on
+    2026-09-15 colouring 7 magnetic-anomaly candidates by a free-text
+    `assessment` field, and it is not a presentation defect — it is the ramp being
+    asked a question it has no answer to. **Categorical styling is a different
+    mapping** (a distinct colour per class, a legend, a stable class order), not a
+    degenerate case of a continuous ramp, and it is a follow-on rather than
+    something to approximate here.
+
+    `fields()` is deliberately unchanged and still reports every field: the
+    click-to-inspect popup shows them all, and label-by-field — the other
+    follow-on — will want them all too.
+
+    A **persisted** `color_field_` can still name a field no feature has a number
+    for, since the style group is keyed on the file path and restored whenever
+    that path is reopened while the file on disk may have changed. `applyStyle()`
+    treats an invalid colour range as **no colour field at all** for that pass —
+    default colour, nothing flagged — rather than marking the entire layer
+    no-data: no-data means "this feature lacks a value its neighbours have", and
+    with no range there is nothing for anything to be missing from. (Size-by-field
+    already behaved this way: `radiusForValue()` returns the default radius on an
+    invalid range.)
+
+15. **A point's CLICK target is wider than its drawn marker**, by
+    `kPointClickSlackPixels` (4 device pixels) in `shape()`, with `boundingRect()`
+    grown to match because a shape outside the bounding rect is undefined in Qt.
+    The drawn marker is 5 pixels at the default size, and click-to-inspect is
+    gated on pan mode — where the cursor is an **open hand whose hotspot the
+    operator cannot see**. In the 2026-09-15 GUI test nobody landed a click inside
+    5 pixels, and the headline feature read as not working. This is the same trade
+    a line already makes (its shape is stroked to `kClickWidth`, wider than the
+    drawn stroke): the target is what the cursor can be placed on, not what the
+    renderer draws. Nothing about the symbol grows.
+
 ## Consequences
 
 - **CAMP now has two vector-file entry points with similar names**, and picking
@@ -288,6 +337,11 @@ had to be answered rather than assumed.
   style — which is the friendlier behaviour for a file the operator opens
   repeatedly, at the cost of an orphan group for one they never open again. The
   split precedent is recorded, not resolved.
+- **A field CAMP cannot ramp is invisible in the styling menus** (D14), so an
+  operator whose file carries only text attributes gets no *Color by* menu at all
+  rather than one that does nothing useful. The Layers-tab popup still shows every
+  attribute, which is where those fields are readable today. Categorical styling
+  and label-by-field are the follow-ons that give them a rendering role.
 - **A pan that starts on a feature does not pan the map** (camp#225). The item
   accepts the left press in pan mode, which is what lets the release tell a
   click from a drag, and that press therefore never reaches `QGraphicsView`'s
