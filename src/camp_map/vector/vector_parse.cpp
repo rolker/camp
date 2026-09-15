@@ -103,10 +103,15 @@ struct ParseBudget
 // inside a frame on any machine that can run CAMP, and far below the part counts
 // the coarser polls already bound.
 //
-// A truncated ring is SAFE, not a wrong shape on screen: the abort that truncated
-// it is still set at the next feature-boundary check, which sets
-// ParseDiagnostics::aborted, and VectorLayer::loadFinished() discards the whole
-// parse result on that flag. Nothing partial is ever drawn.
+// A truncated ring is SAFE, not a wrong shape on screen — but only because the
+// feature-boundary check below tests the abort predicate BEFORE the geometry cap
+// (see the round-4 comment at that site). The abort that truncated the ring is
+// still raised at that check, which sets ParseDiagnostics::aborted, and
+// VectorLayer::loadFinished() discards the whole parse result on that flag. Had
+// the cap been tested first, a feature that both crossed the cap and carried a
+// truncated ring would have returned cap-reached with aborted unset, and the
+// partial shape would have been drawn. Nothing partial is drawn as long as that
+// ordering holds.
 constexpr int kVertexPollInterval = 1024;
 
 std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
@@ -395,6 +400,33 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                            unprojectTransformation.get(), parsed.geometries, diag, budget);
             OGRFeature::DestroyFeature(feature);
             emitted += parsed.geometries.size() - before;
+            // [camp#22 round-4 must-fix] ABORT IS CHECKED BEFORE THE CAP, and the
+            // order is load-bearing.
+            //
+            // The in-loop polls inside readRing() and appendGeometry() TRUNCATE
+            // what they are building when the abort flag rises; the only thing
+            // that keeps a truncated ring off the screen is ParseDiagnostics::
+            // aborted, which VectorLayer::loadFinished() discards the whole result
+            // on. When the cap was tested first, a feature that both crossed
+            // max_geometries and carried a ring truncated by the vertex poll
+            // returned with geometry_cap_reached set and aborted UNSET — a partial
+            // shape presented as a complete one. Testing the abort first means a
+            // truncated parse is always reported as aborted.
+            //
+            // A parse that hits both therefore reports aborted, not cap-reached,
+            // and is NOT trimmed to exactly max_geometries: an aborted result is
+            // partial by construction and its caller throws it away. The
+            // "exactly max_geometries" contract is about the cap-reached return
+            // below, which is the one a caller consumes.
+            if(aborted())
+            {
+                // Return what was parsed so far. The caller knows it is partial
+                // (diagnostics.aborted) and, in the case this exists for, is about
+                // to throw it away anyway.
+                diag.aborted = true;
+                result.push_back(std::move(parsed));
+                return result;
+            }
             // [camp#22] The cap is checked HERE, per feature, so the rest of the
             // file is never read: the caller's cap on the items it builds bounds
             // the GUI thread, but the memory the parse itself takes is only
@@ -412,15 +444,6 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 if(excess > 0)
                     parsed.geometries.resize(parsed.geometries.size() - excess);
                 diag.geometry_cap_reached = true;
-                result.push_back(std::move(parsed));
-                return result;
-            }
-            if(aborted())
-            {
-                // Return what was parsed so far. The caller knows it is partial
-                // (diagnostics.aborted) and, in the case this exists for, is about
-                // to throw it away anyway.
-                diag.aborted = true;
                 result.push_back(std::move(parsed));
                 return result;
             }

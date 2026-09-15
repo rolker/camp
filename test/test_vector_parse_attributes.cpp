@@ -347,6 +347,46 @@ QString writeGeometryCollectionPackage(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-4] A GeoPackage holding ONE feature whose single LineString has
+// enough vertices to reach readRing()'s in-loop abort poll (kVertexPollInterval is
+// 1024). It is the fixture for the interaction between the vertex-level
+// truncation and the per-feature geometry cap: the feature both crosses a cap of
+// one AND carries a ring the abort cut short, which is the case where the two
+// feature-boundary returns disagree about what the result is.
+constexpr int kTruncatableRingVertices = 4000;
+
+QString writeTruncatableRingPackage(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+  const QString path = dir.filePath("long_ring.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  srs.SetWellKnownGeogCS("WGS84");
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+  OGRLayer* layer = ds->CreateLayer("long_ring", &srs, wkbUnknown, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+
+  OGRFeature* f = OGRFeature::CreateFeature(layer->GetLayerDefn());
+  OGRLineString ls;
+  for(int i = 0; i < kTruncatableRingVertices; ++i)
+    ls.addPoint(-70.80 + i * 1e-5, 43.00 + i * 1e-5);
+  f->SetGeometry(&ls);
+  layer->CreateFeature(f);
+  OGRFeature::DestroyFeature(f);
+  GDALClose(ds);
+  return path;
+}
+
 const ParsedGeometry* firstNamed(const ParsedLayer& layer, const QString& name)
 {
   for(const auto& g : layer.geometries)
@@ -824,6 +864,68 @@ TEST(VectorParseAttributes, CapAndAbortStopInsideAMultiPartFeature)
     emitted += layer.geometries.size();
   EXPECT_LT(emitted, 4u) << "the abort must stop the feature part way, not after it";
   EXPECT_GT(polls, 2) << "the predicate must be polled inside the feature's parts";
+}
+
+// [camp#22 round-4 must-fix] A parse that is BOTH aborted mid-ring and at its
+// geometry cap must report `aborted`.
+//
+// The vertex-level abort poll inside readRing() TRUNCATES the ring it is
+// building. The only thing that keeps a truncated ring off the screen is
+// ParseDiagnostics::aborted, which VectorLayer::loadFinished() discards the whole
+// result on. The per-feature cap check used to run FIRST and return from its own
+// branch, so a feature that crossed `max_geometries` and carried a ring the abort
+// had just cut short came back with `geometry_cap_reached` set and `aborted`
+// UNSET — a partial shape presented to the caller as a complete one, outside the
+// discard net.
+//
+// The fixture is one feature of one LineString with 4000 vertices, so the ONLY
+// place the abort can be honoured is the in-loop vertex poll, and emitting that
+// one geometry is exactly what reaches a cap of one: the two returns are forced
+// to disagree. Asserting the ring came back truncated (neither empty nor whole)
+// is what proves the abort fired mid-ring rather than at one of the coarser poll
+// sites before it.
+TEST(VectorParseAttributes, AbortMidRingAtTheCapIsStillReportedAsAborted)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeTruncatableRingPackage(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  // Baseline: the whole ring, uncapped and unaborted.
+  DatasetPtr full_ds = openDataset(path);
+  ASSERT_TRUE(full_ds);
+  const std::vector<ParsedLayer> full =
+    camp::vector::parseVectorLayers(full_ds.get(), camp::vector::ParseOptions(), nullptr);
+  ASSERT_EQ(full.size(), 1u);
+  ASSERT_EQ(full.front().geometries.size(), 1u);
+  ASSERT_EQ(full.front().geometries.front().exterior.size(),
+            static_cast<size_t>(kTruncatableRingVertices));
+
+  // Poll sites reached before the first in-loop vertex poll, in order: the
+  // per-layer check, appendGeometry()'s budget check, readRing()'s per-ring
+  // check. Firing on the fourth call therefore fires INSIDE the vertex loop.
+  DatasetPtr ds = openDataset(path);
+  ASSERT_TRUE(ds);
+  int polls = 0;
+  camp::vector::ParseOptions options;
+  options.max_geometries = 1;
+  options.aborted = [&polls]() { return ++polls > 3; };
+  camp::vector::ParseDiagnostics diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(ds.get(), options, &diag);
+
+  ASSERT_EQ(layers.size(), 1u);
+  ASSERT_EQ(layers.front().geometries.size(), 1u);
+  const size_t vertices = layers.front().geometries.front().exterior.size();
+  EXPECT_GT(vertices, 0u) << "the abort fired before the vertex loop, not inside it";
+  EXPECT_LT(vertices, static_cast<size_t>(kTruncatableRingVertices))
+      << "the ring was not truncated, so this fixture does not exercise the interaction";
+
+  // The assertion this test exists for: the truncated result is reported as
+  // aborted, so loadFinished() discards it. Reaching the cap in the same feature
+  // must not mask that.
+  EXPECT_TRUE(diag.aborted)
+      << "a parse truncated mid-ring must report aborted even when it also hit the cap";
 }
 
 // [camp#22] A polygon with no exterior ring has no outline to draw, so it is

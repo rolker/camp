@@ -103,6 +103,12 @@ struct ParseDiagnostics
     // many more the file holds is deliberately NOT reported, because reading that
     // far is the cost the cap exists to avoid (and an OGR feature count is not a
     // geometry count — one multi-part feature emits several).
+    //
+    // [camp#22] A parse that hits BOTH the cap and the abort reports `aborted`,
+    // not this: an abort can truncate a ring mid-way, and `aborted` is the flag
+    // on which a caller discards a partial result, so it must never be masked by
+    // the cap. Such a result is also not trimmed to exactly `max_geometries` —
+    // it is partial by construction.
     bool geometry_cap_reached = false;
     // Layers seen, and layers SKIPPED ENTIRELY because the layer declares a
     // spatial reference but no transformation to WGS84 could be built for it.
