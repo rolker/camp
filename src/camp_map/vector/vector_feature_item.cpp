@@ -130,37 +130,39 @@ VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry
   setAcceptHoverEvents(true);
 
   const QGeoCoordinate* anchor = firstCoordinate(geometry);
-  if(!anchor)
-    return;
-  // [ADR-0002] Transform to Web-Mercator scene metres ONCE, here, at load —
-  // never per paint. The parent layer is untransformed at the scene origin, so
-  // parent-local coordinates are scene coordinates.
-  // placeableToMap, not geoToMap: the anchor is a vertex like any other, and a
-  // polar one must be clamped here too or the item's POSITION is what blows the
-  // extent out, with the path's own numbers staying small and innocent.
-  const QPointF origin = placeableToMap(*anchor);
-  setPos(origin);
-
-  if(point_)
+  if(anchor)
   {
-    // Screen-sized marker: constant pixels across zoom, like the mission items'
-    // symbols. The item's own coordinates become device pixels around setPos().
-    setFlag(QGraphicsItem::ItemIgnoresTransformations);
-    return;
-  }
+    // [ADR-0002] Transform to Web-Mercator scene metres ONCE, here, at load —
+    // never per paint. The parent layer is untransformed at the scene origin, so
+    // parent-local coordinates are scene coordinates.
+    // placeableToMap, not geoToMap: the anchor is a vertex like any other, and a
+    // polar one must be clamped here too or the item's POSITION is what blows the
+    // extent out, with the path's own numbers staying small and innocent.
+    const QPointF origin = placeableToMap(*anchor);
+    setPos(origin);
 
-  addRing(path_, geometry.exterior, origin);
-  if(polygon_)
-  {
-    path_.closeSubpath();
-    for(const auto& ring : geometry.interiorRings)
+    if(point_)
+      // Screen-sized marker: constant pixels across zoom, like the mission items'
+      // symbols. The item's own coordinates become device pixels around setPos().
+      setFlag(QGraphicsItem::ItemIgnoresTransformations);
+    else
     {
-      addRing(path_, ring, origin);
-      path_.closeSubpath();
+      addRing(path_, geometry.exterior, origin);
+      if(polygon_)
+      {
+        path_.closeSubpath();
+        for(const auto& ring : geometry.interiorRings)
+        {
+          addRing(path_, ring, origin);
+          path_.closeSubpath();
+        }
+        // Odd-even so an interior ring paints as a HOLE rather than as more fill.
+        path_.setFillRule(Qt::OddEvenFill);
+      }
     }
-    // Odd-even so an interior ring paints as a HOLE rather than as more fill.
-    path_.setFillRule(Qt::OddEvenFill);
   }
+  // The hit shape is built ONCE here, not on demand — see rebuildShape().
+  rebuildShape();
 }
 
 QRectF VectorFeatureItem::boundingRect() const
@@ -191,7 +193,18 @@ QRectF VectorFeatureItem::boundingRect() const
 
 QPainterPath VectorFeatureItem::shape() const
 {
-  QPainterPath shape;
+  // [camp#22] The CACHED shape — never built here. shape() is called by the
+  // scene's hit test, and with inspection on hover that is per MOUSE-MOVE for
+  // every item whose bounding rect is under the cursor; a long polyline's
+  // bounding rect covers most of the map, so a whole-path re-stroke on each call
+  // would be paid continuously while the operator simply moves the mouse. The
+  // click version paid it once per click, which is why it went unnoticed.
+  return shape_;
+}
+
+void VectorFeatureItem::rebuildShape()
+{
+  shape_ = QPainterPath();
   if(point_)
   {
     // [camp#22] The marker PLUS kPointHoverSlackPixels, for the same reason a
@@ -200,13 +213,16 @@ QPainterPath VectorFeatureItem::shape() const
     // renderer draws. boundingRect() grows with it. shape() is what
     // the scene hit-tests to dispatch hover events, so this is the hover target.
     const double click_radius = radius_ + kPointHoverSlackPixels;
-    shape.addEllipse(QPointF(0.0, 0.0), click_radius, click_radius);
-    return shape;
+    shape_.addEllipse(QPointF(0.0, 0.0), click_radius, click_radius);
+    return;
   }
   if(path_.isEmpty())
-    return shape;
+    return;
   if(polygon_)
-    return path_;   // a closed, filled path: Qt's fill-area hit test works on it
+  {
+    shape_ = path_;   // a closed, filled path: Qt's fill-area hit test works on it
+    return;
+  }
   // [camp#22] A LINE has no fill area, so returning the raw open path means Qt's
   // hit test never picks it and hover-to-inspect is unusable on every line
   // feature. Stroke it into a thin ribbon, as the mission-tree LineString does
@@ -216,7 +232,7 @@ QPainterPath VectorFeatureItem::shape() const
   // target when zoomed far out, which is the same trade the mission item makes.
   QPainterPathStroker stroker;
   stroker.setWidth(kHoverWidth);
-  return stroker.createStroke(path_);
+  shape_ = stroker.createStroke(path_);
 }
 
 void VectorFeatureItem::paint(QPainter* painter, const QStyleOptionGraphicsItem*, QWidget*)
@@ -299,6 +315,10 @@ void VectorFeatureItem::setRadius(double radius)
     return;
   prepareGeometryChange();     // the radius IS the bounding rect for a point
   radius_ = radius;
+  // The radius is also the hit shape, which is cached: every
+  // prepareGeometryChange() site has to refresh it or a restyled marker keeps the
+  // old hover target until something else rebuilds it.
+  rebuildShape();
   update();
 }
 

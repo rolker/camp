@@ -154,6 +154,12 @@ private:
   /// and outline pen as `GeoGraphicsItem`'s label.
   QGraphicsSimpleTextItem* labelItem();
 
+  /// Rebuild `shape_` from the current geometry and radius. Called from the
+  /// constructor and from every `prepareGeometryChange()` site — never from
+  /// `shape()`, which the scene calls on every mouse-move now that inspection is
+  /// on hover.
+  void rebuildShape();
+
   bool point_ = false;
   bool polygon_ = false;
   bool no_data_ = false;
@@ -161,6 +167,10 @@ private:
   // the geometry's first vertex, so the path's numbers stay small instead of
   // being millions of Web-Mercator metres).
   QPainterPath path_;
+  /// The CACHED hit shape `shape()` returns — the stroked ribbon for a line, the
+  /// slack-grown ellipse for a point. Built once per geometry/radius change
+  /// rather than per `shape()` call: see rebuildShape().
+  QPainterPath shape_;
   QColor color_;
   double radius_ = 0.0;
   QMap<QString, QVariant> attributes_;

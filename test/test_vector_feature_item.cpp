@@ -358,6 +358,38 @@ TEST(VectorFeatureItem, PointHoverTargetIsWiderThanTheDrawnMarker)
   EXPECT_TRUE(item.boundingRect().contains(shape.boundingRect()));
 }
 
+// [camp#22] The hit shape is CACHED, and the cache tracks the radius.
+//
+// shape() is called by the scene's hit test on every mouse-move for every item
+// whose bounding rect is under the cursor — a long polyline's bounding rect
+// covers most of the map — so it must not re-stroke the path each time; the
+// stroke is built once, in the constructor and at every prepareGeometryChange()
+// site. That the RESULT is a stable object is what a test can see (Qt gives no
+// stroker call count), and the failure mode caching introduces is a STALE shape:
+// a size-by-field restyle must move the hover target with the marker.
+TEST(VectorFeatureItem, HitShapeIsCachedAndFollowsTheRadius)
+{
+  VectorFeatureItem item(nullptr, pointAt(QGeoCoordinate(43.07, -70.71)));
+  EXPECT_EQ(item.shape(), item.shape()) << "two calls answered differently";
+
+  // Grown by a size-by-field pass: the target must grow with the marker.
+  item.setRadius(20.0);
+  EXPECT_TRUE(item.shape().contains(QPointF(22.0, 0.0)))
+      << "the hit shape is stale: it still has the old radius";
+  EXPECT_TRUE(item.boundingRect().contains(item.shape().boundingRect()));
+
+  // And back down: a stale cache would leave the old, too-wide target behind.
+  item.setRadius(camp::vector::kDefaultPointRadius);
+  EXPECT_FALSE(item.shape().contains(QPointF(22.0, 0.0)));
+
+  // A LINE's stroked ribbon is the expensive one; it is stable too.
+  const QGeoCoordinate a(43.00, -70.80);
+  VectorFeatureItem line(nullptr, lineThrough({a, QGeoCoordinate(43.00, -70.60)}));
+  const QPainterPath first = line.shape();
+  ASSERT_FALSE(first.isEmpty());
+  EXPECT_EQ(first, line.shape());
+}
+
 // [camp#22] The NO-DATA marker is visible.
 //
 // A no-data point is drawn hollow and dashed (ADR-0016 D6's second channel), and
