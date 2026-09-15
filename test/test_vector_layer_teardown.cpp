@@ -237,6 +237,21 @@ TEST(VectorLayerTeardown, VirtualFileSystemPathsAreRefusedWithoutOpening)
   EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/data/survey/x.geojson"));
   EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/data/vsicurl/x.geojson"));
   EXPECT_FALSE(camp::vector::isVirtualFileSystemPath(QString()));
+
+  // [camp#22 suggestion] An ordinary local DIRECTORY whose name merely begins
+  // with the same four characters is not a virtual file system, and refusing it
+  // made real files unopenable. The check asks GDAL for its registered handler
+  // prefixes (VSIGetFileSystemsPrefixes) instead of matching "/vsi" raw; a
+  // prefix-boundary check would not have helped, since "/vsidata/" is still
+  // "/vsi<word>/".
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/vsidata/survey.geojson"));
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/vsi_survey/2026/x.shp"));
+  EXPECT_FALSE(camp::vector::isVirtualFileSystemPath("/vsi/x.geojson"));
+  // And the real ones are still refused, including the archive handlers and the
+  // in-memory one, which are registered prefixes like any other.
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/vsimem/x.geojson"));
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/vsitar//data/a.tar/x.shp"));
+  EXPECT_TRUE(camp::vector::isVirtualFileSystemPath("/vsigzip//data/x.geojson.gz"));
 }
 
 // [camp#22 must-fix 7] Per-feature item construction happens on the GUI thread and

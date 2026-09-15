@@ -12,6 +12,8 @@
 #include <QUrl>
 #include <QtConcurrent/QtConcurrent>
 
+#include <cpl_string.h>
+#include <cpl_vsi.h>
 #include <gdal_priv.h>
 
 #include <marine_colormap/palette.hpp>
@@ -65,13 +67,38 @@ const char* const kAllowedDrivers[] = {
 
 bool isVirtualFileSystemPath(const QString& path)
 {
-  // GDAL's virtual file systems are selected by a leading "/vsi..." token in the
-  // filename, resolved BEFORE any driver is chosen, so the driver allowlist does
-  // not see them. Nested forms ("/vsizip//vsicurl/https://...") start with the
-  // same token. Whitespace is trimmed first: GDAL does not, but a path pasted
-  // into the file dialog or carried in a settings file can arrive padded, and a
-  // check that a space defeats is not a check.
-  return path.trimmed().startsWith(QStringLiteral("/vsi"), Qt::CaseInsensitive);
+  // GDAL's virtual file systems are selected by a leading prefix in the filename,
+  // resolved BEFORE any driver is chosen, so the driver allowlist does not see
+  // them. Nested forms ("/vsizip//vsicurl/https://...") start with the same
+  // prefix. Whitespace is trimmed first: GDAL does not, but a path pasted into
+  // the file dialog or carried in a settings file can arrive padded, and a check
+  // that a space defeats is not a check.
+  //
+  // [camp#22] The prefixes are asked of GDAL (VSIGetFileSystemsPrefixes), not
+  // matched as the four raw characters "/vsi". That spelling refused any path
+  // BEGINNING with them, so an ordinary local directory named /vsidata — or
+  // /vsi_survey, or a mount point someone called /vsi — could not be opened or
+  // persisted at all, with a loud and wrong explanation. A prefix-BOUNDARY check
+  // does not fix it either ("/vsidata/" is still "/vsi<word>/"); only the actual
+  // registered handler list distinguishes a virtual file system from a directory
+  // whose name starts the same way. The list is what GDAL itself dispatches on,
+  // so this check now tracks GDAL's real behaviour rather than approximating it:
+  // a prefix GDAL does not have a handler for is a prefix GDAL will not resolve.
+  const QString candidate = path.trimmed();
+  if(candidate.isEmpty())
+    return false;
+  char** prefixes = VSIGetFileSystemsPrefixes();
+  if(!prefixes)
+  {
+    // Nothing registered to ask — refuse the whole "/vsi" family rather than
+    // letting one through on the strength of an empty list.
+    return candidate.startsWith(QStringLiteral("/vsi"), Qt::CaseInsensitive);
+  }
+  bool virtual_path = false;
+  for(int i = 0; prefixes[i] && !virtual_path; ++i)
+    virtual_path = candidate.startsWith(QString::fromUtf8(prefixes[i]), Qt::CaseInsensitive);
+  CSLDestroy(prefixes);
+  return virtual_path;
 }
 
 VectorLayer::VectorLayer(map::MapItem* parentItem, const QString& filename, int feature_cap):
