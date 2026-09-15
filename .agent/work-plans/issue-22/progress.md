@@ -771,3 +771,26 @@ All 11 fix-pass commits carry the agent identity; working tree clean.
 
 Lifecycle: **Implementation** → **review-code** (re-review the fixes).
 Nothing was pushed — the host performs pushes.
+
+## Integrated Review
+**Status**: complete
+**When**: 2026-09-15 09:31 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `14d61c6`
+**Sources**: 2 (Copilot R2 @ `14d61c6` — 2 inline comments; CI rollup @ `14d61c6`)
+**Cross-source confirmations**: 0 (no local review entry at this head; the round-1 Copilot/local findings at `507ee23` were all addressed and re-verified below)
+**CI**: all-pass (`build-and-test` SUCCESS, `copilot-pull-request-reviewer` SUCCESS, both on `14d61c6`); no human review comments, no conversation comments
+
+Round 2 of triage. Only comments created after the first `## Integrated Review`
+(2026-09-14 14:58) are triaged here; the round-1 findings were confirmed closed
+by reading the current code at each cited site (the `ParseBudget` recursion, the
+unavailable-path `removeAll` ordering, `isPlaceable`, `noDataColor`).
+
+### Findings
+- [ ] (should-fix, Copilot R2) `readRing()` consumes EVERY vertex of a ring before returning: `ParseBudget` is polled at geometry/part boundaries only, so one LineString or ring with millions of points is an unbounded stretch inside a worker whose join runs on the GUI thread (`VectorLayer::~VectorLayer()` → `waitForFinished()`). This is the same failure class round 1 fixed one level up — the per-feature poll was too coarse for a 200 000-part MultiPolygon; the per-part poll is too coarse for a 200 000-vertex ring. `budget` is already in scope at all three `readRing()` call sites (`vector_parse.cpp:167`, `:189`, `:192`), so the fix is to pass it in and poll `budget.aborted` every N vertices (N ~1024 — `isAborted()` takes a mutex, so per-vertex polling is not free) and break out. A truncated ring is safe: the next feature-boundary check sets `diagnostics.aborted` and `loadFinished()` discards the whole result on that flag. The existing abort test does not cover this path — its fixture is 200 000 SEPARATE points, so every poll site it exercises is a part boundary; add a single-huge-ring fixture — `src/camp_map/vector/vector_parse.cpp:75`, `test/test_vector_layer_teardown.cpp:304`
+- [ ] (should-fix, Copilot R2) `normalizedValue()` mis-maps interior values when the span overflows: with `range.min = -DBL_MAX` and `range.max = DBL_MAX`, `span` is `+inf` but `(0 - range.min) / span` is the FINITE value `0`, so the `!std::isfinite(t)` fallback never fires. Verified by direct execution of the function's arithmetic: `0 → 0.0`, `-1e100 → 0.0`, `1e100 → 0.0`, while `1e307 → 0.5` and `-1e307 → 0.0` — not merely compressed, but non-monotonic, so colours and marker radii are ordered wrongly, not just squeezed. Reachable from an operator-chosen file: `numericAttribute()` admits any finite double, and a GeoJSON property may legitimately hold `1e308`. Fix: when `span` is not finite, compute on halved operands — `(value/2 - range.min/2) / (range.max/2 - range.min/2)` is finite for every finite min/max — keeping the existing order-based fallback as the last resort — `src/camp_map/vector/vector_style.cpp:87`
+- [ ] (suggestion, Copilot R2) Second half of the `readRing` comment: bound VERTEX count, not just geometry count, so one ring cannot materialise an arbitrarily large coordinate vector (100M vertices ≈ 1.6 GB). Unlike the cancellation half this is a DECISION, not a mechanical edit — silently truncating a ring draws a wrong shape, which is worse than the documented geometry cap, so the honest options are drop-the-geometry-and-count-it in `ParseDiagnostics` or accept it and say so. Fold into the already-deferred ADR-0016 D11 item on per-attribute size bounds (`## Local Review (Pre-Push)` 2026-09-15 08:48) rather than opening a second decision thread — `src/camp_map/vector/vector_parse.cpp:75`, `docs/decisions/0016-read-only-vector-file-layer.md`
+
+### False positives
+- (none this round — both new Copilot comments describe failure modes that the current code genuinely has)
