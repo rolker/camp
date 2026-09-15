@@ -6,6 +6,27 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 15** (2026-09-15) — **round-7 pre-push review fixes.** No design change.
+
+- **The unhandled-type NAME in the per-layer summary line is per-layer**, like
+  the count beside it. `ParseDiagnostics::first_unhandled_geometry_type`
+  accumulates across the whole parse, so layer 2 of a mixed dataset logged layer
+  1's type. The parser now scopes the field to the layer body (an RAII guard, so
+  the two early returns cannot leak the layer-scoped value) and restores the
+  parse-wide first type afterwards; the field keeps its documented whole-parse
+  meaning for callers.
+- **The cap lookahead polls the abort predicate.** It sits on the path the
+  destructor's GUI-thread join waits for, and without the poll an aborted worker
+  still ran one unabortable `GetNextFeature()` per remaining layer. The answer is
+  cosmetic once aborted — the result is discarded whole.
+- Tests: the once-per-layer test now uses a **two-layer** fixture of two curve
+  types (it fails without the scope guard), and a new two-layer cap fixture
+  covers the lookahead's previously untested multi-layer branch (trailing layer
+  empty vs. holding one feature).
+- Docs: ADR-0016 D11 now records the "cap flag means input was ACTUALLY left
+  unread" rule and its bounded lookahead, and `withoutVectorLayerFile()`'s
+  declaration records the accepted cost of its per-entry GUI-thread stat.
+
 **Rev 14** (2026-09-15) — **round-3 PR triage fixes.** No design change: the
 hover label, the pan-mode arrow cursor and numeric-only ramp fields all stand as
 rev 12 settled them. The plan-level behaviour changes are:
@@ -39,11 +60,14 @@ rev 12 settled them. The plan-level behaviour changes are:
   cursor ENTERED and does not track it (header, call site, test name, ADR-0016
   D5), and ADR-0016 D13 now records that a dropped mid-ring vertex leaves a
   fabricated straight segment.
-- New tests: the dangling-symlink purge lifecycle, the polygon-with-a-valid-hole
-  rejection, a capped-but-empty layer's status, cap-at-exactly-the-file-size (and
-  its mid-feature counterpart), one-warning-per-layer for unhandled types, the
-  diagnostics reset, and a projected-CRS (EPSG:32619, UTM 19N) reprojection
-  fixture — the transform path was previously only ever exercised WGS84 -> WGS84.
+- New tests: the dangling-symlink purge lifecycle,
+  `WithoutVectorLayerFileKeepsUnrelatedEntries` (the purge drops the file's own
+  spellings and NOTHING else — the guard on resolving every entry), the
+  polygon-with-a-valid-hole rejection, a capped-but-empty layer's status,
+  cap-at-exactly-the-file-size (and its mid-feature counterpart),
+  one-warning-per-layer for unhandled types, the diagnostics reset, and a
+  projected-CRS (EPSG:32619, UTM 19N) reprojection fixture — the transform path
+  was previously only ever exercised WGS84 -> WGS84.
 
 **Rev 13** (2026-09-15) — **round-5 pre-push review fixes.** No design change:
 the hover popup, the in-scene label, the pan-mode arrow and numeric-only ramp
@@ -526,10 +550,16 @@ rounds of answers directly:
      existing Point/LineString/Polygon extraction logic (factor each into a
      small free function so the multi-* cases can call it per part without
      duplicating the transform/ring logic). Anything still unhandled
-     (`wkbGeometryCollection`, curves) stays a documented, logged skip — not
-     a silent one — since the issue's format claims (shapefile/GeoPackage/
-     KML) are then honestly met for the geometry types those formats
-     actually emit.
+     (the curve types) stays a documented, logged skip — not a silent one —
+     since the issue's format claims (shapefile/GeoPackage/KML) are then
+     honestly met for the geometry types those formats actually emit.
+     (Superseded in detail by later revisions, recorded here so the Approach
+     section is not read as current: `wkbGeometryCollection` is HANDLED, and
+     the skip is no longer a warning per geometry. An unhandled geometry does
+     not spend the geometry budget, so a file of curve types emitted unbounded
+     log I/O under a cap that bounded nothing there; rev 14 made it ONE summary
+     line per layer carrying that layer's count and its own first type name —
+     see rev 14's bullet and rev 15's correction of the type's scope.)
    - **Bound the parse itself, per geometry** (rev 6/7): `ParseOptions` carries
      `max_geometries` (the layer's feature cap) and an `aborted` predicate, and
      both travel into `appendGeometry()`'s collection recursion as a
