@@ -1467,6 +1467,82 @@ TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
       << "the third point was never read, so the file really was left partly unread";
 }
 
+// [camp#22 round-5 should-fix] THE CAP PATH STILL REPORTS WHAT THE LAYER LEFT OUT.
+//
+// The geometry-cap return sat ABOVE the three per-layer summary blocks, so a
+// layer that hit the cap reported none of them. VectorLayer re-reports
+// polygons_without_exterior_ring and layers_failed itself, but nothing anywhere
+// reports points_dropped or geometries_unhandled — so on the one path where the
+// operator is already being told the read was partial, two of the four "what was
+// left out" diagnostics vanished entirely.
+TEST(VectorParseAttributes, CapPathStillReportsTheLayerSummaries)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr);
+  DatasetPtr ds(driver->Create("capped_summaries", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(ds);
+
+  // Orthographic again: a coordinate outside the visible hemisphere has no
+  // inverse, which is how a point is made to FAIL its transform for real.
+  OGRSpatialReference ortho;
+  ASSERT_EQ(ortho.SetFromUserInput(
+              "+proj=ortho +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs"),
+            OGRERR_NONE);
+  OGRLayer* layer = ds->CreateLayer("mixed", &ortho, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+
+  {  // one point that cannot be transformed
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRPoint point(1.0e10, 1.0e10);
+    feature.SetGeometry(&point);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  {  // one geometry of a type this parser does not handle
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRCircularString curve;
+    curve.addPoint(1000.0, 1000.0);
+    curve.addPoint(1100.0, 1100.0);
+    curve.addPoint(1200.0, 1000.0);
+    feature.SetGeometry(&curve);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  for(int i = 0; i < 3; ++i)
+  {  // and enough drawable points to reach a cap of two with a remainder
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRPoint point(1000.0 * (i + 1), 2000.0);
+    feature.SetGeometry(&point);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+
+  static QStringList warnings;
+  warnings.clear();
+  QtMessageHandler previous = qInstallMessageHandler(
+      [](QtMsgType, const QMessageLogContext&, const QString& message)
+      {
+        warnings.append(message);
+      });
+
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;
+  camp::vector::ParseDiagnostics diag;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(ds.get(), capped, &diag);
+  qInstallMessageHandler(previous);
+
+  ASSERT_EQ(layers.size(), 1u);
+  EXPECT_EQ(layers.front().geometries.size(), 2u);
+  ASSERT_TRUE(diag.geometry_cap_reached) << "the fixture must actually reach the cap";
+  EXPECT_EQ(diag.points_dropped, 1);
+  EXPECT_EQ(diag.geometries_unhandled, 1);
+
+  const QString all = warnings.join(" | ");
+  EXPECT_TRUE(all.contains("coordinate transformation failed"))
+      << "a capped layer must still report its dropped points: " << all.toStdString();
+  EXPECT_TRUE(all.contains("unhandled type"))
+      << "a capped layer must still report its unhandled geometries: " << all.toStdString();
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

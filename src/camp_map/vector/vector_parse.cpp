@@ -530,6 +530,39 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         const int dropped_before = diag.points_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
         const int unhandled_before = diag.geometries_unhandled;
+
+        // [camp#22 round-5 should-fix] The per-layer "what was left out" summaries,
+        // in a lambda because the layer body has TWO consumed exits: the end of the
+        // feature loop and the GEOMETRY CAP return below. The cap return used to sit
+        // above these blocks, so the one path where the operator is already being
+        // told the read was partial reported neither points_dropped nor
+        // geometries_unhandled — and nothing else anywhere reports those two.
+        // (The ABORT return deliberately does not call this: its result is
+        // discarded whole by contract, and its counts describe a parse that was
+        // cut off mid-feature.)
+        const auto reportLayerDiagnostics = [&]()
+        {
+            if(diag.polygons_without_exterior_ring > polygons_dropped_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- dropped"
+                           << (diag.polygons_without_exterior_ring - polygons_dropped_before)
+                           << "polygon(s) with no exterior ring";
+
+            if(diag.points_dropped > dropped_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- dropped" << (diag.points_dropped - dropped_before)
+                           << "point(s) whose coordinate transformation failed";
+
+            if(diag.geometries_unhandled > unhandled_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- skipped" << (diag.geometries_unhandled - unhandled_before)
+                           << "geometry(ies) of an unhandled type (first:"
+                           << (diag.first_unhandled_geometry_type.isEmpty()
+                                   ? QStringLiteral("unnamed")
+                                   : diag.first_unhandled_geometry_type)
+                           << ")";
+        };
+
         layer->ResetReading();
         OGRFeature *feature = layer->GetNextFeature();
         while(feature)
@@ -602,31 +635,14 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 // moreInputRemains(), which is bounded at one feature per
                 // remaining layer.
                 diag.geometry_cap_reached = moreInputRemains(layer, i, budget);
+                reportLayerDiagnostics();
                 result.push_back(std::move(parsed));
                 return result;
             }
             feature = layer->GetNextFeature();
         }
 
-        if(diag.polygons_without_exterior_ring > polygons_dropped_before)
-            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
-                       << "- dropped"
-                       << (diag.polygons_without_exterior_ring - polygons_dropped_before)
-                       << "polygon(s) with no exterior ring";
-
-        if(diag.points_dropped > dropped_before)
-            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
-                       << "- dropped" << (diag.points_dropped - dropped_before)
-                       << "point(s) whose coordinate transformation failed";
-
-        if(diag.geometries_unhandled > unhandled_before)
-            qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
-                       << "- skipped" << (diag.geometries_unhandled - unhandled_before)
-                       << "geometry(ies) of an unhandled type (first:"
-                       << (diag.first_unhandled_geometry_type.isEmpty()
-                               ? QStringLiteral("unnamed")
-                               : diag.first_unhandled_geometry_type)
-                       << ")";
+        reportLayerDiagnostics();
 
         // unprojectTransformation's RAII deleter frees it here.
         result.push_back(std::move(parsed));
