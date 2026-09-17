@@ -286,6 +286,38 @@ struct ParseDiagnostics
 // are fine — admitted here, like any other bad vertex of an admitted geometry.
 bool isPlaceable(const QGeoCoordinate &coordinate);
 
+// [camp#22 round-12] The Web-Mercator latitude domain, in DEGREES
+// (`web_mercator::maximum_latitude`, 85.0511...). Declared here so the ONE
+// constant is shared: `placeableToMap()` clamps to it and `isProjectable()`
+// below tests against it, and two spellings of the projection's own limit is a
+// limit that drifts.
+double webMercatorLatitudeLimit();
+
+// [camp#22 round-12 must-fix] True when @p coordinate is placeable AND lands
+// inside the Web-Mercator world WITHOUT being clamped there — the rule a
+// consumer needs when the coordinate becomes an EDITABLE position.
+//
+// `isPlaceable()` deliberately admits latitude +/-90: it is a perfectly valid
+// WGS84 coordinate, and the DISPLAY path (`placeableToMap()`) handles it by
+// CLAMPING to the projection's limit, which draws a polar feature at the edge of
+// the Mercator world rather than losing it — a polar survey line is real data
+// this program should show. That is why the polar bound cannot simply be folded
+// into `isPlaceable()`: doing so would turn the display path's documented clamp
+// into a silent drop.
+//
+// The MISSION path cannot clamp. `VectorDataset` copies each admitted vertex into
+// a Point/LineString/Polygon MissionItem, which is draggable, written to the
+// mission file and a candidate for transmission to the robot — and whose
+// `GeoGraphicsItem::geoToPixel()` calls `web_mercator::geoToMap()` RAW, with no
+// clamp anywhere on that path: latitude 90 projects to y ~ 2.425e8 m, about
+// twelve times the world half-extent, blowing out the scene index and
+// fit-to-extent exactly as a `.prj`-less shapefile's northings do. Clamping is
+// not the alternative either — it would move the waypoint, i.e. quietly answer a
+// position the file does not state. So this path DROPS the vertex and counts it
+// (see `placeableGeometry()`), which is the same trade that function already
+// makes for every other unplaceable vertex.
+bool isProjectable(const QGeoCoordinate &coordinate);
+
 // The first vertex of @p geometry's EXTERIOR that `isPlaceable()` admits, or
 // nullptr when it has none. This is what a display item is positioned at.
 //
@@ -302,7 +334,9 @@ const QGeoCoordinate *firstPlaceableCoordinate(const ParsedGeometry &geometry);
 bool hasPlaceableCoordinate(const ParsedGeometry &geometry);
 
 // [camp#22 round-11 must-fix] One parsed geometry reduced to the vertices that
-// `isPlaceable()` admits, for the consumer that CANNOT filter again later.
+// `isProjectable()` admits, for the consumer that CANNOT filter again later.
+// (Round 12: `isProjectable()`, not `isPlaceable()` — the editable consumer needs
+// the polar bound too, and has no clamp to fall back on. See above.)
 struct PlaceableGeometry
 {
     // The admitted exterior vertices, in file order. Empty when the geometry

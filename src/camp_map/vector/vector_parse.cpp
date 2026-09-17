@@ -1,5 +1,8 @@
 #include "vector_parse.h"
 
+#include "../map_view/web_mercator.h"
+
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -485,6 +488,22 @@ bool isPlaceable(const QGeoCoordinate &coordinate)
     return coordinate.isValid();
 }
 
+double webMercatorLatitudeLimit()
+{
+    // web_mercator::maximum_latitude is in RADIANS; QGeoCoordinate carries degrees.
+    return web_mercator::maximum_latitude * 180.0 / M_PI;
+}
+
+bool isProjectable(const QGeoCoordinate &coordinate)
+{
+    // The polar bound is deliberately NOT part of isPlaceable(): see the header —
+    // the display path clamps there rather than dropping, and folding the bound in
+    // would turn that documented clamp into a silent loss of a polar feature.
+    if(!isPlaceable(coordinate))
+        return false;
+    return std::abs(coordinate.latitude()) <= webMercatorLatitudeLimit();
+}
+
 const QGeoCoordinate *firstPlaceableCoordinate(const ParsedGeometry &geometry)
 {
     for(const auto &coordinate : geometry.exterior)
@@ -506,7 +525,7 @@ PlaceableGeometry placeableGeometry(const ParsedGeometry &geometry)
         kept.reserve(in.size());
         for(const auto &coordinate : in)
         {
-            if(isPlaceable(coordinate))
+            if(isProjectable(coordinate))
                 kept.push_back(coordinate);
             else
                 ++dropped;

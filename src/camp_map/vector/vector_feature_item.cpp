@@ -73,8 +73,11 @@ constexpr double kHoveredZValue = 1.0;
 
 QPointF placeableToMap(const QGeoCoordinate& coordinate)
 {
-  // maximum_latitude is in RADIANS; QGeoCoordinate carries degrees.
-  constexpr double kMaximumLatitudeDegrees = web_mercator::maximum_latitude * 180.0 / M_PI;
+  // [camp#22 round-12] The limit comes from webMercatorLatitudeLimit() (vector_parse)
+  // rather than being spelled again here: isProjectable() tests against the same
+  // value on the mission path, and two spellings of the projection's own limit is
+  // a limit that drifts.
+  const double kMaximumLatitudeDegrees = webMercatorLatitudeLimit();
   const double latitude =
       std::max(-kMaximumLatitudeDegrees, std::min(kMaximumLatitudeDegrees, coordinate.latitude()));
   return web_mercator::geoToMap(QGeoCoordinate(latitude, coordinate.longitude()));

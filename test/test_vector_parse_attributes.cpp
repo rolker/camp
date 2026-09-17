@@ -1763,6 +1763,55 @@ TEST(VectorParseAttributes, AnUnplaceableExteriorTakesTheHolesWithIt)
   EXPECT_EQ(placeable.rings_dropped, 0);
 }
 
+// [camp#22 round-12 must-fix] A POLAR vertex is filtered out for the mission-item
+// consumer, even though isPlaceable() admits it.
+//
+// Latitude +/-90 is a perfectly valid WGS84 coordinate, so isPlaceable() says yes
+// and nothing in the parse reports anything. Web Mercator does not converge there:
+// web_mercator::geoToMap() stays finite only because tan(pi/2) is 1.633e16 rather
+// than inf in double, and returns y ~ 2.425e8 m — about twelve times the world
+// half-extent of 2.0037e7 m. The DISPLAY path survives that by CLAMPING
+// (placeableToMap(), and that clamp is deliberate — a polar survey line should
+// still be drawn, at the edge of the Mercator world). The MISSION path has no
+// clamp anywhere: GeoGraphicsItem::geoToPixel() calls geoToMap() raw, so the polar
+// vertex became an editable, saved, transmittable waypoint twelve worlds out.
+// Clamping here would MOVE the waypoint to a position the file never stated, so
+// the vertex is dropped and counted like any other unplaceable one.
+TEST(VectorParseAttributes, PolarVerticesAreFilteredForTheMissionItemConsumer)
+{
+  const double limit = camp::vector::webMercatorLatitudeLimit();
+  EXPECT_NEAR(limit, 85.0511287798, 1.0e-9);
+
+  EXPECT_TRUE(camp::vector::isPlaceable(QGeoCoordinate(90.0, -70.71)))
+      << "the weaker rule the display path relies on must NOT change: it clamps";
+  EXPECT_FALSE(camp::vector::isProjectable(QGeoCoordinate(90.0, -70.71)));
+  EXPECT_FALSE(camp::vector::isProjectable(QGeoCoordinate(-90.0, -70.71)));
+  EXPECT_FALSE(camp::vector::isProjectable(QGeoCoordinate(85.2, 0.0)));
+  EXPECT_TRUE(camp::vector::isProjectable(QGeoCoordinate(85.0, 0.0)));
+  EXPECT_TRUE(camp::vector::isProjectable(QGeoCoordinate(43.07, -70.71)));
+
+  ParsedGeometry line;
+  line.type = ParsedGeometry::LineString;
+  line.exterior = {QGeoCoordinate(90.0, -70.80), QGeoCoordinate(43.07, -70.71),
+                   QGeoCoordinate(-90.0, -70.60)};
+  const camp::vector::PlaceableGeometry placeable_line = camp::vector::placeableGeometry(line);
+  EXPECT_TRUE(placeable_line.placeable);
+  ASSERT_EQ(placeable_line.exterior.size(), 1u)
+      << "only the vertex Web Mercator can place without clamping may become a waypoint";
+  EXPECT_DOUBLE_EQ(placeable_line.exterior.front().latitude(), 43.07);
+  EXPECT_EQ(placeable_line.vertices_dropped, 2);
+
+  // A geometry that is ENTIRELY polar builds nothing at all, rather than one
+  // waypoint at 2.4e8 m.
+  ParsedGeometry polar;
+  polar.type = ParsedGeometry::Point;
+  polar.exterior = {QGeoCoordinate(90.0, 0.0)};
+  const camp::vector::PlaceableGeometry placeable_polar = camp::vector::placeableGeometry(polar);
+  EXPECT_FALSE(placeable_polar.placeable);
+  EXPECT_TRUE(placeable_polar.exterior.empty());
+  EXPECT_EQ(placeable_polar.vertices_dropped, 1);
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

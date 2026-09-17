@@ -55,6 +55,14 @@ void VectorDataset::buildItems(const std::vector<camp::vector::ParsedLayer>& lay
     // out rather than shown a silently different shape. See
     // camp::vector::placeableGeometry(), which holds the rule so the display and
     // mission paths cannot drift apart.
+    //
+    // [round-12] That rule is camp::vector::isProjectable(), which also excludes
+    // the POLES. A latitude of exactly +/-90 is a valid WGS84 coordinate, so
+    // isPlaceable() admits it and the display path merely clamps it to the edge of
+    // the Mercator world — but the items built below project through
+    // GeoGraphicsItem::geoToPixel(), i.e. raw web_mercator::geoToMap(), which puts
+    // a polar vertex ~2.4e8 m out: twelve world half-extents of empty scene, and an
+    // editable waypoint no vessel can be sent to.
     int vertices_dropped = 0;
     int rings_dropped = 0;
     int geometries_dropped = 0;
