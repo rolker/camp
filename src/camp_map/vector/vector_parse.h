@@ -67,9 +67,11 @@ struct ParsedLayer
 // [camp#22] Caller-supplied controls for one parse.
 struct ParseOptions
 {
-    // Polled once per layer and once per feature. When it returns true the parse
-    // stops where it is and returns what it has, with ParseDiagnostics::aborted
-    // set. Empty (the default) means "never abort".
+    // Polled once per layer and once per feature — and, so the promise below
+    // holds in every window, once more after the bounded lookahead the geometry
+    // cap runs. When it returns true the parse stops where it is and returns what
+    // it has, with ParseDiagnostics::aborted set. Empty (the default) means
+    // "never abort".
     //
     // This exists because VectorLayer parses on a worker thread its DESTRUCTOR
     // joins: without a cancellation hook inside the loops, closing a layer part

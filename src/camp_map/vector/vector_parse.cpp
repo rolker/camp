@@ -635,6 +635,20 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 // moreInputRemains(), which is bounded at one feature per
                 // remaining layer.
                 diag.geometry_cap_reached = moreInputRemains(layer, i, budget);
+                // [camp#22 round-5 suggestion] The abort flag can RISE during the
+                // lookahead's own GetNextFeature() — this iteration's aborted()
+                // check has already passed — and the header promises that when the
+                // predicate returns true the parse returns what it has with
+                // ParseDiagnostics::aborted SET. Re-check it here so the promise
+                // holds in that window. It cuts the other way too: the lookahead
+                // answers "nothing remains" once an abort has been requested, so a
+                // genuinely capped parse could otherwise return
+                // geometry_cap_reached = false — a "read in full" claim in the one
+                // status line this design leans on. Reporting the abort is what
+                // makes the caller discard the result instead of believing either
+                // flag.
+                if(aborted())
+                    diag.aborted = true;
                 reportLayerDiagnostics();
                 result.push_back(std::move(parsed));
                 return result;

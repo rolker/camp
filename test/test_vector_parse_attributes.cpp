@@ -1543,6 +1543,77 @@ TEST(VectorParseAttributes, CapPathStillReportsTheLayerSummaries)
       << "a capped layer must still report its unhandled geometries: " << all.toStdString();
 }
 
+// [camp#22 round-5 suggestion] AN ABORT THAT RISES AT ANY POINT OF THE PARSE IS
+// REPORTED AS AN ABORT — INCLUDING INSIDE THE CAP LOOKAHEAD.
+//
+// moreInputRemains() polls the abort predicate on entry and between layers, but
+// the flag can rise during the GetNextFeature() it runs: this iteration's
+// per-feature aborted() check has already passed, so the cap branch used to
+// return with ParseDiagnostics::aborted UNSET. The header promises the opposite —
+// "the parse stops where it is and returns what it has, with
+// ParseDiagnostics::aborted set". The window cuts both ways, which is why it is
+// worth closing: once an abort is requested the lookahead answers "nothing
+// remains", so a genuinely capped parse could come back with
+// geometry_cap_reached = false — a "read in full" claim in the one status line
+// this design leans on — and nothing at all saying the parse was cut short.
+//
+// Tested over EVERY poll position rather than a guessed one: the fixture is
+// parsed once with a predicate that only counts its polls, then re-parsed once
+// per position with the flag rising exactly there. There is no position at which
+// a parse can end claiming a clean read, so the lookahead window cannot hide in
+// the gaps of a hand-picked index.
+TEST(VectorParseAttributes, AnAbortAtAnyPollIsReportedAsAborted)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr);
+  DatasetPtr ds(driver->Create("lookahead_abort", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(ds);
+
+  OGRSpatialReference wgs84;
+  wgs84.SetWellKnownGeogCS("WGS84");
+  wgs84.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+  OGRLayer* layer = ds->CreateLayer("points", &wgs84, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+  for(int i = 0; i < 4; ++i)
+  {
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRPoint point(-70.80 + 0.01 * i, 43.00);
+    feature.SetGeometry(&point);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+
+  // The reference run: never aborted, and it reaches the cap with a remainder.
+  int polls = 0;
+  camp::vector::ParseOptions counting;
+  counting.max_geometries = 2;
+  counting.aborted = [&polls]() { ++polls; return false; };
+  camp::vector::ParseDiagnostics counting_diag;
+  const std::vector<ParsedLayer> counted =
+    camp::vector::parseVectorLayers(ds.get(), counting, &counting_diag);
+  ASSERT_EQ(counted.size(), 1u);
+  ASSERT_EQ(counted.front().geometries.size(), 2u);
+  ASSERT_TRUE(counting_diag.geometry_cap_reached) << "the fixture must reach the cap";
+  ASSERT_FALSE(counting_diag.aborted);
+  ASSERT_GT(polls, 2) << "the parse must poll the predicate per layer and per feature";
+
+  for(int rise_on = 1; rise_on <= polls; ++rise_on)
+  {
+    int call = 0;
+    camp::vector::ParseOptions aborting;
+    aborting.max_geometries = 2;
+    aborting.aborted = [&call, rise_on]() { return ++call >= rise_on; };
+    camp::vector::ParseDiagnostics aborting_diag;
+    const std::vector<ParsedLayer> aborted_layers =
+      camp::vector::parseVectorLayers(ds.get(), aborting, &aborting_diag);
+    (void)aborted_layers;
+    EXPECT_TRUE(aborting_diag.aborted)
+        << "the predicate rose at poll " << rise_on << " of " << polls
+        << " and the parse did not report the abort; a result whose aborted flag is clear "
+           "is one the caller is entitled to draw";
+  }
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
