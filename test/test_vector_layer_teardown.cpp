@@ -400,6 +400,56 @@ QString writeOutOfDomainPoints(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-10 suggestion] A file whose every geometry is of a type this
+// parser does not draw — the curve types. It is written through OGR because no
+// hand-written GeoJSON can express one: the format has no curve geometry at all,
+// which is also why the operator meets this case through GML, DXF or a GeoPackage
+// rather than through the files the rest of this harness writes.
+//
+// Such a file is read to its last feature (an unhandled geometry does not spend
+// the geometry budget), produces NO drawable item, and leaves every counter the
+// layer's status used to read at zero — so it was reported as an empty FILE.
+QString writeCurveGeometryFile(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+
+  const QString path = dir.filePath("curves.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  srs.SetWellKnownGeogCS("WGS84");
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+  OGRLayer* layer = ds->CreateLayer("curves", &srs, wkbCircularString, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  OGRFeatureDefn* defn = layer->GetLayerDefn();
+  for(const char* wkt : {"CIRCULARSTRING (-70.71 43.07, -70.70 43.08, -70.69 43.07)",
+                         "CIRCULARSTRING (-70.61 43.07, -70.60 43.08, -70.59 43.07)"})
+  {
+    OGRGeometry* geometry = nullptr;
+    if(OGRGeometryFactory::createFromWkt(wkt, &srs, &geometry) != OGRERR_NONE || !geometry)
+    {
+      GDALClose(ds);
+      return QString();
+    }
+    OGRFeature* f = OGRFeature::CreateFeature(defn);
+    f->SetGeometryDirectly(geometry);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  GDALClose(ds);
+  return path;
+}
+
 // The same wait for a layer that is EXPECTED to end up empty: waitForLoad()
 // answers loaded(), which is false by design for a layer with no drawable
 // feature, so a status assertion needs the settled-status wait on its own.
@@ -740,6 +790,43 @@ TEST(VectorLayerTeardown, DroppedStandalonePointsAreReportedInTheStatus)
       << "the status must count what was left out: " << layer->status().toStdString();
   EXPECT_TRUE(layer->status().contains("3"))
       << "all three dropped points must be counted: " << layer->status().toStdString();
+  delete layer;
+}
+
+// [camp#22 round-10 suggestion] A FILE OF UNHANDLED GEOMETRY TYPES IS NOT AN
+// EMPTY FILE EITHER.
+//
+// This is the same rule as the two tests above, applied to the last drop class
+// that was missing from it. The parser skips the curve types by design and counts
+// them (ParseDiagnostics::geometries_unhandled), but the count reached the log
+// only — so a file of nothing but curves produced no items with every status
+// counter at zero and was reported as "(no items)": the empty-FILE verdict, whose
+// remedy ("this file has no content") is not the remedy here ("CAMP does not draw
+// this geometry type; convert it"). The count carries its own note rather than
+// being folded into the unplaceable tally, because those two remedies differ.
+TEST(VectorLayerTeardown, UnhandledGeometryTypesAreReportedInTheStatus)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeCurveGeometryFile(dir);   // 2 circular strings
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "no geometry of this file can be drawn";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_NE(layer->status(), QStringLiteral("(no items)"))
+      << "a file whose geometries are all of an unhandled type must not be reported "
+         "as an empty file";
+  EXPECT_TRUE(layer->status().contains("unhandled"))
+      << "the status must say what was left out: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("2"))
+      << "both unhandled geometries must be counted: " << layer->status().toStdString();
+  EXPECT_FALSE(layer->status().contains("not read"))
+      << "the file was read to its end, so the status must not claim otherwise: "
+      << layer->status().toStdString();
   delete layer;
 }
 

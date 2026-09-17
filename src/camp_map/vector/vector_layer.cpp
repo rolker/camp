@@ -369,6 +369,22 @@ void VectorLayer::loadFinished()
                << "layer(s) were skipped: no coordinate transformation to WGS84 could be"
                << "built from their spatial reference";
 
+  // [camp#22 round-10 suggestion] The unhandled-type count reaches the STATUS, not
+  // just the log. It is the one drop class that was still invisible in the Layers
+  // tab, and it is invisible in exactly the file that consists of nothing else.
+  // It is reported with its own note rather than summed into the unplaceable
+  // count: the two have different remedies (see the `(no drawable items)` branch
+  // below), and the type name is what tells the operator which.
+  const int unhandled = result.diagnostics.geometries_unhandled;
+  const QString unhandled_text =
+      QString("%1 of an unhandled geometry type%2")
+          .arg(unhandled)
+          .arg(result.diagnostics.first_unhandled_geometry_type.isEmpty()
+                   ? QString()
+                   : QString(" (first: %1)")
+                         .arg(result.diagnostics.first_unhandled_geometry_type));
+  const QString unhandled_note = unhandled > 0 ? "; " + unhandled_text : QString();
+
   loaded_ = !features_.empty();
   if(!loaded_)
   {
@@ -387,9 +403,22 @@ void VectorLayer::loadFinished()
                      .arg(feature_cap_)
                : QString();
     if(result.diagnostics.layers_failed > 0)
-      setStatus("(load failed: no usable coordinate system" + capped_note + ")");
+      setStatus("(load failed: no usable coordinate system" + capped_note + unhandled_note + ")");
     else if(skipped > 0)
-      setStatus(QString("(no placeable items; %1 skipped%2)").arg(skipped).arg(capped_note));
+      setStatus(QString("(no placeable items; %1 skipped%2%3)")
+                    .arg(skipped).arg(capped_note).arg(unhandled_note));
+    else if(unhandled > 0)
+      // [camp#22 round-10 suggestion] An unhandled-type geometry is the LAST drop
+      // class that still reported the empty-FILE verdict: a file of curve types
+      // (a CIRCULARSTRING GML, a DXF of arcs) is read in full, drops every
+      // geometry, and left every counter the status reads at zero. It gets the
+      // note rather than a fold into `skipped` because it is a different question
+      // with a different answer: "skipped" here means "CAMP could not place it",
+      // whose remedy is the file's coordinate system, while this means "CAMP does
+      // not draw this shape", whose remedy is converting the geometry — see
+      // ParseDiagnostics::geometries_unhandled and the per-layer log line that
+      // names the first such type.
+      setStatus(QString("(no drawable items%1%2)").arg(capped_note).arg(unhandled_note));
     else
       setStatus("(no items" + capped_note + ")");
     return;
@@ -407,6 +436,8 @@ void VectorLayer::loadFinished()
     notes << QString("stopped at the %1-item cap; rest of file not read").arg(feature_cap_);
   if(skipped > 0)
     notes << QString("%1 unplaceable").arg(skipped);
+  if(unhandled > 0)
+    notes << unhandled_text;
   if(result.diagnostics.layers_failed > 0)
     notes << QString("%1 layer(s) failed").arg(result.diagnostics.layers_failed);
   setStatus("(" + notes.join(", ") + ")");
