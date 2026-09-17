@@ -481,6 +481,14 @@ had to be answered rather than assumed.
   data (a national coastline, an OSM extract). Spatial-index-backed culling or
   level-of-detail would lift it; both are larger work than this issue, and the
   cap is honest in the meantime.
+- **The cap does not bound the READ of a file that draws nothing.** Only a
+  drawable geometry spends the cap, so a file whose geometries are all dropped as
+  undrawable — every vertex outside the file's projection, or no exterior ring —
+  is read to its end. Memory is unaffected (a dropped geometry is never
+  materialised) and the load stays abortable, so the cost is wall time on a file
+  that shows nothing, and the Layers tab reports the drop count rather than
+  calling the file empty. Charging the cap for dropped geometry is the worse
+  trade: it spends the operator's budget on shapes that draw nothing.
 - **Removal leaves the layer's `MapItem/file:<path>` settings group behind.**
   `MapTiles` removes its group (camp#117's convention); `RasterLayer` does not.
   This layer follows `RasterLayer`, so re-adding the same file restores its

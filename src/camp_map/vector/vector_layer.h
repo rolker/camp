@@ -84,6 +84,15 @@ public:
   /// the log and this paragraph used to promise a feature count the file does not
   /// have. The constant's own name is the accurate one.
   ///
+  /// [camp#22 round-8 suggestion] The parse stops at the cap once the cap has been
+  /// SPENT, and only a drawable geometry spends it. A file whose geometries are
+  /// all dropped as undrawable — every vertex outside the file's projection, or no
+  /// exterior ring — therefore never reaches the cap and is read to its end. Memory
+  /// stays bounded (nothing is materialised) and the load stays abortable, so the
+  /// cost is wall time on a file that shows nothing; the status says how many were
+  /// dropped. See `ParseOptions::max_geometries` for why the alternative — charging
+  /// the cap for dropped geometry — is worse.
+  ///
   /// How much was left unread is deliberately not reported: finding out means
   /// reading the file the cap exists to stop reading. The number is a
   /// responsiveness-and-memory budget, not a data limit: 50 000 items build in

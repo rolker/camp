@@ -90,6 +90,25 @@ struct ParseOptions
     // unbounded — the OOM that VectorLayer::kMaxFeatureItems is documented as
     // protecting against. When the cap stops the parse, exactly `max_geometries`
     // geometries are returned and ParseDiagnostics::geometry_cap_reached says so.
+    //
+    // [camp#22 round-8 suggestion] WHAT THE CAP DOES NOT BOUND, deliberately: a
+    // geometry that is dropped as undrawable (an exterior with no usable vertex —
+    // ParseDiagnostics::geometries_with_empty_exterior — or a polygon with no
+    // ring) is not charged to it, so a file whose geometries ALL drop out is read
+    // to its last feature. The cap's "the rest of the file is never read" holds
+    // for a file that produces drawable geometry, which is the case it exists for.
+    // Accepted, with the reasoning written down rather than rediscovered:
+    //  * MEMORY, the thing the cap is here to bound, is unaffected — a dropped
+    //    geometry is never materialised, so such a parse holds nothing;
+    //  * the parse stays INTERRUPTIBLE at the same granularity as any other
+    //    (`aborted` is polled per feature and every kVertexPollInterval vertices),
+    //    so closing the layer still returns the GUI thread promptly;
+    //  * the alternative — charging the cap for geometries that were dropped —
+    //    is exactly what the round-5 fix removed: it spends the operator's budget
+    //    on shapes that draw nothing, and makes a mixed file report the cap
+    //    reached having produced fewer items than the cap.
+    // What is left is wall time on a pathological file, and the operator is told:
+    // the drop count reaches the layer's status (VectorLayer::loadFinished()).
     int max_geometries = 0;
 };
 
