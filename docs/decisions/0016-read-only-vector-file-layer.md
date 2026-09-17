@@ -271,8 +271,9 @@ had to be answered rather than assumed.
     the worker has already materialised every geometry and attribute map of the
     whole file — responsive, and out of memory. Capping the parse bounds both.
 
-    Whenever the cap, an unplaceable feature, a ring-less polygon, or a failed
-    layer applies, the Layers-tab status and the log say so: a layer showing 2 of
+    Whenever the cap, an unplaceable feature, a ring-less polygon, a standalone
+    point that would not transform, or a failed layer applies, the Layers-tab
+    status and the log say so: a layer showing 2 of
     5 items and reporting "(2 items)" is indistinguishable from a file that holds
     2. The status, the log and `kMaxFeatureItems` all count **drawn items** — one
     per emitted geometry part — because that is what the cap is spent on and what
@@ -488,12 +489,21 @@ had to be answered rather than assumed.
   cap is honest in the meantime.
 - **The cap does not bound the READ of a file that draws nothing.** Only a
   drawable geometry spends the cap, so a file whose geometries are all dropped as
-  undrawable — every vertex outside the file's projection, or no exterior ring —
-  is read to its end. Memory is unaffected (a dropped geometry is never
+  undrawable — an exterior with no usable vertex, no exterior ring, a standalone
+  point whose coordinate would not transform, or (camp#22 round 9) a geometry no
+  vertex of which is a valid latitude/longitude, which is what a layer with *no
+  spatial reference* yields — is read to its end. Memory is unaffected (a dropped geometry is never
   materialised) and the load stays abortable, so the cost is wall time on a file
   that shows nothing, and the Layers tab reports the drop count rather than
   calling the file empty. Charging the cap for dropped geometry is the worse
-  trade: it spends the operator's budget on shapes that draw nothing.
+  trade: it spends the operator's budget on shapes that draw nothing — and, on a
+  multi-layer container whose first layer has no spatial reference, it could
+  exhaust the cap before the good layer behind it was ever read. The notable
+  consequence of extending the rule to unplaceable geometry is that a `.prj`-less
+  national shapefile — the motivating case for the cap — is now read to its last
+  feature instead of stopping at 50 000: nothing is materialised from it, the
+  abort still returns the GUI thread promptly, and the status reports every
+  dropped geometry rather than a partial read.
 - **Removal leaves the layer's `MapItem/file:<path>` settings group behind.**
   `MapTiles` removes its group (camp#117's convention); `RasterLayer` does not.
   This layer follows `RasterLayer`, so re-adding the same file restores its
