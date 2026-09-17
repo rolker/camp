@@ -328,6 +328,41 @@ TEST(VectorLayerStyling, NoDataIsCarriedAsAStateNotOnlyAColour)
   EXPECT_EQ(colorForValue(nullptr, 3.0, range, fallback), fallback);
 }
 
+// [camp#22 round-12 must-fix] An ENGAGED optional holding NaN or infinity is
+// no-data, in every channel.
+//
+// The contract has always been "empty, or not a finite number", but the predicate
+// only checked engagement, so a non-finite value read as a real measurement: it
+// reached normalizedValue(), whose own guards answer 0.5, and the feature was
+// painted in the MIDDLE of the palette with a solid fill and a solid outline —
+// indistinguishable from a real mid-range measurement, which is the exact
+// confusion the no-data channels exist to prevent. numericAttribute() refuses a
+// non-finite value today, so this is the contract holding for the NEXT producer
+// (a computed field, an expression, a value taken straight off a ParsedGeometry),
+// which has no reason to know it must pre-filter.
+TEST(VectorLayerStyling, NonFiniteValuesAreNoDataNotAMidRangeMeasurement)
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  FieldRange range;
+  range.valid = true;
+  range.min = 0.0;
+  range.max = 10.0;
+
+  EXPECT_TRUE(isNoData(nan, range));
+  EXPECT_TRUE(isNoData(inf, range));
+  EXPECT_TRUE(isNoData(-inf, range));
+  EXPECT_FALSE(isNoData(5.0, range)) << "a real measurement is untouched";
+
+  // And the colour follows the predicate, under a palette as well as without one.
+  const marine_colormap::Palette* palette = marine_colormap::find_palette("viridis");
+  ASSERT_NE(palette, nullptr);
+  EXPECT_EQ(colorForValue(palette, nan, range, Qt::darkCyan), noDataColor());
+  EXPECT_EQ(colorForValue(palette, inf, range, Qt::darkCyan), noDataColor());
+  EXPECT_EQ(colorForValue(palette, -inf, range, Qt::darkCyan), noDataColor());
+  EXPECT_NE(colorForValue(palette, 5.0, range, Qt::darkCyan), noDataColor());
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

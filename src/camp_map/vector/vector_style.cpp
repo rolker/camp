@@ -115,7 +115,18 @@ QColor noDataColor()
 
 bool isNoData(const std::optional<double>& value, const FieldRange& range)
 {
-  return !value || !range.valid;
+  // [camp#22 round-12] An ENGAGED optional holding NaN or infinity is no-data too.
+  // The header's contract is "not a finite number", and numericAttribute() - the
+  // one producer in the app - already refuses a non-finite value, so today this
+  // reads as belt and braces. It is not: the value is a plain function argument,
+  // VectorLayer recomputes styling from its own per-feature cache, and the next
+  // producer (a computed field, an expression, a value read straight off a
+  // ParsedGeometry) has no reason to know it must pre-filter. Without this check a
+  // NaN would reach normalizedValue() - whose own guards then return 0.5, the
+  // MIDDLE of the palette - and paint a nonexistent measurement as a solid,
+  // mid-range feature, the exact confusion the dashed outline and hatched fill
+  // exist to prevent.
+  return !value || !std::isfinite(*value) || !range.valid;
 }
 
 QColor colorForValue(const marine_colormap::Palette* palette,

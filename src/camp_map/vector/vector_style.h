@@ -82,8 +82,8 @@ double normalizedValue(double value, const FieldRange& range);
 QColor noDataColor();
 
 /// [camp#22] True when a feature must be drawn as NO DATA — @p value is empty
-/// (the styling field is missing from this feature, or its value is not a finite
-/// number) or @p range is invalid (no feature in the layer has a value for the
+/// (the styling field is missing from this feature), @p value is engaged but NOT
+/// FINITE (NaN / infinity, whatever produced it), or @p range is invalid (no feature in the layer has a value for the
 /// field). Exactly the two cases `colorForValue()` answers with `noDataColor()`,
 /// named once so the item can carry the state in a second channel.
 ///
