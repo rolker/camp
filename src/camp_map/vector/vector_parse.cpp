@@ -212,6 +212,16 @@ void appendGeometry(const OGRGeometry *geometry,
             g.type = ParsedGeometry::LineString;
             g.attributes = attributes;
             g.exterior = readRing(ols, unprojectTransformation, diagnostics, budget);
+            // [camp#22 round-5 should-fix] EVERY vertex failed to transform (each
+            // one counted in points_dropped): there is no line left to draw, so
+            // emitting one and SPENDING a cap slot on it burns budget a later
+            // valid feature needs — and makes a mixed file report the cap reached
+            // having produced fewer items than the cap. The wkbPoint branch above
+            // already counts-and-drops without spending; this is the same rule.
+            // VectorLayer rejects the empty item anyway (hasPlaceableCoordinate),
+            // so nothing drawn changes.
+            if(g.exterior.empty())
+                break;
             out.push_back(std::move(g));
             budget.spend();
         }
@@ -235,6 +245,13 @@ void appendGeometry(const OGRGeometry *geometry,
             g.attributes = attributes;
             g.exterior = readRing(op->getExteriorRing(), unprojectTransformation, diagnostics,
                                   budget);
+            // [camp#22 round-5 should-fix] The polygon half of the same rule, and
+            // the reason to test it HERE: returning before the interior-ring loop
+            // also saves walking every hole of a polygon that cannot be drawn at
+            // all. An exterior whose vertices all failed to transform leaves no
+            // outline, so the geometry is neither emitted nor charged to the cap.
+            if(g.exterior.empty())
+                break;
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
             {
                 // [camp#22] Break on ABORT, the way the geometry-collection part

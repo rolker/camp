@@ -1361,6 +1361,112 @@ TEST(VectorParseAttributes, PolygonWithoutExteriorRingIsCounted)
   EXPECT_EQ(diagnostics.geometries_unhandled, 0) << "an empty polygon is dropped, not unhandled";
 }
 
+// [camp#22 round-5 should-fix] A LINE OR POLYGON WHOSE EXTERIOR LOSES EVERY
+// VERTEX IS NOT EMITTED AND DOES NOT SPEND A CAP SLOT.
+//
+// readRing() drops each vertex whose transform fails; when it drops them ALL
+// there is nothing left to draw, and the line/polygon branches used to push the
+// empty geometry and spend() anyway. VectorLayer rejects the empty item
+// (hasPlaceableCoordinate), so nothing wrong was ever DRAWN — the cost is that a
+// run of out-of-domain features burns cap slots later valid features needed, and
+// a mixed file can report the cap reached having produced fewer items than the
+// cap. The wkbPoint branch already counted-and-dropped without spending.
+//
+// The fixture makes transforms FAIL for real rather than mocking them: an
+// orthographic projection has no inverse outside the visible hemisphere, so a
+// coordinate a thousand Earth radii out cannot come back as a latitude/longitude.
+TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr) << "GDAL Memory driver is required for this test";
+  DatasetPtr dataset(driver->Create("outofdomain", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(dataset);
+
+  OGRSpatialReference ortho;
+  ASSERT_EQ(ortho.SetFromUserInput(
+              "+proj=ortho +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs"),
+            OGRERR_NONE);
+  OGRLayer* layer = dataset->CreateLayer("shapes", &ortho, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+
+  // Far outside the hemisphere the projection can represent: every vertex fails.
+  constexpr double kOutOfDomain = 1.0e10;
+
+  {  // a line whose three vertices all fail
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRLineString line;
+    line.addPoint(kOutOfDomain, kOutOfDomain);
+    line.addPoint(kOutOfDomain + 10.0, kOutOfDomain);
+    line.addPoint(kOutOfDomain + 20.0, kOutOfDomain + 10.0);
+    feature.SetGeometry(&line);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  {  // a polygon whose EXTERIOR all fails, carrying a hole that is in domain
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRLinearRing exterior;
+    exterior.addPoint(kOutOfDomain, kOutOfDomain);
+    exterior.addPoint(kOutOfDomain + 100.0, kOutOfDomain);
+    exterior.addPoint(kOutOfDomain + 100.0, kOutOfDomain + 100.0);
+    exterior.addPoint(kOutOfDomain, kOutOfDomain);
+    OGRLinearRing hole;
+    hole.addPoint(1000.0, 1000.0);
+    hole.addPoint(2000.0, 1000.0);
+    hole.addPoint(2000.0, 2000.0);
+    hole.addPoint(1000.0, 1000.0);
+    OGRPolygon polygon;
+    polygon.addRing(&exterior);
+    polygon.addRing(&hole);
+    feature.SetGeometry(&polygon);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  for(int i = 0; i < 3; ++i)
+  {  // three points well inside the domain
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRPoint point(1000.0 * (i + 1), 2000.0);
+    feature.SetGeometry(&point);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+
+  // Uncapped: only the three points come back, and the dropped vertices are
+  // counted. The hole's vertices are NOT among them — the polygon branch returns
+  // before reading the interior rings of a polygon it cannot draw.
+  camp::vector::ParseDiagnostics diagnostics;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diagnostics);
+  ASSERT_EQ(layers.size(), 1u);
+  ASSERT_EQ(layers.front().geometries.size(), 3u)
+      << "an exterior with no surviving vertex must not be emitted";
+  for(const ParsedGeometry& geometry : layers.front().geometries)
+    EXPECT_EQ(geometry.type, ParsedGeometry::Point);
+  EXPECT_EQ(diagnostics.points_dropped, 7)
+      << "3 line vertices + 4 exterior-ring vertices; the hole is never read";
+  EXPECT_EQ(diagnostics.polygons_without_exterior_ring, 0)
+      << "the polygon HAS an exterior ring; its vertices are what could not be transformed";
+
+  // Capped at two: the cap buys two DRAWABLE geometries. Before this fix the
+  // empty line and the empty polygon spent both slots and the parse returned two
+  // geometries that draw nothing at all.
+  DatasetPtr capped_ds(driver->Create("outofdomain_capped", 0, 0, 0, GDT_Unknown, nullptr),
+                       gdal_closer);
+  ASSERT_TRUE(capped_ds);
+  ASSERT_EQ(capped_ds->CopyLayer(layer, "shapes", nullptr) != nullptr, true);
+  camp::vector::ParseOptions capped;
+  capped.max_geometries = 2;
+  camp::vector::ParseDiagnostics capped_diag;
+  const std::vector<ParsedLayer> capped_layers =
+    camp::vector::parseVectorLayers(capped_ds.get(), capped, &capped_diag);
+  ASSERT_EQ(capped_layers.size(), 1u);
+  ASSERT_EQ(capped_layers.front().geometries.size(), 2u);
+  for(const ParsedGeometry& geometry : capped_layers.front().geometries)
+  {
+    EXPECT_EQ(geometry.type, ParsedGeometry::Point);
+    EXPECT_FALSE(geometry.exterior.empty()) << "a cap slot must buy a drawable geometry";
+  }
+  EXPECT_TRUE(capped_diag.geometry_cap_reached)
+      << "the third point was never read, so the file really was left partly unread";
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
