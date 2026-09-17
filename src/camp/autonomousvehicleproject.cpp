@@ -455,7 +455,16 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
         // and the trailing append loop moved the reopened layer to the END of the
         // operator's stacking order. Gated on the purge having actually changed the
         // list so the resolve pass runs only on a promotion, never on every open.
-        if(purged.size() != m_unavailableVectorLayerFiles.size())
+        //
+        // [camp#22 round-8 suggestion] The gate compares CONTENTS, not lengths. A
+        // length test is only equivalent while withoutVectorLayerFile() removes
+        // without de-duplicating — which it does today, unlike both of its
+        // siblings (withVectorLayerFile() and withVectorLayerFilePromoted() each
+        // collapse duplicates) — so the length form made a promotion silently
+        // depend on an unstated property of a function two files away. QStringList
+        // compares element-wise; the list is operator-sized and already walked
+        // twice on this path.
+        if(purged != m_unavailableVectorLayerFiles)
             m_restoredVectorLayerOrder =
                 camp::vector::withVectorLayerFilePromoted(m_restoredVectorLayerOrder, fname);
         m_unavailableVectorLayerFiles = purged;
