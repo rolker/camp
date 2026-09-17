@@ -307,6 +307,25 @@ QString canonicalVectorLayerPath(const QString& fname);
 /// today), this is the site to revisit.
 QStringList withoutVectorLayerFile(const QStringList& files, const QString& canonicalFile);
 
+/// @p files with every entry NAMING THE SAME FILE as @p canonicalFile rewritten
+/// IN PLACE to @p canonicalFile, keeping its slot; order is otherwise untouched
+/// and exact duplicates are collapsed.
+///
+/// [camp#22 round-5 should-fix] The counterpart of `withoutVectorLayerFile()` for
+/// the RESTORED ORDER. The unavailable list is purged by canonical-equivalent
+/// identity when a once-missing file is reopened, but the order list kept the raw
+/// spelling a dangling symlink was remembered under while the reopened layer is
+/// tracked under its resolved TARGET. `rebuildPersistedVectorLayerFiles()` matches
+/// the order against the loaded filenames by exact string, so it missed that slot
+/// and the trailing append loop put the reopened file LAST: `[dangling link, B]`
+/// persisted as `[B, target]`. Layer order is the operator's stacking order and
+/// `restorePersistedVectorLayers()` documents the slot as kept, so the promotion
+/// has to rewrite the entry rather than leave the rebuild to stat every entry on
+/// every persist. One resolve pass over an operator-sized list, only on the
+/// promotion itself — the same bounded cost `withoutVectorLayerFile()` documents
+/// above, paid on the same call.
+QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile);
+
 /// The persisted vector-layer list rebuilt from scratch — the whole rule behind
 /// `AutonomousVehicleProject::persistVectorLayers()`, in one pure function so it
 /// can be exercised (the project itself is not constructible in a test harness).

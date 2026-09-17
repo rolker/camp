@@ -442,8 +442,24 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     // on paths that may be unmounted shares — a bounded, deliberately accepted
     // cost; the reasoning is on withoutVectorLayerFile()'s declaration.
     if(QFileInfo::exists(fname))
-        m_unavailableVectorLayerFiles =
+    {
+        const QStringList purged =
             camp::vector::withoutVectorLayerFile(m_unavailableVectorLayerFiles, fname);
+        // [camp#22 round-5 should-fix] A PROMOTION — this file was unavailable at
+        // startup and is now open — also has to rewrite the ORDER of record, for
+        // the same reason the purge above is identity-based. m_restoredVectorLayerOrder
+        // holds the spelling that was stored at startup, which for a path that did
+        // not resolve then is the RAW one; the layer is tracked under the resolved
+        // target. rebuildPersistedVectorLayerFiles() matches order against loaded
+        // filenames by exact string, so the raw entry missed, its slot was skipped,
+        // and the trailing append loop moved the reopened layer to the END of the
+        // operator's stacking order. Gated on the purge having actually changed the
+        // list so the resolve pass runs only on a promotion, never on every open.
+        if(purged.size() != m_unavailableVectorLayerFiles.size())
+            m_restoredVectorLayerOrder =
+                camp::vector::withVectorLayerFilePromoted(m_restoredVectorLayerOrder, fname);
+        m_unavailableVectorLayerFiles = purged;
+    }
     // The layer parses asynchronously; it is recorded (and persisted) immediately,
     // and reports a failed or empty load in its own Layers-tab status rather than
     // being silently dropped here — the operator asked for this file, so a file

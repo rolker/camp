@@ -39,6 +39,7 @@ using camp::vector::rebuildPersistedVectorLayerFiles;
 using camp::vector::vectorLayerFilesKey;
 using camp::vector::canonicalVectorLayerPath;
 using camp::vector::withVectorLayerFile;
+using camp::vector::withVectorLayerFilePromoted;
 using camp::vector::withoutVectorLayerFile;
 using camp::vector::writePersistedVectorLayerFiles;
 
@@ -326,6 +327,79 @@ TEST(VectorLayerPersistence, ReopenedDanglingSymlinkCanBeRemoved)
   EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, QStringList{}),
             QStringList{})
       << "a removed layer must not return through the unavailable branch";
+}
+
+// [camp#22 round-5 should-fix] The reopened dangling symlink keeps its SLOT, not
+// just its removability.
+//
+// The sibling of the test above, one step further on: the order of record holds
+// the RAW spelling the link was remembered under, while the reopened layer is
+// tracked under the resolved TARGET. rebuildPersistedVectorLayerFiles() matches
+// order against loaded filenames by exact string, so without the promotion the
+// raw entry misses, its slot is skipped, and the trailing append loop puts the
+// reopened layer LAST — [link, B] persists as [B, target]. Layer order is the
+// operator's stacking order, so that is a silent reshuffle of their map.
+TEST(VectorLayerPersistence, ReopenedDanglingSymlinkKeepsItsSlot)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString target = dir.filePath("survey.geojson");
+  const QString link = dir.filePath("latest.geojson");
+  const QString other = dir.filePath("other.geojson");
+  ASSERT_TRUE(QFile::link(target, link)) << "could not create the symlink fixture";
+  for(const QString& path : {other})
+  {
+    QFile file(path);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+    file.write("{}");
+  }
+
+  // Launch 1: the link dangles. It is remembered, FIRST, under its raw spelling;
+  // the other file loads.
+  ASSERT_FALSE(QFileInfo::exists(link));
+  const QString stored = canonicalVectorLayerPath(link);
+  ASSERT_EQ(stored, link);
+  QStringList restoredOrder{stored, canonicalVectorLayerPath(other)};
+  QStringList unavailable{stored};
+  QStringList loaded{canonicalVectorLayerPath(other)};
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, loaded),
+            (QStringList{stored, canonicalVectorLayerPath(other)}));
+
+  // The target appears and the operator opens the same link: the path in hand is
+  // now the resolved target.
+  {
+    QFile file(target);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+    file.write("{}");
+  }
+  const QString opened = canonicalVectorLayerPath(link);
+  ASSERT_NE(opened, stored);
+
+  // The two steps openVectorLayer() performs on a promotion.
+  unavailable = withoutVectorLayerFile(unavailable, opened);
+  restoredOrder = withVectorLayerFilePromoted(restoredOrder, opened);
+  loaded << opened;
+
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(restoredOrder, unavailable, loaded),
+            (QStringList{opened, canonicalVectorLayerPath(other)}))
+      << "the reopened layer must keep the slot it was persisted in, not move to the end";
+}
+
+// The promotion must leave every OTHER entry exactly where it was, and must not
+// invent an entry for a file that was never in the order.
+TEST(VectorLayerPersistence, PromotionRewritesOnlyTheMatchingEntry)
+{
+  const QString shared = QStringLiteral("/mnt/share/survey.geojson");
+  const QString local = QStringLiteral("/home/op/local.geojson");
+  EXPECT_EQ(withVectorLayerFilePromoted(QStringList{shared, local}, shared),
+            (QStringList{shared, local}))
+      << "an entry already stored under its own identity is untouched";
+  EXPECT_EQ(withVectorLayerFilePromoted(QStringList{shared, local},
+                                        QStringLiteral("/other.gpkg")),
+            (QStringList{shared, local}))
+      << "an unrelated path must not disturb the list";
+  EXPECT_TRUE(withVectorLayerFilePromoted(QStringList{}, shared).isEmpty())
+      << "promotion adds nothing; it only rewrites what is already there";
 }
 
 // The exact-match removal withoutVectorLayerFile() also has to keep doing, and the

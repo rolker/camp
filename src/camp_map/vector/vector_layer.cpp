@@ -599,6 +599,23 @@ QStringList withoutVectorLayerFile(const QStringList& files, const QString& cano
   return result;
 }
 
+QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile)
+{
+  QStringList result;
+  for(const QString& file : files)
+  {
+    // Same identity test withoutVectorLayerFile() uses — an exact match, or an
+    // entry whose raw spelling only NOW resolves to this file — but the entry is
+    // rewritten in its slot instead of being dropped.
+    const bool same_file =
+      file == canonicalFile || canonicalVectorLayerPath(file) == canonicalFile;
+    const QString entry = same_file ? canonicalFile : file;
+    if(!result.contains(entry))
+      result << entry;
+  }
+  return result;
+}
+
 QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
                                              const QStringList& unavailable,
                                              const QStringList& loadedFiles)
