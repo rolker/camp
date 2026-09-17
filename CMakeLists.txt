@@ -560,6 +560,18 @@ if(BUILD_TESTING)
       -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_worker_alt_stacks.cmake)
 
+  # [camp#22 round-11 should-fix] ADR-0016 D16's pan-mode ARROW cursor has to be in
+  # force at launch, which means MainWindow must call ProjectView::setPanMode()
+  # AFTER setupUi() applies the .ui's ScrollHandDrag property (Qt's setDragMode()
+  # installs the open hand with it). ProjectView cannot be constructed in a gtest
+  # harness — it pulls in roslink / platform_manager / mission_manager /
+  # helm_manager — and what regresses here is the ORDER of two constructor calls,
+  # so this is a source check, like check_worker_alt_stacks above.
+  add_test(NAME check_pan_mode_at_launch
+    COMMAND ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_pan_mode_at_launch.cmake)
+
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.
   ament_add_gtest(test_color_map

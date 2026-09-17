@@ -42,6 +42,20 @@ MainWindow::MainWindow(QWidget *parent) :
     m_ui(new Ui::MainWindow)
 {
     m_ui->setupUi(this);
+    // [camp#22 round-11 should-fix] PUT THE VIEW IN PAN MODE FOR REAL, here, after
+    // setupUi() has applied the .ui's properties.
+    //
+    // ProjectView starts in pan mode by its own bookkeeping — mouseMode is pan and
+    // the status bar says "Mode: pan" — but nothing ever CALLED setPanMode(), which
+    // is what installs ADR-0016 D16's arrow cursor. setupUi() applies the .ui's
+    // dragMode = ScrollHandDrag property, and Qt's setDragMode() puts the open hand
+    // on the viewport with it, so the launch state showed the hand the 2026-09-15
+    // GUI test rejected (ADR-0016 D15: nobody could land it within 5 pixels) while
+    // claiming pan mode. CAMP idles in pan mode, so that is the state the operator
+    // spends most of a session in. It must be called AFTER setupUi(), not from the
+    // ProjectView constructor, because the .ui property is applied later and would
+    // reinstall the hand over it.
+    m_ui->projectView->setPanMode();
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
 
