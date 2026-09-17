@@ -6,6 +6,57 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 19** (2026-09-17) — **round-9 pre-push review fixes.** No design change; one
+must-fix, ten suggestions, one filed away.
+
+- **The no-result load path REPORTS.** `loadFinished()` returned silently when the
+  future carried no result, leaving the Layers tab on "(loading...)" for the
+  session. The reachable cause is not cancellation but the worker THROWING —
+  QtConcurrent cancels the future and never stores a result — i.e. the
+  `std::bad_alloc` the geometry cap exists to bound. It now sets "(load failed)"
+  and warns, unless the layer is being torn down. Why no test: the work function
+  is a private, non-virtual member handed straight to `QtConcurrent::run()`, so
+  nothing can substitute it, and exhausting the heap for real is not a test; the
+  reasoning is written beside the tests.
+- **"A file that shows nothing must not get the empty-file verdict" is now
+  complete.** Two classes still reached the operator as "(no items)": geometry of
+  an UNHANDLED type (the curve types — a file of them is read in full and drops
+  every geometry), and features carrying NO GEOMETRY AT ALL — a CSV with no usable
+  X/Y columns is every row of the file, and that class had no counter of any kind
+  behind it (`ParseDiagnostics::features_without_geometry` is new). Each gets its
+  own note rather than a fold into the unplaceable count, because the three
+  remedies differ: fix the coordinate system, convert the geometry, name the
+  coordinate columns.
+- **A restore that completes can no longer lose an entry.** `openVectorLayer()`'s
+  `topLevelLayers()` guard returned leaving the file in the order of record but in
+  neither the loaded nor the unavailable list, which the rebuild reads as "removed
+  through the Layers tab" — the single trailing persist then deleted it. The file
+  is remembered as unavailable and retried next launch. `restorePersistedVectorLayers()`
+  also refuses re-entry outright: its `RestoreScope` fails OPEN if it ever happens.
+- **Two comments now say what was measured rather than what was reasoned.** The
+  re-entrancy note asserted Qt behaviour the review could not confirm — so it was
+  measured: with the run-once flag removed, clearing the watcher's future
+  re-delivers `finished()` immediately, and the re-entered slot reports a
+  succeeded load as "(load failed)". The flag is load-bearing, and a regression
+  test asserts the status VALUE (a before/after comparison passes vacuously,
+  because the corruption lands before the capture). The cap `qWarning()` now names
+  the surprise that can still happen — the cap is spent per emitted PART — instead
+  of one this round made unreachable. The placeability guard's header states the
+  bound it delivers: any ONE placeable vertex admits a geometry.
+- **Styling menu residues.** Both numeric-field lists come from ONE pass (the two
+  accessors each folded over every feature and parsed every attribute, on the GUI
+  thread, on every right-click); the redundant `size_fields.isEmpty()` test is
+  gone (it is a subset of the colour list); and "Size by" is omitted when it would
+  hold nothing but "(none)" — unless a size field is set, which is the only place
+  the operator can clear it.
+- **An empty persisted `colormap` is the ABSENT case**, not the unknown-palette
+  one: `QSettings::value(key, default)` only defaults an absent key, so an empty
+  value used to fail the registry lookup and land on grayscale instead of the
+  class default.
+- **Filed, not fixed:** `palette_index()` is case-sensitive while five layers'
+  `readSettings()` lowercase the persisted name — pre-existing, four of the five
+  files outside this branch. [camp#235](https://github.com/rolker/camp/issues/235).
+
 **Rev 18** (2026-09-17) — **round-6 PR triage fixes (Copilot R7).** No design
 change; four should-fix, two suggestions and one nit, all new ground.
 
