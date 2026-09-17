@@ -69,33 +69,7 @@ constexpr double kLabelGapPixels = 4.0;
 // sits at the default 0.0.
 constexpr double kHoveredZValue = 1.0;
 
-// The first vertex CAMP can place, which is what the item is positioned at.
-//
-// [camp#22 round-3 should-fix] EXTERIOR RINGS ONLY. This used to fall back to an
-// interior-ring vertex, which admitted a polygon whose exterior is entirely
-// unplaceable but whose HOLE has a valid vertex: the constructor then closed an
-// empty exterior and addRing() built only the hole, which Qt::OddEvenFill paints
-// as solid fill — a hole drawn as a feature, in a file CAMP has already said it
-// cannot place. Such a polygon is now skipped and counted in the layer's
-// `skipped` tally like any other unplaceable feature. Points and lines carry no
-// interior rings, so nothing else changes.
-const QGeoCoordinate* firstCoordinate(const ParsedGeometry& geometry)
-{
-  for(const auto& coordinate : geometry.exterior)
-    if(isPlaceable(coordinate))
-      return &coordinate;
-  return nullptr;
-}
-
 }  // namespace
-
-bool isPlaceable(const QGeoCoordinate& coordinate)
-{
-  // QGeoCoordinate::isValid() is exactly the contract documented in the header:
-  // both ordinates set and finite, latitude in [-90, 90], longitude in
-  // [-180, 180]. A default-constructed (unset) coordinate is invalid too.
-  return coordinate.isValid();
-}
 
 QPointF placeableToMap(const QGeoCoordinate& coordinate)
 {
@@ -104,11 +78,6 @@ QPointF placeableToMap(const QGeoCoordinate& coordinate)
   const double latitude =
       std::max(-kMaximumLatitudeDegrees, std::min(kMaximumLatitudeDegrees, coordinate.latitude()));
   return web_mercator::geoToMap(QGeoCoordinate(latitude, coordinate.longitude()));
-}
-
-bool hasPlaceableCoordinate(const ParsedGeometry& geometry)
-{
-  return firstCoordinate(geometry) != nullptr;
 }
 
 VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry& geometry):
@@ -139,7 +108,7 @@ VectorFeatureItem::VectorFeatureItem(QGraphicsItem* parent, const ParsedGeometry
   // scene items created at load for the handful the operator ever hovers.
   setAcceptHoverEvents(true);
 
-  const QGeoCoordinate* anchor = firstCoordinate(geometry);
+  const QGeoCoordinate* anchor = firstPlaceableCoordinate(geometry);
   if(anchor)
   {
     // [ADR-0002] Transform to Web-Mercator scene metres ONCE, here, at load —

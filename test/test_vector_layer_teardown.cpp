@@ -592,14 +592,29 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
   delete uncapped;
 }
 
-// [camp#22 round-4 should-fix] "The cap was hit AND every capped geometry was
-// unplaceable" must still say the rest of the file was not read.
+// [camp#22 round-9 suggestion] THE CAP IS NOT SPENT ON GEOMETRY THAT CANNOT BE
+// PLACED — so a file of such geometry is read in full and reported as read in
+// full.
 //
-// That combination is exactly a .prj-less national shapefile, and the status used
-// to read "(no placeable items; N skipped)" — a verdict on the whole file when
-// only its first N features had been read. The log line said it; the Layers tab,
-// which is the status the operator actually sees, did not.
-TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
+// This test is the round-4 case turned around by the round-9 fix, and the turn is
+// the point. Round 4 asked that "the cap was hit AND every capped geometry was
+// unplaceable" still say the rest of the file went unread, because reporting
+// "(no placeable items; N skipped)" alone was a verdict on a whole file of which
+// only the first N features had been read. That combination is no longer
+// reachable through this parser: an unplaceable geometry is now dropped where an
+// empty-exterior one already was, without being emitted and without charging the
+// cap, so a .prj-less file no longer stops at the cap — it is read to its last
+// feature and every geometry of it is counted as skipped.
+//
+// What round 4 protected against therefore cannot happen here: the status is
+// about a file that WAS read in full, and saying "rest of file not read" would
+// now be the false statement. The cost is wall time on a file that shows nothing,
+// which is the trade already accepted for geometries_with_empty_exterior (see
+// ParseOptions::max_geometries); memory is untouched, because nothing dropped is
+// ever materialised, and the parse stays abortable at the same granularity. The
+// capped-and-partial path itself is still asserted, over a file with drawable
+// features, by FeatureCapBoundsGuiThreadWorkAndIsReported above.
+TEST(VectorLayerTeardown, CapIsNotSpentOnGeometryThatCannotBePlaced)
 {
   QTemporaryDir dir;
   ASSERT_TRUE(dir.isValid());
@@ -614,16 +629,22 @@ TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
   EXPECT_EQ(layer->featureCount(), 0);
   EXPECT_TRUE(layer->status().contains("no placeable items"))
       << layer->status().toStdString();
-  EXPECT_TRUE(layer->status().contains("not read"))
-      << "a capped-but-empty layer must still say the rest of the file was not read: "
+  // ALL FOUR, although the cap is two: the two beyond the cap prove the cap was
+  // never charged for the ones before them.
+  EXPECT_TRUE(layer->status().contains("4"))
+      << "every unplaceable geometry must be counted, cap or no cap: "
+      << layer->status().toStdString();
+  EXPECT_FALSE(layer->status().contains("not read"))
+      << "the file was read to its end, so the status must not claim otherwise: "
       << layer->status().toStdString();
   delete layer;
 
-  // Uncapped, the same file is empty with nothing left unread — and must NOT
-  // claim otherwise.
+  // Uncapped, the same file reads identically — which is the other half of "the
+  // cap was not charged".
   auto* uncapped = new camp::vector::VectorLayer(map.topLevelLayers(), path);
   ASSERT_TRUE(waitForStatus(uncapped));
   EXPECT_FALSE(uncapped->status().contains("not read")) << uncapped->status().toStdString();
+  EXPECT_TRUE(uncapped->status().contains("4")) << uncapped->status().toStdString();
   delete uncapped;
 }
 

@@ -264,6 +264,12 @@ void VectorLayer::loadFinished()
       // read as degrees, a NaN from a failed transform — is skipped rather than
       // placed 1e17 metres away, where it would poison childrenBoundingRect()
       // (fit-to-extent) and the scene index for every other feature.
+      //
+      // [camp#22 round-9 suggestion] The PARSE now applies this same test before
+      // emitting (and before charging the geometry cap), so for a result this
+      // class loaded itself nothing reaches here to be skipped — the counter is
+      // fed from ParseDiagnostics below instead. It stays as the backstop it has
+      // always been for a caller that hands this class a result it did not parse.
       if(!hasPlaceableCoordinate(geometry))
       {
         ++skipped;
@@ -280,9 +286,17 @@ void VectorLayer::loadFinished()
                << "item(s) whose coordinates are not a valid latitude/longitude"
                << "(a shapefile missing its .prj sidecar is the usual cause)";
   if(capped)
+    // [camp#22 round-9 suggestion] The wording says what is TRUE: the cap is spent
+    // per emitted geometry part, and some emitted parts can still be rejected here
+    // as unplaceable, so "what is shown is the first 50000 drawn items" overstated
+    // it whenever that happened. The status line below has always been honest —
+    // it prints the real item count with the unplaceable count beside it — and
+    // this line now matches it.
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- stopped at the"
-               << feature_cap_ << "item cap; the REST OF THE FILE WAS NOT READ, so"
-               << "what is shown is the first" << feature_cap_ << "drawn items and no more."
+               << feature_cap_ << "item cap; the REST OF THE FILE WAS NOT READ."
+               << "What is shown is what the first" << feature_cap_
+               << "geometry parts of the file yielded — see the item count in the layer's"
+               << "status, which is lower when some of them could not be placed."
                << "The cap bounds both the items built on the GUI thread and the memory"
                << "the parse itself takes.";
   if(result.diagnostics.polygons_without_exterior_ring > 0)
@@ -313,9 +327,20 @@ void VectorLayer::loadFinished()
   // has its own counter because points_dropped — the obvious candidate — also
   // counts bad VERTICES of lines and polygons that were drawn in full, and
   // folding that in would report items as missing that are on screen.
+  // [camp#22 round-9 suggestion] ...and a geometry the parse dropped because none
+  // of its vertices is a place on the earth is the same kind of loss, moved one
+  // step earlier: it used to be emitted, charged to the cap, and rejected by the
+  // loop above, where it was counted. Counting it here keeps the reported number
+  // the same while the cap stops being spent on it.
+  if(result.diagnostics.geometries_without_placeable_vertex > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- dropped"
+               << result.diagnostics.geometries_without_placeable_vertex
+               << "geometry(ies) whose coordinates are not a valid latitude/longitude"
+               << "(a layer with no spatial reference is the usual cause)";
   skipped += result.diagnostics.geometries_with_empty_exterior +
              result.diagnostics.polygons_without_exterior_ring +
-             result.diagnostics.point_geometries_dropped;
+             result.diagnostics.point_geometries_dropped +
+             result.diagnostics.geometries_without_placeable_vertex;
   if(result.diagnostics.layers_failed > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
                << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total

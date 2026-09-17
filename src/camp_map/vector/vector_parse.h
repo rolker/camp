@@ -93,9 +93,11 @@ struct ParseOptions
     //
     // [camp#22 round-8 suggestion] WHAT THE CAP DOES NOT BOUND, deliberately: a
     // geometry that is dropped as undrawable (an exterior with no usable vertex —
-    // ParseDiagnostics::geometries_with_empty_exterior — or a polygon with no
-    // ring) is not charged to it, so a file whose geometries ALL drop out is read
-    // to its last feature. The cap's "the rest of the file is never read" holds
+    // ParseDiagnostics::geometries_with_empty_exterior — a polygon with no ring,
+    // a standalone point whose coordinate would not transform, or — [round 9] —
+    // a geometry NO vertex of which can be placed on the scene,
+    // ParseDiagnostics::geometries_without_placeable_vertex) is not charged to it,
+    // so a file whose geometries ALL drop out is read to its last feature. The cap's "the rest of the file is never read" holds
     // for a file that produces drawable geometry, which is the case it exists for.
     // Accepted, with the reasoning written down rather than rediscovered:
     //  * MEMORY, the thing the cap is here to bound, is unaffected — a dropped
@@ -106,7 +108,10 @@ struct ParseOptions
     //  * the alternative — charging the cap for geometries that were dropped —
     //    is exactly what the round-5 fix removed: it spends the operator's budget
     //    on shapes that draw nothing, and makes a mixed file report the cap
-    //    reached having produced fewer items than the cap.
+    //    reached having produced fewer items than the cap. [round 9] The
+    //    unplaceable class is where that mattered most: a multi-layer container
+    //    whose FIRST layer has no spatial reference could exhaust the cap on
+    //    shapes that draw nothing and never reach the good layer behind it.
     // What is left is wall time on a pathological file, and the operator is told:
     // the drop count reaches the layer's status (VectorLayer::loadFinished()).
     int max_geometries = 0;
@@ -208,7 +213,57 @@ struct ParseDiagnostics
     // different case of no ring at all. VectorLayer folds this into the count of
     // items it could not place, so the Layers tab says what happened.
     int geometries_with_empty_exterior = 0;
+    // [camp#22 round-9 suggestion] Geometries dropped because NO vertex of their
+    // exterior can be placed on the scene (`hasPlaceableCoordinate()`), although
+    // every one of them transformed successfully.
+    //
+    // The case is a layer with no spatial reference at all: no transformation is
+    // built, the file's projected metres are read as degrees, and the result is a
+    // perfectly well-formed QGeoCoordinate that is nowhere on earth. Nothing above
+    // catches it — no vertex FAILED and the exterior is not empty — so such a
+    // geometry used to be emitted and to SPEND a cap slot, only for the display
+    // layer to reject it on the same test one step later. On a multi-layer
+    // container an SRS-less layer could therefore exhaust the cap on shapes that
+    // draw nothing and starve a good layer behind it. Dropping it here is the same
+    // rule as geometries_with_empty_exterior, applied to the same question asked
+    // one step earlier; the count is what keeps the operator's status honest, since
+    // the dropped geometry no longer reaches the layer to be counted there.
+    int geometries_without_placeable_vertex = 0;
 };
+
+// [camp#22] True when @p coordinate can be placed on the Web-Mercator scene: both
+// ordinates finite, latitude within +/-90, longitude within +/-180
+// (`QGeoCoordinate::isValid()`).
+//
+// This is not a theoretical guard. A shapefile shipped without its `.prj` sidecar
+// has no spatial reference, so the parser reads its projected eastings and
+// northings as degrees — a UTM northing of 4 800 000 becomes "latitude 4800000",
+// and `geoToMap()` turns that into a position ~1e17 scene metres away. A single
+// such feature poisons the layer's `childrenBoundingRect()` (so fit-to-extent
+// flies to nowhere) and the scene's spatial index. A NaN ordinate, which a failed
+// coordinate transform produces, is worse: every comparison against it is false,
+// and the bounding rect becomes permanently invalid.
+//
+// [camp#22 round-9 suggestion] It lives HERE, beside the parse, rather than in the
+// display layer where it started: the parser applies it too, to decide whether a
+// geometry is worth emitting and charging to the geometry cap, and a second copy
+// of the rule in two files is a rule that drifts.
+bool isPlaceable(const QGeoCoordinate &coordinate);
+
+// The first vertex of @p geometry's EXTERIOR that `isPlaceable()` admits, or
+// nullptr when it has none. This is what a display item is positioned at.
+//
+// [camp#22 round-3 should-fix] Interior rings deliberately do not qualify. A
+// polygon whose exterior is entirely unplaceable but whose HOLE has a valid vertex
+// would otherwise be admitted, and the item would be built from the hole alone —
+// which `Qt::OddEvenFill` paints as solid fill, turning a hole into a feature in a
+// file whose coordinates CAMP has already said it cannot place. Points and lines
+// have no interior rings, so this reads the same for them.
+const QGeoCoordinate *firstPlaceableCoordinate(const ParsedGeometry &geometry);
+
+// True when @p geometry has at least one placeable coordinate in its exterior —
+// i.e. when an item built from it would land somewhere real.
+bool hasPlaceableCoordinate(const ParsedGeometry &geometry);
 
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.
 //

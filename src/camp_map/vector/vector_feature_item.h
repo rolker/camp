@@ -11,27 +11,19 @@
 #include <QString>
 #include <QVariant>
 
+#include "vector_parse.h"
+
 class QGraphicsSceneHoverEvent;
 class QGraphicsSimpleTextItem;
 
 namespace camp::vector
 {
 
-struct ParsedGeometry;
-
-/// [camp#22] True when @p coordinate can be placed on the Web-Mercator scene:
-/// both ordinates finite, latitude within +/-90, longitude within +/-180
-/// (`QGeoCoordinate::isValid()`).
-///
-/// This is not a theoretical guard. A shapefile shipped without its `.prj`
-/// sidecar has no spatial reference, so the parser reads its projected eastings
-/// and northings as degrees — a UTM northing of 4 800 000 becomes "latitude
-/// 4800000", and `geoToMap()` turns that into a position ~1e17 scene metres away.
-/// A single such feature poisons the layer's `childrenBoundingRect()` (so
-/// fit-to-extent flies to nowhere) and the scene's spatial index. A NaN ordinate,
-/// which a failed coordinate transform produces, is worse: every comparison
-/// against it is false, and the bounding rect becomes permanently invalid.
-bool isPlaceable(const QGeoCoordinate& coordinate);
+/// [camp#22 round-9] `isPlaceable()`, `firstPlaceableCoordinate()` and
+/// `hasPlaceableCoordinate()` are declared in vector_parse.h and re-exported
+/// through this include: the PARSE applies the same test, to decide whether a
+/// geometry is worth emitting and charging to the geometry cap, and one rule in
+/// two files is a rule that drifts.
 
 /// [camp#22] @p coordinate in Web-Mercator scene metres, with its latitude
 /// CLAMPED to the projection's own limit (`web_mercator::maximum_latitude`,
@@ -51,19 +43,6 @@ bool isPlaceable(const QGeoCoordinate& coordinate);
 /// dropped, because dropping it would silently lose real data — a polar survey
 /// line is a thing this program should be able to show.
 QPointF placeableToMap(const QGeoCoordinate& coordinate);
-
-/// True when @p geometry has at least one placeable coordinate IN ITS EXTERIOR
-/// ring — i.e. when a VectorFeatureItem built from it would land somewhere real.
-/// The layer checks this before constructing an item and reports the number of
-/// features skipped.
-///
-/// [camp#22] Interior rings deliberately do not qualify. A polygon whose exterior
-/// is entirely unplaceable but whose HOLE has a valid vertex would otherwise be
-/// admitted, and the item would be built from the hole alone — which
-/// `Qt::OddEvenFill` paints as solid fill, turning a hole into a feature in a file
-/// whose coordinates CAMP has already said it cannot place. Points and lines have
-/// no interior rings, so this reads the same for them.
-bool hasPlaceableCoordinate(const ParsedGeometry& geometry);
 
 /// [camp#22] One read-only feature of a VectorLayer.
 ///

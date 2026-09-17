@@ -209,6 +209,17 @@ void appendGeometry(const OGRGeometry *geometry,
                 break;
             }
             g.exterior.push_back(*coordinate);
+            // [camp#22 round-9 suggestion] ...and it still has to be PLACEABLE. A
+            // layer with no spatial reference takes the untransformed branch, so a
+            // projected easting/northing arrives here as a well-formed coordinate
+            // that is nowhere on earth: nothing failed, nothing is empty, and the
+            // display layer rejects it one step later — after it has spent a cap
+            // slot a drawable feature needed.
+            if(!hasPlaceableCoordinate(g))
+            {
+                ++diagnostics.geometries_without_placeable_vertex;
+                break;
+            }
             out.push_back(std::move(g));
             budget.spend();
         }
@@ -241,6 +252,15 @@ void appendGeometry(const OGRGeometry *geometry,
             if(g.exterior.empty())
             {
                 ++diagnostics.geometries_with_empty_exterior;
+                break;
+            }
+            // [camp#22 round-9 suggestion] The same rule one question further on:
+            // every vertex transformed (or needed no transform) and not one of
+            // them is a place on the earth — the SRS-less layer read as degrees.
+            // Drop and count rather than emit and charge; see the counter.
+            if(!hasPlaceableCoordinate(g))
+            {
+                ++diagnostics.geometries_without_placeable_vertex;
                 break;
             }
             out.push_back(std::move(g));
@@ -276,6 +296,15 @@ void appendGeometry(const OGRGeometry *geometry,
             if(g.exterior.empty())
             {
                 ++diagnostics.geometries_with_empty_exterior;
+                break;
+            }
+            // [camp#22 round-9 suggestion] The polygon half of the placeability
+            // drop, tested BEFORE the interior-ring loop for the same reason the
+            // empty-exterior test is: a polygon that cannot be drawn at all is not
+            // worth walking every hole of.
+            if(!hasPlaceableCoordinate(g))
+            {
+                ++diagnostics.geometries_without_placeable_vertex;
                 break;
             }
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
@@ -387,6 +416,27 @@ QMap<QString, QVariant> readAttributes(const OGRFeature *feature)
 }
 
 }  // namespace
+
+bool isPlaceable(const QGeoCoordinate &coordinate)
+{
+    // QGeoCoordinate::isValid() is exactly the contract documented in the header:
+    // both ordinates set and finite, latitude in [-90, 90], longitude in
+    // [-180, 180]. A default-constructed (unset) coordinate is invalid too.
+    return coordinate.isValid();
+}
+
+const QGeoCoordinate *firstPlaceableCoordinate(const ParsedGeometry &geometry)
+{
+    for(const auto &coordinate : geometry.exterior)
+        if(isPlaceable(coordinate))
+            return &coordinate;
+    return nullptr;
+}
+
+bool hasPlaceableCoordinate(const ParsedGeometry &geometry)
+{
+    return firstPlaceableCoordinate(geometry) != nullptr;
+}
 
 std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                                            const ParseOptions &options,
@@ -557,6 +607,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         const int point_geometries_dropped_before = diag.point_geometries_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
         const int empty_exteriors_before = diag.geometries_with_empty_exterior;
+        const int unplaceable_before = diag.geometries_without_placeable_vertex;
         const int unhandled_before = diag.geometries_unhandled;
 
         // [camp#22 round-5 should-fix] The per-layer "what was left out" summaries,
@@ -582,6 +633,14 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                            << (diag.geometries_with_empty_exterior - empty_exteriors_before)
                            << "geometry(ies) whose exterior holds no usable vertex (every"
                            << "vertex failed to transform, or the ring was empty)";
+
+            if(diag.geometries_without_placeable_vertex > unplaceable_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- dropped"
+                           << (diag.geometries_without_placeable_vertex - unplaceable_before)
+                           << "geometry(ies) whose coordinates are not a valid"
+                           << "latitude/longitude (a layer with no spatial reference, so its"
+                           << "projected metres were read as degrees, is the usual cause)";
 
             if(diag.point_geometries_dropped > point_geometries_dropped_before)
                 qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
