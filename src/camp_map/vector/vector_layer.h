@@ -229,6 +229,10 @@ private:
 
   QString filename_;
   bool loaded_ = false;
+  /// [camp#22 round-9] loadFinished() runs exactly once per layer. It clears the
+  /// watcher's future to release the parse result (see the slot), and clearing it
+  /// can deliver finished() a second time — over an empty result store.
+  bool load_reported_ = false;
   int feature_cap_ = kMaxFeatureItems;
 
   std::vector<VectorFeatureItem*> features_;   // children; owned by the scene tree

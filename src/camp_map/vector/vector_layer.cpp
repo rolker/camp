@@ -189,7 +189,50 @@ bool VectorLayer::isAborted()
 
 void VectorLayer::loadFinished()
 {
-  const LoadResult result = future_watcher_.result();
+  // [camp#22 round-9 should-fix] READ THE RESULT BY REFERENCE, AND LET IT GO.
+  //
+  // Qt 5.15's QFutureWatcher<T>::result() and QFuture<T>::result() both return T
+  // BY VALUE, so `const LoadResult result = future_watcher_.result();` built a
+  // second full std::vector<ParsedLayer> — every coordinate and every per-part
+  // attribute map — while the future's own result store still held the first.
+  // Peak memory doubled at the exact moment the GUI thread is also building up to
+  // kMaxFeatureItems items, and because future_watcher_ is a member that was
+  // never reset, the future's copy was RETAINED for the layer's whole lifetime
+  // even though the items carry their own attributes. That undercut the memory
+  // bound kMaxFeatureItems is documented to provide.
+  //
+  // Qt 5 has no takeResult(), but the copy is avoidable: constBegin() dereferences
+  // to `const T&` (QFuture::resultReference), and clearing the watcher's future at
+  // the end of the slot releases the store. The future is held in a NAMED LOCAL
+  // because the const_iterator points at the QFuture object it came from — off a
+  // temporary it would dangle the moment the expression ended — and the local also
+  // keeps the store alive across the clear below, for the rest of this slot.
+  //
+  // Re-entrancy: setFuture() with an empty future can deliver finished() once
+  // more, and this slot must not then dereference an empty result store. It runs
+  // exactly once per layer; the flag is what says so. An empty future also leaves
+  // the destructor's waitForFinished() a no-op, which is correct — by the time we
+  // are here the worker has finished.
+  if(load_reported_)
+    return;
+  load_reported_ = true;
+
+  const QFuture<LoadResult> future = future_watcher_.future();
+  struct FutureRelease
+  {
+    QFutureWatcher<LoadResult>& watcher;
+    ~FutureRelease() { watcher.setFuture(QFuture<LoadResult>()); }
+    FutureRelease(const FutureRelease&) = delete;
+    FutureRelease& operator=(const FutureRelease&) = delete;
+  } release_future{future_watcher_};
+
+  if(!future.isResultReadyAt(0))
+  {
+    // No result at all: the worker was cancelled before it produced one. Nothing
+    // to report and nothing to read — treat it as the abort path below does.
+    return;
+  }
+  const LoadResult& result = *future.constBegin();
   if(result.diagnostics.aborted)
     return;   // the parse was cancelled; this layer is on its way out
   if(!result.opened)
