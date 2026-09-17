@@ -228,8 +228,30 @@ void VectorLayer::loadFinished()
 
   if(!future.isResultReadyAt(0))
   {
-    // No result at all: the worker was cancelled before it produced one. Nothing
-    // to report and nothing to read — treat it as the abort path below does.
+    // [camp#22 round-10 must-fix] NO RESULT AT ALL, and the layer has to SAY SO.
+    //
+    // The reachable cause is not cancellation — it is the worker THROWING.
+    // QtConcurrent's run-base catches the exception, hands it to
+    // reportException(), which CANCELS the future, and reportResult() then bails
+    // without ever storing a result (Qt 5.15 qtconcurrentrunbase.h /
+    // qfutureinterface.h). The exception that gets here is the std::bad_alloc the
+    // geometry cap exists to bound: a file large enough, or a cap raised far
+    // enough, that the parse cannot hold what it read. That used to RETHROW here
+    // and take the process down — loud, and wrong; saying nothing at all is the
+    // silent-failure class this round exists to remove, and it leaves the Layers
+    // tab reading "(loading...)" for the rest of the session.
+    //
+    // A genuine abort — the destructor raised the flag and is joining the worker
+    // right now — is the other way to reach an empty result store, and it is not
+    // reported: that layer is being destroyed, so a status nobody will ever read
+    // and a warning about our own teardown are both noise.
+    if(!isAborted())
+    {
+      qWarning() << "camp::vector::VectorLayer:" << filename_
+                 << "- the load produced no result: the parse threw. Running out of"
+                 << "memory reading a very large file is the usual cause.";
+      setStatus("(load failed)");
+    }
     return;
   }
   const LoadResult& result = *future.constBegin();

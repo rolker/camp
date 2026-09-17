@@ -496,6 +496,32 @@ TEST(VectorLayerTeardown, UnopenableFileReportsLoadFailed)
   delete layer;
 }
 
+// [camp#22 round-10 must-fix] THE OTHER "(load failed)" PATH — the worker THREW —
+// IS NOT COVERED HERE, deliberately, and this is why.
+//
+// VectorLayer::loadFinished() now reports "(load failed)" plus a qWarning() when
+// the future carries no result, which QtConcurrent produces when the work
+// function throws: reportException() cancels the future and reportResult() never
+// runs. The exception that reaches it in production is std::bad_alloc, from a
+// parse too large to hold.
+//
+// Provoking it needs a seam this class does not have and should not grow for a
+// test: the work function is `VectorLayer::loadVectorFile`, a private,
+// non-virtual member the constructor hands straight to QtConcurrent::run(), so
+// there is nothing a fixture can substitute, override or wrap. The alternative —
+// exhausting the heap for real — is not a test, it is a way to take the whole
+// gtest process (and whatever else is on the machine) down, and it would be
+// neither deterministic nor bounded. An `#ifdef`-gated throw compiled into the
+// production path would be testing the test.
+//
+// What IS covered: the status string and the featureCount() this path sets are
+// exactly the ones UnopenableFileReportsLoadFailed asserts above (the two paths
+// converge on `setStatus("(load failed)")`), and the abort half of the same
+// branch — where nothing must be reported — is exercised by
+// DestroyDuringLoadJoinsTheWorker and DestroyDuringLoadDoesNotWaitOutTheWholeParse,
+// which destroy layers mid-parse and would trip an unguarded setStatus() on a
+// half-destroyed layer.
+
 // [camp#22] A GDAL virtual-file-system path is REFUSED without being opened.
 //
 // The driver allowlist cannot stop a remote read: GDAL resolves /vsicurl/,
