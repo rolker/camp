@@ -46,6 +46,18 @@ using camp::vector::writePersistedVectorLayerFiles;
 namespace
 {
 
+// Exposes the protected settings hooks so the style round-trip can be asserted
+// synchronously, without waiting for MapItem::itemConstructed's deferred
+// readSettings() — the pattern test_range_persist.cpp and test_gggs_persistence.cpp
+// use for the raster layers.
+class TestableVectorLayer: public VectorLayer
+{
+public:
+  using VectorLayer::VectorLayer;
+  using VectorLayer::readSettings;
+  using VectorLayer::writeSettings;
+};
+
 // What AutonomousVehicleProject::persistVectorLayers() does: rebuild the whole
 // key from the layers it tracks, de-duped, in order. Written here as the tracked
 // list so the add/remove sequence can be driven without the project.
@@ -134,6 +146,52 @@ TEST(VectorLayerPersistence, SettingsKeyIsPathNotBasename)
 
   delete layer_a;
   delete layer_b;
+}
+
+// [camp#22 round-5 should-fix] PER-LAYER STYLE round-trips through QSettings.
+//
+// The path-based settings key (camp#126) exists so a style survives reopening the
+// same file, and SettingsKeyIsPathNotBasename only checks that two layers' keys
+// DIFFER. A mistyped value key, a group mismatch, or a lost readSettings() call
+// would leave every persisted style silently forgotten with the suite green — the
+// operator sets colour-by-field once and finds it gone on the next launch.
+TEST(VectorLayerPersistence, StyleRoundTripsThroughSettings)
+{
+  QSettings().clear();
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = dir.filePath("candidates.geojson");
+
+  camp::map::Map map;
+  auto* written = new TestableVectorLayer(map.topLevelLayers(), path);
+  // The setters persist as they go (each calls writeSettings()); the explicit
+  // call is what an operator-driven session ends with either way.
+  written->setColorField(QStringLiteral("depth"));
+  written->setSizeField(QStringLiteral("confidence"));
+  written->setColormap("plasma");
+  written->writeSettings();
+  ASSERT_NE(written->colormap(), std::string("viridis")) << "fixture must differ from the default";
+
+  // A second layer on the SAME FILE — what reopening is — restores all three.
+  auto* restored = new TestableVectorLayer(map.topLevelLayers(), path);
+  ASSERT_EQ(restored->settingsKey(), written->settingsKey())
+      << "two layers on one file must share a settings key or nothing can round-trip";
+  restored->readSettings();
+  EXPECT_EQ(restored->colorField(), QStringLiteral("depth"));
+  EXPECT_EQ(restored->sizeField(), QStringLiteral("confidence"));
+  EXPECT_EQ(restored->colormap(), std::string("plasma"));
+
+  // And a layer on a DIFFERENT file is untouched by it — the point of keying on
+  // the path rather than the basename.
+  auto* other = new TestableVectorLayer(map.topLevelLayers(), dir.filePath("other.geojson"));
+  other->readSettings();
+  EXPECT_TRUE(other->colorField().isEmpty());
+  EXPECT_TRUE(other->sizeField().isEmpty());
+  EXPECT_EQ(other->colormap(), std::string("viridis")) << "the default palette";
+
+  delete other;
+  delete restored;
+  delete written;
 }
 
 // [camp#22 must-fix 1] A drag-reorder in the Layers tab must NOT un-persist the
