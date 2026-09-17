@@ -27,6 +27,7 @@
 #include "vector/polygon.h"
 #include "vector/linestring.h"
 #include "behavior.h"
+#include "mission_insertion.h"
 #include "orbit.h"
 #include "avoid_area.h"
 
@@ -38,6 +39,7 @@
 #include "map/layer_list.h"
 #include "raster/raster_layer.h"
 #include "raster/gggs_tile_layer.h"
+#include "vector/vector_layer.h"
 #include <QSettings>
 #include <algorithm>
 
@@ -59,6 +61,12 @@ AutonomousVehicleProject::AutonomousVehicleProject(QObject *parent) : QAbstractI
     // removed via the Layers-tab Remove action (camp_map Layer detaches through the
     // Map model; we react here so camp_map stays unaware of the project).
     connect(m_map, &QAbstractItemModel::rowsAboutToBeRemoved, this, &AutonomousVehicleProject::onChartLayerRemoved);
+    // [camp#22 / camp#90] The read-only vector layers deliberately do NOT use
+    // rowsAboutToBeRemoved: Map::setMapItemParent() implements a drag-reorder as
+    // beginRemoveRows + beginInsertRows, so that signal cannot tell a reorder from
+    // a removal and dragging a vector layer up the list used to un-persist it.
+    // Each layer is connected to VectorLayer::removedFromMap instead, which fires
+    // only from Layer::removeFromMap() — see openVectorLayer().
 
     m_root = new Group();
     m_root->setParent(this);
@@ -197,12 +205,33 @@ void AutonomousVehicleProject::addBackgroundLayer(const QString &fname, const QS
     emit backgroundUpdated();
 }
 
-void AutonomousVehicleProject::openGeometry(const QString& fname, QString label)
+void AutonomousVehicleProject::openGeometry(const QString& fname, QString label, MissionItem *parent)
 {
+    // [camp#22] Resolve the insertion target ONCE and route both the model's
+    // insert notification (RowInserter) and the new node through it. `parent` is
+    // a nullptr sentinel rather than a default argument because the fallback is
+    // a member (m_currentGroup), which a default argument cannot name. The
+    // menu-action caller passes nothing and lands on m_currentGroup exactly as
+    // before; MissionItem::readChildren passes `this`, so a VectorDataset saved
+    // inside a Group is restored inside that Group instead of wherever the
+    // project's current-group pointer happens to be.
+    MissionItem *insertion_parent = camp::mission::resolveInsertionParent(parent, m_currentGroup);
+    // [camp#22] A null result is NOT "insert at top level" — RowInserter
+    // dereferences the parent it is handed (see mission_insertion.h, which names
+    // this caller). In the running application m_currentGroup is set in the
+    // constructor and never cleared, so this is a programming error rather than a
+    // state the operator can reach; say so instead of crashing on it.
+    if(!insertion_parent)
+    {
+        qWarning() << "AutonomousVehicleProject::openGeometry:" << fname
+                   << "- no insertion parent (no requested parent and no current group);"
+                   << "the file is not opened";
+        return;
+    }
     VectorDataset * vd;
     {
-        RowInserter ri(*this,m_currentGroup);
-        vd = new VectorDataset(m_currentGroup);
+        RowInserter ri(*this,insertion_parent);
+        vd = new VectorDataset(insertion_parent);
         if(label.isEmpty())
             vd->setObjectName(QFileInfo(fname).fileName());
         else
@@ -353,6 +382,300 @@ void AutonomousVehicleProject::onChartLayerRemoved(const QModelIndex& parent, in
         // Refresh overlays (depth-dependent planning, fit-to-extent presence).
         emit backgroundUpdated();
     }
+}
+
+QString AutonomousVehicleProject::canonicalVectorLayerPath(const QString &fname)
+{
+    // [camp#22] Identity for de-dup, removal and persistence is the file itself,
+    // not the spelling of the path that reached us. The rule lives in camp::vector
+    // so it can be exercised alongside withoutVectorLayerFile(), which depends on
+    // its one awkward case (a path that does not resolve keeps its raw spelling);
+    // this class is not constructible in a test harness.
+    return camp::vector::canonicalVectorLayerPath(fname);
+}
+
+void AutonomousVehicleProject::openVectorLayer(const QString &requested)
+{
+    // [camp#22] Refuse a GDAL virtual-file-system path before anything is created
+    // or PERSISTED: /vsicurl/, /vsizip/, /vsis3/ … are resolved by GDAL ahead of
+    // driver selection, so the driver allowlist does not stop them fetching. A
+    // refused path must not reach vectorLayers/files either, or every later
+    // launch would retry it unattended.
+    if(camp::vector::isVirtualFileSystemPath(requested))
+    {
+        qWarning() << "AutonomousVehicleProject: refusing vector layer" << requested
+                   << "- a /vsi path is a GDAL virtual file system, which can fetch"
+                   << "over the network. Open Vector Layer reads local files only.";
+        return;
+    }
+    const QString fname = canonicalVectorLayerPath(requested);
+    // [camp#22 / ADR-0003] De-dup by filename: the same file must not stack two
+    // identical layers, and without this the restore path plus a command-line or
+    // menu open of the same file would accumulate a duplicate on every launch.
+    for(auto* existing : m_vectorLayers)
+        if(existing->filename() == fname)
+            return;
+
+    auto layers = m_map->topLevelLayers();
+    if(!layers)
+    {
+        // [camp#22 round-10 suggestion] REMEMBER THE FILE, then give up. This is
+        // the one way a restore that RAN TO COMPLETION could still lose an entry:
+        // the file is in the order of record and, having been reachable,
+        // planVectorLayerRestore() put it on the openable list rather than the
+        // unavailable one — so a bare return left it in neither, and
+        // rebuildPersistedVectorLayerFiles() reads "in the order but neither
+        // loaded nor unavailable" as "removed through the Layers tab" and drops
+        // it. The single trailing persist then wrote the file out of existence,
+        // silently, although the operator did nothing of the kind.
+        //
+        // The unavailable list is the right home for it: it means "an entry whose
+        // layer could not be created this time, carried forward to the next
+        // launch", which is exactly the state here. It applies equally to an
+        // operator-initiated open — they asked for this file, and a map with no
+        // top-level layer list is a condition of this session, not their decision.
+        m_unavailableVectorLayerFiles =
+            camp::vector::withVectorLayerFile(m_unavailableVectorLayerFiles, fname);
+        qWarning() << "AutonomousVehicleProject: cannot open vector layer" << fname
+                   << "- the map has no top-level layer list. The entry is KEPT and"
+                   << "will be retried on the next launch.";
+        return;
+    }
+    // [camp#22 / camp#90] The file is reachable now, so it is no longer an
+    // unavailable-at-startup entry. Dropping it here is what lets a LATER removal
+    // through the Layers tab stick: while the path stayed in
+    // m_unavailableVectorLayerFiles, persistVectorLayers() kept finding it on the
+    // unavailable branch and wrote it back, so the layer returned on every launch
+    // — the camp#90/#117 bug in a new place. Still-missing paths keep their
+    // entries, which is what carries an unmounted share across a session.
+    // Deliberately AFTER every early return: the path may only leave the
+    // unavailable list once this call is certain to track the file as a loaded
+    // layer. Dropping it before the topLevelLayers() guard left the file neither
+    // unavailable nor loaded, and the next persist forgot it silently.
+    // Purged by canonical-equivalent IDENTITY, not by exact string: an entry is
+    // only canonical when its file resolved at the time it was written. A dangling
+    // symlink is remembered under its RAW spelling (canonicalFilePath is empty for
+    // it), and when the target appears and the operator opens that same symlink,
+    // `fname` is the resolved TARGET — an exact-match removal misses the raw entry,
+    // persistVectorLayers() writes it back on the unavailable branch, and removing
+    // the reopened layer through the Layers tab does not stick. Exact matches are
+    // still dropped; withoutVectorLayerFile() does both.
+    // That resolve costs one stat per unavailable entry, here on the GUI thread,
+    // on paths that may be unmounted shares — a bounded, deliberately accepted
+    // cost; the reasoning is on withoutVectorLayerFile()'s declaration.
+    // [camp#22 round-8 suggestion] The promotion below walks a DIFFERENT and
+    // longer list — the whole restored order, not the unavailable subset — so its
+    // cost is its own; it is stated on withVectorLayerFilePromoted()'s
+    // declaration, and it stops resolving at the entry it rewrites.
+    if(QFileInfo::exists(fname))
+    {
+        const QStringList purged =
+            camp::vector::withoutVectorLayerFile(m_unavailableVectorLayerFiles, fname);
+        // [camp#22 round-5 should-fix] A PROMOTION — this file was unavailable at
+        // startup and is now open — also has to rewrite the ORDER of record, for
+        // the same reason the purge above is identity-based. m_restoredVectorLayerOrder
+        // holds the spelling that was stored at startup, which for a path that did
+        // not resolve then is the RAW one; the layer is tracked under the resolved
+        // target. rebuildPersistedVectorLayerFiles() matches order against loaded
+        // filenames by exact string, so the raw entry missed, its slot was skipped,
+        // and the trailing append loop moved the reopened layer to the END of the
+        // operator's stacking order. Gated on the purge having actually changed the
+        // list so the resolve pass runs only on a promotion, never on every open.
+        //
+        // [camp#22 round-8 suggestion] The gate compares CONTENTS, not lengths. A
+        // length test is only equivalent while withoutVectorLayerFile() removes
+        // without de-duplicating — which it does today, unlike both of its
+        // siblings (withVectorLayerFile() and withVectorLayerFilePromoted() each
+        // collapse duplicates) — so the length form made a promotion silently
+        // depend on an unstated property of a function two files away. QStringList
+        // compares element-wise; the list is operator-sized and already walked
+        // twice on this path.
+        if(purged != m_unavailableVectorLayerFiles)
+            m_restoredVectorLayerOrder =
+                camp::vector::withVectorLayerFilePromoted(m_restoredVectorLayerOrder, fname);
+        m_unavailableVectorLayerFiles = purged;
+    }
+    // The layer parses asynchronously; it is recorded (and persisted) immediately,
+    // and reports a failed or empty load in its own Layers-tab status rather than
+    // being silently dropped here — the operator asked for this file, so a file
+    // that will not open should say so rather than vanish.
+    auto* layer = new camp::vector::VectorLayer(layers, fname);
+    // [camp#22 round-11 should-fix] PUT IT AT ITS ROW, not wherever a new item
+    // lands. camp::map::Map parents a newly constructed item at row 0 — the top of
+    // the Layers tab — which is right during the restore loop (it walks the order
+    // bottom to top, so each new layer belongs on top of the last) and WRONG for a
+    // layer reopened later: the promotion above just gave that file its slot back
+    // in the order of record, and leaving the layer on top made the on-screen
+    // stacking disagree with the list that the next launch will replay.
+    //
+    // Applied to every file that is IN the order, not only to a promotion: during
+    // the restore it computes the row the layer already has (each new layer is the
+    // last loaded entry of the order, so the rule puts it above its predecessor),
+    // so there is no second code path to keep true. A file opened from the menu
+    // that is not in the order returns -1 and keeps the default — landing on top,
+    // which is where the operator who just opened it is looking.
+    //
+    // The rule itself is camp::vector::vectorLayerRestoredRow(), pure so it can be
+    // exercised: this class is not constructible in a test harness.
+    {
+        // A Map row is the REVERSE of the child order — row 0 is the child drawn
+        // last, i.e. the top of the Layers tab (camp::map::Map::index()). Computed
+        // from the sibling list rather than asked of the model because Map::index()
+        // is private to the model implementation; this is the same arithmetic it
+        // does, over the list that MapItem exposes.
+        const QList<camp::map::MapItem*> siblings = layers->childMapItems();
+        const auto rowOf = [&siblings](camp::map::MapItem* item)
+        {
+            const int position = siblings.indexOf(item);
+            return position < 0 ? -1 : siblings.size() - 1 - position;
+        };
+        std::vector<camp::vector::LoadedVectorLayerRow> loadedRows;
+        loadedRows.reserve(m_vectorLayers.size() + 1);
+        for(auto* tracked : m_vectorLayers)
+            loadedRows.push_back({rowOf(tracked), tracked->filename()});
+        loadedRows.push_back({rowOf(layer), fname});
+        const int row = camp::vector::vectorLayerRestoredRow(
+            m_restoredVectorLayerOrder, fname, loadedRows);
+        if(row >= 0)
+            m_map->setMapItemParent(layer, layers, row);
+    }
+    // [camp#22 / camp#90] Removal — and ONLY removal — drops the file from the
+    // persisted list. VectorLayer::removedFromMap comes from onRemovedFromMap(),
+    // which a drag-reorder never reaches.
+    connect(layer, &camp::vector::VectorLayer::removedFromMap,
+            this, &AutonomousVehicleProject::onVectorLayerRemoved);
+    // Lifetime safety net: a layer destroyed by any other path (app shutdown,
+    // a direct delete) must not leave a dangling pointer in the bookkeeping.
+    // This deliberately does NOT re-persist — shutdown destroys every layer and
+    // persisting from here would erase the whole restore list on every quit.
+    connect(layer, &QObject::destroyed, this, &AutonomousVehicleProject::onVectorLayerDestroyed);
+    m_vectorLayers.push_back(layer);
+    persistVectorLayers();
+}
+
+void AutonomousVehicleProject::persistVectorLayers() const
+{
+    // [camp#22 round-9 should-fix] SUPPRESSED while the startup restore is running.
+    // openVectorLayer() ends here, and this function rewrites the whole key from
+    // m_restoredVectorLayerOrder / m_unavailableVectorLayerFiles / the tracked
+    // layers. While the restore loop was building those lists entry by entry, each
+    // per-layer call therefore wrote a list TRUNCATED at the current entry —
+    // through a fresh QSettings whose destructor syncs, so it reached disk
+    // immediately — and the entries the loop had not reached yet existed nowhere
+    // else. The opens are asynchronous parses that keep running while the loop
+    // opens later layers, so a worker-side abort taking the process down mid
+    // restore silently forgot every later layer: the camp#90/#117 class from the
+    // other direction. restorePersistedVectorLayers() decides the whole state
+    // first and persists ONCE, after the loop; until it clears this flag the key
+    // is left exactly as it was found.
+    if(m_restoringVectorLayers)
+        return;
+    // [camp#22 / ADR-0003 §4] The ordered vector-layer filename list as app state,
+    // beside the chart list. Per-layer style (colour/size field, palette) persists
+    // separately through the layer's own settings group; this records which layers
+    // to recreate. Single writer of the key — see the header.
+    //
+    // The rule itself lives in camp::vector::rebuildPersistedVectorLayerFiles so
+    // it can be tested: this class is not constructible in a test harness, and a
+    // rule that cannot be exercised is a rule that silently regresses.
+    QStringList loaded;
+    for(auto* layer : m_vectorLayers)
+        loaded << layer->filename();
+    camp::vector::writePersistedVectorLayerFiles(
+        camp::vector::rebuildPersistedVectorLayerFiles(
+            m_restoredVectorLayerOrder, m_unavailableVectorLayerFiles, loaded));
+}
+
+void AutonomousVehicleProject::restorePersistedVectorLayers()
+{
+    // [camp#22 / ADR-0003] Recreate the persisted vector layers (app state).
+    //
+    // TWO PASSES, deliberately. The first (camp::vector::planVectorLayerRestore)
+    // decides what the persisted list MEANS — the order of record, which entries
+    // are not reachable right now, which are to be opened — without opening
+    // anything; the second opens them. Interleaving the two, which is what this
+    // used to do, meant openVectorLayer()'s trailing persistVectorLayers() wrote a
+    // list truncated at the current entry on every iteration, so an exit or a
+    // worker-side crash part way through the restore erased every entry the loop
+    // had not reached. See the note on persistVectorLayers() and the plan struct's
+    // header.
+    //
+    // A file that is not there RIGHT NOW is REMEMBERED, not dropped. Survey data
+    // routinely lives on a network share or an external disk, and "the share was
+    // not mounted when CAMP started" is not the operator saying "remove this
+    // layer" — but skip-then-re-persist made it exactly that, permanently, after
+    // one launch. The entry is carried in m_unavailableVectorLayerFiles, which
+    // persistVectorLayers() folds back into the key, so the layer returns on the
+    // next launch that can see the file. The one deliberate consequence is that
+    // an unavailable entry cannot be removed through the Layers tab (it has no
+    // layer to right-click); it goes when the file comes back and is removed, or
+    // by clearing the setting.
+    // [camp#22 round-10 suggestion] RE-ENTRANCY IS REFUSED AT THE DOOR, because
+    // the scope guard below cannot survive it: an inner call's RestoreScope
+    // destructor clears the flag while the outer loop is still running, and every
+    // remaining openVectorLayer() then persists a list truncated at its own entry
+    // — the exact failure the flag exists to prevent, with the guard reporting
+    // itself as in force. Nothing calls this twice today, but "nothing does" rests
+    // on unasserted properties of openVectorLayer() (and of the async loads it
+    // starts) two files away, and this line costs nothing to keep true.
+    if(m_restoringVectorLayers)
+        return;
+
+    const camp::vector::VectorLayerRestorePlan plan =
+        camp::vector::planVectorLayerRestore(camp::vector::persistedVectorLayerFiles());
+    m_restoredVectorLayerOrder = plan.order;
+    m_unavailableVectorLayerFiles = plan.unavailable;
+
+    // Hold off every per-layer persist until the whole loop has run, and clear the
+    // flag on EVERY exit from this function — a persist suppressed for good would
+    // be worse than the truncation it guards against.
+    struct RestoreScope
+    {
+        bool &flag;
+        explicit RestoreScope(bool &f): flag(f) { flag = true; }
+        ~RestoreScope() { flag = false; }
+        RestoreScope(const RestoreScope &) = delete;
+        RestoreScope &operator=(const RestoreScope &) = delete;
+    };
+    {
+        RestoreScope restoring(m_restoringVectorLayers);
+        for(const auto& fname : plan.openable)
+            openVectorLayer(fname);
+    }
+    // Rewrite the key ONCE, now that the state is whole: the rebuild collapses
+    // duplicates and normalises path spellings that an older build may have left
+    // behind.
+    persistVectorLayers();
+}
+
+void AutonomousVehicleProject::onVectorLayerRemoved()
+{
+    // [camp#22 / camp#90 / camp#117] The layer this slot was invoked for is being
+    // REMOVED (Layers-tab Remove, or a programmatic removeFromMap) — not merely
+    // reordered. Dropping only the in-memory entry would leave the file in
+    // `vectorLayers/files` and the layer would return on the next launch.
+    auto* layer = qobject_cast<camp::vector::VectorLayer*>(sender());
+    if(!layer)
+        return;
+    auto it = std::find(m_vectorLayers.begin(), m_vectorLayers.end(), layer);
+    if(it == m_vectorLayers.end())
+        return;
+    m_vectorLayers.erase(it);
+    persistVectorLayers();
+}
+
+void AutonomousVehicleProject::onVectorLayerDestroyed(QObject* object)
+{
+    // [camp#22] Bookkeeping hygiene only — never persistence. By the time
+    // QObject::destroyed fires the VectorLayer subobject is already gone, so the
+    // entry is matched by pointer identity (static_cast applies the same
+    // adjustment the connect() did).
+    for(auto it = m_vectorLayers.begin(); it != m_vectorLayers.end(); ++it)
+        if(static_cast<QObject*>(*it) == object)
+        {
+            m_vectorLayers.erase(it);
+            return;
+        }
 }
 
 QGraphicsItem *AutonomousVehicleProject::originAnchor() const

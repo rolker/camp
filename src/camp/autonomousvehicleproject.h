@@ -30,6 +30,7 @@ class AvoidArea;
 
 namespace camp { namespace map { class Map; } }
 namespace camp { namespace raster { class RasterLayer; } }
+namespace camp { namespace vector { class VectorLayer; } }
 
 class AutonomousVehicleProject : public QAbstractItemModel
 {
@@ -55,6 +56,16 @@ public:
     // after the MainWindow has wired up the background signals, so fit-to-extent
     // and overlay refresh fire for the restored charts.
     void restorePersistedBackgrounds();
+
+    // [camp#22 / ADR-0003] Load an OGR vector file as a READ-ONLY display layer
+    // (camp::vector::VectorLayer) in the Layers tab, and persist it in the
+    // vector-layer file list. De-duped by filename. This is the display path;
+    // openGeometry() is the editable mission-tree path.
+    void openVectorLayer(QString const &requested);
+
+    // [camp#22 / ADR-0003] Re-create the persisted vector layers (app state),
+    // called from MainWindow at startup beside restorePersistedBackgrounds().
+    void restorePersistedVectorLayers();
 
     // [#59 ADR-0003] True while at least one chart layer is loaded.
     bool hasBackground() const;
@@ -147,7 +158,14 @@ public:
     void save(QString const &fname = QString());
     void open(QString const &fname);
 
-    void openGeometry(QString const &fname, QString label = "");
+    // [camp#22] Open an OGR vector file as an EDITABLE mission-tree node
+    // (VectorDataset). @p parent is the node to insert under; nullptr (the
+    // default, used by the File > Open Geometry action) means "no opinion" and
+    // falls back to the project's current group. MissionItem::readChildren passes
+    // the restoring node so a VectorDataset nested in a Group comes back in that
+    // Group. For the read-only DISPLAY path — a Layers-tab layer with
+    // attribute-driven styling — see openVectorLayer().
+    void openGeometry(QString const &fname, QString label = "", MissionItem *parent = nullptr);
 
     void import(QString const &fname);
 
@@ -217,6 +235,30 @@ private:
     // filename). This is the multi-background depth model (stage 4 will front it
     // with a tree).
     std::vector<DepthRaster*> m_depthRasters;
+    // [camp#22 / ADR-0003] Read-only vector display layers, Map-owned (parented to
+    // m_map->topLevelLayers()), kept in load order for persistence and removal —
+    // the same bookkeeping shape as m_chartLayers. Lifetime belongs to the Map
+    // model; drop a pointer here only after detaching+deleting via it.
+    std::vector<camp::vector::VectorLayer*> m_vectorLayers;
+    // [camp#22] Persisted vector-layer files that were not reachable at restore
+    // time (an unmounted share, an external disk). Kept so persistVectorLayers()
+    // can carry them forward instead of forgetting them after one launch.
+    QStringList m_unavailableVectorLayerFiles;
+    // [camp#22] The persisted list as it was READ at restore, which is the record
+    // of the operator's layer ORDER. persistVectorLayers() rewrites the key in
+    // this order so an unreachable entry keeps its slot instead of being appended
+    // at the end — otherwise one launch with the share unmounted permanently
+    // reshuffles the list.
+    QStringList m_restoredVectorLayerOrder;
+    // [camp#22 round-9 should-fix] True for the duration of the startup restore
+    // loop, during which persistVectorLayers() writes NOTHING. openVectorLayer()
+    // persists on every call, and while the restore was building the two lists
+    // above entry by entry each of those writes rewrote `vectorLayers/files` from
+    // a state truncated at the current entry — so an interruption mid restore
+    // (the opens are asynchronous parses that outlive the loop) erased every
+    // layer the loop had not reached yet. The restore decides the whole state up
+    // front and persists once, after the loop.
+    bool m_restoringVectorLayers = false;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;
@@ -243,6 +285,26 @@ private:
     // Connected to m_map's rowsAboutToBeRemoved so the Map model (camp_map) stays
     // unaware of the project's chart/depth bookkeeping.
     void onChartLayerRemoved(const QModelIndex& parent, int first, int last);
+    // [camp#22 / ADR-0003] Persist the vector-layer filename list (ordered) as
+    // app state. THE single writer of the `vectorLayers/files` key: it rebuilds
+    // the whole list from m_vectorLayers and is called from both the add and the
+    // remove path, so the two can never disagree about what is persisted.
+    void persistVectorLayers() const;
+    // [camp#22] The file's canonical path — the identity used for de-dup, removal
+    // and persistence, so "./x.geojson", an absolute path and a symlink do not
+    // stack three layers. Falls back to the given path when the file is not there.
+    static QString canonicalVectorLayerPath(QString const &fname);
+    // [camp#22 / camp#90 / camp#117] React to a vector layer being removed via the
+    // Layers-tab Remove action: drop its bookkeeping entry and re-persist, so a
+    // removed layer does not silently reappear on the next launch. Connected to
+    // each layer's VectorLayer::removedFromMap (which comes from
+    // Layer::onRemovedFromMap) — NOT to the Map model's rowsAboutToBeRemoved,
+    // which a drag-reorder fires too and which therefore used to un-persist a
+    // layer the operator only moved up the list.
+    void onVectorLayerRemoved();
+    // [camp#22] Drop a destroyed layer's dangling pointer from the bookkeeping.
+    // Deliberately does not persist: app shutdown destroys every layer.
+    void onVectorLayerDestroyed(QObject* object);
     QString generateUniqueLabel(std::string const &prefix);
 
 

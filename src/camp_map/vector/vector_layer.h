@@ -1,0 +1,499 @@
+#ifndef CAMP_VECTOR_LAYER_H
+#define CAMP_VECTOR_LAYER_H
+
+#include <string>
+#include <vector>
+
+#include <QFutureWatcher>
+#include <QMutex>
+#include <QString>
+#include <QStringList>
+
+#include "../map/layer.h"
+#include "vector_parse.h"
+#include "vector_style.h"
+
+namespace camp::vector
+{
+
+class VectorFeatureItem;
+
+/// [camp#22 / ADR-0003] Read-only display layer for an OGR-readable vector file
+/// (GeoJSON, shapefile, GeoPackage, KML — whatever the driver opens).
+///
+/// **VectorLayer vs. VectorDataset.** CAMP has two vector-file entry points and
+/// they are not interchangeable:
+///   - `VectorDataset` (src/camp/vector/, File > Open Geometry) imports a file as
+///     EDITABLE mission-tree nodes — Group/Point/LineString/Polygon MissionItems
+///     the operator can drag, rename and send to the robot. It persists in the
+///     mission project file.
+///   - `VectorLayer` (this class, File > Open Vector Layer) DISPLAYS a file as an
+///     ordinary Layers-tab layer with attribute-driven styling and hover-to-
+///     inspect: nothing about it is editable, nothing reaches the robot, and it
+///     persists as app state in QSettings alongside the chart list (ADR-0003 §4),
+///     independent of any mission file.
+/// Both read the file through `camp::vector::parseVectorLayers`.
+///
+/// [ADR-0016 D5] Hover-to-inspect shows an IN-SCENE LABEL the instant the cursor
+/// reaches a feature — CAMP's house convention for "tell me what this is"
+/// (Platform, AISContact and the mission items all answer to hover), by the same
+/// mechanism GeoGraphicsItem gives them, and not a persistent panel. A Qt tooltip
+/// was tried first and rejected by the operator in the 2026-09-15 GUI test: it
+/// waits out Qt's hover delay, and nothing else in CAMP does. A feature accepts NO mouse button, so every press over one
+/// falls through to the view: a pan gesture that starts on a feature pans, and a
+/// left-press in one of ProjectView's add-* modes places its mission item with
+/// nothing in the way. See VectorFeatureItem.
+///
+/// [ADR-0016] The design decisions and the persisted schema (`vectorLayers/files`
+/// plus the per-layer style group) are recorded in
+/// `docs/decisions/0016-read-only-vector-file-layer.md`. Known limitation: a line
+/// or polygon whose vertices straddle the antimeridian is drawn the long way
+/// round the world and stretches this layer's extent with it; nothing splits
+/// geometry at the seam.
+///
+/// Shape follows `raster::RasterLayer`: the file is parsed off the GUI thread
+/// (QFutureWatcher + an abort flag joined in the destructor — the #213 pattern),
+/// and the result is turned into one `VectorFeatureItem` child per feature, whose
+/// coordinates are transformed to the Web-Mercator scene once (ADR-0002). Per-
+/// feature child items — rather than RasterLayer's single painted surface — are
+/// what make hover-to-inspect Qt's problem instead of ours.
+class VectorLayer: public map::Layer
+{
+  Q_OBJECT
+  Q_INTERFACES(QGraphicsItem)
+public:
+  /// [camp#22] Upper bound on how much of a vector file this layer reads and draws.
+  ///
+  /// It bounds TWO things, and it has to be both: item construction happens on the
+  /// GUI thread (a QGraphicsItem cannot be built off it), and the parse that feeds
+  /// it materialises every geometry and attribute map in the worker. The Open
+  /// Vector Layer dialog does not bound what an operator can pick — a national
+  /// coastline shapefile or an OSM extract is millions of features — so a cap on
+  /// the items alone would leave CAMP responsive and out of memory. The cap is
+  /// therefore carried into the parse (`ParseOptions::max_geometries`), which
+  /// STOPS at it: the rest of the file is never read.
+  ///
+  /// What is shown is the first `kMaxFeatureItems` DRAWN ITEMS — one per emitted
+  /// geometry part, which is what the cap is spent on, so a multi-part feature (a
+  /// KML placemark, a multipolygon coastline) accounts for several. The Layers-tab
+  /// status and the log say the cap was hit, in the same units, and a visibly
+  /// partial layer is the point: better than a hung or dead application.
+  ///
+  /// [camp#22 round-5 nit] Items, not FEATURES: an OGR feature count is not a
+  /// geometry count (`ParseDiagnostics` says so in terms), and the status line,
+  /// the log and this paragraph used to promise a feature count the file does not
+  /// have. The constant's own name is the accurate one.
+  ///
+  /// [camp#22 round-8 suggestion] The parse stops at the cap once the cap has been
+  /// SPENT, and only a drawable geometry spends it. A file whose geometries are
+  /// all dropped as undrawable — every vertex outside the file's projection, or no
+  /// exterior ring — therefore never reaches the cap and is read to its end. Memory
+  /// stays bounded (nothing is materialised) and the load stays abortable, so the
+  /// cost is wall time on a file that shows nothing; the status says how many were
+  /// dropped. See `ParseOptions::max_geometries` for why the alternative — charging
+  /// the cap for dropped geometry — is worse.
+  ///
+  /// [camp#22 round-9 nit] WHAT THIS CAP DOES NOT BOUND, said where a reader meets
+  /// the claim: it bounds the geometry COUNT and the abort latency, not the size of
+  /// any ONE geometry. A single ring of a hundred million vertices is ~1.6 GB of
+  /// coordinates and is read in full, as is a single outsized attribute value.
+  /// That exception is a deliberate open decision, not an oversight — truncating a
+  /// ring draws a WRONG shape and truncating a value reports a wrong number, each
+  /// worse than the honest geometry cap — and it is recorded as such in ADR-0016
+  /// D11 (`docs/decisions/0016-read-only-vector-file-layer.md`), which states it in
+  /// terms and lists the two options it has not chosen between.
+  ///
+  /// How much was left unread is deliberately not reported: finding out means
+  /// reading the file the cap exists to stop reading. The number is a
+  /// responsiveness-and-memory budget, not a data limit: 50 000 items build in
+  /// well under a second and the scene index handles them.
+  static constexpr int kMaxFeatureItems = 50000;
+
+  /// @param feature_cap  test seam; see kMaxFeatureItems, which is the value the
+  ///                     application uses. Values <= 0 are treated as the default.
+  VectorLayer(map::MapItem* parentItem, const QString& filename,
+              int feature_cap = kMaxFeatureItems);
+  ~VectorLayer();
+
+  enum { Type = map::VectorLayerType };
+  int type() const override
+  {
+    return Type;
+  }
+
+  /// The union of the feature items' extents. MapItem::boundingRect() is empty by
+  /// default, so this override is what gives the layer a meaningful extent.
+  QRectF boundingRect() const override;
+
+  /// Source file this layer renders — its identity for persistence and removal.
+  const QString& filename() const { return filename_; }
+
+  /// [camp#126 precedent] Keyed on the full path, NOT the itemID() default: that
+  /// derives from objectName() = the file's BASENAME, so two vector files named
+  /// candidates.geojson in different directories would share one settings group
+  /// and overwrite each other's style.
+  QString settingsKey() const override;
+
+  /// Attribute field names present on any loaded feature, sorted. Empty until the
+  /// load completes. This is EVERY field — attribute inspection (the hover label,
+  /// ADR-0016 D5) and a future label-by-field want them all; the styling menus
+  /// want `numericFields()`.
+  QStringList fields() const;
+
+  /// [camp#22] The subset of `fields()` a colour or size ramp can read: a field
+  /// is included when at least one loaded feature holds a finite numeric value
+  /// for it (`numericAttribute()`). Sorted; empty until the load completes.
+  ///
+  /// The styling menus offer THESE. Offering every field let the operator colour
+  /// by a free-text field, which no ramp can read: the range came back invalid,
+  /// every feature was marked no-data, and the whole layer went hollow grey — in
+  /// the GUI test of 2026-09-15 that read as the features DISAPPEARING. A ramp
+  /// over categories is a different mapping (a distinct colour per class, a
+  /// legend), not a degenerate case of this one; it is a follow-on, and until it
+  /// exists a field no ramp can read is not offered as one (ADR-0016 D14).
+  QStringList numericFields() const;
+
+  /// [camp#22 round-9 suggestion] The subset of `numericFields()` that POINT
+  /// features carry — the list the Size by menu offers.
+  ///
+  /// `applyStyle()` folds the size range over points only, deliberately: geometry
+  /// that is never sized must not set the marker extent, or a mixed file whose
+  /// polygons carry the largest values squeezes every marker into the bottom of
+  /// the radius range. The consequence is that picking a line- or polygon-only
+  /// field under Size by leaves the range invalid and every marker at the default
+  /// radius, while the action shows as checked and the choice is persisted — a
+  /// menu entry whose only effect is to look selected. Color by stays on the full
+  /// list: a ramp reads every geometry type.
+  QStringList pointNumericFields() const;
+
+  /// Colour each feature by its value for @p field, sampled from the active
+  /// palette across the field's extent over the features that HAVE a value.
+  /// Empty field -> the layer's default colour. A feature whose value is missing
+  /// or non-numeric is painted in `noDataColor()`, never at the bottom of the ramp.
+  ///
+  /// A field NO feature has a numeric value for (a persisted style whose file has
+  /// changed, say) is treated as an empty field — default colour, nothing marked
+  /// no-data — rather than marking the entire layer no-data. See applyStyle().
+  void setColorField(const QString& field);
+  const QString& colorField() const { return color_field_; }
+
+  /// Scale each POINT feature's marker radius by its value for @p field, between
+  /// kMinPointRadius and kMaxPointRadius. Lines and polygons ignore this. A
+  /// missing or non-numeric value gets kDefaultPointRadius, not the smallest radius.
+  void setSizeField(const QString& field);
+  const QString& sizeField() const { return size_field_; }
+
+  /// marine_colormap palette for colour-by-field (ADR-0008). Unknown name ->
+  /// grayscale, matching the raster layers.
+  void setColormap(const std::string& name);
+  const std::string& colormap() const { return colormap_; }
+
+  /// The cap actually in force for this layer (kMaxFeatureItems unless overridden).
+  int featureCap() const { return feature_cap_; }
+
+  /// Number of feature items built from the file. Zero until the load completes.
+  int featureCount() const { return static_cast<int>(features_.size()); }
+
+  /// True once the load finished and produced at least one feature. A file that
+  /// failed to open, or held nothing this parser handles, is false and shows
+  /// "(load failed)" / "(no items)" in the Layers tab.
+  bool loaded() const { return loaded_; }
+
+signals:
+  /// [camp#22] This layer was REMOVED from the map — emitted from
+  /// onRemovedFromMap(), so it fires only on `Layer::removeFromMap()` (the
+  /// Layers-tab Remove action or a programmatic detach) and NOT on the
+  /// remove-then-insert that `Map::setMapItemParent()` performs when a layer is
+  /// dragged to a new position in the list.
+  ///
+  /// That distinction is the whole reason this hook exists: the owner used to
+  /// watch the model's `rowsAboutToBeRemoved`, which cannot tell a reorder from a
+  /// removal, so dragging a vector layer up or down the Layers tab silently
+  /// dropped its file from `vectorLayers/files` and the layer did not come back
+  /// on the next launch. RasterLayer and GggsTileLayer de-persist through
+  /// `onRemovedFromMap()` for exactly this reason (camp#90 / camp#104).
+  ///
+  /// The signal carries no payload: the owner (AutonomousVehicleProject) matches
+  /// on `sender()` and remains the single writer of `vectorLayers/files`.
+  void removedFromMap();
+
+protected:
+  /// [camp#22 / camp#90] Reorder-safe removal notification — see removedFromMap().
+  /// Deliberately does NOT write `vectorLayers/files` itself: that key has one
+  /// writer, `AutonomousVehicleProject::persistVectorLayers()`, which rebuilds it
+  /// from the layers it tracks. (RasterLayer writes its key here because it owns
+  /// a key of its own; this layer does not.)
+  void onRemovedFromMap() override;
+
+  void contextMenu(QMenu* menu) override;
+  void readSettings() override;
+  void writeSettings() override;
+
+private:
+  struct LoadResult
+  {
+    bool opened = false;
+    std::vector<ParsedLayer> layers;
+    ParseDiagnostics diagnostics;
+  };
+
+  /// Worker body (QtConcurrent pool thread): open the file with GDAL and parse it.
+  LoadResult loadVectorFile(const QString& filename);
+
+  /// The numeric-field fold behind `numericFields()` and `pointNumericFields()`:
+  /// @p points_only restricts it to point features.
+  QStringList numericFieldsOf(bool points_only) const;
+
+  /// [camp#22 round-10 suggestion] BOTH numeric-field lists from ONE pass over the
+  /// features — `all` is `numericFields()`, `points` is `pointNumericFields()`.
+  ///
+  /// `contextMenu()` needs both, and calling the two accessors ran the fold twice
+  /// over every loaded feature and every attribute of it, asking
+  /// `numericAttribute()` (which parses strings) the same question twice — on the
+  /// GUI thread, on every right-click, over a layer that may hold the whole
+  /// 50 000-item cap. The two lists differ only by a test on the feature, so one
+  /// walk answers both.
+  struct NumericFieldLists
+  {
+    QStringList all;
+    QStringList points;
+  };
+  NumericFieldLists numericFieldLists() const;
+
+  /// Thread-safe read of the abort flag. Called on the worker thread, including
+  /// from inside the parser's per-feature poll (ParseOptions::aborted).
+  bool isAborted();
+
+  QFutureWatcher<LoadResult> future_watcher_;
+  // Set under the mutex to tell an in-flight load to stop; the destructor sets it
+  // and then joins, so the worker never outlives `this` (#213).
+  bool abort_flag_ = false;
+  QMutex abort_flag_mutex_;
+
+  QString filename_;
+  bool loaded_ = false;
+  /// [camp#22 round-9] loadFinished() runs exactly once per layer. It clears the
+  /// watcher's future to release the parse result (see the slot), and clearing it
+  /// can deliver finished() a second time — over an empty result store.
+  bool load_reported_ = false;
+  int feature_cap_ = kMaxFeatureItems;
+
+  std::vector<VectorFeatureItem*> features_;   // children; owned by the scene tree
+  QString color_field_;
+  QString size_field_;
+  std::string colormap_ = "viridis";
+
+  /// Recompute every feature's colour and radius from the current style. One pass
+  /// over the already-loaded features — no re-parse, no re-load.
+  void applyStyle();
+
+private slots:
+  void loadFinished();
+};
+
+/// [camp#22 / ADR-0003 §4] The persisted vector-layer file list — app state, the
+/// same shape as `backgrounds/files` for charts, NOT the mission project file: a
+/// Layers-tab layer is not mission data, and the operator expects it back when
+/// CAMP reopens whether or not a mission is loaded.
+///
+/// These are the mechanism only. `AutonomousVehicleProject::persistVectorLayers()`
+/// is the single writer of the key — it rebuilds the whole list from its tracked
+/// layers on both the add and the remove path — so the two halves can never
+/// disagree about what is persisted. They live here (rather than in the project,
+/// which no test can construct) so the add/dedup/remove rules are testable.
+/// [camp#22] True if @p path would be resolved through GDAL's VIRTUAL FILE SYSTEM
+/// — a leading `/vsicurl/`, `/vsizip/`, `/vsis3/`, `/vsigs/` … token.
+///
+/// This is the check that keeps "open this file" from becoming a network fetch.
+/// The driver allowlist in vector_layer.cpp cannot do it: GDAL resolves the /vsi
+/// prefix BEFORE it selects a driver, so `/vsicurl/https://host/x.geojson` is
+/// downloaded and then handed to the perfectly-allowed GeoJSON driver. A /vsi
+/// path is refused by `VectorLayer`'s constructor (before anything is opened) and
+/// by `AutonomousVehicleProject` on both the open and the restore path — the
+/// restore path matters most, since it reopens every persisted entry at startup
+/// with nobody there to confirm it.
+bool isVirtualFileSystemPath(const QString& path);
+
+QString vectorLayerFilesKey();
+QStringList persistedVectorLayerFiles();
+void writePersistedVectorLayerFiles(const QStringList& files);
+/// @p files with @p filename appended if it is not already present (de-dup by
+/// exact path), preserving order — the chart-list convention.
+///
+/// Removal from the persisted key itself is still "do not include it in the
+/// rebuild", not an edit — see `rebuildPersistedVectorLayerFiles()`.
+/// `withoutVectorLayerFile()` below is for the in-memory UNAVAILABLE list, which
+/// is an input to that rebuild.
+QStringList withVectorLayerFile(const QStringList& files, const QString& filename);
+
+/// The identity of a vector-layer file: its canonical path, or the given
+/// spelling when the file does not resolve.
+///
+/// [camp#22] "./survey.geojson", an absolute path and a symlink all name one
+/// file, and de-dup, removal and persistence all key on the file itself rather
+/// than on the spelling that reached us. `QFileInfo::canonicalFilePath()`
+/// resolves symlinks and "." / ".." and returns EMPTY for a path that does not
+/// resolve — a dangling symlink, an unmounted share — in which case the given
+/// path is the best identity available. That fallback is exactly why removal
+/// needs `withoutVectorLayerFile()` below and not a plain string compare.
+QString canonicalVectorLayerPath(const QString& fname);
+
+/// @p files with every entry NAMING THE SAME FILE as @p canonicalFile dropped:
+/// an exact string match, plus any entry whose `canonicalVectorLayerPath()`
+/// resolves to @p canonicalFile. Order of the survivors is preserved.
+///
+/// [camp#22 / camp#90] Why identity and not `removeAll()`: an entry is only
+/// canonical when its file resolved AT THE TIME IT WAS WRITTEN. A dangling
+/// symlink is persisted under its RAW spelling; when the target later appears
+/// and the operator opens that same symlink, the path in hand is now the
+/// resolved target, and an exact-match removal misses the raw entry. The rebuild
+/// then keeps finding it on the unavailable branch and writes it back, so
+/// removing the reopened layer through the Layers tab does not stick and the
+/// layer returns on the next launch — the camp#90/#117 class again. (This is the
+/// counterpart the header once said it deliberately lacked; it now has the
+/// production caller — `AutonomousVehicleProject::openVectorLayer()` — that its
+/// absence was justified by.)
+///
+/// [camp#22 round-7 suggestion] COST, and why it is accepted. Resolving each
+/// surviving entry means one `canonicalFilePath()` — a stat/readlink — per entry,
+/// on the GUI thread, and the motivating case in the paragraph above is an
+/// UNMOUNTED SHARE, the kind of path that can block for a mount's timeout rather
+/// than returning promptly. Accepted because:
+///  * it is bounded by the length of the in-memory unavailable list, which is
+///    operator-sized (the files they opened and could not load), not file-sized;
+///  * the call site already stats the same class of path immediately before, via
+///    `QFileInfo::exists(fname)`, so this amplifies an existing exposure by the
+///    list length rather than introducing a new one; and
+///  * the alternative is making the purge asynchronous, which would race
+///    `persistVectorLayers()` — the purge has to have happened before the next
+///    persist, or the removed entry is written back and the camp#90/#117 bug
+///    returns. A latency risk on a list of a few entries is the smaller cost.
+/// If the unavailable list ever grows unbounded (it is not persisted per-session
+/// today), this is the site to revisit.
+QStringList withoutVectorLayerFile(const QStringList& files, const QString& canonicalFile);
+
+/// @p files with every entry NAMING THE SAME FILE as @p canonicalFile rewritten
+/// IN PLACE to @p canonicalFile, keeping its slot; order is otherwise untouched
+/// and exact duplicates are collapsed.
+///
+/// [camp#22 round-5 should-fix] The counterpart of `withoutVectorLayerFile()` for
+/// the RESTORED ORDER. The unavailable list is purged by canonical-equivalent
+/// identity when a once-missing file is reopened, but the order list kept the raw
+/// spelling a dangling symlink was remembered under while the reopened layer is
+/// tracked under its resolved TARGET. `rebuildPersistedVectorLayerFiles()` matches
+/// the order against the loaded filenames by exact string, so it missed that slot
+/// and the trailing append loop put the reopened file LAST: `[dangling link, B]`
+/// persisted as `[B, target]`. Layer order is the operator's stacking order and
+/// `restorePersistedVectorLayers()` documents the slot as kept, so the promotion
+/// has to rewrite the entry rather than leave the rebuild to stat every entry on
+/// every persist.
+///
+/// [camp#22 round-8 suggestion] COST, stated for THIS function rather than
+/// borrowed from `withoutVectorLayerFile()`: the list walked here is the whole
+/// RESTORED ORDER — every vector layer the operator has, not just the unavailable
+/// ones — and the resolve is the same GUI-thread stat, on paths that at this exact
+/// moment are most likely dead mounts. The resolve therefore stops at the entry
+/// that matches: at most one pass UP TO the promoted slot, never the whole order.
+/// Entries after it are compared by string only, which is why a second raw
+/// spelling of the same file is left in place (harmlessly — see the note at the
+/// implementation) instead of being collapsed.
+QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile);
+
+/// [camp#22 round-9 should-fix] What the persisted list MEANS, decided in one
+/// pass before any file is opened: the order of record (`order`, canonical
+/// spellings, de-duplicated), the subset that is not reachable right now
+/// (`unavailable`) and the subset to open, in order (`openable`). A `/vsi` entry
+/// is in none of them — it is dropped, loudly, for the reason on
+/// `isVirtualFileSystemPath()`.
+///
+/// It is a separate pass because `AutonomousVehicleProject::openVectorLayer()`
+/// PERSISTS: it ends in `persistVectorLayers()`, which rewrites the whole key
+/// from the order/unavailable/loaded triple, and each write is a fresh `QSettings`
+/// whose destructor syncs. Building the triple incrementally inside the open loop
+/// therefore wrote a list truncated at entry k to disk once per restored layer,
+/// and entries k+1..n existed nowhere else: an exit or a worker-side crash mid
+/// restore — and the opens are asynchronous parses that are still running while
+/// the loop opens later layers — silently forgot every layer the loop had not
+/// reached. That is the camp#90/#117 class ("a layer the operator did not remove
+/// comes back missing") reached from the other direction. With the full state
+/// decided up front, the restore persists ONCE, after the loop, and an interrupted
+/// restore leaves the key exactly as it found it.
+///
+/// Pure but for the filesystem: reachability is `QFileInfo::exists()` on the
+/// canonical path, the same test the open path uses.
+struct VectorLayerRestorePlan
+{
+  QStringList order;
+  QStringList unavailable;
+  QStringList openable;
+};
+
+VectorLayerRestorePlan planVectorLayerRestore(const QStringList& files);
+
+/// The persisted vector-layer list rebuilt from scratch — the whole rule behind
+/// `AutonomousVehicleProject::persistVectorLayers()`, in one pure function so it
+/// can be exercised (the project itself is not constructible in a test harness).
+///
+/// @p restoredOrder is the order of record read at startup, @p unavailable the
+/// subset of it whose files could not be opened THEN and are carried forward
+/// rather than forgotten, and @p loadedFiles the filenames of the layers tracked
+/// right now, in load order.
+///
+/// Order comes from @p restoredOrder first, so one launch with a share unmounted
+/// cannot reshuffle the operator's layers; an entry in it that is neither loaded
+/// nor unavailable was REMOVED through the Layers tab and is dropped. Anything
+/// opened since the restore follows, in load order.
+///
+/// [camp#22 / camp#90] The caller owes this function an @p unavailable list that
+/// has been kept CURRENT: an entry must be dropped from it as soon as its file is
+/// successfully opened, or removing that layer afterwards will not stick — the
+/// rebuild would keep finding it on the unavailable branch and write it back on
+/// every launch, which is the camp#90/#117 bug this whole mechanism exists to
+/// avoid. `AutonomousVehicleProject::openVectorLayer()` is where that happens.
+QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
+                                             const QStringList& unavailable,
+                                             const QStringList& loadedFiles);
+
+/// [camp#22 round-11 should-fix] One loaded vector layer's position in the Layers
+/// tab: its model ROW and the file it shows.
+struct LoadedVectorLayerRow
+{
+  int row = -1;
+  QString file;
+};
+
+/// The Layers-tab row at which the layer for @p canonicalFile belongs, given the
+/// order of record @p restoredOrder and where every currently loaded vector layer
+/// (@p loaded, INCLUDING the one being placed, at the row it holds right now)
+/// sits. -1 means "leave it where it is": the file is not in the order of record,
+/// or no other entry of that order is loaded to anchor it against.
+///
+/// WHY: a layer reopened after being unavailable at startup gets its slot back in
+/// the ORDER — `withVectorLayerFilePromoted()` rewrites the entry in place — but
+/// the layer itself is constructed like any other, and `camp::map::Map` puts a
+/// newly parented item at row 0 (the top of the list, drawn last). So a restored
+/// order of `[missing, B]` persisted as `[missing, B]` and DREW with the reopened
+/// layer on top, which is where the next launch will NOT put it: the restore loop
+/// opens the order front to back and each new layer lands on top of the previous
+/// one, so `[missing, B]` replays with B on top. The operator's z-order therefore
+/// silently disagreed with the file that will be replayed, for the rest of the
+/// session. This computes the row that makes the two agree.
+///
+/// THE MAPPING, since it is not the identity: a Map row is the reverse of the
+/// child order (row 0 is drawn last, i.e. on top — `Map::index()`), while the
+/// order of record runs bottom to top. So a LATER entry of `restoredOrder` sits at
+/// a SMALLER row. The layer is placed directly below the loaded entry that follows
+/// it in the order, or — when it is the last loaded entry of the order — directly
+/// above the one that precedes it.
+///
+/// Rows are read from the live model rather than derived, so layers that are not
+/// vector layers (charts, AIS, the collision overlay) are never disturbed and
+/// never have to be enumerated: the result is always expressed relative to a
+/// sibling that is already where it belongs.
+int vectorLayerRestoredRow(const QStringList& restoredOrder,
+                           const QString& canonicalFile,
+                           const std::vector<LoadedVectorLayerRow>& loaded);
+
+}  // namespace camp::vector
+
+#endif  // CAMP_VECTOR_LAYER_H

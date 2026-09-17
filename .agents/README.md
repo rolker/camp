@@ -25,7 +25,7 @@ One ROS 2 / ament_cmake package (`camp`) that builds **one executable** and
 | Target | Kind | Source | Role |
 |--------|------|--------|------|
 | `CCOMAutonomousMissionPlanner` | executable | `src/camp/` | The deployed product (mission planning + monitoring) |
-| `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,util}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
+| `camp_map` | shared lib | `src/camp_map/{map,map_view,raster,map_tiles,wmts,tools,background,catalog,util,vector}/` | Web-Mercator scene + layer-tree framework (ROS-free) |
 | `camp_map_ros` | shared lib | `src/camp_map/ros/` | ROS overlay framework (topic discovery, grids, markers, geometry) built on `camp_map` |
 | `camp_crash` | shared lib | `src/camp_crash/` | Crash diagnostics (#217): fatal-signal / `std::terminate` backtraces + per-thread alternate signal stacks. ROS-free, Qt-free — see the pitfall below |
 
@@ -98,6 +98,69 @@ items (cf. topic discovery #44/#68/#69). The retired store node also carried a
 tile-set directory for newly-landed tiles). Live auto-pickup (a per-layer
 watcher) is a follow-up.
 
+**Two vector-file entry points, and they are not interchangeable (camp#22):**
+a file like a GeoJSON, shapefile, GeoPackage or KML can be brought in two ways,
+and picking the wrong one is the easy mistake because the names look alike.
+`VectorDataset` (`src/camp/vector/`, File > Open Geometry) imports it as
+**editable mission-tree nodes** — Group/Point/LineString/Polygon `MissionItem`s
+the operator can move, rename and send to the robot — persisted in the mission
+project file. `camp::vector::VectorLayer` (`src/camp_map/vector/`, File > Open
+Vector Layer) **displays** it read-only as an ordinary Layers-tab layer with
+attribute-driven styling (colour-by-field through `marine_colormap`,
+size-by-field on point markers) and **hover-to-inspect** — an in-scene label that
+appears the instant the cursor reaches a feature, matching CAMP's house
+convention (`Platform` and `AISContact` show their label on hover,
+`GeoGraphicsMissionItem` brightens on hover; nothing in CAMP inspects on click).
+The mechanism is `GeoGraphicsItem`'s, replicated rather than inherited: a child
+`QGraphicsSimpleTextItem` with the same flag/font/brush/pen, filled in
+`hoverEnterEvent()` and emptied in `hoverLeaveEvent()`, because `camp_map` cannot
+depend on `GeoGraphicsItem` in the `camp` executable. A Qt tooltip was tried first
+and rejected in the 2026-09-15 GUI test — it waits out Qt's delay, and nothing
+else in CAMP does. It is not a persistent panel. A `VectorFeatureItem` **and every child it puts in
+the scene** accept **no mouse button at all**
+(`setAcceptedMouseButtons(Qt::NoButton)` on the item AND on the hover label), so
+every press over a feature falls through to the view — which is what keeps the pan
+gesture and ProjectView's add-* placement clicks working over a vector layer, and
+what makes camp#225 fixed by construction. The label is why this is stated for the
+SUBTREE: it is drawn on top of the feature under the cursor and kept Qt's default
+(which accepts the left button) until it was given the same call. Do not give the
+item — or any child of it — a mouse handler without re-reading ADR-0016 D5.
+
+The layer persists as **app state** under `QSettings vectorLayers/files` like the
+chart list (ADR-0003 §4), not in the mission file. Both read the file through
+`camp::vector::parseVectorLayers` (`src/camp_map/vector/vector_parse.cpp`),
+which lives in **camp_map** so both the library layer and the executable's
+importer can call it — a library cannot call into the executable that links it
+(the libcamp_crash rule below).
+
+**`ProjectView` cursors (camp#22 / ADR-0016 D16):** each add-\* mode sets
+`Qt::CrossCursor` **on the view**; pan mode sets `Qt::ArrowCursor` **on the
+viewport**, after `setDragMode(ScrollHandDrag)` and again after
+`QGraphicsView::mouseReleaseEvent()` returns from a **left-button** release (the
+only button `ScrollHandDrag` pans with) — Qt installs its own
+`Qt::OpenHandCursor` at both points, and the open hand has no visible hotspot, so
+anything aimed at with it (a hover label, a mission item) is aimed at blind. The
+closed hand during an actual drag is left alone. The view-vs-viewport split is
+load-bearing: leaving pan mode calls `setDragMode(NoDrag)`, and Qt unsets the
+viewport's own cursor there, which is what lets the add-\* modes' view cursor
+propagate again.
+
+The design decisions and the persisted schema are
+[`docs/decisions/0016-read-only-vector-file-layer.md`](../docs/decisions/0016-read-only-vector-file-layer.md).
+Four of them bite when editing this code: **`persistVectorLayers()` is the single
+writer** of `vectorLayers/files` (the layer never writes it); **removal is
+observed through `Layer::onRemovedFromMap()`, never the Map model's
+`rowsAboutToBeRemoved`**, because `Map::setMapItemParent()` implements a
+drag-REORDER as remove+insert and the model signal cannot tell the two apart; and
+**feature-item construction is capped** (`VectorLayer::kMaxFeatureItems`) because
+it runs on the GUI thread, with the shortfall reported in the Layers-tab status
+(including when the capped features were all unplaceable, so the layer shows
+nothing); and **the unavailable-at-startup list is purged by canonical-equivalent
+identity** (`camp::vector::withoutVectorLayerFile()`), never by exact string — an
+entry whose path did not resolve when it was written keeps its RAW spelling (a
+dangling symlink), so once the target appears the path in hand is the resolved
+one and an exact-match removal would write the entry back on every launch.
+
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,
 via `AutonomousVehicleProject::originAnchor()`) or to a dedicated Map `Layer`, so
@@ -112,6 +175,8 @@ to get `node_`/`transform_buffer_` + an `onNodeUpdated()` hook.
 
 - `docs/decisions/0002-*.md`, `docs/decisions/0003-*.md` — the scene/layer/depth
   architecture. **Read before changing anything in the map system.**
+- `docs/decisions/0016-*.md` — the read-only vector-file layer family (the first
+  non-raster layer) and its persisted schema.
 - `src/camp/autonomousvehicleproject.{h,cpp}` — the mission model + chart
   load/persistence/depth.
 - `src/camp_map/map/map.{h,cpp}` + `map/layer.{h,cpp}` — the layer model.

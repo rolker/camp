@@ -112,6 +112,7 @@ set(SOURCES
     src/camp/collision_monitor/collision_monitor_manager.cpp
     src/camp/footprint/footprint.cpp
     src/camp/footprint/footprint_manager.cpp
+    src/camp/mission_insertion.cpp
     src/camp/missionitem.cpp
     src/camp/mission_manager/mission_manager.cpp
     src/camp/orbit.cpp
@@ -132,7 +133,6 @@ set(SOURCES
     src/camp/waypointdetails.cpp
 
     src/camp/vector/vectordataset.cpp
-    src/camp/vector/vector_parse.cpp
     src/camp/group.cpp
     src/camp/vector/point.cpp
     src/camp/vector/linestring.cpp
@@ -331,6 +331,10 @@ set(CAMP_MAP_SOURCES
     src/camp_map/tools/map_tool.cpp
     src/camp_map/tools/tools_manager.cpp
     src/camp_map/util/cached_file_loader.cpp
+    src/camp_map/vector/vector_feature_item.cpp
+    src/camp_map/vector/vector_layer.cpp
+    src/camp_map/vector/vector_parse.cpp
+    src/camp_map/vector/vector_style.cpp
     src/camp_map/wmts/capabilities.cpp
     src/camp_map/wmts/layer.cpp
     src/camp_map/wmts/tile_matrix_set.cpp
@@ -556,6 +560,18 @@ if(BUILD_TESTING)
       -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_worker_alt_stacks.cmake)
 
+  # [camp#22 round-11 should-fix] ADR-0016 D16's pan-mode ARROW cursor has to be in
+  # force at launch, which means MainWindow must call ProjectView::setPanMode()
+  # AFTER setupUi() applies the .ui's ScrollHandDrag property (Qt's setDragMode()
+  # installs the open hand with it). ProjectView cannot be constructed in a gtest
+  # harness — it pulls in roslink / platform_manager / mission_manager /
+  # helm_manager — and what regresses here is the ORDER of two constructor calls,
+  # so this is a source check, like check_worker_alt_stacks above.
+  add_test(NAME check_pan_mode_at_launch
+    COMMAND ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_pan_mode_at_launch.cmake)
+
   # Colormap characterization tests (camp#63 / camp#141): the marine_colormap
   # palettes, the exposed registry, and the name-resolution rules the layers use.
   ament_add_gtest(test_color_map
@@ -684,17 +700,134 @@ if(BUILD_TESTING)
   # those are proven only under valgrind (run this binary with
   # `valgrind --leak-check=full`; "definitely lost" must be 0). Linked against
   # the standalone vector_parse TU so the leak path is exercised without the
-  # MissionItem / AutonomousVehicleProject item graph.
+  # MissionItem / AutonomousVehicleProject item graph. [camp#22] That TU now
+  # lives in src/camp_map/vector/ (compiled into camp_map) so the read-only
+  # VectorLayer can call it; the test still compiles it directly rather than
+  # linking camp_map, keeping the source set narrow.
   ament_add_gtest(test_vector_dataset_cleanup
     test/test_vector_dataset_cleanup.cpp
-    src/camp/vector/vector_parse.cpp
+    src/camp_map/vector/vector_parse.cpp
   )
   target_include_directories(test_vector_dataset_cleanup PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
   target_link_libraries(test_vector_dataset_cleanup
     Qt5::Core
     Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#22] Feature attributes + geometry coverage in parseVectorLayers: typed
+  # fields round-trip (and an unset field stays ABSENT, which is what lets the
+  # styling path tell "no value" from a low value), multi-part geometries emit one
+  # ParsedGeometry per part, and 25D variants are no longer dropped. Same narrow
+  # source set as test_vector_dataset_cleanup — the TU, not the camp_map library.
+  ament_add_gtest(test_vector_parse_attributes
+    test/test_vector_parse_attributes.cpp
+    src/camp_map/vector/vector_parse.cpp
+  )
+  target_include_directories(test_vector_parse_attributes PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_parse_attributes
+    Qt5::Core
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#22] Insertion-target rule for a restored VectorDataset: an explicitly
+  # requested parent wins, nullptr falls back to the project's current group.
+  # Narrow source set (the seam's own TU) — AutonomousVehicleProject, where the
+  # defect lived, is not constructible in a test harness. Pure pointer logic: no
+  # Qt, no GDAL, nothing to link but gtest.
+  ament_add_gtest(test_mission_insertion
+    test/test_mission_insertion.cpp
+    src/camp/mission_insertion.cpp
+  )
+  target_include_directories(test_mission_insertion PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+
+  # [camp#22] Attribute-driven styling for the read-only vector layer: the range
+  # is computed over the features that HAVE a value, an all-equal field maps to the
+  # middle of the ramp instead of dividing by zero (totally — including above 2^53,
+  # where the old max-1.0 offset was a no-op), and a missing / non-numeric value
+  # gets the documented no-data colour rather than palette index 0. Headless free
+  # functions (vector_style.cpp) — no QApplication, no GL, no Map model.
+  ament_add_gtest(test_vector_layer_styling
+    test/test_vector_layer_styling.cpp
+    src/camp_map/vector/vector_style.cpp
+  )
+  target_include_directories(test_vector_layer_styling PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_styling
+    marine_colormap::marine_colormap
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Positioning
+  )
+
+  # [camp#22 / camp#213] VectorLayer teardown: the parse runs on a QtConcurrent
+  # worker that reads the layer's members, so the destructor must abort and JOIN it
+  # — the destroy-during-load case here is the racing shape. The open-dataset
+  # baseline also proves the worker's RAII closes the GDAL handle on the aborted
+  # path, and the load assertions keep the teardown check non-vacuous.
+  ament_add_gtest(test_vector_layer_teardown
+    test/test_vector_layer_teardown.cpp
+  )
+  target_include_directories(test_vector_layer_teardown PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_teardown
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Concurrent
+    Qt5::Positioning
+    ${GDAL_LIBRARY}
+  )
+
+  # [camp#22] One vector feature item: hover hit-testing (a line's shape must be
+  # STROKED or Qt never picks it, so hover-to-inspect silently fails on all line
+  # data), the in-scene attribute LABEL and the no-mouse-button contract, and
+  # coordinate validity (a .prj-less shapefile read as degrees, or a NaN from a
+  # failed transform, must not be projected into the scene at all). The label is
+  # not a tooltip: the tooltip version was tried and rejected in the operator GUI
+  # test of 2026-09-15 (ADR-0016 D5).
+  ament_add_gtest(test_vector_feature_item
+    test/test_vector_feature_item.cpp
+  )
+  target_include_directories(test_vector_feature_item PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_feature_item
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+  )
+
+  # [camp#22 / ADR-0003 §4 / camp#90] Vector-layer list persistence: add de-dups,
+  # removal STICKS across a restart (the half whose absence makes a removed layer
+  # come back) while a drag-REORDER does not un-persist, the settings key
+  # round-trips, and per-layer style is keyed by full path rather than basename
+  # (camp#126's collision).
+  ament_add_gtest(test_vector_layer_persistence
+    test/test_vector_layer_persistence.cpp
+  )
+  target_include_directories(test_vector_layer_persistence PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_link_libraries(test_vector_layer_persistence
+    camp_map
+    Qt5::Core
+    Qt5::Gui
+    Qt5::Widgets
+    Qt5::Positioning
+    Qt5::Test
     ${GDAL_LIBRARY}
   )
 

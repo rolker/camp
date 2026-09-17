@@ -42,6 +42,20 @@ MainWindow::MainWindow(QWidget *parent) :
     m_ui(new Ui::MainWindow)
 {
     m_ui->setupUi(this);
+    // [camp#22 round-11 should-fix] PUT THE VIEW IN PAN MODE FOR REAL, here, after
+    // setupUi() has applied the .ui's properties.
+    //
+    // ProjectView starts in pan mode by its own bookkeeping — mouseMode is pan and
+    // the status bar says "Mode: pan" — but nothing ever CALLED setPanMode(), which
+    // is what installs ADR-0016 D16's arrow cursor. setupUi() applies the .ui's
+    // dragMode = ScrollHandDrag property, and Qt's setDragMode() puts the open hand
+    // on the viewport with it, so the launch state showed the hand the 2026-09-15
+    // GUI test rejected (ADR-0016 D15: nobody could land it within 5 pixels) while
+    // claiming pan mode. CAMP idles in pan mode, so that is the state the operator
+    // spends most of a session in. It must be called AFTER setupUi(), not from the
+    // ProjectView constructor, because the .ui property is applied later and would
+    // reinstall the hand over it.
+    m_ui->projectView->setPanMode();
     GDALAllRegister();
     project = new AutonomousVehicleProject(this);
 
@@ -160,6 +174,10 @@ MainWindow::MainWindow(QWidget *parent) :
     // the restored charts. Charts are app state, independent of any mission file.
     project->restorePersistedBackgrounds();
 
+    // [camp#22 / ADR-0003] Same for the read-only vector display layers: app
+    // state, restored at startup independently of any mission file.
+    project->restorePersistedVectorLayers();
+
     // [camp#90] Restore window geometry/state and the map view position+zoom from
     // the previous session (saved in closeEvent). Geometry applies now; the map
     // view scale/center is deferred to the next event-loop turn so it isn't
@@ -252,7 +270,7 @@ void MainWindow::setCurrent(const QModelIndex &index, const QModelIndex &previou
 void MainWindow::on_speedLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
         item->setSpeed(m_ui->speedLineEdit->text().toDouble());
     bool ok;
     auto speed = m_ui->speedLineEdit->text().toDouble(&ok);
@@ -266,7 +284,7 @@ void MainWindow::on_speedLineEdit_editingFinished()
 void MainWindow::on_throttleLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
       item->setThrottle(m_ui->throttleLineEdit->text().toDouble()/100.0);
     bool ok;
     auto throttle = m_ui->throttleLineEdit->text().toDouble(&ok);
@@ -285,7 +303,7 @@ void MainWindow::on_priorityLineEdit_editingFinished()
     if(ok)
     {
         auto item = project->currentSelected();
-        if(item) 
+        if(item)
             item->setPriority(priority);
     }
 }
@@ -293,7 +311,7 @@ void MainWindow::on_priorityLineEdit_editingFinished()
 void MainWindow::on_taskDataLineEdit_editingFinished()
 {
     auto item = project->currentSelected();
-    if(item) 
+    if(item)
         item->setTaskData(m_ui->taskDataLineEdit->text().toStdString());
 }
 
@@ -350,9 +368,9 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         QAction *sendToROSAction = menu.addAction("Send to ROS (Use Execute button)");
         sendToROSAction->setEnabled(false);
         //connect(sendToROSAction, &QAction::triggered, this, &MainWindow::sendToROS);
-        
+
         QMenu *missionMenu = menu.addMenu("Mission");
-        
+
         QAction *appendMissionAction = missionMenu->addAction("append");
         connect(appendMissionAction, &QAction::triggered, this, &MainWindow::appendMission);
 
@@ -361,12 +379,12 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *updateMissionAction = missionMenu->addAction("update");
         connect(updateMissionAction, &QAction::triggered, this, &MainWindow::updateMission);
-        
+
         QMenu *exportMenu = menu.addMenu("Export");
 
         QAction *exportGeoJsonAction = exportMenu->addAction("Export GeoJSON");
         connect(exportGeoJsonAction, &QAction::triggered, [=](){this->project->exportGeoJson(index);});
-        
+
         QAction *exportHypackAction = exportMenu->addAction("Export Hypack");
         connect(exportHypackAction, &QAction::triggered, this, &MainWindow::exportHypack);
 
@@ -374,10 +392,10 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
         connect(exportMPAction, &QAction::triggered, this, &MainWindow::exportMissionPlan);
     }
 
-    
+
     QAction *openBackgroundAction = menu.addAction("Open Background");
     connect(openBackgroundAction, &QAction::triggered, this, &MainWindow::on_actionOpenBackground_triggered);
-    
+
     QMenu *addMenu = menu.addMenu("Add");
 
     if(!index.isValid())
@@ -455,8 +473,8 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
 
         QAction *deleteItemAction = menu.addAction("Delete");
         connect(deleteItemAction, &QAction::triggered, [=](){this->project->deleteItems(m_ui->treeView->selectionModel()->selectedRows());});
-        
-        
+
+
         TrackLine *tl = qobject_cast<TrackLine*>(mi);
         if(tl)
         {
@@ -498,7 +516,7 @@ void MainWindow::on_treeView_customContextMenuRequested(const QPoint &pos)
                 connect(lockItemAction, &QAction::triggered, gmi, &GeoGraphicsMissionItem::lock);
             }
         }
-        
+
         SurveyArea *sa = qobject_cast<SurveyArea*>(mi);
         if(sa)
         {
@@ -618,6 +636,23 @@ void MainWindow::on_actionBehaviorFromContext_triggered()
 }
 
 
+void MainWindow::on_actionOpenVectorLayer_triggered()
+{
+    // [camp#22] The DISPLAY path: an OGR vector file as a read-only Layers-tab
+    // layer with attribute-driven styling. File > Open Geometry (below) is the
+    // editable mission-tree import of the same kind of file.
+    QString fname = QFileDialog::getOpenFileName(this,tr("Open Vector Layer"),m_workspace_path);
+
+    if(!fname.isEmpty())
+    {
+        // No wait cursor: openVectorLayer() only STARTS the load — the parse runs
+        // on a worker and the layer reports "(loading...)" in the Layers tab until
+        // it finishes. A cursor bracketing the kickoff would be set and unset
+        // before any of the waiting it appears to represent.
+        project->openVectorLayer(fname);
+    }
+}
+
 void MainWindow::on_actionOpenGeometry_triggered()
 {
     project->setContextMode(false);
@@ -684,4 +719,3 @@ void MainWindow::onROSConnected(bool connected)
 {
     //m_ui->rosDetails->setEnabled(connected);
 }
-
