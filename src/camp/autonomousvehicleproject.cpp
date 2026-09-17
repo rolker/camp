@@ -418,7 +418,29 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
 
     auto layers = m_map->topLevelLayers();
     if(!layers)
+    {
+        // [camp#22 round-10 suggestion] REMEMBER THE FILE, then give up. This is
+        // the one way a restore that RAN TO COMPLETION could still lose an entry:
+        // the file is in the order of record and, having been reachable,
+        // planVectorLayerRestore() put it on the openable list rather than the
+        // unavailable one — so a bare return left it in neither, and
+        // rebuildPersistedVectorLayerFiles() reads "in the order but neither
+        // loaded nor unavailable" as "removed through the Layers tab" and drops
+        // it. The single trailing persist then wrote the file out of existence,
+        // silently, although the operator did nothing of the kind.
+        //
+        // The unavailable list is the right home for it: it means "an entry whose
+        // layer could not be created this time, carried forward to the next
+        // launch", which is exactly the state here. It applies equally to an
+        // operator-initiated open — they asked for this file, and a map with no
+        // top-level layer list is a condition of this session, not their decision.
+        m_unavailableVectorLayerFiles =
+            camp::vector::withVectorLayerFile(m_unavailableVectorLayerFiles, fname);
+        qWarning() << "AutonomousVehicleProject: cannot open vector layer" << fname
+                   << "- the map has no top-level layer list. The entry is KEPT and"
+                   << "will be retried on the next launch.";
         return;
+    }
     // [camp#22 / camp#90] The file is reachable now, so it is no longer an
     // unavailable-at-startup entry. Dropping it here is what lets a LATER removal
     // through the Layers tab stick: while the path stayed in
