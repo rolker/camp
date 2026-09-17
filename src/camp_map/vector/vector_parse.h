@@ -145,6 +145,21 @@ struct ParseDiagnostics
     // Polygons dropped because they carry no exterior ring — there is no outline
     // to draw and no ring to close, so nothing can be emitted for them.
     int polygons_without_exterior_ring = 0;
+    // [camp#22 round-8 must-fix] Line strings and polygons dropped because their
+    // exterior came back EMPTY: every vertex failed to transform (each one also
+    // counted in points_dropped), or the ring held no vertex to begin with. Such a
+    // geometry is neither emitted nor charged to the cap — an empty shape draws
+    // nothing and must not spend a cap slot a drawable feature needs.
+    //
+    // It needs its own field because nothing else counts it: the file whose
+    // features all fall outside their projection's inverse domain is the motivating
+    // case, and without this the caller sees an empty result with every other
+    // counter at zero and reports it as an empty FILE. `points_dropped` is not a
+    // substitute (a genuinely empty ring has no vertex to count, and a partly
+    // dropped ring is still drawn), and `polygons_without_exterior_ring` counts the
+    // different case of no ring at all. VectorLayer folds this into the count of
+    // items it could not place, so the Layers tab says what happened.
+    int geometries_with_empty_exterior = 0;
 };
 
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.

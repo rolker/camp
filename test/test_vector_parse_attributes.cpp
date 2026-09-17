@@ -1443,6 +1443,11 @@ TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
       << "3 line vertices + 4 exterior-ring vertices; the hole is never read";
   EXPECT_EQ(diagnostics.polygons_without_exterior_ring, 0)
       << "the polygon HAS an exterior ring; its vertices are what could not be transformed";
+  // [camp#22 round-8 must-fix] The skip has its OWN counter, because nothing else
+  // counts it: without this the caller sees an empty result and reports an empty
+  // FILE. Both the line and the polygon are counted here.
+  EXPECT_EQ(diagnostics.geometries_with_empty_exterior, 2)
+      << "the line and the polygon were each dropped for having no usable exterior";
 
   // Capped at two: the cap buys two DRAWABLE geometries. Before this fix the
   // empty line and the empty polygon spent both slots and the parse returned two

@@ -246,6 +246,20 @@ void VectorLayer::loadFinished()
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- dropped"
                << result.diagnostics.polygons_without_exterior_ring
                << "polygon(s) with no exterior ring";
+  if(result.diagnostics.geometries_with_empty_exterior > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- dropped"
+               << result.diagnostics.geometries_with_empty_exterior
+               << "geometry(ies) whose exterior holds no usable vertex (every vertex outside"
+               << "the file's projection is the usual cause)";
+  // [camp#22 round-8 must-fix] The geometries the PARSE dropped as undrawable are
+  // skipped items too, and the loop above cannot count them: they never reach it.
+  // Folding them in is what keeps the status honest — without it a file whose
+  // features all fall outside their projection's inverse domain, or whose polygons
+  // carry no exterior ring, reported the bare "(no features)", which is the
+  // verdict an EMPTY FILE gets and has a completely different remedy. The
+  // per-reason detail is in the log lines above; the status carries the count.
+  skipped += result.diagnostics.geometries_with_empty_exterior +
+             result.diagnostics.polygons_without_exterior_ring;
   if(result.diagnostics.layers_failed > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
                << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total

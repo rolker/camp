@@ -220,8 +220,18 @@ void appendGeometry(const OGRGeometry *geometry,
             // already counts-and-drops without spending; this is the same rule.
             // VectorLayer rejects the empty item anyway (hasPlaceableCoordinate),
             // so nothing drawn changes.
+            //
+            // [camp#22 round-8 must-fix] COUNT the skip. Dropping it silently left
+            // the class with no operator-visible report at all: the geometry never
+            // reaches VectorLayer, so its own skipped counter stays 0 and the
+            // Layers tab printed the bare "(no features)" — an empty-file verdict
+            // for a file whose features exist and fall outside their projection's
+            // inverse domain.
             if(g.exterior.empty())
+            {
+                ++diagnostics.geometries_with_empty_exterior;
                 break;
+            }
             out.push_back(std::move(g));
             budget.spend();
         }
@@ -250,8 +260,13 @@ void appendGeometry(const OGRGeometry *geometry,
             // also saves walking every hole of a polygon that cannot be drawn at
             // all. An exterior whose vertices all failed to transform leaves no
             // outline, so the geometry is neither emitted nor charged to the cap.
+            // Counted, for the reason given on the line-string skip above: this is
+            // the only report the operator gets of a geometry dropped this way.
             if(g.exterior.empty())
+            {
+                ++diagnostics.geometries_with_empty_exterior;
                 break;
+            }
             for(int ringNum = 0; ringNum < op->getNumInteriorRings(); ++ringNum)
             {
                 // [camp#22] Break on ABORT, the way the geometry-collection part
@@ -529,6 +544,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         LayerUnhandledTypeScope unhandled_type_scope(diag);
         const int dropped_before = diag.points_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
+        const int empty_exteriors_before = diag.geometries_with_empty_exterior;
         const int unhandled_before = diag.geometries_unhandled;
 
         // [camp#22 round-5 should-fix] The per-layer "what was left out" summaries,
@@ -547,6 +563,13 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                            << "- dropped"
                            << (diag.polygons_without_exterior_ring - polygons_dropped_before)
                            << "polygon(s) with no exterior ring";
+
+            if(diag.geometries_with_empty_exterior > empty_exteriors_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- dropped"
+                           << (diag.geometries_with_empty_exterior - empty_exteriors_before)
+                           << "geometry(ies) whose exterior holds no usable vertex (every"
+                           << "vertex failed to transform, or the ring was empty)";
 
             if(diag.points_dropped > dropped_before)
                 qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()

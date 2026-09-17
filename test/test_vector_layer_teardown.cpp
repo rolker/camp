@@ -285,6 +285,34 @@ bool waitForLoad(const camp::vector::VectorLayer* layer, int timeout_ms = 5000)
   return layer->loaded();
 }
 
+// [camp#22 round-8 must-fix] A file whose geometries all drop out in the PARSE:
+// two line strings with no vertex at all and a polygon with no ring. GDAL reads
+// these as LINESTRING EMPTY / POLYGON EMPTY, which is the same thing the parser
+// is left holding when every vertex of a real geometry falls outside its
+// projection's inverse domain (ParseDiagnostics::geometries_with_empty_exterior /
+// polygons_without_exterior_ring). None of them reaches VectorLayer's own skip
+// loop, which is why the layer used to report this file as empty.
+QString writeEmptyGeometryGeoJson(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("empty_geometries.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature", "geometry": {"type": "LineString", "coordinates": []},
+       "properties": {"name": "a"}},
+      {"type": "Feature", "geometry": {"type": "LineString", "coordinates": []},
+       "properties": {"name": "b"}},
+      {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[]]},
+       "properties": {"name": "c"}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // The same wait for a layer that is EXPECTED to end up empty: waitForLoad()
 // answers loaded(), which is false by design for a layer with no drawable
 // feature, so a status assertion needs the settled-status wait on its own.
@@ -510,6 +538,42 @@ TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
   ASSERT_TRUE(waitForStatus(uncapped));
   EXPECT_FALSE(uncapped->status().contains("not read")) << uncapped->status().toStdString();
   delete uncapped;
+}
+
+// [camp#22 round-8 must-fix] A GEOMETRY THE PARSE DROPPED IS STILL A SKIPPED ITEM
+// IN THE STATUS.
+//
+// The parse skips a geometry whose exterior holds no usable vertex — every vertex
+// outside the projection's inverse domain, or a ring with no vertex at all — and
+// a polygon with no exterior ring. Those geometries never reach the layer's own
+// skip loop, so its `skipped` counter stayed 0 and the Layers tab printed the bare
+// "(no features)": the verdict an EMPTY FILE gets, for a file whose features exist
+// and whose remedy (a wrong or unusable coordinate system) is a different one
+// entirely. The status must say something was left out.
+TEST(VectorLayerTeardown, GeometriesDroppedByTheParseAreReportedInTheStatus)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeEmptyGeometryGeoJson(dir);   // 2 empty lines + 1 ringless polygon
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "no geometry of this file can be drawn";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_NE(layer->status(), QStringLiteral("(no features)"))
+      << "a file whose geometries were all dropped by the parse must not be reported "
+         "as an empty file";
+  EXPECT_TRUE(layer->status().contains("skipped"))
+      << "the status must count what was left out: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("3"))
+      << "all three dropped geometries must be counted: " << layer->status().toStdString();
+  EXPECT_FALSE(layer->status().contains("not read"))
+      << "nothing was left unread — the cap was never reached: "
+      << layer->status().toStdString();
+  delete layer;
 }
 
 // [camp#22 must-fix 6] The destructor's join must be bounded by the ABORT, not by
