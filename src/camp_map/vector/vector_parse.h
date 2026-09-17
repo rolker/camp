@@ -263,6 +263,27 @@ struct ParseDiagnostics
 // display layer where it started: the parser applies it too, to decide whether a
 // geometry is worth emitting and charging to the geometry cap, and a second copy
 // of the rule in two files is a rule that drifts.
+//
+// [camp#22 round-10 suggestion] WHAT THE GUARD ACTUALLY BOUNDS, stated so the
+// paragraph above is not read as more than it is. The test applied to a GEOMETRY
+// is `hasPlaceableCoordinate()`, which admits it on ANY ONE placeable vertex — so
+// a line carrying one good vertex and 999 UTM northings read as degrees IS
+// admitted, and those 999 vertices do reach `childrenBoundingRect()` and the
+// scene index. What the guard removes is the geometry NONE of whose vertices is a
+// place on the earth: the whole-file case (a `.prj`-less shapefile, a layer with
+// no spatial reference), which is the one that actually occurs and the one that
+// leaves fit-to-extent useless.
+//
+// The weaker bound is deliberate. A mixed geometry is a corrupt or mis-projected
+// FILE rather than a format CAMP is asked to read, dropping a shape whose vertices
+// mostly transformed would lose real data, and there is no per-vertex answer that
+// is right for every geometry type (dropping vertices reshapes a line; dropping
+// the geometry discards a feature that may be exactly where the operator is
+// looking). The NaN an ordinate takes from a FAILED TRANSFORM never gets this far
+// at all: `toWgs84()` returns nothing for it, so the vertex is dropped (and
+// counted) before a geometry is built. What remains is a file that carries a NaN
+// literally in a layer with no transformation, on a geometry whose other vertices
+// are fine — admitted here, like any other bad vertex of an admitted geometry.
 bool isPlaceable(const QGeoCoordinate &coordinate);
 
 // The first vertex of @p geometry's EXTERIOR that `isPlaceable()` admits, or
