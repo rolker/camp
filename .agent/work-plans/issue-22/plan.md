@@ -6,6 +6,44 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 16** (2026-09-17) — **round-5 PR triage fixes.** No design change; seven
+review findings, all in the mechanisms rev 14 and rev 15 put in place.
+
+- **A reopened once-unavailable layer keeps its persisted SLOT.** Rev 14 purged
+  the unavailable list by canonical-equivalent identity, but the restored ORDER
+  kept the raw spelling a dangling symlink was remembered under while the
+  reopened layer is tracked under its resolved target, so the rebuild's exact
+  string match skipped the slot and the trailing append loop moved the layer to
+  the END of the operator's stacking order. `withVectorLayerFilePromoted()`
+  rewrites the entry in place, on the same promotion that purges the list.
+- **A line or polygon whose exterior loses every vertex is not emitted and does
+  not spend a geometry-cap slot.** The point branch already counted-and-dropped
+  without spending; the other two pushed an empty geometry and spent anyway, so
+  out-of-domain features burned cap slots later valid features needed. The
+  polygon returns before walking the holes of a shape it cannot draw.
+- **The cap path reports the per-layer diagnostic summaries.** The cap return sat
+  above the three `qWarning` blocks, so on the one path where the operator is
+  already told the read was partial, `points_dropped` and `geometries_unhandled`
+  — reported nowhere else — vanished. Both consumed exits now call one lambda.
+- **An abort that rises inside the cap lookahead is reported as an abort**, which
+  the header always promised. The lookahead also answers "nothing remains" once
+  an abort is requested, so a genuinely capped parse could otherwise have claimed
+  it was read in full.
+- **The hover label answers no mouse button either.** The item's
+  `Qt::NoButton` guarantee (ADR-0016 D5 / camp#225) is only true by construction
+  if it holds for the whole subtree, and the label is placed AT the cursor for a
+  line or polygon with the item lifted above its siblings.
+- **The cap is reported in ITEMS**, the quantity it counts: `max_geometries` is
+  spent per emitted geometry part and one item is built per part, so a multi-part
+  feature accounts for several. Header, status line, log and ADR-0016 now agree;
+  wording only.
+- Tests: the canonical-aware restored order (and the promotion's blast radius),
+  the per-layer style QSettings round trip (a mistyped key would have lost every
+  persisted style with the suite green), an all-dropped exterior under the cap,
+  the cap path's summaries, an abort at EVERY poll position of a capped parse,
+  and the label's no-button contract at item level plus a press over the label
+  through a real view.
+
 **Rev 15** (2026-09-15) — **round-7 pre-push review fixes.** No design change.
 
 - **The unhandled-type NAME in the per-layer summary line is per-layer**, like
