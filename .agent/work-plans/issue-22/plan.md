@@ -6,6 +6,65 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 18** (2026-09-17) — **round-6 PR triage fixes (Copilot R7).** No design
+change; four should-fix, two suggestions and one nit, all new ground.
+
+- **The startup restore decides its whole state before opening anything, and
+  persists once.** `openVectorLayer()` ends in `persistVectorLayers()`, which
+  rewrites `vectorLayers/files` from the restored order, the unavailable list and
+  the tracked layers — so while those lists were built INSIDE the open loop, each
+  per-layer write put a list truncated at the current entry on disk, and an exit
+  or a worker-side crash mid restore (the opens are asynchronous parses that
+  outlive the loop) silently forgot every later layer: camp#90/#117 from the
+  other direction. The classification moves into
+  `camp::vector::planVectorLayerRestore()` — a harness-visible seam that opens
+  nothing and writes nothing — and per-layer persistence is suppressed for the
+  duration of the loop.
+- **A standalone point the parse drops is reported as a skipped item.** The
+  round-17 fix reached lines and polygons; the point branch was the one case it
+  did not, so a file whose points all fall outside their projection's inverse
+  domain still produced the bare "(no items)" — an empty-FILE verdict.
+  `ParseDiagnostics::point_geometries_dropped` is its own counter because
+  `points_dropped` also counts bad VERTICES of lines and polygons that were drawn
+  in full.
+- **The parse result is read by reference, and the future is released.** Qt
+  5.15's `QFutureWatcher::result()` returns by value, so `loadFinished()` built a
+  second full copy of every coordinate and attribute map while the future's store
+  still held the first — and the watcher, a never-reset member, RETAINED that
+  first copy for the layer's whole lifetime, undercutting the memory bound
+  `kMaxFeatureItems` is documented to give. Read through the future's const
+  iterator and clear the watcher's future at the end of the slot (guarded against
+  the re-entrant `finished()` that clearing can deliver).
+- **The persisted colormap name is case-folded and registry-validated**, falling
+  back to grayscale — the `RasterLayer::readSettings()` rule (camp#141) this layer
+  did not share. An unknown name RENDERED as grayscale while `colormap_` kept the
+  invalid spelling, so no palette showed as checked and `writeSettings()` wrote
+  the bad value back every session.
+- **Size by offers point-carried numeric fields only.** `applyStyle()` folds the
+  size range over points alone, so a field only lines or polygons carry left every
+  marker at the default radius while the action showed as checked and the choice
+  persisted. Color by keeps the full list; a set-but-unusable size field is
+  annotated `(no numbers on any point)`.
+- **The geometry cap is not charged for geometry with no placeable coordinate.** A
+  layer with NO spatial reference takes the untransformed branch, so projected
+  metres arrive as a well-formed coordinate that is nowhere on earth: nothing
+  failed, nothing was empty, and the geometry was emitted, charged, and rejected
+  one step later — on a multi-layer container an SRS-less layer could exhaust the
+  cap before the good layer behind it was read. The parser now applies the display
+  layer's own `hasPlaceableCoordinate()` test (moved beside the parse, so one rule
+  serves both) and drops-and-counts instead. Consequence, recorded in ADR-0016: a
+  `.prj`-less file is now read to its last feature rather than stopping at the
+  cap. The cap `qWarning()` no longer overstates what is shown.
+- **`kMaxFeatureItems` names the limit it does not bound**, pointing at the
+  ADR-0016 D11 deferral (a single ring of millions of vertices) rather than
+  leaving the claim to read as unqualified. The deferral itself stands.
+- Tests: the restore plan is complete (and writes nothing) before the first open;
+  a point-only file outside its projection domain does not report the empty-file
+  verdict; a bogus and a miscased persisted palette round-trip to grayscale and to
+  the registry spelling; Size by omits a line-only numeric field and annotates one
+  that is set; and the round-4 capped-but-empty test is turned around to assert
+  what the cap now does NOT charge.
+
 **Rev 17** (2026-09-17) — **round-8 pre-push review fixes.** No design change;
 one must-fix and eight suggestions, all consequences of the rev-16 fixes.
 
