@@ -149,7 +149,15 @@ double radiusForValue(const std::optional<double>& value,
                       double max_radius,
                       double default_radius)
 {
-  if(!value || !range.valid)
+  // [camp#22 round-12] The SAME predicate the colour path uses, not a second
+  // spelling of it: the marker's size and its colour must answer no-data
+  // identically, or a feature is drawn grey-and-hatched at a computed size (or
+  // palette-coloured at the default size). This branch used to repeat
+  // `!value || !range.valid`, which is how it missed the non-finite case the
+  // colour path had just been corrected for - a NaN would have taken
+  // normalizedValue()'s 0.5 and been drawn as a mid-sized marker, i.e. a
+  // measurement.
+  if(isNoData(value, range))
     return default_radius;
   return min_radius + normalizedValue(*value, range) * (max_radius - min_radius);
 }

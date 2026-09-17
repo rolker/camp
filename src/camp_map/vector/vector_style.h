@@ -109,9 +109,12 @@ QColor colorForValue(const marine_colormap::Palette* palette,
                      const FieldRange& range,
                      const QColor& default_color);
 
-/// Marker radius in device pixels for one point feature. A missing or
-/// non-numeric value — or an invalid range — gets @p default_radius, NOT a
-/// computed one, so an unstyled feature is not silently drawn as the smallest.
+/// Marker radius in device pixels for one point feature. Anything `isNoData()`
+/// calls no data — a missing value, a non-finite one, or an invalid range — gets
+/// @p default_radius, NOT a computed one, so an unstyled feature is not silently
+/// drawn as the smallest. It goes through that predicate rather than repeating
+/// its condition, so size and colour cannot disagree about which features are
+/// unstyled.
 double radiusForValue(const std::optional<double>& value,
                       const FieldRange& range,
                       double min_radius,

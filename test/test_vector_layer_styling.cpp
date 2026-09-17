@@ -363,6 +363,49 @@ TEST(VectorLayerStyling, NonFiniteValuesAreNoDataNotAMidRangeMeasurement)
   EXPECT_NE(colorForValue(palette, 5.0, range, Qt::darkCyan), noDataColor());
 }
 
+// [camp#22 round-12 must-fix] The marker SIZE answers no-data exactly as the
+// colour does, because it asks the same predicate.
+//
+// radiusForValue() repeated `!value || !range.valid` instead of calling
+// isNoData(), so it carried the same non-finite hole: a NaN took
+// normalizedValue()'s 0.5 and was drawn as a mid-sized marker. Two spellings of
+// one condition also let size and colour disagree about which features are
+// unstyled - a feature drawn grey and hatched at a computed size, or
+// palette-coloured at the default size.
+TEST(VectorLayerStyling, NonFiniteValuesGetTheDefaultRadiusNotAComputedOne)
+{
+  const double nan = std::numeric_limits<double>::quiet_NaN();
+  const double inf = std::numeric_limits<double>::infinity();
+  FieldRange range;
+  range.valid = true;
+  range.min = 0.0;
+  range.max = 10.0;
+
+  EXPECT_DOUBLE_EQ(
+    radiusForValue(nan, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
+    kDefaultPointRadius);
+  EXPECT_DOUBLE_EQ(
+    radiusForValue(inf, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
+    kDefaultPointRadius);
+  EXPECT_DOUBLE_EQ(
+    radiusForValue(-inf, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
+    kDefaultPointRadius);
+  // A real measurement still gets its computed size.
+  EXPECT_DOUBLE_EQ(
+    radiusForValue(10.0, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
+    kMaxPointRadius);
+
+  // Size and colour agree, feature for feature, on what is unstyled.
+  for(const double v : {nan, inf, -inf})
+  {
+    EXPECT_TRUE(isNoData(v, range));
+    EXPECT_EQ(colorForValue(nullptr, v, range, Qt::darkCyan), noDataColor());
+    EXPECT_DOUBLE_EQ(
+      radiusForValue(v, range, kMinPointRadius, kMaxPointRadius, kDefaultPointRadius),
+      kDefaultPointRadius);
+  }
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);
