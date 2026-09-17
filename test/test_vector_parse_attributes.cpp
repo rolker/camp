@@ -1402,7 +1402,12 @@ TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
     feature.SetGeometry(&line);
     ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
   }
-  {  // a polygon whose EXTERIOR all fails, carrying a hole that is in domain
+  {  // a polygon whose EXTERIOR all fails, carrying a hole that is ALSO out of
+     // domain. [camp#22 round-8 suggestion] The hole used to be in domain, so its
+     // vertices added nothing to points_dropped whether the parser read them or
+     // not, and the property the early return exists for — the holes of a polygon
+     // that cannot be drawn are never read — was untested. Out of domain, reading
+     // them would show up as 4 more dropped points: 11 instead of 7.
     OGRFeature feature(layer->GetLayerDefn());
     OGRLinearRing exterior;
     exterior.addPoint(kOutOfDomain, kOutOfDomain);
@@ -1410,10 +1415,10 @@ TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
     exterior.addPoint(kOutOfDomain + 100.0, kOutOfDomain + 100.0);
     exterior.addPoint(kOutOfDomain, kOutOfDomain);
     OGRLinearRing hole;
-    hole.addPoint(1000.0, 1000.0);
-    hole.addPoint(2000.0, 1000.0);
-    hole.addPoint(2000.0, 2000.0);
-    hole.addPoint(1000.0, 1000.0);
+    hole.addPoint(kOutOfDomain + 20.0, kOutOfDomain + 20.0);
+    hole.addPoint(kOutOfDomain + 40.0, kOutOfDomain + 20.0);
+    hole.addPoint(kOutOfDomain + 40.0, kOutOfDomain + 40.0);
+    hole.addPoint(kOutOfDomain + 20.0, kOutOfDomain + 20.0);
     OGRPolygon polygon;
     polygon.addRing(&exterior);
     polygon.addRing(&hole);
@@ -1440,7 +1445,9 @@ TEST(VectorParseAttributes, AllDroppedExteriorIsNeitherEmittedNorCharged)
   for(const ParsedGeometry& geometry : layers.front().geometries)
     EXPECT_EQ(geometry.type, ParsedGeometry::Point);
   EXPECT_EQ(diagnostics.points_dropped, 7)
-      << "3 line vertices + 4 exterior-ring vertices; the hole is never read";
+      << "3 line vertices + 4 exterior-ring vertices. The hole's 4 vertices are out of "
+         "domain too, so reading them would make this 11 — 7 is what proves the polygon "
+         "branch returns before the interior rings of a polygon it cannot draw";
   EXPECT_EQ(diagnostics.polygons_without_exterior_ring, 0)
       << "the polygon HAS an exterior ring; its vertices are what could not be transformed";
   // [camp#22 round-8 must-fix] The skip has its OWN counter, because nothing else
