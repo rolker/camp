@@ -622,13 +622,30 @@ QStringList withoutVectorLayerFile(const QStringList& files, const QString& cano
 QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile)
 {
   QStringList result;
+  // [camp#22 round-8 suggestion] STOP RESOLVING once the entry has been found.
+  // There is exactly one entry to rewrite, and every resolve is a
+  // canonicalFilePath() — a stat/readlink on the GUI thread, on paths that are
+  // most likely DEAD MOUNTS at the one moment this runs (a share has just come
+  // back; the operator's other unavailable files have not). Resolving the whole
+  // list meant the cost grew with the order of record rather than stopping at the
+  // match. An exact-string comparison still runs for every entry, so the
+  // duplicate-collapse below is unaffected for the spellings it can see.
+  //
+  // A SECOND raw spelling of the same file, after the match, is therefore left as
+  // it is rather than being collapsed into the rewritten entry. That entry is
+  // neither loaded (the layer is tracked under the resolved target) nor
+  // unavailable (withoutVectorLayerFile() purges every equivalent), so
+  // rebuildPersistedVectorLayerFiles() drops it: nothing is persisted twice and
+  // no slot moves.
+  bool promoted = false;
   for(const QString& file : files)
   {
     // Same identity test withoutVectorLayerFile() uses — an exact match, or an
     // entry whose raw spelling only NOW resolves to this file — but the entry is
     // rewritten in its slot instead of being dropped.
     const bool same_file =
-      file == canonicalFile || canonicalVectorLayerPath(file) == canonicalFile;
+      file == canonicalFile || (!promoted && canonicalVectorLayerPath(file) == canonicalFile);
+    promoted = promoted || same_file;
     const QString entry = same_file ? canonicalFile : file;
     if(!result.contains(entry))
       result << entry;

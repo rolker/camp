@@ -441,6 +441,10 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     // That resolve costs one stat per unavailable entry, here on the GUI thread,
     // on paths that may be unmounted shares — a bounded, deliberately accepted
     // cost; the reasoning is on withoutVectorLayerFile()'s declaration.
+    // [camp#22 round-8 suggestion] The promotion below walks a DIFFERENT and
+    // longer list — the whole restored order, not the unavailable subset — so its
+    // cost is its own; it is stated on withVectorLayerFilePromoted()'s
+    // declaration, and it stops resolving at the entry it rewrites.
     if(QFileInfo::exists(fname))
     {
         const QStringList purged =

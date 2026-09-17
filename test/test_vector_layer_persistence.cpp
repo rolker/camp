@@ -458,6 +458,12 @@ TEST(VectorLayerPersistence, PromotionRewritesOnlyTheMatchingEntry)
       << "an unrelated path must not disturb the list";
   EXPECT_TRUE(withVectorLayerFilePromoted(QStringList{}, shared).isEmpty())
       << "promotion adds nothing; it only rewrites what is already there";
+  // [camp#22 round-8 suggestion] The resolve stops at the matching entry, but the
+  // exact-string comparison does not: an identical duplicate anywhere in the list
+  // is still collapsed, and the entries around it keep their order.
+  EXPECT_EQ(withVectorLayerFilePromoted(QStringList{shared, local, shared}, shared),
+            (QStringList{shared, local}))
+      << "an exact duplicate must still collapse into the promoted slot";
 }
 
 // The exact-match removal withoutVectorLayerFile() also has to keep doing, and the

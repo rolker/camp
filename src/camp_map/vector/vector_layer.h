@@ -330,9 +330,17 @@ QStringList withoutVectorLayerFile(const QStringList& files, const QString& cano
 /// persisted as `[B, target]`. Layer order is the operator's stacking order and
 /// `restorePersistedVectorLayers()` documents the slot as kept, so the promotion
 /// has to rewrite the entry rather than leave the rebuild to stat every entry on
-/// every persist. One resolve pass over an operator-sized list, only on the
-/// promotion itself — the same bounded cost `withoutVectorLayerFile()` documents
-/// above, paid on the same call.
+/// every persist.
+///
+/// [camp#22 round-8 suggestion] COST, stated for THIS function rather than
+/// borrowed from `withoutVectorLayerFile()`: the list walked here is the whole
+/// RESTORED ORDER — every vector layer the operator has, not just the unavailable
+/// ones — and the resolve is the same GUI-thread stat, on paths that at this exact
+/// moment are most likely dead mounts. The resolve therefore stops at the entry
+/// that matches: at most one pass UP TO the promoted slot, never the whole order.
+/// Entries after it are compared by string only, which is why a second raw
+/// spelling of the same file is left in place (harmlessly — see the note at the
+/// implementation) instead of being collapsed.
 QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile);
 
 /// The persisted vector-layer list rebuilt from scratch — the whole rule behind
