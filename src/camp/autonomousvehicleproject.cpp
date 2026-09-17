@@ -549,6 +549,17 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
     // an unavailable entry cannot be removed through the Layers tab (it has no
     // layer to right-click); it goes when the file comes back and is removed, or
     // by clearing the setting.
+    // [camp#22 round-10 suggestion] RE-ENTRANCY IS REFUSED AT THE DOOR, because
+    // the scope guard below cannot survive it: an inner call's RestoreScope
+    // destructor clears the flag while the outer loop is still running, and every
+    // remaining openVectorLayer() then persists a list truncated at its own entry
+    // — the exact failure the flag exists to prevent, with the guard reporting
+    // itself as in force. Nothing calls this twice today, but "nothing does" rests
+    // on unasserted properties of openVectorLayer() (and of the async loads it
+    // starts) two files away, and this line costs nothing to keep true.
+    if(m_restoringVectorLayers)
+        return;
+
     const camp::vector::VectorLayerRestorePlan plan =
         camp::vector::planVectorLayerRestore(camp::vector::persistedVectorLayerFiles());
     m_restoredVectorLayerOrder = plan.order;
