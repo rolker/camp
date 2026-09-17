@@ -117,8 +117,16 @@ struct ParseDiagnostics
     // [camp#22] A parse that hits BOTH the cap and the abort reports `aborted`,
     // not this: an abort can truncate a ring mid-way, and `aborted` is the flag
     // on which a caller discards a partial result, so it must never be masked by
-    // the cap. Such a result is also not trimmed to exactly `max_geometries` —
-    // it is partial by construction.
+    // the cap. The parser clears this flag in that case, so `aborted` and
+    // `geometry_cap_reached` are never both set.
+    //
+    // [camp#22 round-8] How much such a result holds is UNSPECIFIED: an abort
+    // raised inside a work loop leaves a result that is partial by construction,
+    // while one raised in the window between the cap's trim and its return leaves
+    // one trimmed to exactly `max_geometries`. Neither is a promise, because
+    // `aborted` is the flag on which the caller discards the result whole — the
+    // "exactly `max_geometries`" contract is about the cap-reached return, which
+    // is the one a caller consumes.
     bool geometry_cap_reached = false;
     // Layers seen, and layers SKIPPED ENTIRELY because the layer declares a
     // spatial reference but no transformation to WGS84 could be built for it.

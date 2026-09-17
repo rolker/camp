@@ -1616,6 +1616,14 @@ TEST(VectorParseAttributes, AnAbortAtAnyPollIsReportedAsAborted)
         << "the predicate rose at poll " << rise_on << " of " << polls
         << " and the parse did not report the abort; a result whose aborted flag is clear "
            "is one the caller is entitled to draw";
+    // [camp#22 round-8 suggestion] The two flags are mutually exclusive: an
+    // aborted result is thrown away, so "the rest of the file was not read" — a
+    // statement about a result the caller KEEPS — must never ride along with it.
+    // The abort re-check inside the cap return is where they could both be set.
+    EXPECT_FALSE(aborting_diag.geometry_cap_reached)
+        << "the predicate rose at poll " << rise_on << " of " << polls
+        << " and the parse reported BOTH aborted and the cap; ParseDiagnostics says a "
+           "parse that hits both reports aborted";
   }
 }
 

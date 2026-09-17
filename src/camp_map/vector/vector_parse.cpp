@@ -618,11 +618,11 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
             // shape presented as a complete one. Testing the abort first means a
             // truncated parse is always reported as aborted.
             //
-            // A parse that hits both therefore reports aborted, not cap-reached,
-            // and is NOT trimmed to exactly max_geometries: an aborted result is
-            // partial by construction and its caller throws it away. The
-            // "exactly max_geometries" contract is about the cap-reached return
-            // below, which is the one a caller consumes.
+            // A parse that hits both therefore reports aborted, not cap-reached —
+            // the cap return below clears the cap flag when the abort wins there —
+            // and how much such a result holds is unspecified: its caller throws it
+            // away. The "exactly max_geometries" contract is about the cap-reached
+            // return below, which is the one a caller consumes.
             if(aborted())
             {
                 // Return what was parsed so far. The caller knows it is partial
@@ -671,8 +671,18 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 // makes the caller discard the result instead of believing either
                 // flag.
                 if(aborted())
+                {
                     diag.aborted = true;
-                // [camp#22 round-8 suggestion] ...and once it IS an abort, this
+                    // [camp#22 round-8 suggestion] ...and the two flags are
+                    // MUTUALLY EXCLUSIVE by the contract in ParseDiagnostics: a
+                    // parse that hits both reports `aborted`, so that a caller
+                    // cannot read "the rest of the file was not read" — a statement
+                    // about a result it is meant to keep — off a result it is about
+                    // to throw away. Leaving the cap flag set here was the one
+                    // combination the header says cannot happen.
+                    diag.geometry_cap_reached = false;
+                }
+                // ...and once it IS an abort, this
                 // path is an abort path, which the lambda's own contract says must
                 // not report: the caller discards an aborted result whole, so
                 // logging per-layer "what was left out" for it tells the operator
