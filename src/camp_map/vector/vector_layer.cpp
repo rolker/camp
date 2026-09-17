@@ -597,7 +597,21 @@ void VectorLayer::readSettings()
   settings.beginGroup(settingsKey());
   color_field_ = settings.value("color_field").toString();
   size_field_ = settings.value("size_field").toString();
-  colormap_ = settings.value("colormap", QString::fromStdString(colormap_)).toString().toStdString();
+  // [camp#22 round-9 should-fix] CASE-FOLDED and REGISTRY-VALIDATED, the way
+  // RasterLayer::readSettings() does it (camp#141). Restoring the string verbatim
+  // let an unknown or differently-cased name sit in colormap_: resolvePalette()
+  // renders it as grayscale so nothing looks broken, but the Colormap menu checks
+  // each registry name against colormap_, so NO palette showed as checked — the
+  // operator could not see which ramp was in force — and writeSettings() wrote the
+  // bad value straight back every session. It does not need a hand-edited settings
+  // file to happen: a palette renamed or removed from the registry between builds
+  // leaves every layer styled with it in exactly this state. Falling back to
+  // grayscale makes what is DRAWN and what is CHECKED agree.
+  std::string colormap =
+    settings.value("colormap", QString::fromStdString(colormap_)).toString().toLower().toStdString();
+  if(!marine_colormap::palette_index(colormap))
+    colormap = "grayscale";
+  colormap_ = colormap;
   settings.endGroup();
   settings.endGroup();
   // Restoring can run before the async load finishes (MapItem::itemConstructed

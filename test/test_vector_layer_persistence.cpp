@@ -168,7 +168,10 @@ TEST(VectorLayerPersistence, StyleRoundTripsThroughSettings)
   // call is what an operator-driven session ends with either way.
   written->setColorField(QStringLiteral("depth"));
   written->setSizeField(QStringLiteral("confidence"));
-  written->setColormap("plasma");
+  // A REGISTRY palette (marine_colormap::palette_names()): the restore validates
+  // the persisted name against the registry now, so a made-up one would come back
+  // as the grayscale fallback and prove nothing about the round trip.
+  written->setColormap("turbo");
   written->writeSettings();
   ASSERT_NE(written->colormap(), std::string("viridis")) << "fixture must differ from the default";
 
@@ -179,7 +182,7 @@ TEST(VectorLayerPersistence, StyleRoundTripsThroughSettings)
   restored->readSettings();
   EXPECT_EQ(restored->colorField(), QStringLiteral("depth"));
   EXPECT_EQ(restored->sizeField(), QStringLiteral("confidence"));
-  EXPECT_EQ(restored->colormap(), std::string("plasma"));
+  EXPECT_EQ(restored->colormap(), std::string("turbo"));
 
   // And a layer on a DIFFERENT file is untouched by it — the point of keying on
   // the path rather than the basename.
@@ -189,6 +192,45 @@ TEST(VectorLayerPersistence, StyleRoundTripsThroughSettings)
   EXPECT_TRUE(other->sizeField().isEmpty());
   EXPECT_EQ(other->colormap(), std::string("viridis")) << "the default palette";
 
+  // [camp#22 round-9 should-fix] A PERSISTED NAME THE REGISTRY DOES NOT HAVE falls
+  // back to grayscale, and a differently-cased one is folded to the registry's
+  // spelling — the RasterLayer rule (camp#141), which this layer did not share.
+  //
+  // Restoring the string verbatim was not visibly broken (an unknown name already
+  // RENDERS as grayscale) and that was the problem: colormap_ kept a name no
+  // registry entry matches, so the Colormap menu showed nothing checked and the
+  // operator had no way to see which ramp was in force — while writeSettings()
+  // wrote the bad value back every session. A palette renamed or removed from the
+  // registry between builds reaches this without anyone hand-editing a thing.
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(written->settingsKey());
+    settings.setValue("colormap", QStringLiteral("no_such_palette"));
+    settings.endGroup();
+    settings.endGroup();
+  }
+  auto* bogus = new TestableVectorLayer(map.topLevelLayers(), path);
+  bogus->readSettings();
+  EXPECT_EQ(bogus->colormap(), std::string("grayscale"))
+      << "a persisted palette the registry does not have must fall back to the one that "
+         "is actually drawn, or the menu shows nothing checked";
+
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(written->settingsKey());
+    settings.setValue("colormap", QStringLiteral("TuRbO"));
+    settings.endGroup();
+    settings.endGroup();
+  }
+  auto* miscased = new TestableVectorLayer(map.topLevelLayers(), path);
+  miscased->readSettings();
+  EXPECT_EQ(miscased->colormap(), std::string("turbo"))
+      << "the registry's own spelling, so the menu can match it";
+
+  delete miscased;
+  delete bogus;
   delete other;
   delete restored;
   delete written;
