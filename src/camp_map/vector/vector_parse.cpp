@@ -460,6 +460,44 @@ bool hasPlaceableCoordinate(const ParsedGeometry &geometry)
     return firstPlaceableCoordinate(geometry) != nullptr;
 }
 
+PlaceableGeometry placeableGeometry(const ParsedGeometry &geometry)
+{
+    const auto keepPlaceable = [](const std::vector<QGeoCoordinate> &in, int &dropped)
+    {
+        std::vector<QGeoCoordinate> kept;
+        kept.reserve(in.size());
+        for(const auto &coordinate : in)
+        {
+            if(isPlaceable(coordinate))
+                kept.push_back(coordinate);
+            else
+                ++dropped;
+        }
+        return kept;
+    };
+
+    PlaceableGeometry result;
+    result.exterior = keepPlaceable(geometry.exterior, result.vertices_dropped);
+    result.placeable = !result.exterior.empty();
+    // An unplaceable EXTERIOR takes the whole geometry with it, holes included —
+    // the same rule firstPlaceableCoordinate() states: a polygon rebuilt from its
+    // hole alone is painted as solid fill by Qt::OddEvenFill, so the hole would
+    // become a feature in a file CAMP has just said it cannot place. Counting the
+    // interior vertices here too would report a per-vertex loss for a geometry
+    // that was dropped whole; the caller counts the geometry instead.
+    if(!result.placeable)
+        return result;
+    for(const auto &ring : geometry.interiorRings)
+    {
+        std::vector<QGeoCoordinate> kept = keepPlaceable(ring, result.vertices_dropped);
+        if(kept.empty())
+            ++result.rings_dropped;
+        else
+            result.interiorRings.push_back(std::move(kept));
+    }
+    return result;
+}
+
 std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                                            const ParseOptions &options,
                                            ParseDiagnostics *diagnostics)

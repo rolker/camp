@@ -1634,6 +1634,135 @@ TEST(VectorParseAttributes, AnAbortAtAnyPollIsReportedAsAborted)
   }
 }
 
+// [camp#22 round-11 must-fix] THE MISSION-ITEM CONSUMER FILTERS EVERY VERTEX.
+//
+// The parser admits a geometry on ANY ONE placeable vertex (hasPlaceableCoordinate)
+// and says so in terms, because the DISPLAY consumer filters again per vertex
+// before it projects anything into the scene. VectorDataset — File > Open Geometry,
+// which builds EDITABLE mission items that are dragged, saved into the mission
+// file and are candidates for transmission to the robot — has no second filter, so
+// the vertices the weak bound admits used to become waypoints at coordinates that
+// are nowhere on earth.
+//
+// The motivating input is exactly this fixture: a layer with NO spatial reference,
+// whose projected eastings/northings are read as degrees. No transform runs, no
+// vertex "fails", and points_dropped stays zero — nothing in the parse diagnostics
+// reports the loss, which is why the guard has to be applied by the consumer.
+//
+// placeableGeometry() is that guard, tested here rather than through
+// VectorDataset::buildItems(): buildItems is a private member of a MissionItem
+// whose construction needs an AutonomousVehicleProject, which is not constructible
+// in a test harness (the same reason mission_insertion.cpp exists as its own seam).
+// What buildItems adds over this function is the item construction it already did.
+TEST(VectorParseAttributes, UnplaceableVerticesAreFilteredForTheMissionItemConsumer)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("Memory");
+  ASSERT_NE(driver, nullptr) << "GDAL Memory driver is required for this test";
+  DatasetPtr dataset(driver->Create("nosrs", 0, 0, 0, GDT_Unknown, nullptr), gdal_closer);
+  ASSERT_TRUE(dataset);
+
+  // NO spatial reference: the .prj-less shapefile case. x/y are read as
+  // longitude/latitude verbatim.
+  OGRLayer* layer = dataset->CreateLayer("shapes", nullptr, wkbUnknown, nullptr);
+  ASSERT_NE(layer, nullptr);
+
+  // A UTM northing read as a latitude. Finite, perfectly well formed, and 4.8
+  // million degrees north.
+  constexpr double kNorthingAsLatitude = 4800000.0;
+
+  {  // a line: one real position, three that are not
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRLineString line;
+    line.addPoint(-70.71, 43.07);
+    line.addPoint(340000.0, kNorthingAsLatitude);
+    line.addPoint(340100.0, kNorthingAsLatitude + 100.0);
+    line.addPoint(340200.0, kNorthingAsLatitude + 200.0);
+    feature.SetGeometry(&line);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+  {  // a polygon whose exterior is mixed and whose hole is entirely unplaceable
+    OGRFeature feature(layer->GetLayerDefn());
+    OGRLinearRing exterior;
+    exterior.addPoint(-70.80, 43.00);
+    exterior.addPoint(-70.60, 43.00);
+    exterior.addPoint(340000.0, kNorthingAsLatitude);
+    exterior.addPoint(-70.80, 43.00);
+    OGRLinearRing hole;
+    hole.addPoint(340010.0, kNorthingAsLatitude + 10.0);
+    hole.addPoint(340020.0, kNorthingAsLatitude + 10.0);
+    hole.addPoint(340020.0, kNorthingAsLatitude + 20.0);
+    hole.addPoint(340010.0, kNorthingAsLatitude + 10.0);
+    OGRPolygon polygon;
+    polygon.addRing(&exterior);
+    polygon.addRing(&hole);
+    feature.SetGeometry(&polygon);
+    ASSERT_EQ(layer->CreateFeature(&feature), OGRERR_NONE);
+  }
+
+  camp::vector::ParseDiagnostics diagnostics;
+  const std::vector<ParsedLayer> layers =
+    camp::vector::parseVectorLayers(dataset.get(), camp::vector::ParseOptions(), &diagnostics);
+  ASSERT_EQ(layers.size(), 1u);
+  ASSERT_EQ(layers.front().geometries.size(), 2u)
+      << "both geometries have a placeable vertex, so the parser admits them WHOLE - "
+         "this is the bound the consumer has to narrow";
+  EXPECT_EQ(diagnostics.points_dropped, 0)
+      << "no transform ran, so no vertex failed: the parse diagnostics report nothing "
+         "at all about this file, which is why the consumer cannot rely on them";
+  EXPECT_EQ(diagnostics.geometries_without_placeable_vertex, 0);
+
+  const ParsedGeometry& parsed_line = layers.front().geometries.at(0);
+  ASSERT_EQ(parsed_line.type, ParsedGeometry::LineString);
+  ASSERT_EQ(parsed_line.exterior.size(), 4u);
+  const camp::vector::PlaceableGeometry line = camp::vector::placeableGeometry(parsed_line);
+  EXPECT_TRUE(line.placeable);
+  ASSERT_EQ(line.exterior.size(), 1u)
+      << "only the one real position may become a mission waypoint";
+  EXPECT_DOUBLE_EQ(line.exterior.front().latitude(), 43.07);
+  EXPECT_DOUBLE_EQ(line.exterior.front().longitude(), -70.71);
+  EXPECT_EQ(line.vertices_dropped, 3);
+  EXPECT_EQ(line.rings_dropped, 0);
+
+  const ParsedGeometry& parsed_polygon = layers.front().geometries.at(1);
+  ASSERT_EQ(parsed_polygon.type, ParsedGeometry::Polygon);
+  ASSERT_EQ(parsed_polygon.interiorRings.size(), 1u);
+  const camp::vector::PlaceableGeometry polygon = camp::vector::placeableGeometry(parsed_polygon);
+  EXPECT_TRUE(polygon.placeable);
+  EXPECT_EQ(polygon.exterior.size(), 3u) << "the ring's three real vertices survive";
+  EXPECT_TRUE(polygon.interiorRings.empty())
+      << "a hole with no placeable vertex is omitted, not carried as an empty ring";
+  EXPECT_EQ(polygon.rings_dropped, 1);
+  EXPECT_EQ(polygon.vertices_dropped, 5)
+      << "1 exterior vertex + all 4 vertices of the hole (a ring is read as the file "
+         "states it, closing vertex included)";
+}
+
+// [camp#22 round-11 must-fix] An exterior with NO placeable vertex takes the whole
+// geometry, holes included — the rule firstPlaceableCoordinate() states: a polygon
+// rebuilt from its hole alone is painted as SOLID by Qt::OddEvenFill, turning a
+// hole into a feature in a file CAMP has just said it cannot place.
+TEST(VectorParseAttributes, AnUnplaceableExteriorTakesTheHolesWithIt)
+{
+  ParsedGeometry geometry;
+  geometry.type = ParsedGeometry::Polygon;
+  geometry.exterior = {QGeoCoordinate(4800000.0, 340000.0),
+                       QGeoCoordinate(4800100.0, 340000.0),
+                       QGeoCoordinate(4800100.0, 340100.0)};
+  geometry.interiorRings = {{QGeoCoordinate(43.05, -70.70), QGeoCoordinate(43.06, -70.70),
+                             QGeoCoordinate(43.06, -70.69)}};
+
+  const camp::vector::PlaceableGeometry placeable = camp::vector::placeableGeometry(geometry);
+  EXPECT_FALSE(placeable.placeable);
+  EXPECT_TRUE(placeable.exterior.empty());
+  EXPECT_TRUE(placeable.interiorRings.empty())
+      << "the perfectly good hole must NOT become the item's outline";
+  EXPECT_EQ(placeable.vertices_dropped, 3)
+      << "the exterior's three vertices; the geometry is dropped WHOLE, so its holes are "
+         "not counted a second time as a per-vertex loss";
+  EXPECT_EQ(placeable.rings_dropped, 0);
+}
+
 int main(int argc, char** argv)
 {
   ::testing::InitGoogleTest(&argc, argv);

@@ -301,6 +301,54 @@ const QGeoCoordinate *firstPlaceableCoordinate(const ParsedGeometry &geometry);
 // i.e. when an item built from it would land somewhere real.
 bool hasPlaceableCoordinate(const ParsedGeometry &geometry);
 
+// [camp#22 round-11 must-fix] One parsed geometry reduced to the vertices that
+// `isPlaceable()` admits, for the consumer that CANNOT filter again later.
+struct PlaceableGeometry
+{
+    // The admitted exterior vertices, in file order. Empty when the geometry
+    // contributes nothing (`placeable` is false).
+    std::vector<QGeoCoordinate> exterior;
+    // Polygon only: the admitted vertices of each interior ring. A ring left with
+    // no vertex at all is omitted (and counted in `rings_dropped`) rather than
+    // carried as an empty hole.
+    std::vector<std::vector<QGeoCoordinate>> interiorRings;
+    // Vertices rejected, across the exterior and every interior ring.
+    int vertices_dropped = 0;
+    // Interior rings omitted because no vertex of theirs is placeable.
+    int rings_dropped = 0;
+    // False when no exterior vertex survived: nothing should be built at all.
+    bool placeable = false;
+};
+
+// WHY THIS EXISTS, and why it is not the same question `hasPlaceableCoordinate()`
+// answers. That test admits a geometry on ANY ONE placeable vertex, and the
+// parser applies it (`geometries_without_placeable_vertex`) — a deliberately weak
+// bound, justified on the DISPLAY path because `VectorFeatureItem` filters again
+// per vertex before it projects anything into the scene.
+//
+// The parser has a second production consumer that does not: `VectorDataset`
+// (File > Open Geometry) copies every emitted vertex into `Point`/`LineString`/
+// `Polygon` MISSION ITEMS, which are draggable, saved into the mission file and
+// candidates for transmission to the robot (ADR-0016 Context). So a `.prj`-less
+// shapefile whose vertices are mostly UTM northings read as degrees imported one
+// good vertex and a trail of waypoints that are nowhere on earth. Documenting the
+// weak bound (round 9) did not protect the consumer that has no second filter;
+// this is that filter, applied by the consumer.
+//
+// It lives HERE, beside `isPlaceable()` and for the same reason that test does:
+// two copies of the placement rule in two files is a rule that drifts. The PARSER
+// still does not apply it — ADR-0016 D4 keeps the parse faithful and leaves
+// placement policy to the consumer — this is a helper the consumer calls.
+//
+// THE TRADE, stated because it differs from the one the parser makes: dropping
+// vertices RESHAPES a line or a ring, and the header above gives that as a reason
+// the parser does not do it. On this path the alternative is worse: an editable,
+// persisted, transmittable waypoint at a coordinate that does not exist. A
+// mis-projected file is corrupt input either way; what a mission item must never
+// hold is a position no vessel can be sent to. The counts are what keep it
+// honest — the caller reports them rather than filtering in silence.
+PlaceableGeometry placeableGeometry(const ParsedGeometry &geometry);
+
 // Parse every layer of an already-open OGR dataset into WGS84 plain data.
 //
 // Geometry coverage: Point / LineString / Polygon, their Multi* collections and
