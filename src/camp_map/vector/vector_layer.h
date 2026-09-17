@@ -244,6 +244,22 @@ private:
   /// @p points_only restricts it to point features.
   QStringList numericFieldsOf(bool points_only) const;
 
+  /// [camp#22 round-10 suggestion] BOTH numeric-field lists from ONE pass over the
+  /// features — `all` is `numericFields()`, `points` is `pointNumericFields()`.
+  ///
+  /// `contextMenu()` needs both, and calling the two accessors ran the fold twice
+  /// over every loaded feature and every attribute of it, asking
+  /// `numericAttribute()` (which parses strings) the same question twice — on the
+  /// GUI thread, on every right-click, over a layer that may hold the whole
+  /// 50 000-item cap. The two lists differ only by a test on the feature, so one
+  /// walk answers both.
+  struct NumericFieldLists
+  {
+    QStringList all;
+    QStringList points;
+  };
+  NumericFieldLists numericFieldLists() const;
+
   /// Thread-safe read of the abort flag. Called on the worker thread, including
   /// from inside the parser's per-feature poll (ParseOptions::aborted).
   bool isAborted();

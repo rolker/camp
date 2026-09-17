@@ -513,6 +513,34 @@ QStringList VectorLayer::numericFieldsOf(bool points_only) const
   return list;
 }
 
+VectorLayer::NumericFieldLists VectorLayer::numericFieldLists() const
+{
+  // [camp#22 round-10 suggestion] One walk, both answers — see the declaration.
+  // The question asked per attribute is the same one numericFieldsOf() asks
+  // (numericAttribute(), so the menu and the ramp cannot disagree); it is asked
+  // ONCE here and the point-only list is a second insert, not a second parse.
+  std::set<QString> all;
+  std::set<QString> points;
+  for(const VectorFeatureItem* feature : features_)
+  {
+    const bool is_point = feature->isPoint();
+    for(auto it = feature->attributes().begin(); it != feature->attributes().end(); ++it)
+    {
+      if(!numericAttribute(feature->attributes(), it.key()))
+        continue;
+      all.insert(it.key());
+      if(is_point)
+        points.insert(it.key());
+    }
+  }
+  NumericFieldLists lists;
+  for(const QString& name : all)
+    lists.all << name;
+  for(const QString& name : points)
+    lists.points << name;
+  return lists;
+}
+
 QStringList VectorLayer::numericFields() const
 {
   return numericFieldsOf(false);
@@ -642,11 +670,17 @@ void VectorLayer::contextMenu(QMenu* menu)
   // offering it produced a layer of hollow grey rings the operator read as the
   // features disappearing (ADR-0016 D14). The Colormap menu is gated on the same
   // list because a palette with no colour field to sample changes nothing.
-  const QStringList color_fields = numericFields();
   // [camp#22 round-9 suggestion] The two menus are built from DIFFERENT lists:
   // only a point can be sized, so a numeric field no point carries would be an
   // entry that changes nothing. See pointNumericFields().
-  const QStringList size_fields = pointNumericFields();
+  //
+  // [camp#22 round-10 suggestion] Both lists come from ONE pass. numericFields()
+  // and pointNumericFields() each fold over every loaded feature and parse every
+  // attribute, so calling them both did that work twice on the GUI thread on every
+  // right-click, over a layer that can hold the whole item cap.
+  const NumericFieldLists numeric_fields = numericFieldLists();
+  const QStringList& color_fields = numeric_fields.all;
+  const QStringList& size_fields = numeric_fields.points;
 
   // [camp#22] A PERSISTED field that numericFields() no longer offers. The style
   // group is keyed on the file path and restored whenever that path is reopened,
@@ -663,7 +697,11 @@ void VectorLayer::contextMenu(QMenu* menu)
   // A size field no POINT carries reads as stale here for the same reason a
   // missing one does: it is set, it is shown checked, and it does nothing.
   const bool stale_size = !size_field_.isEmpty() && !size_fields.contains(size_field_);
-  if(color_fields.isEmpty() && size_fields.isEmpty() && !stale_color && !stale_size)
+  // [camp#22 round-10 suggestion] `size_fields.isEmpty()` is not tested here: the
+  // size list is a SUBSET of the colour list (same fold, restricted to point
+  // features), so an empty colour list already implies an empty size list, and
+  // testing both invited the reader to look for a case where they differ.
+  if(color_fields.isEmpty() && !stale_color && !stale_size)
     return;   // nothing loaded, no field a ramp can read, and nothing set: nothing to offer
 
   // The two field submenus are identical but for their title, their list and
@@ -705,8 +743,16 @@ void VectorLayer::contextMenu(QMenu* menu)
   // [camp#22 round-9 suggestion] A different reason, so a different note: the
   // field may hold perfectly good numbers on the file's lines or polygons and
   // still size nothing, because only points are sized.
-  addFieldMenu(QStringLiteral("Size by"), size_fields, size_field_,
-               QStringLiteral("(no numbers on any point)"), &VectorLayer::setSizeField);
+  //
+  // [camp#22 round-10 suggestion] ...and the submenu is OMITTED when it would
+  // offer nothing: on a layer whose points carry no numeric field (or that has no
+  // points at all — a coastline) and with no size field set, the menu was a "Size
+  // by" holding the single entry "(none)", which reads as a feature that is
+  // broken rather than one that does not apply here. Color by is always shown
+  // because reaching this line at all means it has something to offer.
+  if(!size_fields.isEmpty() || !size_field_.isEmpty())
+    addFieldMenu(QStringLiteral("Size by"), size_fields, size_field_,
+                 QStringLiteral("(no numbers on any point)"), &VectorLayer::setSizeField);
 
   if(color_fields.isEmpty())
     return;   // a palette with no field a ramp can sample changes nothing

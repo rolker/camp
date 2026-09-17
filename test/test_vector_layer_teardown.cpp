@@ -180,6 +180,32 @@ QString writeLineOnlyNumericGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-10 suggestion] A file with NO POINTS and a numeric field on its
+// line — the coastline-with-attributes shape. Color by has something to offer;
+// Size by has nothing and never can, because only points are sized.
+QString writeLineOnlyFile(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("line_only.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature",
+       "geometry": {"type": "LineString",
+                    "coordinates": [[-70.68, 43.04], [-70.67, 43.03]]},
+       "properties": {"length_m": 820.0}},
+      {"type": "Feature",
+       "geometry": {"type": "LineString",
+                    "coordinates": [[-70.66, 43.02], [-70.65, 43.01]]},
+       "properties": {"length_m": 410.0}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22] Every property is free-text: numericFields() must come back EMPTY,
 // so a stale style field set over this file exercises the contextMenu() guard
 // with field_names.isEmpty() true.
@@ -1261,6 +1287,48 @@ TEST(VectorLayerStyleFields, SizeByOffersOnlyFieldsThePointsCarry)
 // with, no sign of what was set, and `writeSettings()` kept re-persisting it. The
 // setting was stuck. It is shown rather than cleared on load because the operator
 // chose it and the file may read as numeric again next time.
+// [camp#22 round-10 suggestion] AN EMPTY "Size by" SUBMENU IS NOT OFFERED.
+//
+// On a layer with no points — a coastline with attributes is the everyday case —
+// the size list is empty and nothing can ever go in it, so the submenu held the
+// lone entry "(none)". A menu whose only content is "none" reads as a broken
+// feature rather than one that does not apply to this layer. With a size field
+// actually set it must still appear, because that is the only place the operator
+// can see and clear it.
+TEST(VectorLayerStyleFields, SizeByIsOmittedWhenItCanOfferNothing)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeLineOnlyFile(dir);   // two lines, no points
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new MenuProbe(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  ASSERT_TRUE(layer->numericFields().contains("length_m"));
+  ASSERT_TRUE(layer->pointNumericFields().isEmpty()) << "this file has no points";
+
+  QMenu menu;
+  layer->contextMenu(&menu);
+  EXPECT_FALSE(submenuEntries(menu, QStringLiteral("Color by")).isEmpty())
+      << "the line's numeric field is colourable and must be offered";
+  EXPECT_TRUE(submenuEntries(menu, QStringLiteral("Size by")).isEmpty())
+      << "a Size by menu holding nothing but (none) must not be shown at all";
+
+  // ...but a size field in force is still reachable, and still clearable.
+  layer->setSizeField("length_m");
+  QMenu after;
+  layer->contextMenu(&after);
+  const QStringList after_entries = submenuEntries(after, QStringLiteral("Size by"));
+  EXPECT_TRUE(after_entries.contains(QStringLiteral("(none)")))
+      << "the setting must stay clearable: " << after_entries.join(", ").toStdString();
+  EXPECT_TRUE(after_entries.contains(QStringLiteral("length_m (no numbers on any point)")))
+      << "the field in force must be named: " << after_entries.join(", ").toStdString();
+
+  delete layer;
+}
+
 TEST(VectorLayerStyleFields, AStaleStyleFieldIsShownInTheMenuAndCanBeCleared)
 {
   QTemporaryDir dir;
