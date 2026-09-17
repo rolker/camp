@@ -672,7 +672,14 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 // flag.
                 if(aborted())
                     diag.aborted = true;
-                reportLayerDiagnostics();
+                // [camp#22 round-8 suggestion] ...and once it IS an abort, this
+                // path is an abort path, which the lambda's own contract says must
+                // not report: the caller discards an aborted result whole, so
+                // logging per-layer "what was left out" for it tells the operator
+                // about a read whose output nothing will ever show. Closing a layer
+                // mid-parse is the ordinary way this happens.
+                if(!diag.aborted)
+                    reportLayerDiagnostics();
                 result.push_back(std::move(parsed));
                 return result;
             }
