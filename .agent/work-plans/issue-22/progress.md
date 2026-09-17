@@ -2108,3 +2108,34 @@ not how much of it is read.
 
 ### Next step
 review-code (re-review the fixes) via `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 22 --skill review-code`
+
+## Implementation
+**Status**: complete
+**When**: 2026-09-17 12:17 -04:00
+**By**: Claude Code Agent (Claude Opus)
+
+**PR**: #226 at `070cc7a`
+**Branch**: feature/issue-22 at `070cc7a`
+**Addressed**: Copilot review of 2026-09-17 16:03 UTC at PR head `241ed5e` — the three defects the operator selected to fix before merge
+**Commits**: `2e57ca0`, `5c8568a`, `2ae1f76`, `070cc7a` (plan Rev 21)
+
+### Actions
+- [x] `vectordataset.cpp:68` — a POLAR vertex no longer reaches an editable mission item. `placeableGeometry()` filtered on `isPlaceable()` (i.e. `QGeoCoordinate::isValid()`), which admits latitude +/-90: a valid WGS84 coordinate where Web Mercator does not converge, projecting to y ~ 2.4e8 m, twelve world half-extents. The display path survives it by CLAMPING (`placeableToMap()`); the mission path has no clamp, since `GeoGraphicsItem::geoToPixel()` calls `web_mercator::geoToMap()` raw — so the vertex became a draggable, persisted, transmittable waypoint. New `camp::vector::isProjectable()` (placeable AND inside the projection's latitude domain) is what `placeableGeometry()` now filters on, and `webMercatorLatitudeLimit()` is exported so the clamp in `placeableToMap()` and this rule read ONE constant — `src/camp_map/vector/vector_parse.{h,cpp}`, `vector_feature_item.cpp`, `src/camp/vector/vectordataset.cpp` (`2e57ca0`). Test: `PolarVerticesAreFilteredForTheMissionItemConsumer`.
+- [x] DEVIATION from the finding's suggested shape, stated because it is a design choice: the polar bound is NOT folded into `isPlaceable()` itself. Doing so would make the display path DROP polar vertices, silently reversing the round-5 decision (recorded in `vector_feature_item.h` and pinned by `PolarLatitudeIsClampedToTheWebMercatorLimit`) that a polar survey line is drawn at the edge of the Mercator world rather than lost. Clamping on the mission path is equally wrong — it would move the waypoint to a position the file never states. The rule is still shared, as one predicate and one constant beside `isPlaceable()`, which is what the finding asked for; the two consumers differ only in what they do at the limit, and each says why.
+- [x] `vector_style.cpp:118` — `isNoData()` checks `std::isfinite(*value)`. An engaged optional holding NaN/inf read as a real measurement: it reached `normalizedValue()`, whose guards answer 0.5, and was painted at the MIDDLE of the palette with a solid fill and outline — indistinguishable from a real mid-range value, the confusion the dashed outline and hatched fill exist to prevent. The header's contract was always "empty, or not a finite number". `numericAttribute()` already refuses one, so this holds the contract for the next producer (a computed field, an expression, a raw `ParsedGeometry` value) — `src/camp_map/vector/vector_style.{h,cpp}` (`5c8568a`). Test: `NonFiniteValuesAreNoDataNotAMidRangeMeasurement` (predicate + `colorForValue()` under a palette).
+- [x] `vector_style.cpp:143` — `radiusForValue()` calls `isNoData()` instead of repeating `!value || !range.valid`. It carried the same non-finite hole (a NaN took 0.5 and drew a mid-SIZED marker), and two spellings of one condition let size and colour disagree about which features are unstyled — `src/camp_map/vector/vector_style.{h,cpp}` (`2ae1f76`). Test: `NonFiniteValuesGetTheDefaultRadiusNotAComputedOne`, which also asserts colour and size agree feature for feature.
+
+### Deliberately untouched
+The review's other two comments are standing dismissals already recorded in this
+file: the cap lookahead materialising one whole next feature (the ADR-0016 D11
+deferral) and the cosmetic 2-px stroke vs the polygon bounding rect. Neither was
+touched in this pass.
+
+### Verification
+- `./ui_ws/build.sh camp` clean; `./ui_ws/test.sh camp` → **428 tests, 0 errors, 0 failures, 1 skipped** (425 before this pass — three new tests, one per fix).
+- Pre-commit hooks ran on every commit; no `--no-verify`. All four commits carry the agent identity.
+- plan.md **Rev 21** records this pass (design unchanged).
+- Not pushed: the branch is four commits ahead of `origin/feature/issue-22`.
+
+### Next step
+Operator merges PR #226 (rolker/camp) after pushing these four commits.
