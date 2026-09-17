@@ -6,6 +6,52 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 17** (2026-09-17) — **round-8 pre-push review fixes.** No design change;
+one must-fix and eight suggestions, all consequences of the rev-16 fixes.
+
+- **A geometry the PARSE drops is reported as a skipped item.** Rev 16 stopped
+  emitting a line or polygon whose exterior holds no usable vertex — and with it
+  went the only operator-visible report of that class, because such a geometry
+  never reaches `VectorLayer` to be counted there: the Layers tab printed the bare
+  "(no items)", the verdict an EMPTY FILE gets, for a file whose features exist
+  and fall outside their projection's inverse domain. The skips have their own
+  `ParseDiagnostics` counter, logged per layer like its siblings, and
+  `loadFinished()` folds it — and `polygons_without_exterior_ring`, which had the
+  same gap — into the skipped count the status reports.
+- **`aborted` and `geometry_cap_reached` are never both set.** The rev-16 abort
+  re-check inside the cap return could raise the abort on a result already flagged
+  cap-reached, the one combination `ParseDiagnostics` says cannot happen. The cap
+  flag is cleared there; the header now says how much an aborted result holds is
+  unspecified (the caller discards it whole), and the abort-poll sweep asserts the
+  combination never appears.
+- **The cap path's abort window does not log the per-layer summaries**, which the
+  lambda's own contract reserves for a result the caller keeps.
+- **The promotion gate compares the purged list's CONTENTS**, not its length — the
+  length form was sound only while `withoutVectorLayerFile()` does not
+  de-duplicate, unlike both its siblings.
+- **`withVectorLayerFilePromoted()` stops resolving at the entry it rewrites.** It
+  walked the whole restored order with a GUI-thread stat per entry, at the one
+  moment those paths are most likely dead mounts; the exact-string duplicate
+  collapse is unchanged, and the cost is now stated for this function rather than
+  borrowed from its smaller sibling.
+- **What the cap stopped bounding is recorded.** Only a drawable geometry spends
+  the cap, so a file whose geometries all drop out is read to its end: memory and
+  abortability are unaffected, the residue is wall time on a file that shows
+  nothing, and the operator is told the drop count. Written down on
+  `ParseOptions::max_geometries`, `kMaxFeatureItems` and in ADR-0016's
+  consequences, with why charging the cap for dropped geometry is worse.
+- **The no-mouse-button guarantee is stated for the ITEM SUBTREE** in ADR-0016 D5
+  and `.agents/README.md` — the item-only reading is what let the child hover
+  label keep Qt's default.
+- Units: the four residual "feature" spellings of the quantity rev 16 renamed to
+  items (the skipped-count log line, the empty-layer status `(no items)`, and two
+  ADR sentences).
+- Tests: a layer-level regression that a file of parse-dropped geometries is not
+  reported as empty, the new counter asserted on the all-dropped fixture, the
+  undrawable polygon's hole moved OUT of domain so "the holes are never read" is
+  actually proved (7 dropped points, not 11), the abort/cap exclusivity swept at
+  every poll position, and the promotion's duplicate collapse.
+
 **Rev 16** (2026-09-17) — **round-5 PR triage fixes.** No design change; seven
 review findings, all in the mechanisms rev 14 and rev 15 put in place.
 
