@@ -208,11 +208,15 @@ void VectorLayer::loadFinished()
   // temporary it would dangle the moment the expression ended — and the local also
   // keeps the store alive across the clear below, for the rest of this slot.
   //
-  // Re-entrancy: setFuture() with an empty future can deliver finished() once
-  // more, and this slot must not then dereference an empty result store. It runs
-  // exactly once per layer; the flag is what says so. An empty future also leaves
-  // the destructor's waitForFinished() a no-op, which is correct — by the time we
-  // are here the worker has finished.
+  // Re-entrancy: whether setFuture() with an empty future can deliver finished()
+  // again is NOT settled here — Qt 5.15's QFutureWatcher drops most callouts on a
+  // canceled future, and the source that would decide it (qfuturewatcher.cpp) is
+  // not part of this build's installed headers, so the claim is not one to write
+  // down as fact. What matters is what this slot must be true of either way: it
+  // runs exactly once per layer and must never dereference an empty result store.
+  // The flag is what guarantees that, and it stays whichever way the Qt question
+  // resolves. An empty future also leaves the destructor's waitForFinished() a
+  // no-op, which is correct — by the time we are here the worker has finished.
   if(load_reported_)
     return;
   load_reported_ = true;
@@ -308,17 +312,20 @@ void VectorLayer::loadFinished()
                << "item(s) whose coordinates are not a valid latitude/longitude"
                << "(a shapefile missing its .prj sidecar is the usual cause)";
   if(capped)
-    // [camp#22 round-9 suggestion] The wording says what is TRUE: the cap is spent
-    // per emitted geometry part, and some emitted parts can still be rejected here
-    // as unplaceable, so "what is shown is the first 50000 drawn items" overstated
-    // it whenever that happened. The status line below has always been honest —
-    // it prints the real item count with the unplaceable count beside it — and
-    // this line now matches it.
+    // [camp#22 round-10 suggestion] The line names the surprise that CAN STILL
+    // HAPPEN. Its previous wording explained why the item count may fall short of
+    // the cap because emitted parts were rejected here as unplaceable — a
+    // discrepancy the same round made unreachable, since the parse now drops such
+    // a geometry before emitting it. What remains is the round-5 one, and it is
+    // the one an operator actually trips over: the cap is spent per emitted
+    // geometry PART, so a file of multi-part features stops after far fewer
+    // features than the number in this message.
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- stopped at the"
                << feature_cap_ << "item cap; the REST OF THE FILE WAS NOT READ."
-               << "What is shown is what the first" << feature_cap_
-               << "geometry parts of the file yielded — see the item count in the layer's"
-               << "status, which is lower when some of them could not be placed."
+               << "The cap counts geometry PARTS, not features: a multi-part feature"
+               << "(a multipolygon coastline, a KML placemark holding several shapes)"
+               << "spends one slot per part, so the" << feature_cap_
+               << "parts that were read can come from far fewer features than that."
                << "The cap bounds both the items built on the GUI thread and the memory"
                << "the parse itself takes.";
   if(result.diagnostics.polygons_without_exterior_ring > 0)
