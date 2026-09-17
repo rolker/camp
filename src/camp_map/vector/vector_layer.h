@@ -93,6 +93,16 @@ public:
   /// dropped. See `ParseOptions::max_geometries` for why the alternative — charging
   /// the cap for dropped geometry — is worse.
   ///
+  /// [camp#22 round-9 nit] WHAT THIS CAP DOES NOT BOUND, said where a reader meets
+  /// the claim: it bounds the geometry COUNT and the abort latency, not the size of
+  /// any ONE geometry. A single ring of a hundred million vertices is ~1.6 GB of
+  /// coordinates and is read in full, as is a single outsized attribute value.
+  /// That exception is a deliberate open decision, not an oversight — truncating a
+  /// ring draws a WRONG shape and truncating a value reports a wrong number, each
+  /// worse than the honest geometry cap — and it is recorded as such in ADR-0016
+  /// D11 (`docs/decisions/0016-read-only-vector-file-layer.md`), which states it in
+  /// terms and lists the two options it has not chosen between.
+  ///
   /// How much was left unread is deliberately not reported: finding out means
   /// reading the file the cap exists to stop reading. The number is a
   /// responsiveness-and-memory budget, not a data limit: 50 000 items build in
