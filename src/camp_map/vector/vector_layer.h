@@ -143,6 +143,19 @@ public:
   /// exists a field no ramp can read is not offered as one (ADR-0016 D14).
   QStringList numericFields() const;
 
+  /// [camp#22 round-9 suggestion] The subset of `numericFields()` that POINT
+  /// features carry — the list the Size by menu offers.
+  ///
+  /// `applyStyle()` folds the size range over points only, deliberately: geometry
+  /// that is never sized must not set the marker extent, or a mixed file whose
+  /// polygons carry the largest values squeezes every marker into the bottom of
+  /// the radius range. The consequence is that picking a line- or polygon-only
+  /// field under Size by leaves the range invalid and every marker at the default
+  /// radius, while the action shows as checked and the choice is persisted — a
+  /// menu entry whose only effect is to look selected. Color by stays on the full
+  /// list: a ramp reads every geometry type.
+  QStringList pointNumericFields() const;
+
   /// Colour each feature by its value for @p field, sampled from the active
   /// palette across the field's extent over the features that HAVE a value.
   /// Empty field -> the layer's default colour. A feature whose value is missing
@@ -216,6 +229,10 @@ private:
 
   /// Worker body (QtConcurrent pool thread): open the file with GDAL and parse it.
   LoadResult loadVectorFile(const QString& filename);
+
+  /// The numeric-field fold behind `numericFields()` and `pointNumericFields()`:
+  /// @p points_only restricts it to point features.
+  QStringList numericFieldsOf(bool points_only) const;
 
   /// Thread-safe read of the abort flag. Called on the worker thread, including
   /// from inside the parser's per-feature poll (ParseOptions::aborted).

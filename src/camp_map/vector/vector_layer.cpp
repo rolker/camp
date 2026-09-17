@@ -393,7 +393,7 @@ QStringList VectorLayer::fields() const
   return list;
 }
 
-QStringList VectorLayer::numericFields() const
+QStringList VectorLayer::numericFieldsOf(bool points_only) const
 {
   // [camp#22] "Numeric" is asked of numericAttribute() — the same function the
   // ramp itself reads values through — rather than of the QVariant's declared
@@ -402,13 +402,35 @@ QStringList VectorLayer::numericFields() const
   // numericAttribute() reads as a measurement, and that field must be offerable.
   std::set<QString> names;
   for(const VectorFeatureItem* feature : features_)
+  {
+    if(points_only && !feature->isPoint())
+      continue;
     for(auto it = feature->attributes().begin(); it != feature->attributes().end(); ++it)
       if(numericAttribute(feature->attributes(), it.key()))
         names.insert(it.key());
+  }
   QStringList list;
   for(const QString& name : names)
     list << name;
   return list;
+}
+
+QStringList VectorLayer::numericFields() const
+{
+  return numericFieldsOf(false);
+}
+
+QStringList VectorLayer::pointNumericFields() const
+{
+  // [camp#22 round-9 suggestion] The SIZE-BY list. applyStyle() folds the size
+  // range over point features only — deliberately, so geometry that is never
+  // sized cannot set the marker extent — so a field only lines or polygons carry
+  // leaves that range invalid: every marker keeps the default radius while the
+  // menu entry sits there checked and the choice is persisted. A menu entry whose
+  // only effect is to look selected is exactly what the stale-field annotation
+  // elsewhere in this file exists to prevent. Colour by stays on the full list:
+  // a ramp reads every geometry type.
+  return numericFieldsOf(true);
 }
 
 void VectorLayer::setColorField(const QString& field)
@@ -522,7 +544,11 @@ void VectorLayer::contextMenu(QMenu* menu)
   // offering it produced a layer of hollow grey rings the operator read as the
   // features disappearing (ADR-0016 D14). The Colormap menu is gated on the same
   // list because a palette with no colour field to sample changes nothing.
-  const QStringList field_names = numericFields();
+  const QStringList color_fields = numericFields();
+  // [camp#22 round-9 suggestion] The two menus are built from DIFFERENT lists:
+  // only a point can be sized, so a numeric field no point carries would be an
+  // entry that changes nothing. See pointNumericFields().
+  const QStringList size_fields = pointNumericFields();
 
   // [camp#22] A PERSISTED field that numericFields() no longer offers. The style
   // group is keyed on the file path and restored whenever that path is reopened,
@@ -535,14 +561,18 @@ void VectorLayer::contextMenu(QMenu* menu)
   // because the operator chose it and the same path may be reopened over a file
   // where it reads as a number again; clearing it here would discard that choice
   // without anyone seeing it happen.
-  const bool stale_color = !color_field_.isEmpty() && !field_names.contains(color_field_);
-  const bool stale_size = !size_field_.isEmpty() && !field_names.contains(size_field_);
-  if(field_names.isEmpty() && !stale_color && !stale_size)
+  const bool stale_color = !color_field_.isEmpty() && !color_fields.contains(color_field_);
+  // A size field no POINT carries reads as stale here for the same reason a
+  // missing one does: it is set, it is shown checked, and it does nothing.
+  const bool stale_size = !size_field_.isEmpty() && !size_fields.contains(size_field_);
+  if(color_fields.isEmpty() && size_fields.isEmpty() && !stale_color && !stale_size)
     return;   // nothing loaded, no field a ramp can read, and nothing set: nothing to offer
 
-  // The two field submenus are identical but for their title and their setter.
-  auto addFieldMenu = [this, menu, &field_names](const QString& title, const QString& current,
-                                                 void (VectorLayer::*setter)(const QString&))
+  // The two field submenus are identical but for their title, their list and
+  // their setter.
+  auto addFieldMenu = [this, menu](const QString& title, const QStringList& field_names,
+                                   const QString& current, const QString& stale_note,
+                                   void (VectorLayer::*setter)(const QString&))
   {
     QMenu* submenu = menu->addMenu(title);
     QAction* none = submenu->addAction("(none)");
@@ -564,7 +594,7 @@ void VectorLayer::contextMenu(QMenu* menu)
       // and left selectable rather than greyed out, because a disabled entry is
       // read as "not available" when the point is that it IS what is in force.
       // "(none)" above is what clears it.
-      QAction* action = submenu->addAction(current + " (no numbers)");
+      QAction* action = submenu->addAction(current + " " + stale_note);
       action->setCheckable(true);
       action->setChecked(true);
       connect(action, &QAction::triggered, this,
@@ -572,10 +602,15 @@ void VectorLayer::contextMenu(QMenu* menu)
     }
   };
 
-  addFieldMenu(QStringLiteral("Color by"), color_field_, &VectorLayer::setColorField);
-  addFieldMenu(QStringLiteral("Size by"), size_field_, &VectorLayer::setSizeField);
+  addFieldMenu(QStringLiteral("Color by"), color_fields, color_field_,
+               QStringLiteral("(no numbers)"), &VectorLayer::setColorField);
+  // [camp#22 round-9 suggestion] A different reason, so a different note: the
+  // field may hold perfectly good numbers on the file's lines or polygons and
+  // still size nothing, because only points are sized.
+  addFieldMenu(QStringLiteral("Size by"), size_fields, size_field_,
+               QStringLiteral("(no numbers on any point)"), &VectorLayer::setSizeField);
 
-  if(field_names.isEmpty())
+  if(color_fields.isEmpty())
     return;   // a palette with no field a ramp can sample changes nothing
 
   // [ADR-0008] The full marine_colormap registry, as the raster layers expose it.

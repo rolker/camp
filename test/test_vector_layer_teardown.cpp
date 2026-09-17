@@ -151,6 +151,35 @@ QString writeUnplaceableGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-9 suggestion] A mixed file where one numeric field is carried
+// ONLY by the line: `depth_m` is on the points, `length_m` on the line alone.
+// Size by can do nothing with `length_m` — applyStyle() folds the size range over
+// points only — so it must not be offered there, while Color by reads it fine.
+QString writeLineOnlyNumericGeoJson(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("line_only_numeric.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature",
+       "geometry": {"type": "Point", "coordinates": [-70.71, 43.07]},
+       "properties": {"depth_m": 12.5}},
+      {"type": "Feature",
+       "geometry": {"type": "Point", "coordinates": [-70.70, 43.06]},
+       "properties": {"depth_m": 3.25}},
+      {"type": "Feature",
+       "geometry": {"type": "LineString",
+                    "coordinates": [[-70.68, 43.04], [-70.67, 43.03]]},
+       "properties": {"length_m": 820.0}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22] Every property is free-text: numericFields() must come back EMPTY,
 // so a stale style field set over this file exercises the contextMenu() guard
 // with field_names.isEmpty() true.
@@ -981,6 +1010,60 @@ TEST(VectorLayerStyleFields, AColorFieldWithNoNumbersFallsBackToUnstyled)
   delete layer;
 }
 
+// [camp#22 round-9 suggestion] SIZE BY OFFERS POINT-CARRIED FIELDS ONLY.
+//
+// applyStyle() accumulates the size range over `feature->isPoint()` alone — on
+// purpose: geometry that is never sized must not set the marker extent. So a
+// field only the file's lines or polygons carry leaves that range invalid, every
+// marker keeps the default radius, and nothing on screen changes — while the
+// action shows as checked and the choice is persisted. That is precisely the
+// "a setting that does nothing must say so" pattern this layer already applies to
+// a stale persisted field, one menu over. Color by is unaffected: a ramp reads
+// every geometry type.
+TEST(VectorLayerStyleFields, SizeByOffersOnlyFieldsThePointsCarry)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeLineOnlyNumericGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new MenuProbe(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  // Both fields are numeric; only one of them is on a point.
+  EXPECT_TRUE(layer->numericFields().contains("depth_m"));
+  EXPECT_TRUE(layer->numericFields().contains("length_m"));
+  EXPECT_TRUE(layer->pointNumericFields().contains("depth_m"));
+  EXPECT_FALSE(layer->pointNumericFields().contains("length_m"));
+
+  QMenu menu;
+  layer->contextMenu(&menu);
+
+  const QStringList color_entries = submenuEntries(menu, QStringLiteral("Color by"));
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("depth_m")));
+  EXPECT_TRUE(color_entries.contains(QStringLiteral("length_m")))
+      << "a ramp reads a line's field perfectly well; Color by must still offer it";
+
+  const QStringList size_entries = submenuEntries(menu, QStringLiteral("Size by"));
+  EXPECT_TRUE(size_entries.contains(QStringLiteral("depth_m")));
+  EXPECT_FALSE(size_entries.contains(QStringLiteral("length_m")))
+      << "Size by offered a field no point carries: selecting it changes nothing "
+         "and still shows as checked";
+
+  // And a PERSISTED size field that no point carries is named rather than
+  // silently absent — the same treatment a stale field gets, for the same reason.
+  layer->setSizeField("length_m");
+  QMenu after;
+  layer->contextMenu(&after);
+  const QStringList after_entries = submenuEntries(after, QStringLiteral("Size by"));
+  EXPECT_TRUE(after_entries.contains(QStringLiteral("length_m (no numbers on any point)")))
+      << "a size field in force that can do nothing must say so: "
+      << after_entries.join(", ").toStdString();
+
+  delete layer;
+}
+
 // [camp#22] A persisted field the file no longer offers is SHOWN in the menu,
 // and can be cleared there.
 //
@@ -1021,7 +1104,10 @@ TEST(VectorLayerStyleFields, AStaleStyleFieldIsShownInTheMenuAndCanBeCleared)
 
   const QStringList size_entries = submenuEntries(menu, QStringLiteral("Size by"));
   EXPECT_TRUE(size_entries.contains(QStringLiteral("(none)")));
-  EXPECT_TRUE(size_entries.contains(QStringLiteral("assessment (no numbers)")));
+  // [camp#22 round-9 suggestion] The Size by menu says WHY its stale field does
+  // nothing in its own terms: only points are sized, so "no numbers" is not the
+  // whole story there.
+  EXPECT_TRUE(size_entries.contains(QStringLiteral("assessment (no numbers on any point)")));
 
   // The stale entry reads as the setting in force, and "(none)" as not-chosen.
   QAction* stale = submenuAction(menu, QStringLiteral("Color by"),
