@@ -229,6 +229,21 @@ struct ParseDiagnostics
     // one step earlier; the count is what keeps the operator's status honest, since
     // the dropped geometry no longer reaches the layer to be counted there.
     int geometries_without_placeable_vertex = 0;
+    // [camp#22 round-10 suggestion] Features that carry NO GEOMETRY AT ALL —
+    // `OGRFeature::GetGeometryRef()` came back null — and null PARTS of a Multi*
+    // collection, which are the same loss reached one level down (OGR offers
+    // nothing there that would tell the two apart).
+    //
+    // This is not a theoretical row either: a CSV opened without usable X/Y (or
+    // WKT) columns has a null geometry on EVERY feature, and CSV, GML and DXF are
+    // all on this parser's allowed-driver list. It was the last geometry class
+    // dropped with no counter behind it — the condition that returns for it used
+    // to be shared with the exhausted geometry budget, which reports itself — so
+    // such a file arrived at the caller with zero geometries and zero of
+    // everything else, and was reported as an EMPTY FILE. The two verdicts have
+    // different remedies ("this file has no rows" vs "tell GDAL which columns hold
+    // the coordinates"), so the caller reports this with a note of its own.
+    int features_without_geometry = 0;
 };
 
 // [camp#22] True when @p coordinate can be placed on the Web-Mercator scene: both

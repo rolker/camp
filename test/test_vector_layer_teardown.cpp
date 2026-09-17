@@ -450,6 +450,25 @@ QString writeCurveGeometryFile(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-10 suggestion] A CSV with no usable X/Y (or WKT) columns: the
+// driver opens it and reads every row, and every feature comes back with a NULL
+// geometry. CSV is on the parser's allowed-driver list, so an operator handed a
+// table of observations without coordinate columns lands here — and before the
+// fix the layer reported the file as empty, which points at the wrong remedy.
+QString writeGeometrylessCsv(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("no_coordinates.csv");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write("station,depth_m,assessment\n"
+             "A,12.5,candidate\n"
+             "B,3.25,background\n"
+             "C,7.0,candidate\n");
+  file.close();
+  return path;
+}
+
 // The same wait for a layer that is EXPECTED to end up empty: waitForLoad()
 // answers loaded(), which is false by design for a layer with no drawable
 // feature, so a status assertion needs the settled-status wait on its own.
@@ -826,6 +845,39 @@ TEST(VectorLayerTeardown, UnhandledGeometryTypesAreReportedInTheStatus)
       << "both unhandled geometries must be counted: " << layer->status().toStdString();
   EXPECT_FALSE(layer->status().contains("not read"))
       << "the file was read to its end, so the status must not claim otherwise: "
+      << layer->status().toStdString();
+  delete layer;
+}
+
+// [camp#22 round-10 suggestion] A FEATURE WITH NO GEOMETRY IS COUNTED TOO — the
+// last drop class that had no counter of any kind behind it.
+//
+// `OGRFeature::GetGeometryRef()` returning null used to share its early return
+// with the exhausted geometry budget, so nothing recorded it. A CSV opened
+// without usable X/Y columns is that case on every row: three good rows of data,
+// no geometry on any of them, and a Layers tab that said "(no items)" — the
+// empty-FILE verdict, when the file is full and it is the COORDINATES that are
+// missing. The remedy is to tell GDAL which columns hold them, which is why this
+// carries its own note rather than joining the unplaceable tally.
+TEST(VectorLayerTeardown, FeaturesWithNoGeometryAreReportedInTheStatus)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeometrylessCsv(dir);   // 3 rows, no coordinate columns
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "no row of this file carries a geometry";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_NE(layer->status(), QStringLiteral("(no items)"))
+      << "a file whose features carry no geometry must not be reported as an empty file";
+  EXPECT_TRUE(layer->status().contains("no geometry"))
+      << "the status must say what was left out: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("3"))
+      << "all three geometryless features must be counted: "
       << layer->status().toStdString();
   delete layer;
 }

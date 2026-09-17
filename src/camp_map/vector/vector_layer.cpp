@@ -385,6 +385,15 @@ void VectorLayer::loadFinished()
                          .arg(result.diagnostics.first_unhandled_geometry_type));
   const QString unhandled_note = unhandled > 0 ? "; " + unhandled_text : QString();
 
+  // [camp#22 round-10 suggestion] ...and the same for features that carry no
+  // geometry at all. A CSV with no usable X/Y columns is every row of the file,
+  // and its remedy (name the coordinate columns) is neither the unplaceable one
+  // nor the unhandled-type one, so it gets its own note too. The parse logs the
+  // per-layer detail; this is the count the Layers tab carries.
+  const int no_geometry = result.diagnostics.features_without_geometry;
+  const QString no_geometry_text = QString("%1 with no geometry").arg(no_geometry);
+  const QString no_geometry_note = no_geometry > 0 ? "; " + no_geometry_text : QString();
+
   loaded_ = !features_.empty();
   if(!loaded_)
   {
@@ -403,11 +412,12 @@ void VectorLayer::loadFinished()
                      .arg(feature_cap_)
                : QString();
     if(result.diagnostics.layers_failed > 0)
-      setStatus("(load failed: no usable coordinate system" + capped_note + unhandled_note + ")");
+      setStatus("(load failed: no usable coordinate system" + capped_note + unhandled_note +
+                no_geometry_note + ")");
     else if(skipped > 0)
-      setStatus(QString("(no placeable items; %1 skipped%2%3)")
-                    .arg(skipped).arg(capped_note).arg(unhandled_note));
-    else if(unhandled > 0)
+      setStatus(QString("(no placeable items; %1 skipped%2%3%4)")
+                    .arg(skipped).arg(capped_note).arg(unhandled_note).arg(no_geometry_note));
+    else if(unhandled > 0 || no_geometry > 0)
       // [camp#22 round-10 suggestion] An unhandled-type geometry is the LAST drop
       // class that still reported the empty-FILE verdict: a file of curve types
       // (a CIRCULARSTRING GML, a DXF of arcs) is read in full, drops every
@@ -418,7 +428,8 @@ void VectorLayer::loadFinished()
       // not draw this shape", whose remedy is converting the geometry — see
       // ParseDiagnostics::geometries_unhandled and the per-layer log line that
       // names the first such type.
-      setStatus(QString("(no drawable items%1%2)").arg(capped_note).arg(unhandled_note));
+      setStatus(QString("(no drawable items%1%2%3)")
+                    .arg(capped_note).arg(unhandled_note).arg(no_geometry_note));
     else
       setStatus("(no items" + capped_note + ")");
     return;
@@ -438,6 +449,8 @@ void VectorLayer::loadFinished()
     notes << QString("%1 unplaceable").arg(skipped);
   if(unhandled > 0)
     notes << unhandled_text;
+  if(no_geometry > 0)
+    notes << no_geometry_text;
   if(result.diagnostics.layers_failed > 0)
     notes << QString("%1 layer(s) failed").arg(result.diagnostics.layers_failed);
   setStatus("(" + notes.join(", ") + ")");

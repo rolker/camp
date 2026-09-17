@@ -175,7 +175,29 @@ void appendGeometry(const OGRGeometry *geometry,
                     ParseDiagnostics &diagnostics,
                     ParseBudget &budget)
 {
-    if(!geometry || budget.exhausted())
+    // [camp#22 round-10 suggestion] A NULL geometry is COUNTED, and counted
+    // separately from the exhausted budget these two conditions used to share.
+    // They are not the same event: an exhausted budget is the cap doing its job
+    // and is already reported as such, while a feature that carries no geometry at
+    // all is a row of the file the operator will never see, and it was the one
+    // drop class with no counter of any kind behind it.
+    //
+    // It is reachable through the drivers this parser allows: a CSV with no
+    // usable X/Y (or WKT) fields yields exactly this for EVERY row, and so does a
+    // GML or DXF feature written without a geometry. Such a file produced no
+    // items with every counter at zero, and the layer reported it as an EMPTY
+    // FILE — a verdict whose remedy has nothing to do with this one's (name the
+    // coordinate columns, or open the file as a table).
+    //
+    // A null PART of a Multi* collection lands here too, through the recursion
+    // below. That is the same loss — a shape the file declares and does not
+    // carry — and OGR offers nothing at this point that would tell the two apart.
+    if(!geometry)
+    {
+        ++diagnostics.features_without_geometry;
+        return;
+    }
+    if(budget.exhausted())
         return;
 
     switch(wkbFlatten(geometry->getGeometryType()))
@@ -609,6 +631,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         const int empty_exteriors_before = diag.geometries_with_empty_exterior;
         const int unplaceable_before = diag.geometries_without_placeable_vertex;
         const int unhandled_before = diag.geometries_unhandled;
+        const int no_geometry_before = diag.features_without_geometry;
 
         // [camp#22 round-5 should-fix] The per-layer "what was left out" summaries,
         // in a lambda because the layer body has TWO consumed exits: the end of the
@@ -653,6 +676,13 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
                            << "- dropped" << (diag.points_dropped - dropped_before)
                            << "point(s) whose coordinate transformation failed";
+
+            if(diag.features_without_geometry > no_geometry_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- skipped"
+                           << (diag.features_without_geometry - no_geometry_before)
+                           << "feature(s) that carry no geometry (a CSV opened without usable"
+                           << "X/Y or WKT columns is the usual cause)";
 
             if(diag.geometries_unhandled > unhandled_before)
                 qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
