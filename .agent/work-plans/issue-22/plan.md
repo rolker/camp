@@ -6,6 +6,41 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 20** (2026-09-17) — **round-7 integrated-review (Copilot R8) fixes.** No
+design change; two must-fix, two should-fix.
+
+- **Placement policy is applied by BOTH consumers now.** The parser admits a
+  geometry on any ONE placeable vertex and says so (ADR-0016 D4 keeps the parse
+  faithful), which is safe for the display path because `VectorFeatureItem` filters
+  again per vertex. `VectorDataset` — File > Open Geometry, which builds EDITABLE
+  mission items that are dragged, saved and can be sent to the robot — had no
+  second filter, so a `.prj`-less shapefile imported waypoints at coordinates that
+  are nowhere on earth. `camp::vector::placeableGeometry()` is that filter, applied
+  in `buildItems()` with counts in one warning per import. It lives beside
+  `isPlaceable()` so the display and mission paths cannot drift apart. Round 9
+  documented the weak bound; documenting it did not protect this consumer.
+- **The two remaining raw OGR handles are owned.** `OGRPointIterator` (freed after
+  a vertex loop that allocates) and the per-feature `OGRFeature` (freed after
+  `readAttributes()`/`appendGeometry()`, which allocate) leaked on the one throwing
+  path this code explicitly handles — the `std::bad_alloc` the geometry cap exists
+  to bound, which `VectorLayer::loadFinished()` reports as a failed load. Both are
+  now `std::unique_ptr` with OGR deleters, like the dataset and the transformation
+  in the same file; the #152 "every return path" guarantee now includes unwinding.
+- **A reopened layer is drawn where the order says.** The promotion gave a
+  once-unavailable file its slot back in the order of record, but the layer was
+  constructed like any other and `camp::map::Map` puts a new item at row 0 — on top
+  — so the on-screen z-order disagreed with the list the next launch replays.
+  `camp::vector::vectorLayerRestoredRow()` computes the row from the live sibling
+  rows (so non-vector layers are never disturbed) and the restore loop is a no-op
+  under the same rule.
+- **Pan mode is in force at launch.** ADR-0016 D16's arrow cursor is installed by
+  `ProjectView::setPanMode()`, which nothing called at startup: `setupUi()` applies
+  the `.ui`'s `ScrollHandDrag` property and Qt's `setDragMode()` puts the open hand
+  on the viewport with it, so CAMP launched claiming "Mode: pan" while showing the
+  cursor the 2026-09-15 GUI test rejected (D15). `MainWindow` now calls it after
+  `setupUi()`; a source check (`cmake/check_pan_mode_at_launch.cmake`) keeps the
+  ordering, since `ProjectView` cannot be constructed in a gtest harness.
+
 **Rev 19** (2026-09-17) — **round-9 pre-push review fixes.** No design change; one
 must-fix, ten suggestions, one filed away.
 
