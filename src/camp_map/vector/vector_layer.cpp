@@ -740,8 +740,18 @@ void VectorLayer::readSettings()
   // file to happen: a palette renamed or removed from the registry between builds
   // leaves every layer styled with it in exactly this state. Falling back to
   // grayscale makes what is DRAWN and what is CHECKED agree.
-  std::string colormap =
-    settings.value("colormap", QString::fromStdString(colormap_)).toString().toLower().toStdString();
+  //
+  // [camp#22 round-10 suggestion] The default is applied to an EMPTY value as
+  // well as to an absent key. QSettings::value(key, default) returns the default
+  // only when the key is ABSENT, so a present-but-empty `colormap` — an
+  // interrupted write, a hand-edited or merged settings file, an older build that
+  // stored the empty string — used to arrive here as "", fail the registry lookup
+  // and land on GRAYSCALE, silently replacing this class's default. A partial or
+  // corrupt entry falling back to the default rather than to a different setting
+  // is how RasterLayer reads its persisted range (raster_layer.cpp), and it is
+  // the behaviour an operator can predict.
+  const QString stored = settings.value("colormap").toString().trimmed();
+  std::string colormap = stored.isEmpty() ? colormap_ : stored.toLower().toStdString();
   if(!marine_colormap::palette_index(colormap))
     colormap = "grayscale";
   colormap_ = colormap;

@@ -229,6 +229,27 @@ TEST(VectorLayerPersistence, StyleRoundTripsThroughSettings)
   EXPECT_EQ(miscased->colormap(), std::string("turbo"))
       << "the registry's own spelling, so the menu can match it";
 
+  // [camp#22 round-10 suggestion] A PRESENT-BUT-EMPTY entry is the ABSENT case,
+  // not the unknown-palette one. QSettings::value(key, default) hands back the
+  // default only when the key is missing, so an empty string reached the registry
+  // lookup, failed it, and set the layer to grayscale — a third palette, chosen by
+  // neither the operator nor this class. An interrupted write or a hand-edited
+  // settings file is all it takes.
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(written->settingsKey());
+    settings.setValue("colormap", QString());
+    settings.endGroup();
+    settings.endGroup();
+  }
+  auto* empty_value = new TestableVectorLayer(map.topLevelLayers(), path);
+  empty_value->readSettings();
+  EXPECT_EQ(empty_value->colormap(), std::string("viridis"))
+      << "an empty persisted palette must fall back to the class default, not to the "
+         "unknown-name fallback";
+
+  delete empty_value;
   delete miscased;
   delete bogus;
   delete other;
