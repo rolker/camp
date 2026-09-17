@@ -6,6 +6,42 @@ https://github.com/rolker/camp/issues/22
 
 ## Revision history
 
+**Rev 21** (2026-09-17) — **round-8 Copilot review fixes (2026-09-17 16:03 UTC,
+at 241ed5e).** No design change; three defects, one regression test each.
+
+- **A POLAR vertex no longer becomes an editable waypoint.** `placeableGeometry()`
+  filtered on `isPlaceable()`, i.e. `QGeoCoordinate::isValid()`, which admits
+  latitude +/-90 — a perfectly valid WGS84 coordinate that Web Mercator does not
+  converge at. The display path survives it by CLAMPING (`placeableToMap()`), a
+  documented decision that keeps a polar survey line visible at the edge of the
+  Mercator world; the mission path has no clamp anywhere, since
+  `GeoGraphicsItem::geoToPixel()` calls `web_mercator::geoToMap()` raw and puts the
+  vertex ~2.4e8 m out (twelve world half-extents). New
+  `camp::vector::isProjectable()` = placeable AND inside the projection's latitude
+  domain; `placeableGeometry()` routes through it, and `webMercatorLatitudeLimit()`
+  is exported so the clamp and the test read one constant. The bound is
+  deliberately NOT folded into `isPlaceable()` itself — that would silently turn
+  the display path's clamp into a drop — and clamping on the mission path is
+  equally wrong, because it would move the waypoint to a position the file never
+  states. So it is dropped and counted, like every other unplaceable vertex.
+- **A non-finite styling value is no data.** `isNoData()` checked only that the
+  optional was engaged, so a NaN/infinity read as a real measurement: it reached
+  `normalizedValue()`, whose guards answer 0.5, and was painted at the MIDDLE of
+  the palette with a solid fill and outline — indistinguishable from a real
+  mid-range value, which is what the dashed outline and hatched fill exist to
+  prevent. The documented contract was always "empty, or not a finite number".
+  `numericAttribute()` already refuses one, so this holds the contract for the next
+  producer (a computed field, an expression, a raw `ParsedGeometry` value).
+- **Marker SIZE asks the same predicate as colour.** `radiusForValue()` repeated
+  `!value || !range.valid` instead of calling `isNoData()`, so it carried the same
+  non-finite hole and, more generally, let size and colour disagree about which
+  features are unstyled. It now calls the predicate.
+
+Two other comments in the same review are standing dismissals recorded in
+progress.md and deliberately untouched: the cap lookahead materialising one whole
+next feature (ADR-0016 D11 deferral) and the cosmetic 2-px stroke vs the polygon
+bounding rect.
+
 **Rev 20** (2026-09-17) — **round-7 integrated-review (Copilot R8) fixes.** No
 design change; two must-fix, two should-fix.
 
