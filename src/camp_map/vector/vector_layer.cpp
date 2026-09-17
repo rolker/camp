@@ -251,6 +251,11 @@ void VectorLayer::loadFinished()
                << result.diagnostics.geometries_with_empty_exterior
                << "geometry(ies) whose exterior holds no usable vertex (every vertex outside"
                << "the file's projection is the usual cause)";
+  if(result.diagnostics.point_geometries_dropped > 0)
+    qWarning() << "camp::vector::VectorLayer:" << filename_ << "- dropped"
+               << result.diagnostics.point_geometries_dropped
+               << "standalone point(s) whose coordinate transformation failed (every point of"
+               << "the file outside its projection is the usual cause)";
   // [camp#22 round-8 must-fix] The geometries the PARSE dropped as undrawable are
   // skipped items too, and the loop above cannot count them: they never reach it.
   // Folding them in is what keeps the status honest — without it a file whose
@@ -258,8 +263,16 @@ void VectorLayer::loadFinished()
   // carry no exterior ring, reported the bare "(no items)", which is the
   // verdict an EMPTY FILE gets and has a completely different remedy. The
   // per-reason detail is in the log lines above; the status carries the count.
+  //
+  // [camp#22 round-9 should-fix] A standalone POINT whose one coordinate would
+  // not transform is the same class and was the one branch round 8 did not
+  // reach: it is dropped in the parse, so it never reaches the loop either. It
+  // has its own counter because points_dropped — the obvious candidate — also
+  // counts bad VERTICES of lines and polygons that were drawn in full, and
+  // folding that in would report items as missing that are on screen.
   skipped += result.diagnostics.geometries_with_empty_exterior +
-             result.diagnostics.polygons_without_exterior_ring;
+             result.diagnostics.polygons_without_exterior_ring +
+             result.diagnostics.point_geometries_dropped;
   if(result.diagnostics.layers_failed > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "-"
                << result.diagnostics.layers_failed << "of" << result.diagnostics.layers_total

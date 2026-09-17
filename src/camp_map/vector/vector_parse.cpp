@@ -194,7 +194,18 @@ void appendGeometry(const OGRGeometry *geometry,
             {
                 // The one point this feature had would not transform; emitting the
                 // geometry anyway would produce an empty Point.
+                //
+                // [camp#22 round-9 should-fix] Counted TWICE, in two different
+                // units, because they answer different questions: points_dropped
+                // is the vertex-level tally (a bad vertex of a drawn line is in
+                // it too), and point_geometries_dropped is the whole GEOMETRY the
+                // caller lost — the only counter VectorLayer can honestly fold
+                // into its skipped-item count. Without the second one a file of
+                // points that all fall outside their projection's inverse domain
+                // reported the empty-file verdict; this is the branch the
+                // round-8 must-fix did not reach.
                 ++diagnostics.points_dropped;
+                ++diagnostics.point_geometries_dropped;
                 break;
             }
             g.exterior.push_back(*coordinate);
@@ -543,6 +554,7 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         // keeps the whole-parse meaning its header documents for callers.
         LayerUnhandledTypeScope unhandled_type_scope(diag);
         const int dropped_before = diag.points_dropped;
+        const int point_geometries_dropped_before = diag.point_geometries_dropped;
         const int polygons_dropped_before = diag.polygons_without_exterior_ring;
         const int empty_exteriors_before = diag.geometries_with_empty_exterior;
         const int unhandled_before = diag.geometries_unhandled;
@@ -570,6 +582,13 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                            << (diag.geometries_with_empty_exterior - empty_exteriors_before)
                            << "geometry(ies) whose exterior holds no usable vertex (every"
                            << "vertex failed to transform, or the ring was empty)";
+
+            if(diag.point_geometries_dropped > point_geometries_dropped_before)
+                qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()
+                           << "- dropped"
+                           << (diag.point_geometries_dropped - point_geometries_dropped_before)
+                           << "standalone point(s) whose coordinate transformation failed"
+                           << "(every one of them also counted below)";
 
             if(diag.points_dropped > dropped_before)
                 qWarning() << "camp::vector::parseVectorLayers: layer" << layer->GetName()

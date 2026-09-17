@@ -25,6 +25,8 @@
 #include <memory>
 
 #include <gdal_priv.h>
+#include <ogr_spatialref.h>
+#include <ogrsf_frmts.h>
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -313,6 +315,62 @@ QString writeEmptyGeometryGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-9 should-fix] A file of STANDALONE POINTS whose coordinates fall
+// outside their projection's inverse domain, so every one of them fails to
+// transform and is dropped by the parse.
+//
+// The projection is an orthographic one, whose inverse is defined only inside the
+// disc of the globe it looks at: a coordinate past that radius is not a point on
+// the earth at all, and PROJ says so ("Point outside of projection domain") —
+// which is exactly the per-point transform failure the parser checks for. A real
+// file gets here by being written in a projection its data does not belong in, or
+// by carrying a wrong .prj; the harness needs a failure it can rely on, which
+// this one is.
+//
+// The layer therefore ends up with NO features and, before the fix, with every
+// counter it reads at zero — so it reported "(no items)", the verdict for an
+// empty FILE, over a file holding three perfectly good features.
+QString writeOutOfDomainPoints(const QTemporaryDir& dir)
+{
+  GDALAllRegister();
+  GDALDriver* driver = GetGDALDriverManager()->GetDriverByName("GPKG");
+  if(!driver)
+    return QString();
+
+  const QString path = dir.filePath("out_of_domain_points.gpkg");
+  GDALDataset* ds = driver->Create(path.toUtf8().constData(), 0, 0, 0, GDT_Unknown, nullptr);
+  if(!ds)
+    return QString();
+
+  OGRSpatialReference srs;
+  if(srs.SetFromUserInput("+proj=ortho +lat_0=0 +lon_0=0 +datum=WGS84 +units=m +no_defs")
+     != OGRERR_NONE)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  srs.SetAxisMappingStrategy(OAMS_TRADITIONAL_GIS_ORDER);
+
+  OGRLayer* layer = ds->CreateLayer("points", &srs, wkbPoint, nullptr);
+  if(!layer)
+  {
+    GDALClose(ds);
+    return QString();
+  }
+  OGRFeatureDefn* defn = layer->GetLayerDefn();
+  // Far outside the visible hemisphere's radius (~6.4e6 m), so the inverse fails.
+  for(const double offset : {0.0, 1.0e6, 2.0e6})
+  {
+    OGRFeature* f = OGRFeature::CreateFeature(defn);
+    OGRPoint pt(5.0e7 + offset, 5.0e7 + offset);
+    f->SetGeometry(&pt);
+    layer->CreateFeature(f);
+    OGRFeature::DestroyFeature(f);
+  }
+  GDALClose(ds);
+  return path;
+}
+
 // The same wait for a layer that is EXPECTED to end up empty: waitForLoad()
 // answers loaded(), which is false by design for a layer with no drawable
 // feature, so a status assertion needs the settled-status wait on its own.
@@ -573,6 +631,39 @@ TEST(VectorLayerTeardown, GeometriesDroppedByTheParseAreReportedInTheStatus)
   EXPECT_FALSE(layer->status().contains("not read"))
       << "nothing was left unread — the cap was never reached: "
       << layer->status().toStdString();
+  delete layer;
+}
+
+// [camp#22 round-9 should-fix] The POINT half of the same rule: a standalone point
+// dropped by the parse is a skipped item and has to reach the status.
+//
+// This is the branch the round-8 fix above did not cover. A dropped point is
+// never emitted, so VectorLayer's own skip loop cannot see it; `points_dropped`
+// could not be folded in as a stand-in because it also counts bad VERTICES of
+// lines and polygons that were drawn in full, which would report items as missing
+// that are on screen. With a counter of its own, a file whose points all fall
+// outside their projection's inverse domain says so instead of being reported as
+// an empty file — a verdict with a completely different remedy.
+TEST(VectorLayerTeardown, DroppedStandalonePointsAreReportedInTheStatus)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeOutOfDomainPoints(dir);   // 3 points, none transformable
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "no point of this file can be placed";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_NE(layer->status(), QStringLiteral("(no items)"))
+      << "a file whose points were all dropped by the parse must not be reported "
+         "as an empty file";
+  EXPECT_TRUE(layer->status().contains("skipped"))
+      << "the status must count what was left out: " << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("3"))
+      << "all three dropped points must be counted: " << layer->status().toStdString();
   delete layer;
 }
 

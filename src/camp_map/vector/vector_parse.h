@@ -156,7 +156,28 @@ struct ParseDiagnostics
     int layers_failed = 0;
     // Individual points whose coordinate transformation FAILED. OGR leaves a
     // failed point at HUGE_VAL, so these are dropped rather than carried.
+    //
+    // This counts VERTICES: a bad vertex of a line or polygon that was drawn
+    // perfectly well is in here, and so is the one coordinate of a standalone
+    // Point geometry (which is also counted in point_geometries_dropped below).
+    // That mixture is why it must never be folded into a caller's "items I could
+    // not show" tally — see the field below.
     int points_dropped = 0;
+    // [camp#22 round-9 should-fix] STANDALONE Point geometries dropped because
+    // their one coordinate would not transform — the subset of points_dropped
+    // that cost the caller a whole geometry rather than a vertex.
+    //
+    // It needs its own field for the same reason geometries_with_empty_exterior
+    // does, and it is the one geometry class that fix did not reach: such a point
+    // is never emitted, so VectorLayer's own skip loop cannot count it, and
+    // points_dropped cannot be folded in as a substitute because it also counts
+    // vertices of lines and polygons that ARE on screen. Without this, a file of
+    // points that all fall outside their projection's inverse domain produced
+    // zero features with every usable counter at zero, and the Layers tab reported
+    // the bare "(no items)" — an EMPTY-FILE verdict, whose remedy is a different
+    // one entirely. VectorLayer folds this into the count of items it could not
+    // place.
+    int point_geometries_dropped = 0;
     // Geometries of a type this parser does not handle (the curve types), and the
     // name of the FIRST such type seen — the parser logs one summary line per
     // layer rather than one per geometry (an unhandled geometry does not spend the
