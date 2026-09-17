@@ -155,7 +155,12 @@ had to be answered rather than assumed.
    **Hover also costs nothing else, which click did.** A `VectorFeatureItem`
    accepts **no mouse button at all** (`setAcceptedMouseButtons(Qt::NoButton)`;
    `QGraphicsItem` accepts the left button by default, so this has to be said), so
-   every press over a feature falls straight through to `QGraphicsView`. That
+   every press over a feature falls straight through to `QGraphicsView`. The
+   guarantee is a property of **the whole item subtree, not of the item alone**:
+   the hover label is a CHILD item, it is drawn on top of the feature the cursor is
+   over, and it kept Qt's default until it was given the same call — so every item
+   this layer puts in the scene has to answer no mouse button, and a new child is a
+   new hole until it does. That
    deletes a whole apparatus the click version needed, two pieces of which had
    already cost a review round each to get right:
 

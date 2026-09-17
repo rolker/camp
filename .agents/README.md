@@ -116,12 +116,15 @@ The mechanism is `GeoGraphicsItem`'s, replicated rather than inherited: a child
 `hoverEnterEvent()` and emptied in `hoverLeaveEvent()`, because `camp_map` cannot
 depend on `GeoGraphicsItem` in the `camp` executable. A Qt tooltip was tried first
 and rejected in the 2026-09-15 GUI test — it waits out Qt's delay, and nothing
-else in CAMP does. It is not a persistent panel. A `VectorFeatureItem` accepts **no mouse button at
-all** (`setAcceptedMouseButtons(Qt::NoButton)`), so every press over a feature
-falls through to the view — which is what keeps the pan gesture and ProjectView's
-add-* placement clicks working over a vector layer, and what makes camp#225 fixed
-by construction. Do not give the item a mouse handler without re-reading ADR-0016
-D5.
+else in CAMP does. It is not a persistent panel. A `VectorFeatureItem` **and every child it puts in
+the scene** accept **no mouse button at all**
+(`setAcceptedMouseButtons(Qt::NoButton)` on the item AND on the hover label), so
+every press over a feature falls through to the view — which is what keeps the pan
+gesture and ProjectView's add-* placement clicks working over a vector layer, and
+what makes camp#225 fixed by construction. The label is why this is stated for the
+SUBTREE: it is drawn on top of the feature under the cursor and kept Qt's default
+(which accepts the left button) until it was given the same call. Do not give the
+item — or any child of it — a mouse handler without re-reading ADR-0016 D5.
 
 The layer persists as **app state** under `QSettings vectorLayers/files` like the
 chart list (ADR-0003 §4), not in the mission file. Both read the file through
