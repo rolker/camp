@@ -234,7 +234,7 @@ void VectorLayer::loadFinished()
 
   if(skipped > 0)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- skipped" << skipped
-               << "feature(s) whose coordinates are not a valid latitude/longitude"
+               << "item(s) whose coordinates are not a valid latitude/longitude"
                << "(a shapefile missing its .prj sidecar is the usual cause)";
   if(capped)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- stopped at the"
@@ -255,7 +255,7 @@ void VectorLayer::loadFinished()
   // skipped items too, and the loop above cannot count them: they never reach it.
   // Folding them in is what keeps the status honest — without it a file whose
   // features all fall outside their projection's inverse domain, or whose polygons
-  // carry no exterior ring, reported the bare "(no features)", which is the
+  // carry no exterior ring, reported the bare "(no items)", which is the
   // verdict an EMPTY FILE gets and has a completely different remedy. The
   // per-reason detail is in the log lines above; the status carries the count.
   skipped += result.diagnostics.geometries_with_empty_exterior +
@@ -288,7 +288,7 @@ void VectorLayer::loadFinished()
     else if(skipped > 0)
       setStatus(QString("(no placeable items; %1 skipped%2)").arg(skipped).arg(capped_note));
     else
-      setStatus("(no features" + capped_note + ")");
+      setStatus("(no items" + capped_note + ")");
     return;
   }
 

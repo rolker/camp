@@ -372,9 +372,10 @@ had to be answered rather than assumed.
     **clamped** by `placeableToMap()` (above), not dropped, and a vertex whose
     transform failed is dropped by the parser before this code ever sees it
     (**D4**) — so what reaches `addRing()` is only a genuinely invalid coordinate
-    from the no-SRS pass-through branch. The layer reports the count of features
-    skipped for having no placeable vertex at all; a *partly* unplaceable feature
-    is drawn, with the shortcut. Revisit if a real file produces one.
+    from the no-SRS pass-through branch. The layer reports the count of ITEMS
+    skipped for having no placeable vertex at all — the cap's own unit, one per
+    emitted geometry part, since that is what the layer would have built; a
+    *partly* unplaceable feature is drawn, with the shortcut. Revisit if a real file produces one.
 
 14. **Colour and size ramps are NUMERIC-ONLY in this MVP, and the styling menus
     offer only the fields a ramp can read.** `VectorLayer::numericFields()` — the
@@ -476,7 +477,7 @@ had to be answered rather than assumed.
 - **An unreachable persisted entry cannot be removed through the UI** — it has
   no layer to right-click. It goes when the file returns and is removed, or by
   clearing the setting. This is the deliberate cost of D10.
-- **The feature cap is a display limit an operator can hit** on genuinely large
+- **The item cap is a display limit an operator can hit** on genuinely large
   data (a national coastline, an OSM extract). Spatial-index-backed culling or
   level-of-detail would lift it; both are larger work than this issue, and the
   cap is honest in the meantime.

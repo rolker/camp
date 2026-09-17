@@ -164,7 +164,7 @@ public:
 
   /// True once the load finished and produced at least one feature. A file that
   /// failed to open, or held nothing this parser handles, is false and shows
-  /// "(load failed)" / "(no features)" in the Layers tab.
+  /// "(load failed)" / "(no items)" in the Layers tab.
   bool loaded() const { return loaded_; }
 
 signals:

@@ -224,7 +224,7 @@ void appendGeometry(const OGRGeometry *geometry,
             // [camp#22 round-8 must-fix] COUNT the skip. Dropping it silently left
             // the class with no operator-visible report at all: the geometry never
             // reaches VectorLayer, so its own skipped counter stays 0 and the
-            // Layers tab printed the bare "(no features)" — an empty-file verdict
+            // Layers tab printed the bare "(no items)" — an empty-file verdict
             // for a file whose features exist and fall outside their projection's
             // inverse domain.
             if(g.exterior.empty())

@@ -547,7 +547,7 @@ TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
 // outside the projection's inverse domain, or a ring with no vertex at all — and
 // a polygon with no exterior ring. Those geometries never reach the layer's own
 // skip loop, so its `skipped` counter stayed 0 and the Layers tab printed the bare
-// "(no features)": the verdict an EMPTY FILE gets, for a file whose features exist
+// "(no items)": the verdict an EMPTY FILE gets, for a file whose features exist
 // and whose remedy (a wrong or unusable coordinate system) is a different one
 // entirely. The status must say something was left out.
 TEST(VectorLayerTeardown, GeometriesDroppedByTheParseAreReportedInTheStatus)
@@ -563,7 +563,7 @@ TEST(VectorLayerTeardown, GeometriesDroppedByTheParseAreReportedInTheStatus)
 
   EXPECT_FALSE(layer->loaded()) << "no geometry of this file can be drawn";
   EXPECT_EQ(layer->featureCount(), 0);
-  EXPECT_NE(layer->status(), QStringLiteral("(no features)"))
+  EXPECT_NE(layer->status(), QStringLiteral("(no items)"))
       << "a file whose geometries were all dropped by the parse must not be reported "
          "as an empty file";
   EXPECT_TRUE(layer->status().contains("skipped"))
