@@ -1954,3 +1954,58 @@ Pre-commit hooks ran on every commit; nothing pushed (the host pushes).
 
 ### Next step
 review-code (re-review the fixes) via `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 22 --skill review-code`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-17 10:25 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `08c5832`
+**Mode**: pre-push
+**Depth**: Deep (reason: cross-layer camp <-> camp_map, worker-thread lifecycle, GDAL input handling) — horizon scoped to the 10 commits since `6139f33`
+**Must-fix**: 1 | **Suggestions**: 11
+**Round**: 9 | **Ship**: recommended — the single must-fix is a precise, mechanical correction (one `setStatus`/`qWarning` on a newly added early-return path) with no design question open; the count is 1 against round 8's 1, not rising, and all 7 findings of the 09:37 integrated review are verified closed against the code rather than the claim.
+
+Specialists: Static Analysis (cppcheck 2.13 clean on touched lines — one `useStlAlgorithm`
+style note on a MOVED line, dropped; repo pre-commit clean over `6139f33..HEAD`),
+Governance, Plan Drift, Claude Adversarial Lens A + Lens B. Copilot and local review off.
+Build and tests re-run here: `./ui_ws/build.sh camp` clean, `./ui_ws/test.sh camp` →
+**414 tests, 0 errors, 0 failures, 1 skipped**, matching the Implementation entry's claim.
+All 10 commits carry the agent identity; plan rev 18 is in sync; working tree clean.
+
+All 7 findings of the `## Integrated Review` of 2026-09-17 09:37 -04:00 are CLOSED, and no
+regression was found in any of them. The four points the implementer flagged were each
+checked directly and all four calls are UPHELD. (a) The colormap fixture move is right and
+the old test really was asserting the defect — `marine_colormap/test/test_palette.cpp:56`
+asserts `palette_index("plasma")` has no value; all 8 registry names are lowercase so
+`.toLower()` cannot destroy a valid choice, `palette_index()` returns `std::optional` so the
+`if(!...)` tests emptiness rather than index 0, and grayscale (index 0) survives. (b) The
+unplaceable-geometry trade is recorded in ADR-0016 and `ParseOptions::max_geometries`, and
+the rewritten test is non-vacuous (4 unplaceable points against a cap of 2, all 4 counted).
+(c) The `LoadResult` lifetime reasoning is CORRECT, verified independently by both
+adversarial passes against the installed Qt 5.15 headers: declaration order is load-bearing
+and right (`future` before `release_future`, so the clear runs while the local still holds a
+ref), the named local is necessary because `const_iterator` stores the `QFuture*`, the
+`isResultReadyAt(0)` guard is not decoration (`advanceIndex` returns -1 on an empty store),
+and the destructor's join is a correct no-op afterwards — but this fix introduced the one
+must-fix below. (d) The restore rework is behaviourally identical to the old inline loop
+line by line, the in-loop promotion branch is provably inert during restore, and none of
+`persistVectorLayers()`'s three callers is wrongly suppressed.
+
+### Findings
+- [ ] (must-fix) The no-result early return reports NOTHING — status stays "(loading...)" forever with no log line; reachable when the worker THROWS (`reportException` sets Canceled, `reportResult` then bails), i.e. the `bad_alloc` the cap exists to bound. Previously this rethrew and terminated — loud; it is now silent, which is the class this round exists to remove. Add `setStatus("(load failed)")` + a `qWarning()` (guard a genuine abort with `!isAborted()`) and correct the comment, which names cancellation rather than the exception case. Cross-pass confirmed (Lens A + Lens B), reachability verified against `qtconcurrentrunbase.h:104-126` and `qfutureinterface.h:192-198` — `src/camp_map/vector/vector_layer.cpp:229-234`
+- [ ] (suggestion) `geometries_unhandled` is the one drop class still not folded into the status, so a curve-only file reports the bare "(no items)" empty-FILE verdict — verbatim the defect rounds 8 and 9 each closed once; the counter already exists and is already logged per layer, and wants its own note rather than a sum into "unplaceable". Cross-pass confirmed — `src/camp_map/vector/vector_layer.cpp:340-343`, `src/camp_map/vector/vector_parse.cpp:374`
+- [ ] (suggestion) A feature whose `GetGeometryRef()` is null is dropped with NO counter of any kind — the one geometry class genuinely lost silently; reachable because CSV/GML/DXF are on `kAllowedDrivers` and a CSV with no usable X/Y fields is exactly this. Same empty-file verdict; needs a new counter, distinguished from the `budget.exhausted()` half of the condition — `src/camp_map/vector/vector_parse.cpp:178`
+- [ ] (suggestion) Nothing prevents a re-entrant restore and `RestoreScope` FAILS OPEN if one occurs (an inner destructor clears the flag while the outer loop runs). Not reachable today, but that rests on unasserted properties of `openVectorLayer()` two files away; a one-line `if(m_restoringVectorLayers) return;` closes it — `src/camp/autonomousvehicleproject.cpp:528`
+- [ ] (suggestion) The `if(!layers) return;` exit leaves an entry in `plan.order` but in neither the unavailable nor the loaded list, so the single trailing persist silently deletes it — the one way a COMPLETED restore loses an entry. Pre-existing, but the new comments claim completeness — `src/camp/autonomousvehicleproject.cpp:419-420`
+- [ ] (suggestion) The re-entrancy comment asserts as fact that `setFuture()` with an empty future can deliver `finished()` again; Lens B's reading of Qt 5.15 is that `sendCallOutEvent()` drops every callout but `Canceled` on a canceled future. Not settled (`qfuturewatcher.cpp` is not installed here), so soften the wording per "never document from assumptions" — and KEEP `load_reported_` either way — `src/camp_map/vector/vector_layer.cpp:210-215`
+- [ ] (suggestion) The reworded cap `qWarning()` explains a discrepancy this same round made unreachable (nothing unplaceable is emitted any more); the surprise that CAN still occur is the round-5 one, that the cap is spent per emitted part — `src/camp_map/vector/vector_layer.cpp:288-301`
+- [ ] (suggestion) No test covers the round-9 concurrency change (future released, slot idempotent, teardown still joins after a completed load) — the change with the least visible failure mode; and the new placeability drop is exercised on the POINT branch only, leaving the LineString and Polygon branches (including the polygon's deliberate placement before the interior-ring loop) uncovered — `test/test_vector_layer_teardown.cpp`
+- [ ] (suggestion) `QSettings::value(key, default)` returns the default only when the key is ABSENT, so a present-but-empty `colormap` key lands on grayscale rather than the class default `viridis`; `raster_layer.cpp:692-694` handles the partial/corrupt case explicitly elsewhere — `src/camp_map/vector/vector_layer.cpp:670-671`
+- [ ] (suggestion) `palette_index()` is an exact CASE-SENSITIVE scan while the menu offers `palette_names()` verbatim, so a future non-lowercase registry name would reset that layer to grayscale on every launch. PRE-EXISTING and cross-file (`raster_layer`, `gggs_tile_layer`, `sonar_live_cache_layer`, `grid_map` all carry it) — file separately rather than growing this PR — `src/camp_map/vector/vector_layer.cpp:670-673`
+- [ ] (suggestion) Three residues of the Size-by split: the `Size by` submenu is now just "(none)" on a layer whose points carry no numeric field (consider omitting it when list and setting are both empty); `size_fields.isEmpty()` in the early return is redundant (`size_fields` is a subset of `color_fields`); and `contextMenu()` now runs the `numericAttribute()` fold TWICE over the full feature set on every right-click — `src/camp_map/vector/vector_layer.cpp:572-593`
+- [ ] (suggestion) The `isPlaceable()` doc block claims the guard prevents `childrenBoundingRect()` poisoning, but `hasPlaceableCoordinate()` admits a geometry on ANY ONE placeable vertex, so a line with one good vertex and 999 UTM-northings-as-degrees still enters the bounding rect and the scene index. The design is defensible; the comment should state the bound it delivers — `src/camp_map/vector/vector_parse.h:213-224`
+
+### Next step
+address-findings (1 must-fix, 11 suggestions; 2 of the 12 cross-pass confirmed) via `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 22 --skill address-findings`
