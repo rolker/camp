@@ -494,6 +494,21 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
 
 void AutonomousVehicleProject::persistVectorLayers() const
 {
+    // [camp#22 round-9 should-fix] SUPPRESSED while the startup restore is running.
+    // openVectorLayer() ends here, and this function rewrites the whole key from
+    // m_restoredVectorLayerOrder / m_unavailableVectorLayerFiles / the tracked
+    // layers. While the restore loop was building those lists entry by entry, each
+    // per-layer call therefore wrote a list TRUNCATED at the current entry —
+    // through a fresh QSettings whose destructor syncs, so it reached disk
+    // immediately — and the entries the loop had not reached yet existed nowhere
+    // else. The opens are asynchronous parses that keep running while the loop
+    // opens later layers, so a worker-side abort taking the process down mid
+    // restore silently forgot every later layer: the camp#90/#117 class from the
+    // other direction. restorePersistedVectorLayers() decides the whole state
+    // first and persists ONCE, after the loop; until it clears this flag the key
+    // is left exactly as it was found.
+    if(m_restoringVectorLayers)
+        return;
     // [camp#22 / ADR-0003 §4] The ordered vector-layer filename list as app state,
     // beside the chart list. Per-layer style (colour/size field, palette) persists
     // separately through the layer's own settings group; this records which layers
@@ -512,8 +527,17 @@ void AutonomousVehicleProject::persistVectorLayers() const
 
 void AutonomousVehicleProject::restorePersistedVectorLayers()
 {
-    // [camp#22 / ADR-0003] Recreate the persisted vector layers (app state). Read
-    // the list first so it is stable across the loop.
+    // [camp#22 / ADR-0003] Recreate the persisted vector layers (app state).
+    //
+    // TWO PASSES, deliberately. The first (camp::vector::planVectorLayerRestore)
+    // decides what the persisted list MEANS — the order of record, which entries
+    // are not reachable right now, which are to be opened — without opening
+    // anything; the second opens them. Interleaving the two, which is what this
+    // used to do, meant openVectorLayer()'s trailing persistVectorLayers() wrote a
+    // list truncated at the current entry on every iteration, so an exit or a
+    // worker-side crash part way through the restore erased every entry the loop
+    // had not reached. See the note on persistVectorLayers() and the plan struct's
+    // header.
     //
     // A file that is not there RIGHT NOW is REMEMBERED, not dropped. Survey data
     // routinely lives on a network share or an external disk, and "the share was
@@ -525,40 +549,30 @@ void AutonomousVehicleProject::restorePersistedVectorLayers()
     // an unavailable entry cannot be removed through the Layers tab (it has no
     // layer to right-click); it goes when the file comes back and is removed, or
     // by clearing the setting.
-    const QStringList files = camp::vector::persistedVectorLayerFiles();
-    m_unavailableVectorLayerFiles.clear();
-    m_restoredVectorLayerOrder.clear();
-    for(const auto& fname : files)
+    const camp::vector::VectorLayerRestorePlan plan =
+        camp::vector::planVectorLayerRestore(camp::vector::persistedVectorLayerFiles());
+    m_restoredVectorLayerOrder = plan.order;
+    m_unavailableVectorLayerFiles = plan.unavailable;
+
+    // Hold off every per-layer persist until the whole loop has run, and clear the
+    // flag on EVERY exit from this function — a persist suppressed for good would
+    // be worse than the truncation it guards against.
+    struct RestoreScope
     {
-        // [camp#22] A /vsi entry is DROPPED from the list rather than remembered:
-        // it can only have come from an older build or a hand-edited settings
-        // file, and startup restore is precisely the unattended path where a
-        // network fetch must not be attempted. Carrying it forward would retry it
-        // on every launch.
-        if(camp::vector::isVirtualFileSystemPath(fname))
-        {
-            qWarning() << "AutonomousVehicleProject: dropping persisted vector layer" << fname
-                       << "- a /vsi path is a GDAL virtual file system, which can fetch over"
-                       << "the network; it is not restored and not kept in the list";
-            continue;
-        }
-        const QString canonical = canonicalVectorLayerPath(fname);
-        // The order of record, kept whether or not this entry can be opened now.
-        if(!m_restoredVectorLayerOrder.contains(canonical))
-            m_restoredVectorLayerOrder << canonical;
-        if(!QFileInfo::exists(canonical))
-        {
-            qWarning() << "AutonomousVehicleProject: persisted vector layer" << fname
-                       << "is not reachable right now; keeping it in the list for a later"
-                       << "session rather than forgetting it";
-            if(!m_unavailableVectorLayerFiles.contains(canonical))
-                m_unavailableVectorLayerFiles << canonical;
-            continue;
-        }
-        openVectorLayer(canonical);
+        bool &flag;
+        explicit RestoreScope(bool &f): flag(f) { flag = true; }
+        ~RestoreScope() { flag = false; }
+        RestoreScope(const RestoreScope &) = delete;
+        RestoreScope &operator=(const RestoreScope &) = delete;
+    };
+    {
+        RestoreScope restoring(m_restoringVectorLayers);
+        for(const auto& fname : plan.openable)
+            openVectorLayer(fname);
     }
-    // Rewrite the key unconditionally: the rebuild collapses duplicates and
-    // normalises path spellings that an older build may have left behind.
+    // Rewrite the key ONCE, now that the state is whole: the rebuild collapses
+    // duplicates and normalises path spellings that an older build may have left
+    // behind.
     persistVectorLayers();
 }
 

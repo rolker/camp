@@ -653,6 +653,46 @@ QStringList withVectorLayerFilePromoted(const QStringList& files, const QString&
   return result;
 }
 
+VectorLayerRestorePlan planVectorLayerRestore(const QStringList& files)
+{
+  VectorLayerRestorePlan plan;
+  for(const QString& fname : files)
+  {
+    // [camp#22] A /vsi entry is DROPPED from the list rather than remembered: it
+    // can only have come from an older build or a hand-edited settings file, and
+    // startup restore is precisely the unattended path where a network fetch must
+    // not be attempted. Carrying it forward would retry it on every launch.
+    if(isVirtualFileSystemPath(fname))
+    {
+      qWarning() << "camp::vector::planVectorLayerRestore: dropping persisted vector layer"
+                 << fname
+                 << "- a /vsi path is a GDAL virtual file system, which can fetch over"
+                 << "the network; it is not restored and not kept in the list";
+      continue;
+    }
+    const QString canonical = canonicalVectorLayerPath(fname);
+    // The order of record, kept whether or not this entry can be opened now.
+    if(!plan.order.contains(canonical))
+      plan.order << canonical;
+    // A file that is not there RIGHT NOW is REMEMBERED, not dropped. Survey data
+    // routinely lives on a network share or an external disk, and "the share was
+    // not mounted when CAMP started" is not the operator saying "remove this
+    // layer".
+    if(!QFileInfo::exists(canonical))
+    {
+      qWarning() << "camp::vector::planVectorLayerRestore: persisted vector layer" << fname
+                 << "is not reachable right now; keeping it in the list for a later"
+                 << "session rather than forgetting it";
+      if(!plan.unavailable.contains(canonical))
+        plan.unavailable << canonical;
+      continue;
+    }
+    if(!plan.openable.contains(canonical))
+      plan.openable << canonical;
+  }
+  return plan;
+}
+
 QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
                                              const QStringList& unavailable,
                                              const QStringList& loadedFiles)

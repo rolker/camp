@@ -352,6 +352,37 @@ QStringList withoutVectorLayerFile(const QStringList& files, const QString& cano
 /// implementation) instead of being collapsed.
 QStringList withVectorLayerFilePromoted(const QStringList& files, const QString& canonicalFile);
 
+/// [camp#22 round-9 should-fix] What the persisted list MEANS, decided in one
+/// pass before any file is opened: the order of record (`order`, canonical
+/// spellings, de-duplicated), the subset that is not reachable right now
+/// (`unavailable`) and the subset to open, in order (`openable`). A `/vsi` entry
+/// is in none of them — it is dropped, loudly, for the reason on
+/// `isVirtualFileSystemPath()`.
+///
+/// It is a separate pass because `AutonomousVehicleProject::openVectorLayer()`
+/// PERSISTS: it ends in `persistVectorLayers()`, which rewrites the whole key
+/// from the order/unavailable/loaded triple, and each write is a fresh `QSettings`
+/// whose destructor syncs. Building the triple incrementally inside the open loop
+/// therefore wrote a list truncated at entry k to disk once per restored layer,
+/// and entries k+1..n existed nowhere else: an exit or a worker-side crash mid
+/// restore — and the opens are asynchronous parses that are still running while
+/// the loop opens later layers — silently forgot every layer the loop had not
+/// reached. That is the camp#90/#117 class ("a layer the operator did not remove
+/// comes back missing") reached from the other direction. With the full state
+/// decided up front, the restore persists ONCE, after the loop, and an interrupted
+/// restore leaves the key exactly as it found it.
+///
+/// Pure but for the filesystem: reachability is `QFileInfo::exists()` on the
+/// canonical path, the same test the open path uses.
+struct VectorLayerRestorePlan
+{
+  QStringList order;
+  QStringList unavailable;
+  QStringList openable;
+};
+
+VectorLayerRestorePlan planVectorLayerRestore(const QStringList& files);
+
 /// The persisted vector-layer list rebuilt from scratch — the whole rule behind
 /// `AutonomousVehicleProject::persistVectorLayers()`, in one pure function so it
 /// can be exercised (the project itself is not constructible in a test harness).

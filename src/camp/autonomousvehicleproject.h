@@ -250,6 +250,15 @@ private:
     // at the end — otherwise one launch with the share unmounted permanently
     // reshuffles the list.
     QStringList m_restoredVectorLayerOrder;
+    // [camp#22 round-9 should-fix] True for the duration of the startup restore
+    // loop, during which persistVectorLayers() writes NOTHING. openVectorLayer()
+    // persists on every call, and while the restore was building the two lists
+    // above entry by entry each of those writes rewrote `vectorLayers/files` from
+    // a state truncated at the current entry — so an interruption mid restore
+    // (the opens are asynchronous parses that outlive the loop) erased every
+    // layer the loop had not reached yet. The restore decides the whole state up
+    // front and persists once, after the loop.
+    bool m_restoringVectorLayers = false;
     Group* m_currentGroup;
     Group* m_root;
     MissionItem * m_currentSelected;

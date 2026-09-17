@@ -328,6 +328,86 @@ TEST(VectorLayerPersistence, ReopenedUnavailableFileCanBeRemoved)
             QStringList{local});
 }
 
+// [camp#22 round-9 should-fix] THE RESTORE'S STATE IS WHOLE BEFORE THE FIRST FILE
+// IS OPENED — which is what keeps an interrupted restore from erasing the entries
+// it never reached.
+//
+// The hazard: AutonomousVehicleProject::openVectorLayer() ends in
+// persistVectorLayers(), which rewrites the whole key from the restored order,
+// the unavailable list and the layers tracked so far. While those two lists were
+// built INSIDE the open loop, the write at iteration k knew nothing of entries
+// k+1..n — and each write is a fresh QSettings whose destructor syncs, so the
+// truncated list reached disk once per restored layer. The opens are asynchronous
+// parses that are still running while the loop opens later layers, so a
+// worker-side abort mid restore left the operator's list permanently short: the
+// camp#90/#117 class ("a layer I did not remove is gone") from the other side.
+//
+// planVectorLayerRestore() is the seam that removes it: the classification runs
+// over the WHOLE persisted list first, opens nothing, and writes nothing. The
+// project then opens the plan's files with persistence suppressed and persists
+// once, after the loop. The second half of this test is the hazard itself,
+// asserted so the reason the plan has to be complete cannot be quietly lost.
+TEST(VectorLayerPersistence, RestorePlanIsCompleteBeforeAnyFileIsOpened)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString first = dir.filePath("first.geojson");
+  const QString second = dir.filePath("second.geojson");
+  const QString third = dir.filePath("third.geojson");
+  const QString missing = dir.filePath("unmounted_share.geojson");
+  for(const QString& path : {first, second, third})
+  {
+    QFile file(path);
+    ASSERT_TRUE(file.open(QIODevice::WriteOnly)) << "could not create " << path.toStdString();
+    file.write("{}");
+    file.close();
+  }
+  ASSERT_FALSE(QFileInfo::exists(missing));
+
+  const QStringList persisted{first, second, missing, third,
+                              QStringLiteral("/vsicurl/https://host/remote.geojson")};
+  writePersistedVectorLayerFiles(persisted);
+
+  const camp::vector::VectorLayerRestorePlan plan =
+      camp::vector::planVectorLayerRestore(persistedVectorLayerFiles());
+
+  // Every non-/vsi entry is in the order of record, in its persisted slot — for
+  // the LAST one as much as the first, which is the whole point.
+  EXPECT_EQ(plan.order, (QStringList{canonicalVectorLayerPath(first),
+                                     canonicalVectorLayerPath(second),
+                                     canonicalVectorLayerPath(missing),
+                                     canonicalVectorLayerPath(third)}));
+  EXPECT_EQ(plan.unavailable, QStringList{canonicalVectorLayerPath(missing)});
+  EXPECT_EQ(plan.openable, (QStringList{canonicalVectorLayerPath(first),
+                                        canonicalVectorLayerPath(second),
+                                        canonicalVectorLayerPath(third)}));
+
+  // Planning is read-only: the key on disk is untouched until the restore has run
+  // to completion.
+  EXPECT_EQ(persistedVectorLayerFiles(), persisted)
+      << "planning the restore must not write the persisted key";
+
+  // The restore's own persist, run ONCE after the loop, reproduces the list.
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(plan.order, plan.unavailable, plan.openable),
+            (QStringList{canonicalVectorLayerPath(first), canonicalVectorLayerPath(second),
+                         canonicalVectorLayerPath(missing), canonicalVectorLayerPath(third)}));
+
+  // ...and the hazard it replaces. A persist that runs while the state is only
+  // populated as far as entry k — which is what the per-layer persist inside the
+  // open loop did — writes a list with every later entry GONE. Nothing about the
+  // rebuild rule can save it: an order entry that is neither loaded nor
+  // unavailable is a layer the operator REMOVED, and dropping it is the rule that
+  // makes removal stick. Only a complete order, persisted once, is safe.
+  const QStringList order_so_far{canonicalVectorLayerPath(first)};
+  EXPECT_EQ(rebuildPersistedVectorLayerFiles(order_so_far, QStringList{}, order_so_far),
+            order_so_far)
+      << "the mid-loop write is exactly as lossy as it looks; the fix is not to make it";
+  EXPECT_FALSE(rebuildPersistedVectorLayerFiles(order_so_far, QStringList{}, order_so_far)
+                   .contains(canonicalVectorLayerPath(third)));
+
+  QSettings().remove(vectorLayerFilesKey());
+}
+
 // The counterpart that must keep working: an entry still unavailable at removal
 // time has no layer to remove, so it is carried forward — the deliberate
 // consequence documented on restorePersistedVectorLayers().
