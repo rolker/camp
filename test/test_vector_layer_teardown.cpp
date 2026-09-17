@@ -197,6 +197,27 @@ QString writeTwoPoints(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22] One LINE feature with an attribute — the branch whose hover label is
+// placed AT the cursor, which is what puts the label in the way of a press.
+QString writeOneLine(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("one_line.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature",
+       "geometry": {"type": "LineString",
+                    "coordinates": [[-70.80, 43.00], [-70.60, 43.00]]},
+       "properties": {"survey": "line 7"}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22] A GeoJSON with `count` point features — big enough that parsing it is
 // measurably slower than an aborted load, which is what the bounded-join test
 // below needs.
@@ -1082,6 +1103,105 @@ TEST(VectorLayerInteraction, APressOverAFeatureFallsThroughToTheView)
       << "a feature grabbed the press: the view's pan gesture never starts (camp#225)";
 
   QMouseEvent release(QEvent::MouseButtonRelease, QPointF(centre), global,
+                      Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+  QApplication::sendEvent(view.viewport(), &release);
+  QCoreApplication::processEvents();
+
+  delete layer;
+}
+
+// [camp#22 round-5 should-fix / camp#225] A press over the HOVER LABEL also falls
+// through to the view.
+//
+// The no-button guarantee is set on the feature item, and a QGraphicsItem child
+// accepts the left button by default — so the label created on hover was a
+// hit-test candidate of its own. For a line the label is placed AT the cursor on
+// hover-enter and does not track it afterwards, with the whole item lifted above
+// its siblings, so the operator's own pan gesture starts on top of it. Asserted
+// the way the sibling test above asserts the feature itself: through a real view,
+// on the scene's dispatch, because what is claimed is that NO item grabs the
+// press.
+//
+// SCOPE, honestly: this is the end-to-end statement of the guarantee, not the
+// regression detector. A QGraphicsSimpleTextItem with no movable/selectable flag
+// ignores a press it accepts the button for, so the scene ends up with no grabber
+// either way; what pins the flag itself is
+// VectorFeatureItem.TheHoverLabelAcceptsNoMouseButtonEither, which fails without
+// the setAcceptedMouseButtons() call. Both are kept: the flag is the contract,
+// and this is the behaviour the contract exists for — an item that later gains a
+// flag, or a label replaced by something that does accept, is caught here.
+TEST(VectorLayerInteraction, APressOverTheHoverLabelFallsThroughToTheView)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeOneLine(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+  ASSERT_EQ(layer->featureCount(), 1);
+
+  QGraphicsView view(map.scene());
+  view.setDragMode(QGraphicsView::ScrollHandDrag);
+  view.scale(1.0, -1.0);
+  view.resize(800, 600);
+  view.show();
+  QCoreApplication::processEvents();
+
+  camp::vector::VectorFeatureItem* target = nullptr;
+  for(QGraphicsItem* child : layer->childItems())
+  {
+    auto* feature = dynamic_cast<camp::vector::VectorFeatureItem*>(child);
+    if(feature && !feature->isPoint())
+    {
+      target = feature;
+      break;
+    }
+  }
+  ASSERT_NE(target, nullptr);
+
+  view.centerOn(target->sceneBoundingRect().center());
+  QCoreApplication::processEvents();
+  const QPoint on_line = view.mapFromScene(target->sceneBoundingRect().center());
+
+  // Hover the line: this is what creates the label, at the cursor.
+  {
+    const QPointF global = view.viewport()->mapToGlobal(on_line);
+    QMouseEvent move(QEvent::MouseMove, QPointF(on_line), global,
+                     Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QApplication::sendEvent(view.viewport(), &move);
+    QCoreApplication::processEvents();
+  }
+
+  QGraphicsSimpleTextItem* label = nullptr;
+  for(QGraphicsItem* child : target->childItems())
+    if(auto* text = dynamic_cast<QGraphicsSimpleTextItem*>(child))
+      label = text;
+  ASSERT_NE(label, nullptr) << "hovering the line through the view created no label";
+  ASSERT_FALSE(label->text().isEmpty()) << "the label must be showing to be in the way";
+
+  // A press on the TEXT itself — where the operator's hand already is, a few
+  // pixels down and right of where they started hovering.
+  // The label sets ItemIgnoresTransformations and the view is y-flipped, so its
+  // viewport position comes from the device transform, not from mapFromScene().
+  const QPoint on_label =
+    label->deviceTransform(view.viewportTransform())
+      .map(label->boundingRect().center())
+      .toPoint();
+  ASSERT_TRUE(view.items(on_label).contains(static_cast<QGraphicsItem*>(label)))
+      << "harness: the press point is not over the label";
+
+  const QPointF global = view.viewport()->mapToGlobal(on_label);
+  QMouseEvent press(QEvent::MouseButtonPress, QPointF(on_label), global,
+                    Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+  QApplication::sendEvent(view.viewport(), &press);
+  QCoreApplication::processEvents();
+
+  EXPECT_EQ(map.scene()->mouseGrabberItem(), nullptr)
+      << "the hover label grabbed the press: the pan gesture never starts (camp#225)";
+
+  QMouseEvent release(QEvent::MouseButtonRelease, QPointF(on_label), global,
                       Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
   QApplication::sendEvent(view.viewport(), &release);
   QCoreApplication::processEvents();

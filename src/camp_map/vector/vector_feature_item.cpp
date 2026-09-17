@@ -415,6 +415,18 @@ QGraphicsSimpleTextItem* VectorFeatureItem::labelItem()
   // GeoGraphicsItem is in the camp executable and this item is in camp_map,
   // which must not depend on it.
   label_->setFlag(QGraphicsItem::ItemIgnoresTransformations);
+  // [camp#22 / ADR-0016 D5] The label answers NO mouse button either. The
+  // guarantee the constructor sets on this item — every press over a feature
+  // falls through to QGraphicsView, so a pan started on a feature pans (camp#225)
+  // and ProjectView's add-* placement clicks are never swallowed — is only true
+  // by construction if it holds for the whole SUBTREE: QGraphicsItem accepts the
+  // left button by default, and a child is a hit-test candidate in its own right.
+  // For a line or polygon the label is placed AT the cursor on hover-enter and
+  // does not track it afterwards, with the whole item lifted to kHoveredZValue,
+  // so a small move down-and-right inside the feature leaves the cursor squarely
+  // over the topmost text. A press there would be delivered to the label and the
+  // pan would never start.
+  label_->setAcceptedMouseButtons(Qt::NoButton);
   QFont font = label_->font();
   font.setPointSize(20);
   font.setBold(true);

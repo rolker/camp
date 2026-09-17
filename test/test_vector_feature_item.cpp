@@ -456,6 +456,41 @@ TEST(VectorFeatureItem, AcceptsNoMouseButtonSoThePressReachesTheView)
   EXPECT_EQ(item.acceptedMouseButtons(), Qt::NoButton);
 }
 
+// [camp#22 round-5 should-fix] THE HOVER LABEL ANSWERS NO MOUSE BUTTON EITHER.
+//
+// The no-button guarantee above is set on the ITEM, and QGraphicsItem accepts the
+// left button by default — so the child text item created on hover kept accepting
+// it. For a line or polygon the label is placed AT the cursor on hover-enter and
+// does not track it afterwards, and the hovered item is lifted to kHoveredZValue,
+// so a small move while still inside the feature leaves the cursor over the
+// topmost text: the press would be delivered to the label and the pan that
+// camp#225 fixed by construction would not start. The guarantee is only true by
+// construction if it holds for the whole subtree.
+TEST(VectorFeatureItem, TheHoverLabelAcceptsNoMouseButtonEither)
+{
+  const QGeoCoordinate a(43.00, -70.80);
+  ParsedGeometry line = lineThrough({a, QGeoCoordinate(43.00, -70.60)});
+  line.attributes["survey"] = QStringLiteral("line 7");
+  HoverProbe item(nullptr, line);
+  ASSERT_FALSE(item.isPoint());
+  ASSERT_EQ(item.acceptedMouseButtons(), Qt::NoButton);
+
+  QGraphicsSceneHoverEvent enter(QEvent::GraphicsSceneHoverEnter);
+  enter.setPos(QPointF(120.0, 35.0));
+  item.hoverEnterEvent(&enter);
+
+  QGraphicsSimpleTextItem* label = labelOf(item);
+  ASSERT_NE(label, nullptr);
+  ASSERT_FALSE(label->text().isEmpty()) << "the label must actually be showing to be in the way";
+  EXPECT_EQ(label->acceptedMouseButtons(), Qt::NoButton)
+      << "a press on the label would be swallowed instead of reaching the view, which is "
+         "the camp#225 pan-start-on-feature failure again";
+
+  // The label sits where the cursor entered, under the cursor by construction —
+  // which is what makes its hit-testing behaviour matter at all.
+  EXPECT_EQ(label->pos(), QPointF(120.0, 35.0));
+}
+
 // [camp#22] A point marker's HIT target is wider than the marker itself.
 //
 // The drawn marker is kDefaultPointRadius = 5 device pixels, and in the operator
