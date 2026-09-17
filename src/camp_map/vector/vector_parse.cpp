@@ -28,6 +28,36 @@ struct OGRCTDeleter
     }
 };
 
+// [camp#22 round-11 must-fix] The same RAII for the other two OGR native handles
+// this file owns. Both used to be freed by a call placed after the work, so the
+// one path this parser explicitly handles — the worker THROWING std::bad_alloc,
+// which VectorLayer::loadFinished() reports as a failed load — leaked them.
+// `points.push_back()` inside the vertex loop and `readAttributes()` /
+// `appendGeometry()` inside the feature loop are each an allocation on a file
+// sized to exhaust the heap, which is the file the geometry cap exists for. The
+// #152 guarantee this inherits is stated as holding on EVERY return path;
+// unwinding is a return path.
+struct OGRPointIteratorDeleter
+{
+    void operator()(OGRPointIterator *pi) const
+    {
+        if(pi)
+            OGRPointIterator::destroy(pi);
+    }
+};
+
+struct OGRFeatureDeleter
+{
+    void operator()(OGRFeature *feature) const
+    {
+        if(feature)
+            OGRFeature::DestroyFeature(feature);
+    }
+};
+
+using OGRPointIteratorPtr = std::unique_ptr<OGRPointIterator, OGRPointIteratorDeleter>;
+using OGRFeaturePtr = std::unique_ptr<OGRFeature, OGRFeatureDeleter>;
+
 // Convert one OGR (x, y) pair to a WGS84 QGeoCoordinate.
 //
 // [camp#22] The axis convention is the one the Point path has always used, now
@@ -97,6 +127,10 @@ struct ParseBudget
 // including the interior-ring loop where the original code reassigned `pi` per
 // ring and so leaked all but (at most) one.
 //
+// [camp#22 round-11 must-fix] "Always" now includes the path that UNWINDS: the
+// handle is held in an OGRPointIteratorPtr rather than destroyed by a statement
+// after the loop, so a std::bad_alloc out of points.push_back() frees it too.
+//
 // [camp#22] The budget is polled INSIDE the vertex loop. Polling it per geometry
 // and per collection part bounds abort latency by the number of parts, which says
 // nothing about a single LineString or ring carrying millions of vertices — the
@@ -136,7 +170,11 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
     // drop the holes of a polygon that is otherwise drawn in full.
     if(budget.aborted && budget.aborted())
         return points;
-    OGRPointIterator *pi = ring->getPointIterator();
+    // Owned: the loop below allocates (points.push_back), so the destroy cannot be
+    // a statement after it — see OGRPointIteratorDeleter.
+    OGRPointIteratorPtr pi(ring->getPointIterator());
+    if(!pi)
+        return points;
     OGRPoint p;
     int since_poll = 0;
     while(pi->getNextPoint(&p))
@@ -154,7 +192,7 @@ std::vector<QGeoCoordinate> readRing(const OGRCurve *ring,
         else
             ++diagnostics.points_dropped;
     }
-    OGRPointIterator::destroy(pi);
+    // pi's deleter destroys the iterator here.
     return points;
 }
 
@@ -733,7 +771,11 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
         };
 
         layer->ResetReading();
-        OGRFeature *feature = layer->GetNextFeature();
+        // [camp#22 round-11 must-fix] OWNED, not destroyed by the statement after
+        // appendGeometry(): readAttributes() and appendGeometry() both allocate,
+        // and a throw out of either skipped that statement and leaked the feature.
+        // Reset at the advance below, which frees the previous one.
+        OGRFeaturePtr feature(layer->GetNextFeature());
         while(feature)
         {
             const size_t before = parsed.geometries.size();
@@ -747,9 +789,8 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 budget.remaining = emitted < cap ? cap - emitted : 0;
             }
             budget.aborted = options.aborted;
-            appendGeometry(feature->GetGeometryRef(), readAttributes(feature),
+            appendGeometry(feature->GetGeometryRef(), readAttributes(feature.get()),
                            unprojectTransformation.get(), parsed.geometries, diag, budget);
-            OGRFeature::DestroyFeature(feature);
             emitted += parsed.geometries.size() - before;
             // [camp#22 round-4 must-fix] ABORT IS CHECKED BEFORE THE CAP, and the
             // order is load-bearing.
@@ -839,7 +880,8 @@ std::vector<ParsedLayer> parseVectorLayers(GDALDataset *dataset,
                 result.push_back(std::move(parsed));
                 return result;
             }
-            feature = layer->GetNextFeature();
+            // Frees the feature just parsed, then takes the next.
+            feature.reset(layer->GetNextFeature());
         }
 
         reportLayerDiagnostics();
