@@ -621,6 +621,152 @@ TEST(VectorLayerPersistence, WithoutVectorLayerFileKeepsUnrelatedEntries)
       << "an unrelated path must not disturb the list";
 }
 
+// [camp#22 round-11 should-fix] A REOPENED LAYER IS DRAWN WHERE THE ORDER SAYS,
+// not on top.
+//
+// `withVectorLayerFilePromoted()` gives a once-unavailable file its slot back in
+// the order of record, but the layer itself is constructed like any other and
+// camp::map::Map parents a new item at row 0 — the top of the Layers tab. So the
+// order persisted as `[missing, B]` while the screen showed the reopened layer
+// above B, and the next launch — which opens the order front to back, each new
+// layer landing on the last — will show B above it. The z-order the operator sees
+// has to be the one the file replays.
+//
+// A Map row is the reverse of the order of record (row 0 is drawn last, on top),
+// which is why `[missing, B]` wants `missing` at the LARGER row.
+TEST(VectorLayerPersistence, ReopenedLayerTakesItsRestoredRow)
+{
+  const QStringList order{"/data/missing.shp", "/data/b.shp"};
+
+  // B was the only openable entry at startup, so it is alone at row 0. The
+  // reopened layer has just been constructed and is sitting on top of it.
+  const std::vector<camp::vector::LoadedVectorLayerRow> loaded{
+    {0, "/data/missing.shp"}, {1, "/data/b.shp"}};
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(order, "/data/missing.shp", loaded), 2)
+      << "directly below B, which is the entry that follows it in the order; "
+         "Map::setMapItemParent() makes its own adjustment for the removal from row 0";
+
+  // The restore loop itself must be a no-op: it opens the order front to back, so
+  // each new layer is the last loaded entry and already belongs on top.
+  const std::vector<camp::vector::LoadedVectorLayerRow> first{{0, "/data/missing.shp"}};
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(order, "/data/missing.shp", first), -1)
+      << "nothing else of the order is loaded, so there is nothing to agree with";
+  const std::vector<camp::vector::LoadedVectorLayerRow> second{
+    {0, "/data/b.shp"}, {1, "/data/missing.shp"}};
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(order, "/data/b.shp", second), 1)
+      << "B is the last loaded entry of the order, so it goes above its predecessor "
+         "- the row it already holds, making the restore loop a no-op";
+
+  // A file opened from the menu that is not in the order of record keeps the
+  // default placement: on top, where the operator who just opened it is looking.
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(order, "/data/new.shp", loaded), -1);
+
+  // A loaded layer that is NOT in the order is not an anchor either — it has no
+  // slot to be relative to.
+  const QStringList lone{"/data/missing.shp"};
+  const std::vector<camp::vector::LoadedVectorLayerRow> strangers{
+    {0, "/data/missing.shp"}, {1, "/data/adhoc.shp"}};
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(lone, "/data/missing.shp", strangers), -1);
+}
+
+// The middle entry of a three-deep order: it must land between its neighbours,
+// which is neither the top nor the bottom.
+TEST(VectorLayerPersistence, ReopenedMiddleLayerLandsBetweenItsNeighbours)
+{
+  const QStringList order{"/data/a.shp", "/data/missing.shp", "/data/c.shp"};
+  // A and C restored (C on top, row 0; A at row 1); the reopened middle entry has
+  // just been constructed above both.
+  const std::vector<camp::vector::LoadedVectorLayerRow> loaded{
+    {0, "/data/missing.shp"}, {1, "/data/c.shp"}, {2, "/data/a.shp"}};
+  EXPECT_EQ(camp::vector::vectorLayerRestoredRow(order, "/data/missing.shp", loaded), 2)
+      << "directly below C and above A";
+}
+
+// The same rule driven against a REAL camp::map::Map, because the arithmetic has
+// one subtlety a table-driven test cannot reach: the row it returns is in CURRENT
+// coordinates (the layer is already in the model, at row 0), and
+// Map::setMapItemParent() subtracts one for the removal it performs first. Getting
+// that wrong is a silent off-by-one that leaves the layer exactly where it was.
+//
+// The assertion is the one the operator sees: reading the Layers tab top to bottom
+// is reading the order of record BACKWARDS (row 0 is drawn last), so a restored
+// order of [missing, B] must show B above the reopened layer — which is what the
+// next launch will replay.
+TEST(VectorLayerPersistence, ReopenedLayerIsMovedToItsRowInTheModel)
+{
+  QSettings().clear();
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  auto writeFeature = [&dir](const QString& name) -> QString
+  {
+    const QString path = dir.filePath(name);
+    QFile file(path);
+    if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+      return QString();
+    file.write(R"({"type": "FeatureCollection", "features": [
+      {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-70.7, 43.1]},
+       "properties": {}}]})");
+    file.close();
+    return path;
+  };
+  const QString missing = writeFeature("missing.geojson");
+  const QString b = writeFeature("b.geojson");
+  ASSERT_FALSE(missing.isEmpty());
+  ASSERT_FALSE(b.isEmpty());
+
+  // The order of record, with `missing` unavailable at startup: only B was opened.
+  const QStringList order{missing, b};
+  camp::map::Map map;
+  std::vector<VectorLayer*> tracked;
+
+  // AutonomousVehicleProject::openVectorLayer(), reduced to the placement.
+  auto open = [&](const QString& filename)
+  {
+    auto* layer = new VectorLayer(map.topLevelLayers(), filename);
+    const QList<camp::map::MapItem*> siblings = map.topLevelLayers()->childMapItems();
+    const auto rowOf = [&siblings](camp::map::MapItem* item)
+    {
+      const int position = siblings.indexOf(item);
+      return position < 0 ? -1 : siblings.size() - 1 - position;
+    };
+    std::vector<camp::vector::LoadedVectorLayerRow> loaded;
+    for(auto* item : tracked)
+      loaded.push_back({rowOf(item), item->filename()});
+    loaded.push_back({rowOf(layer), filename});
+    const int row = camp::vector::vectorLayerRestoredRow(order, filename, loaded);
+    if(row >= 0)
+      map.setMapItemParent(layer, map.topLevelLayers(), row);
+    tracked.push_back(layer);
+    return layer;
+  };
+
+  VectorLayer* layer_b = open(b);
+  VectorLayer* layer_missing = open(missing);
+
+  // Read the tab top to bottom.
+  QStringList byRow;
+  const QList<camp::map::MapItem*> siblings = map.topLevelLayers()->childMapItems();
+  for(int i = siblings.size() - 1; i >= 0; --i)
+    if(auto* vector_layer = qobject_cast<VectorLayer*>(siblings.at(i)))
+      byRow << vector_layer->filename();   // a Map carries other top-level layers
+  // Compared as joined strings: gtest prints a QStringList mismatch as a wall of
+  // 2-byte objects, which no reader can act on.
+  EXPECT_EQ(byRow.join(" | ").toStdString(), QStringList({b, missing}).join(" | ").toStdString())
+      << "the reopened layer stayed on top: the screen would disagree with the order "
+         "the next launch replays";
+
+  // ...which is the order of record, reversed — the invariant that makes the
+  // session agree with the file.
+  QStringList replayed = byRow;
+  std::reverse(replayed.begin(), replayed.end());
+  EXPECT_EQ(replayed.join(" | ").toStdString(), order.join(" | ").toStdString());
+
+  EXPECT_EQ(layer_b->parentMapItem(), map.topLevelLayers());
+  EXPECT_EQ(layer_missing->parentMapItem(), map.topLevelLayers());
+  QCoreApplication::processEvents();
+}
+
 int main(int argc, char** argv)
 {
   qputenv("QT_QPA_PLATFORM", "offscreen");

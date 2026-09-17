@@ -500,6 +500,45 @@ void AutonomousVehicleProject::openVectorLayer(const QString &requested)
     // being silently dropped here — the operator asked for this file, so a file
     // that will not open should say so rather than vanish.
     auto* layer = new camp::vector::VectorLayer(layers, fname);
+    // [camp#22 round-11 should-fix] PUT IT AT ITS ROW, not wherever a new item
+    // lands. camp::map::Map parents a newly constructed item at row 0 — the top of
+    // the Layers tab — which is right during the restore loop (it walks the order
+    // bottom to top, so each new layer belongs on top of the last) and WRONG for a
+    // layer reopened later: the promotion above just gave that file its slot back
+    // in the order of record, and leaving the layer on top made the on-screen
+    // stacking disagree with the list that the next launch will replay.
+    //
+    // Applied to every file that is IN the order, not only to a promotion: during
+    // the restore it computes the row the layer already has (each new layer is the
+    // last loaded entry of the order, so the rule puts it above its predecessor),
+    // so there is no second code path to keep true. A file opened from the menu
+    // that is not in the order returns -1 and keeps the default — landing on top,
+    // which is where the operator who just opened it is looking.
+    //
+    // The rule itself is camp::vector::vectorLayerRestoredRow(), pure so it can be
+    // exercised: this class is not constructible in a test harness.
+    {
+        // A Map row is the REVERSE of the child order — row 0 is the child drawn
+        // last, i.e. the top of the Layers tab (camp::map::Map::index()). Computed
+        // from the sibling list rather than asked of the model because Map::index()
+        // is private to the model implementation; this is the same arithmetic it
+        // does, over the list that MapItem exposes.
+        const QList<camp::map::MapItem*> siblings = layers->childMapItems();
+        const auto rowOf = [&siblings](camp::map::MapItem* item)
+        {
+            const int position = siblings.indexOf(item);
+            return position < 0 ? -1 : siblings.size() - 1 - position;
+        };
+        std::vector<camp::vector::LoadedVectorLayerRow> loadedRows;
+        loadedRows.reserve(m_vectorLayers.size() + 1);
+        for(auto* tracked : m_vectorLayers)
+            loadedRows.push_back({rowOf(tracked), tracked->filename()});
+        loadedRows.push_back({rowOf(layer), fname});
+        const int row = camp::vector::vectorLayerRestoredRow(
+            m_restoredVectorLayerOrder, fname, loadedRows);
+        if(row >= 0)
+            m_map->setMapItemParent(layer, layers, row);
+    }
     // [camp#22 / camp#90] Removal — and ONLY removal — drops the file from the
     // persisted list. VectorLayer::removedFromMap comes from onRemovedFromMap(),
     // which a drag-reorder never reaches.

@@ -980,4 +980,51 @@ QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
   return files;
 }
 
+int vectorLayerRestoredRow(const QStringList& restoredOrder,
+                           const QString& canonicalFile,
+                           const std::vector<LoadedVectorLayerRow>& loaded)
+{
+  const int self = restoredOrder.indexOf(canonicalFile);
+  if(self < 0)
+    return -1;   // not an entry of the order of record: nothing to agree with.
+
+  // The loaded entry that FOLLOWS this one most closely in the order (so it must
+  // end up directly above, at a smaller row), and the one that PRECEDES it most
+  // closely (directly below, at a larger row).
+  int successor_index = -1;
+  int successor_row = -1;
+  int predecessor_index = -1;
+  int predecessor_row = -1;
+  for(const LoadedVectorLayerRow& entry : loaded)
+  {
+    if(entry.row < 0 || entry.file == canonicalFile)
+      continue;
+    const int index = restoredOrder.indexOf(entry.file);
+    if(index < 0)
+      continue;   // opened this session, outside the order: not an anchor.
+    if(index > self && (successor_index < 0 || index < successor_index))
+    {
+      successor_index = index;
+      successor_row = entry.row;
+    }
+    if(index < self && (predecessor_index < 0 || index > predecessor_index))
+    {
+      predecessor_index = index;
+      predecessor_row = entry.row;
+    }
+  }
+
+  // Directly BELOW the successor. The rows come from the live model with this
+  // layer already in it, so this is a row in current coordinates — which is what
+  // Map::setMapItemParent() takes, and it makes its own adjustment for removing
+  // the layer from its present row first.
+  if(successor_index >= 0)
+    return successor_row + 1;
+  // No loaded entry follows it, so it belongs on top of the ones that precede it:
+  // take the nearest predecessor's row and push that layer down.
+  if(predecessor_index >= 0)
+    return predecessor_row;
+  return -1;
+}
+
 }  // namespace camp::vector

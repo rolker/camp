@@ -454,6 +454,46 @@ QStringList rebuildPersistedVectorLayerFiles(const QStringList& restoredOrder,
                                              const QStringList& unavailable,
                                              const QStringList& loadedFiles);
 
+/// [camp#22 round-11 should-fix] One loaded vector layer's position in the Layers
+/// tab: its model ROW and the file it shows.
+struct LoadedVectorLayerRow
+{
+  int row = -1;
+  QString file;
+};
+
+/// The Layers-tab row at which the layer for @p canonicalFile belongs, given the
+/// order of record @p restoredOrder and where every currently loaded vector layer
+/// (@p loaded, INCLUDING the one being placed, at the row it holds right now)
+/// sits. -1 means "leave it where it is": the file is not in the order of record,
+/// or no other entry of that order is loaded to anchor it against.
+///
+/// WHY: a layer reopened after being unavailable at startup gets its slot back in
+/// the ORDER — `withVectorLayerFilePromoted()` rewrites the entry in place — but
+/// the layer itself is constructed like any other, and `camp::map::Map` puts a
+/// newly parented item at row 0 (the top of the list, drawn last). So a restored
+/// order of `[missing, B]` persisted as `[missing, B]` and DREW with the reopened
+/// layer on top, which is where the next launch will NOT put it: the restore loop
+/// opens the order front to back and each new layer lands on top of the previous
+/// one, so `[missing, B]` replays with B on top. The operator's z-order therefore
+/// silently disagreed with the file that will be replayed, for the rest of the
+/// session. This computes the row that makes the two agree.
+///
+/// THE MAPPING, since it is not the identity: a Map row is the reverse of the
+/// child order (row 0 is drawn last, i.e. on top — `Map::index()`), while the
+/// order of record runs bottom to top. So a LATER entry of `restoredOrder` sits at
+/// a SMALLER row. The layer is placed directly below the loaded entry that follows
+/// it in the order, or — when it is the last loaded entry of the order — directly
+/// above the one that precedes it.
+///
+/// Rows are read from the live model rather than derived, so layers that are not
+/// vector layers (charts, AIS, the collision overlay) are never disturbed and
+/// never have to be enumerated: the result is always expressed relative to a
+/// sibling that is already where it belongs.
+int vectorLayerRestoredRow(const QStringList& restoredOrder,
+                           const QString& canonicalFile,
+                           const std::vector<LoadedVectorLayerRow>& loaded);
+
 }  // namespace camp::vector
 
 #endif  // CAMP_VECTOR_LAYER_H
