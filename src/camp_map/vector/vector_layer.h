@@ -73,12 +73,21 @@ public:
   /// therefore carried into the parse (`ParseOptions::max_geometries`), which
   /// STOPS at it: the rest of the file is never read.
   ///
-  /// What is shown is the first `kMaxFeatureItems` features, and the Layers-tab
-  /// status and the log say the cap was hit — a visibly partial layer rather than a
-  /// hung or dead application. How many features were left unread is deliberately
-  /// not reported: finding out means reading the file the cap exists to stop
-  /// reading. The number is a responsiveness-and-memory budget, not a data limit:
-  /// 50 000 items build in well under a second and the scene index handles them.
+  /// What is shown is the first `kMaxFeatureItems` DRAWN ITEMS — one per emitted
+  /// geometry part, which is what the cap is spent on, so a multi-part feature (a
+  /// KML placemark, a multipolygon coastline) accounts for several. The Layers-tab
+  /// status and the log say the cap was hit, in the same units, and a visibly
+  /// partial layer is the point: better than a hung or dead application.
+  ///
+  /// [camp#22 round-5 nit] Items, not FEATURES: an OGR feature count is not a
+  /// geometry count (`ParseDiagnostics` says so in terms), and the status line,
+  /// the log and this paragraph used to promise a feature count the file does not
+  /// have. The constant's own name is the accurate one.
+  ///
+  /// How much was left unread is deliberately not reported: finding out means
+  /// reading the file the cap exists to stop reading. The number is a
+  /// responsiveness-and-memory budget, not a data limit: 50 000 items build in
+  /// well under a second and the scene index handles them.
   static constexpr int kMaxFeatureItems = 50000;
 
   /// @param feature_cap  test seam; see kMaxFeatureItems, which is the value the

@@ -457,7 +457,7 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
   EXPECT_EQ(layer->featureCap(), 2);
   EXPECT_EQ(layer->featureCount(), 2) << "the cap must bound the items actually built";
   // Silence is the failure mode that matters: a layer showing 2 of 5 features and
-  // saying "(2 features)" is indistinguishable from a file that holds 2.
+  // saying "(2 items)" is indistinguishable from a file that holds 2.
   EXPECT_TRUE(layer->status().contains("cap"))
       << "status must report that the cap was hit: " << layer->status().toStdString();
   // ...and it must say that the rest of the file went UNREAD, which is the whole
@@ -473,7 +473,7 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
   ASSERT_TRUE(waitForLoad(uncapped));
   EXPECT_EQ(uncapped->featureCap(), camp::vector::VectorLayer::kMaxFeatureItems);
   EXPECT_EQ(uncapped->featureCount(), 5);
-  EXPECT_EQ(uncapped->status(), QStringLiteral("(5 features)"));
+  EXPECT_EQ(uncapped->status(), QStringLiteral("(5 items)"));
   delete uncapped;
 }
 
@@ -481,7 +481,7 @@ TEST(VectorLayerTeardown, FeatureCapBoundsGuiThreadWorkAndIsReported)
 // unplaceable" must still say the rest of the file was not read.
 //
 // That combination is exactly a .prj-less national shapefile, and the status used
-// to read "(no placeable features; N skipped)" — a verdict on the whole file when
+// to read "(no placeable items; N skipped)" — a verdict on the whole file when
 // only its first N features had been read. The log line said it; the Layers tab,
 // which is the status the operator actually sees, did not.
 TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
@@ -497,7 +497,7 @@ TEST(VectorLayerTeardown, CappedButEmptyLayerStillReportsTheUnreadRemainder)
 
   EXPECT_FALSE(layer->loaded()) << "no feature of this file can be placed";
   EXPECT_EQ(layer->featureCount(), 0);
-  EXPECT_TRUE(layer->status().contains("no placeable features"))
+  EXPECT_TRUE(layer->status().contains("no placeable items"))
       << layer->status().toStdString();
   EXPECT_TRUE(layer->status().contains("not read"))
       << "a capped-but-empty layer must still say the rest of the file was not read: "

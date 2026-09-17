@@ -238,8 +238,8 @@ void VectorLayer::loadFinished()
                << "(a shapefile missing its .prj sidecar is the usual cause)";
   if(capped)
     qWarning() << "camp::vector::VectorLayer:" << filename_ << "- stopped at the"
-               << feature_cap_ << "feature cap; the REST OF THE FILE WAS NOT READ, so"
-               << "what is shown is the first" << feature_cap_ << "features and no more."
+               << feature_cap_ << "item cap; the REST OF THE FILE WAS NOT READ, so"
+               << "what is shown is the first" << feature_cap_ << "drawn items and no more."
                << "The cap bounds both the items built on the GUI thread and the memory"
                << "the parse itself takes.";
   if(result.diagnostics.polygons_without_exterior_ring > 0)
@@ -261,27 +261,33 @@ void VectorLayer::loadFinished()
     //
     // [camp#22 round-4 should-fix] The CAP is said on this path too. "The cap was
     // hit and every capped geometry was unplaceable" is exactly what a .prj-less
-    // national shapefile does, and reporting it as "(no placeable features; 50000
+    // national shapefile does, and reporting it as "(no placeable items; 50000
     // skipped)" alone reads as a verdict on the whole file when only its first
-    // 50 000 features were ever read. The log line said so; the Layers tab — the
+    // 50 000 items were ever read. The log line said so; the Layers tab — the
     // only status the operator actually looks at — did not.
     const QString capped_note =
-        capped ? QString("; stopped at the %1-feature cap, rest of file not read")
+        capped ? QString("; stopped at the %1-item cap, rest of file not read")
                      .arg(feature_cap_)
                : QString();
     if(result.diagnostics.layers_failed > 0)
       setStatus("(load failed: no usable coordinate system" + capped_note + ")");
     else if(skipped > 0)
-      setStatus(QString("(no placeable features; %1 skipped%2)").arg(skipped).arg(capped_note));
+      setStatus(QString("(no placeable items; %1 skipped%2)").arg(skipped).arg(capped_note));
     else
       setStatus("(no features" + capped_note + ")");
     return;
   }
 
   QStringList notes;
-  notes << QString("%1 features").arg(features_.size());
+  // [camp#22 round-5 nit] "items", not "features": the cap is spent per emitted
+  // GEOMETRY PART and one item is built per part, so a multi-part feature (a KML
+  // placemark, a multipolygon coastline) yields several. Reporting these as
+  // features told the operator a count their file does not have. The constant's
+  // own name, kMaxFeatureItems, was the accurate one all along; the header, this
+  // status line and the log above now all say the same thing.
+  notes << QString("%1 items").arg(features_.size());
   if(capped)
-    notes << QString("stopped at the %1-feature cap; rest of file not read").arg(feature_cap_);
+    notes << QString("stopped at the %1-item cap; rest of file not read").arg(feature_cap_);
   if(skipped > 0)
     notes << QString("%1 unplaceable").arg(skipped);
   if(result.diagnostics.layers_failed > 0)

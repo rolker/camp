@@ -268,10 +268,14 @@ had to be answered rather than assumed.
 
     Whenever the cap, an unplaceable feature, a ring-less polygon, or a failed
     layer applies, the Layers-tab status and the log say so: a layer showing 2 of
-    5 features and reporting "(2 features)" is indistinguishable from a file that
-    holds 2. The one thing not reported is *how many* features were left unread
-    when the cap hit — counting them means reading the file the cap exists to
-    stop reading, and an OGR feature count is not a geometry count anyway.
+    5 items and reporting "(2 items)" is indistinguishable from a file that holds
+    2. The status, the log and `kMaxFeatureItems` all count **drawn items** — one
+    per emitted geometry part — because that is what the cap is spent on and what
+    is built; an OGR feature count is not a geometry count, so a multi-part
+    feature accounts for several items and reporting them as features would state
+    a number the file does not have. The one thing not reported is *how much* was
+    left unread when the cap hit — counting it means reading the file the cap
+    exists to stop reading.
 
     **The cap flag means input was ACTUALLY left unread.**
     `ParseDiagnostics::geometry_cap_reached` — the flag the Layers-tab status
