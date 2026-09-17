@@ -1756,3 +1756,52 @@ GL-dependent one).
 
 ### Next step
 review-code (re-review the fixes) via `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 22 --skill review-code`
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-09-17 08:45 -04:00
+**By**: Claude Code Agent (Claude Opus)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-22 at `7f486f0`
+**Mode**: pre-push
+**Depth**: Deep (reason: cross-layer camp <-> camp_map, GDAL input handling, worker-thread lifecycle) — horizon scoped to the 9 commits since `3cedc7b`
+**Must-fix**: 1 | **Suggestions**: 8
+**Round**: 8 | **Ship**: recommended — the one must-fix is a precise, mechanical correction (a diagnostic counter the new geometry skip has to increment, folded into the Layers-tab status) with no design question open; the count fell from 2 to 1 and every one of the seven round-5 findings is verified closed against the code rather than the claim.
+
+Specialists: Static Analysis (cppcheck 2.13 clean on touched lines — only the known Qt
+`slots` unknownMacro noise and a pre-existing style note on an untouched line; repo
+pre-commit clean over `3cedc7b..HEAD`), Governance, Plan Drift, Claude Adversarial
+Lens A + Lens B. Copilot and local review off (default). Build and tests re-run here:
+`./ui_ws/build.sh camp` clean, `./ui_ws/test.sh camp` → **410 tests, 0 errors,
+0 failures, 1 skipped**, matching the Implementation entry's claim. All 9 commits carry
+the agent identity; plan rev 16 is in sync; working tree clean.
+
+All 7 findings of the `## Integrated Review` of 2026-09-17 08:17 -04:00 are CLOSED.
+The two the implementer flagged for judgement were both checked directly and both
+calls are UPHELD: (a) the cap nit as wording is right — `max_geometries` is spent per
+emitted geometry PART and one `VectorFeatureItem` is built per part, so counting
+source features would unbind the very quantities the cap exists to bound; (b) the
+view-level `APressOverTheHoverLabelFallsThroughToTheView` really cannot fail without
+the fix, verified by MUTATION (the `setAcceptedMouseButtons` line commented out and
+rebuilt): the item-level `TheHoverLabelAcceptsNoMouseButtonEither` fails
+(`acceptedMouseButtons() == 31`) while the view-level test still passes. Keeping both
+with that scope written into the comment is the right call; the end-to-end test guards
+against a future label that does grab the press.
+
+The must-fix is a CONSEQUENCE of fix 3, not a defect in it, and was raised
+independently by both adversarial lenses and the lead.
+
+### Findings
+- [ ] (must-fix) The all-dropped-exterior skip removed the only OPERATOR-VISIBLE report of that class: the geometry no longer reaches `VectorLayer`, so `skipped` stays 0 and the Layers tab prints the bare `(no features)` — indistinguishable from an empty file — for a file whose features exist but fall outside their projection's inverse domain; a genuinely empty exterior ring is now counted by nothing at all (`points_dropped` has no vertex to count, `polygons_without_exterior_ring` sees a ring). Give the two skips their own diagnostic that `loadFinished()` folds into `skipped`/the status — `src/camp_map/vector/vector_parse.cpp:223`, `:253`, `src/camp_map/vector/vector_layer.cpp:274-277`
+- [ ] (suggestion) The cap path sets `diag.aborted` and then calls `reportLayerDiagnostics()` two lines later, which the lambda's own comment says the abort path deliberately must not do — closing a layer can now log per-layer "what was left out" warnings for a result the caller discards whole; guard with `if(!diag.aborted)` — `src/camp_map/vector/vector_parse.cpp:650-652`, `:534-565`
+- [ ] (suggestion) The new re-check makes `aborted` and `geometry_cap_reached` both true on a TRIMMED result, the one combination `ParseDiagnostics` says cannot happen ("a parse that hits BOTH … reports `aborted`, not this … also not trimmed"); clear the cap flag when the re-check fires (or correct the header) and assert `EXPECT_FALSE(geometry_cap_reached)` in the sweep test — `src/camp_map/vector/vector_parse.cpp:637-652`, `src/camp_map/vector/vector_parse.h:116-120`, `test/test_vector_parse_attributes.cpp` (`AnAbortAtAnyPollIsReportedAsAborted`)
+- [ ] (suggestion) Residual "feature" spellings of the quantity commit 76c2f4c renamed to items, in the same function and the same ADR the commit claims now agree: the skipped-count log line, the empty-layer status, and two ADR sentences — `src/camp_map/vector/vector_layer.cpp:237`, `:277`, `docs/decisions/0016-read-only-vector-file-layer.md:375`, `:479`
+- [ ] (suggestion) `AllDroppedExteriorIsNeitherEmittedNorCharged`'s hole is INSIDE the orthographic domain, so its vertices add nothing to `points_dropped` whether or not they are read — the "the hole is never read" property the early return exists for is untested; put the hole out of domain and assert 11 vs 7 — `test/test_vector_parse_attributes.cpp:1442-1443`
+- [ ] (suggestion) The promotion gate `purged.size() != m_unavailableVectorLayerFiles.size()` is sound only because `withoutVectorLayerFile()` does not de-duplicate, unlike both its siblings; compare contents or state the dependency at the call site — `src/camp/autonomousvehicleproject.cpp:458`
+- [ ] (suggestion) `withVectorLayerFilePromoted()` stats EVERY non-exact-matching entry of the whole restored order on the GUI thread, at the moment a share has just come back and the others are most likely dead mounts; the comment cites `withoutVectorLayerFile()`'s smaller per-unavailable-entry cost. Short-circuit after the single rewrite, or correct the comment — `src/camp/autonomousvehicleproject.cpp:455-460`, `src/camp_map/vector/vector_layer.cpp:608-621`
+- [ ] (suggestion) With the skip, a file whose geometries ALL lose their exterior never reaches the cap and is read to its last feature (memory stays bounded, wall time does not) — the cap's "the rest of the file is never read" no longer holds for that file. Bound it or record the deliberate change — `src/camp_map/vector/vector_parse.cpp:223`, `:253`, `src/camp_map/vector/vector_layer.h:73-90`
+- [ ] (suggestion) Doc-impact of fix 6: ADR-0016 D5 and `.agents/README.md` still state the no-mouse-button guarantee as a property of the ITEM ("Do not give the item a mouse handler without re-reading ADR-0016 D5"), which is exactly the reading that let the child label keep the default; one clause each to say it holds for the whole subtree — `docs/decisions/0016-read-only-vector-file-layer.md:155-158`, `.agents/README.md:119-124`
+
+### Next step
+address-findings (1 must-fix + 8 suggestions) via `.agent/scripts/dispatch_subagent.sh --mode in-process --issue 22 --skill address-findings`
