@@ -208,15 +208,21 @@ void VectorLayer::loadFinished()
   // temporary it would dangle the moment the expression ended — and the local also
   // keeps the store alive across the clear below, for the rest of this slot.
   //
-  // Re-entrancy: whether setFuture() with an empty future can deliver finished()
-  // again is NOT settled here — Qt 5.15's QFutureWatcher drops most callouts on a
-  // canceled future, and the source that would decide it (qfuturewatcher.cpp) is
-  // not part of this build's installed headers, so the claim is not one to write
-  // down as fact. What matters is what this slot must be true of either way: it
-  // runs exactly once per layer and must never dereference an empty result store.
-  // The flag is what guarantees that, and it stays whichever way the Qt question
-  // resolves. An empty future also leaves the destructor's waitForFinished() a
-  // no-op, which is correct — by the time we are here the worker has finished.
+  // Re-entrancy, MEASURED rather than reasoned about (the round-9 comment here
+  // asserted it from a reading of Qt's sources, which the round-10 review could
+  // not confirm and this build's installed headers do not settle): with the
+  // run-once flag temporarily removed, clearing the watcher's future at the end of
+  // this slot DELIVERED finished() AGAIN, immediately and repeatedly, on Qt 5.15 —
+  // and the re-entered slot, finding the result store it had just released, set
+  // the layer's status to "(load failed)" over a load that had just succeeded.
+  //
+  // So the flag is load-bearing, not belt-and-braces: this slot runs exactly once
+  // per layer and must never dereference — or report on — an empty result store.
+  // ASecondFinishedDeliveryChangesNothingAndTeardownStillJoins is the regression
+  // guard, and it asserts the status VALUE rather than that it did not change,
+  // because the corruption lands before a before/after comparison could see it.
+  // An empty future also leaves the destructor's waitForFinished() a no-op, which
+  // is correct — by the time we are here the worker has finished.
   if(load_reported_)
     return;
   load_reported_ = true;

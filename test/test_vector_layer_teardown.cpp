@@ -151,6 +151,41 @@ QString writeUnplaceableGeoJson(const QTemporaryDir& dir)
   return path;
 }
 
+// [camp#22 round-10 suggestion] The LINE and POLYGON halves of the unplaceable
+// drop: projected metres in a file that declares no CRS, as
+// writeUnplaceableGeoJson() does for points. The polygon carries an INTERIOR RING,
+// because the parser tests placeability before walking the holes and that order is
+// part of what the drop is for — a polygon that cannot be drawn at all is not
+// worth reading the holes of.
+QString writeUnplaceableLineAndPolygon(const QTemporaryDir& dir)
+{
+  const QString path = dir.filePath("unplaceable_shapes.geojson");
+  QFile file(path);
+  if(!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    return QString();
+  file.write(R"({
+    "type": "FeatureCollection",
+    "features": [
+      {"type": "Feature",
+       "geometry": {"type": "LineString",
+                    "coordinates": [[350000.0, 4800000.0], [350100.0, 4800100.0],
+                                    [350200.0, 4800200.0]]},
+       "properties": {"name": "a line of eastings"}},
+      {"type": "Feature",
+       "geometry": {"type": "Polygon",
+                    "coordinates": [[[350000.0, 4800000.0], [351000.0, 4800000.0],
+                                     [351000.0, 4801000.0], [350000.0, 4801000.0],
+                                     [350000.0, 4800000.0]],
+                                    [[350200.0, 4800200.0], [350800.0, 4800200.0],
+                                     [350800.0, 4800800.0], [350200.0, 4800800.0],
+                                     [350200.0, 4800200.0]]]},
+       "properties": {"name": "a polygon with a hole"}}
+    ]
+  })");
+  file.close();
+  return path;
+}
+
 // [camp#22 round-9 suggestion] A mixed file where one numeric field is carried
 // ONLY by the line: `depth_m` is on the points, `length_m` on the line alone.
 // Size by can do nothing with `length_m` — applyStyle() folds the size range over
@@ -767,6 +802,103 @@ TEST(VectorLayerTeardown, CapIsNotSpentOnGeometryThatCannotBePlaced)
   EXPECT_FALSE(uncapped->status().contains("not read")) << uncapped->status().toStdString();
   EXPECT_TRUE(uncapped->status().contains("4")) << uncapped->status().toStdString();
   delete uncapped;
+}
+
+// [camp#22 round-10 suggestion] THE LINE AND POLYGON BRANCHES OF THE SAME DROP.
+//
+// CapIsNotSpentOnGeometryThatCannotBePlaced above exercises the POINT branch only,
+// and the three geometry branches reach the placeability test at three different
+// places in the parser — the polygon's deliberately BEFORE its interior-ring loop,
+// so a polygon that cannot be drawn at all is not walked hole by hole. A file of
+// projected metres with no declared CRS is the case for all three at once.
+TEST(VectorLayerTeardown, LinesAndPolygonsThatCannotBePlacedAreDroppedAndCounted)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeUnplaceableLineAndPolygon(dir);   // 1 line + 1 holed polygon
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForStatus(layer)) << "load did not settle";
+
+  EXPECT_FALSE(layer->loaded()) << "neither shape of this file can be placed";
+  EXPECT_EQ(layer->featureCount(), 0);
+  EXPECT_NE(layer->status(), QStringLiteral("(no items)"))
+      << "a file whose shapes were all dropped must not be reported as an empty file";
+  EXPECT_TRUE(layer->status().contains("no placeable items"))
+      << layer->status().toStdString();
+  EXPECT_TRUE(layer->status().contains("2"))
+      << "both the line and the polygon must be counted: " << layer->status().toStdString();
+  delete layer;
+
+  // With a cap of ONE, both are still counted — the drop happens before the cap is
+  // charged, so an unplaceable shape cannot exhaust the budget a drawable one
+  // needs. (The point branch's half of this is CapIsNotSpentOnGeometryThatCannotBePlaced.)
+  auto* capped = new camp::vector::VectorLayer(map.topLevelLayers(), path, 1);
+  ASSERT_TRUE(waitForStatus(capped)) << "capped load did not settle";
+  EXPECT_EQ(capped->featureCount(), 0);
+  EXPECT_TRUE(capped->status().contains("2"))
+      << "a cap of one must not stop the count at one: " << capped->status().toStdString();
+  EXPECT_FALSE(capped->status().contains("not read"))
+      << "nothing was charged to the cap, so the file was read in full: "
+      << capped->status().toStdString();
+  delete capped;
+}
+
+// [camp#22 round-10 suggestion] THE ROUND-9 CONCURRENCY CHANGE, ASSERTED.
+//
+// loadFinished() now reads the result BY REFERENCE and releases the future's copy
+// at the end of the slot (setFuture() with an empty future), guarded by a
+// run-once flag. Releasing the store is what keeps the layer's memory bounded;
+// the flag is what keeps a second `finished()` delivery from reaching a slot whose
+// result store is now empty — which since round 10 would report a perfectly loaded
+// layer as "(load failed)", the loudest possible way for that guard to be missing.
+//
+// The second delivery is provoked the way Qt itself would deliver it: loadFinished
+// is a private SLOT, so the meta-object can invoke it by name without this test
+// reaching into the class.
+TEST(VectorLayerTeardown, ASecondFinishedDeliveryChangesNothingAndTeardownStillJoins)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+  const QString path = writeGeoJson(dir);
+  ASSERT_FALSE(path.isEmpty());
+
+  camp::map::Map map;
+  const int baseline = openDatasetCount();
+  auto* layer = new camp::vector::VectorLayer(map.topLevelLayers(), path);
+  ASSERT_TRUE(waitForLoad(layer)) << "load did not complete: " << layer->status().toStdString();
+
+  const int count = layer->featureCount();
+  const QString status = layer->status();
+  ASSERT_GT(count, 0);
+  // Assert what the status IS, not merely that it does not change: the release of
+  // the result store inside the slot can itself deliver finished() again, so an
+  // unguarded slot corrupts the status BEFORE a test could capture it, and a
+  // before/after comparison would then compare two corrupted values and pass.
+  ASSERT_TRUE(status.contains(QStringLiteral("items")))
+      << "a completed load reports its item count: " << status.toStdString();
+  ASSERT_FALSE(status.contains(QStringLiteral("load failed"))) << status.toStdString();
+
+  ASSERT_TRUE(QMetaObject::invokeMethod(layer, "loadFinished", Qt::DirectConnection))
+      << "loadFinished is the slot the watcher delivers to; if it cannot be invoked "
+         "by name this test is no longer testing what it says";
+  EXPECT_EQ(layer->featureCount(), count)
+      << "a second delivery must not build the items again";
+  EXPECT_EQ(layer->status(), status)
+      << "a second delivery must not report the released result store as a failed load";
+  EXPECT_FALSE(layer->status().contains(QStringLiteral("load failed")))
+      << layer->status().toStdString();
+
+  // Teardown after a COMPLETED load: the destructor joins a watcher whose future
+  // was cleared in the slot, which must be a no-op rather than a wait, and the
+  // worker's RAII must already have closed the dataset.
+  QElapsedTimer timer;
+  timer.start();
+  delete layer;
+  EXPECT_LT(timer.elapsed(), 2000) << "the join after a completed load must not block";
+  EXPECT_EQ(openDatasetCount(), baseline);
 }
 
 // [camp#22 round-8 must-fix] A GEOMETRY THE PARSE DROPPED IS STILL A SKIPPED ITEM
