@@ -62,8 +62,11 @@ Constraints from the repo's ADRs:
    b. `itemsIntersecting()` fills `alpha_texture`/`alpha_nodata` when the mode is on.
       Placeholder (coarse overview) items use the SAME sub-rect `u0..v1` for both
       textures because parent and child are the same W x H (ADR-0010 D3 invariant).
-   c. Texture lifetime: every `texture.reset()` site (destructor, prune, eviction,
-      reload — 8 sites found by `grep texture.reset`) also resets `alpha_texture`;
+   c. Texture lifetime: every `texture.reset()` site (six found by `grep texture.reset` in
+      `sonar_live_cache_layer.cpp`: lines 301, 303, 694, 1055, 1236, 1263 — destructor,
+      prune, eviction, reload; re-grep at implementation time) also resets
+      `alpha_texture`; changing `opacity_band_name_` marks every entry (fine AND overview)
+      dirty, like `setBandName()`;
       `entryBytes()` counts the alpha texture so the ADR-0010 budget stays honest.
    d. `setBandName()` currently marks only `tiles_` dirty; verify whether
       `overview_tiles_` textures go stale after a band switch (a possible existing bug).
@@ -72,12 +75,20 @@ Constraints from the repo's ADRs:
       "uncertainty"`, `OpacityRamp opacity_ramp_`, `bool opacity_ramp_manual_ = false`.
       Setters (`setOpacityMode`, `setOpacityRamp`, `resetOpacityRamp`) invalidate
       `cached_image_`, `writeSettings()`, `update()`.
-   f. **Default ramp**: when the mode is enabled and no persisted ramp exists, snapshot
-      the held uncertainty band's auto-range `[min, max]` as the initial pinned ramp
-      (`opaque = min`, `transparent = max`) and persist it, so it does not drift as
-      repeat passes lower the uncertainty (a live-tracking ramp would defeat "firms up").
-      If there is no uncertainty data yet, wait for the first tile. Final constants (or a
-      survey-standard rule) are an open question for the owner.
+   f. **Default ramp (revised after review-plan)**: the default is NEVER derived from the
+      live data. A snapshot or live-tracking auto-range would make the lowest uncertainty
+      present at enable time fully opaque and defeat "firms up" as repeat passes arrive.
+      The default `[opaque, transparent]` comes from one named constant pair (or a
+      `QSettings` default key) in `opacity_ramp.h`, whose values the owner chooses (open
+      question; no value is invented in this plan). Until a persisted ramp exists, enabling
+      the mode opens the "Opacity range..." dialog pre-filled with that default so the
+      operator sees and confirms it. Once confirmed it is persisted as manual.
+   g. **Colour band vs opacity band**: the mode colours by `band_name_` (the existing Band
+      picker) and takes opacity from `opacity_band_name_`. They must differ: the menu entry
+      is disabled (with a tooltip) when `band_name_ == opacity_band_name_`, and `readSettings()`
+      restoring that combination restores with the mode off. Auto-range folding
+      (`foldAutoRange`) continues to follow `band_name_` only, so the colour range stays the
+      depth range.
 5. **Persistence** — in `readSettings()/writeSettings()` under `settingsKey()`
    (`live:<ns>`, the layer's `layer_id`): `opacity_mode` (bool, default false),
    `opacity_band` (string, default `uncertainty`), `opacity_ramp_mode`
@@ -175,7 +186,7 @@ Constraints from the repo's ADRs:
 
 ## Open Questions
 
-- Default opacity ramp: snapshot of the uncertainty band's auto-range at enable time (as planned), a fixed survey-standard rule (which standard?), or a persisted app-wide default?
+- Default opacity ramp values: a fixed survey-standard rule (which standard?) or a persisted app-wide default? (A data-derived snapshot was rejected in review: it would defeat the firming-up behaviour.)
 - Missing uncertainty at cell level renders transparent and a tile with no uncertainty band renders as plain opaque depth: is that the wanted policy?
 - Which base should faint cells blend against for the demo (dark chart vs light)? Faint depth colour on a light basemap may wash out.
 - Is a fixed band name `"uncertainty"` acceptable until camp#104 band semantics land, or should the opacity band be user-pickable in the first slice?
