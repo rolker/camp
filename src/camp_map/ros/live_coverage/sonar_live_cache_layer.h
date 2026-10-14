@@ -370,7 +370,10 @@ private:
   // [camp#239] (Re)upload the opacity band of @p entry; null when the entry lacks it.
   QOpenGLTexture* alphaTextureFor(Entry& entry);
   void releaseAlphaTextures();   // free every alpha texture under the GL context
-  void markAllTexturesDirty();   // both value and opacity textures, fine AND overview
+  // Value textures of fine AND overview tiles; the opacity textures too unless
+  // @p include_alpha is false (a colour-band switch leaves the opacity band's data unchanged).
+  void markAllTexturesDirty(bool include_alpha = true);
+  bool evict_queued_ = false;   // a render-time budget check is already queued
 
   /// [camp#103] items() body with an optional scene-space clip: a non-null
   /// @p clip_scene keeps only the tiles/footprints whose Web-Mercator extent

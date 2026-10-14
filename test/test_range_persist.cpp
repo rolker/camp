@@ -617,6 +617,35 @@ TEST(RangePersist, LiveOpacityCorruptRampFallsBackToTheShippedStandard)
   EXPECT_FLOAT_EQ(layer->opacityRamp().multiple, 3.0f);
 }
 
+// Whatever is applied must be what comes back after a restart: a Manual ramp with
+// hi <= lo (a fresh Manual selection used to be [0, 0]) is normalised at the setter, and a
+// default Manual ramp is a valid seeded one.
+TEST(RangePersist, LiveOpacityManualRampAppliedIsManualRampRestored)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  const camp::raster::OpacityRamp fresh;
+  EXPECT_GT(fresh.hi, fresh.lo) << "default Manual bounds must already be valid";
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    camp::raster::OpacityRamp degenerate;
+    degenerate.kind = camp::raster::OpacityRamp::Kind::Manual;
+    degenerate.lo = 2.0f;
+    degenerate.hi = 2.0f;
+    layer->setOpacityRamp(degenerate);
+    EXPECT_GT(layer->opacityRamp().hi, layer->opacityRamp().lo);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Manual)
+        << "the applied Manual ramp must survive the restart, not revert to Standard";
+    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 2.0f);
+  }
+}
+
 // A garbled number, or a Manual ramp missing a bound, must not restore as [0, 0] (which
 // would hide every positive-uncertainty cell with no explanation): the whole ramp falls
 // back to the shipped standard.

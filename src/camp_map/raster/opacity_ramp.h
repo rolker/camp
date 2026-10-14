@@ -48,8 +48,10 @@ struct OpacityRamp
 
   // Manual: opaque at/below lo, transparent at/above hi (metres, same unit as the
   // uncertainty band).
-  float lo = 0.0f;
-  float hi = 0.0f;
+  // Seeded with the Order 1a figures at zero depth (a, multiple * a) so that switching to
+  // Manual starts from a sensible, valid (hi > lo) ramp rather than a blank [0, 0].
+  float lo = kDefaultStandard.a;
+  float hi = kDefaultTransparentMultiple * kDefaultStandard.a;
 };
 
 /// The standard's allowed uncertainty at @p depth (sign-agnostic: the live depth

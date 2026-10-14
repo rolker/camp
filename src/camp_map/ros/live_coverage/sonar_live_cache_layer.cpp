@@ -1551,7 +1551,7 @@ void SonarLiveCacheLayer::updateDisplay()
     // silently drawing opaque depth.
     if(opacity_mode_ && opacity_band_name_ == band_name_)
       status += " (opacity: pick a colour band other than the opacity band)";
-    else if(opacity_mode_ && !opacityActive())
+    else if(opacity_mode_ && !opacityActive() && !band_name_.empty())
       status += " (opacity: the standard ramp needs the depth band as colour band; "
                 "pick depth or use manual thresholds)";
     else if(opacity_mode_ && !opacityAvailable())
@@ -1561,13 +1561,14 @@ void SonarLiveCacheLayer::updateDisplay()
       // Mixed state: tiles lacking the band draw as plain opaque depth (ADR-0017 D5),
       // which would otherwise read as high confidence - say so.
       std::size_t missing = 0;
-      for(const auto& item : tiles_)
-        if(!item.second.tile.band(opacity_band_name_))
-          ++missing;
+      for(const auto* pool : {&tiles_, &overview_tiles_})
+        for(const auto& item : *pool)
+          if(!item.second.tile.band(opacity_band_name_))
+            ++missing;
       if(missing > 0)
         status += QString(" (opacity: %1 of %2 tiles lack uncertainty, drawn opaque)")
                     .arg(qulonglong(missing))
-                    .arg(qulonglong(tiles_.size()));
+                    .arg(qulonglong(tiles_.size() + overview_tiles_.size()));
     }
     setStatus(status);
   }
@@ -1648,17 +1649,17 @@ void SonarLiveCacheLayer::releaseAlphaTextures()
   renderer_.doneCurrent();
 }
 
-void SonarLiveCacheLayer::markAllTexturesDirty()
+void SonarLiveCacheLayer::markAllTexturesDirty(bool include_alpha)
 {
   for(auto& item : tiles_)
   {
     item.second.texture_dirty = true;
-    item.second.alpha_texture_dirty = true;
+    item.second.alpha_texture_dirty = item.second.alpha_texture_dirty || include_alpha;
   }
   for(auto& item : overview_tiles_)
   {
     item.second.texture_dirty = true;
-    item.second.alpha_texture_dirty = true;
+    item.second.alpha_texture_dirty = item.second.alpha_texture_dirty || include_alpha;
   }
 }
 
@@ -1666,9 +1667,11 @@ bool SonarLiveCacheLayer::opacityAvailable() const
 {
   if(opacity_band_name_ == band_name_)
     return false;
-  for(const auto& item : tiles_)
-    if(item.second.tile.band(opacity_band_name_))
-      return true;
+  // Overviews count too: after the fine tiles are evicted they are what is drawn.
+  for(const auto* pool : {&tiles_, &overview_tiles_})
+    for(const auto& item : *pool)
+      if(item.second.tile.band(opacity_band_name_))
+        return true;
   return false;
 }
 
@@ -1707,6 +1710,11 @@ bool SonarLiveCacheLayer::setOpacityMode(bool on)
 void SonarLiveCacheLayer::setOpacityRamp(const raster::OpacityRamp& ramp)
 {
   opacity_ramp_ = ramp;
+  // A Manual ramp must have hi > lo to survive a restart (readSettings rejects the rest);
+  // enforce the same rule at the source so what is applied is what is restored.
+  if(opacity_ramp_.kind == raster::OpacityRamp::Kind::Manual &&
+     !(opacity_ramp_.hi > opacity_ramp_.lo))
+    opacity_ramp_.hi = opacity_ramp_.lo + 0.01f;
   if(!opacityActive())
     releaseAlphaTextures();   // e.g. Standard ramp with a non-depth colour band
   cached_image_ = QImage();
@@ -1945,6 +1953,19 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bo
     draw, clip_bounds, range_model_.lo(), range_model_.hi(), size,
     opacityActive() ? &opacity_ramp_ : nullptr);
   renderer_.doneCurrent();
+  // [camp#239] Alpha textures are uploaded at render time, which no arrival-driven
+  // evictIfOverBudget() sees: with the stream idle the footprint could sit over the
+  // ADR-0010 budget indefinitely. Re-check once the event loop is back (never inside
+  // the paint that is still using the draw list).
+  if(opacityActive() && !evict_queued_ && vram_budget_bytes_ != 0 &&
+     accountedBytes() > vram_budget_bytes_)
+  {
+    evict_queued_ = true;
+    QMetaObject::invokeMethod(this, [this]() {
+      evict_queued_ = false;
+      evictIfOverBudget();
+    }, Qt::QueuedConnection);
+  }
   return image;
 }
 
@@ -2013,7 +2034,7 @@ void SonarLiveCacheLayer::setBandName(const std::string& name)
   band_name_ = name;
   // The value texture is per-band: mark every tile's texture for re-upload, reset
   // and re-fold the auto-range over the new band.
-  markAllTexturesDirty();   // [camp#239] fine AND overview (overview was missed before)
+  markAllTexturesDirty(/*include_alpha=*/false);   // [camp#239] fine AND overview (overview was missed before)
   if(!opacityActive())
     releaseAlphaTextures();
   resetAutoRange();

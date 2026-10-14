@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -364,4 +365,51 @@ TEST(SonarLiveEviction, OpacityStatusReportsTilesLackingTheUncertaintyBand)
     static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
   EXPECT_EQ(with_alpha - without_alpha, one_texture)
       << "exactly the one tile that has an uncertainty band uploads an alpha texture";
+}
+
+// [camp#239] The alpha texture is uploaded at RENDER time, which no tile-arrival eviction
+// sees; with the stream idle the footprint used to sit over the ADR-0010 budget
+// indefinitely. Rendering with the mode on must queue a budget re-check.
+TEST(SonarLiveEviction, AlphaUploadAtRenderTimeTriggersBudgetEviction)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+  const QString ns = "/opacity_budget_test";
+  const std::size_t two_bands = 2 * static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  const std::size_t one_tex = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  // Two tiles with both bands: CPU bands + value texture fit; the alpha textures do not.
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes",
+                       qulonglong(2 * (two_bands + one_tex) + one_tex / 2));
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  for(double lat : {43.0, 43.5})
+  {
+    const gggs::GridIndex grid = level.gridIndex(lat, -70.5);
+    SonarLiveTile tile(grid, kEdge, kEdge);
+    mi::SonarVisualizationTile msg = makeUniformDepth(grid, 300);
+    mi::VisualizationBand u = msg.bands.front();
+    u.name = "uncertainty";
+    msg.bands.push_back(u);
+    tile.applyPatch(msg);
+    const QString path = QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                                   .arg(static_cast<int>(grid.level()))
+                                                   .arg(grid.row())
+                                                   .arg(grid.column()));
+    ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+  }
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  ASSERT_EQ(layer->residentTileCount(), std::size_t(2));
+  ASSERT_TRUE(layer->setOpacityMode(true));
+  if(layer->renderImage(QSize(64, 64)).isNull())
+    GTEST_SKIP() << "no offscreen GL context";
+  QCoreApplication::processEvents();   // the queued budget re-check
+  EXPECT_LT(layer->residentTileCount(), std::size_t(2))
+      << "alpha uploads pushed the footprint over budget; eviction must have run";
 }
