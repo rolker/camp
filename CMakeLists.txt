@@ -972,6 +972,14 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#239 / ADR-0017] CPU reference for uncertainty-driven opacity (pure maths).
+  ament_add_gtest(test_opacity_ramp
+    test/test_opacity_ramp.cpp
+  )
+  target_include_directories(test_opacity_ramp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+
   # [camp#134] Shared RasterGlRenderer unit tests (ADR-0007): the unified shader's
   # NaN + finite-sentinel discard, LUT bake, Nearest sampling, and the RGBA bypass
   # path, driven directly with hand-built textures. Self-skips with no offscreen GL.
