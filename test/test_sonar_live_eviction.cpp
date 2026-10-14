@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <set>
+#include <vector>
 
 #include <QApplication>
 #include <QDir>
@@ -253,4 +254,54 @@ int main(int argc, char** argv)
   QCoreApplication::setApplicationName("test_sonar_live_eviction");
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+// [camp#239] setBandName() used to mark only the FINE tiles' textures dirty, so after a
+// band switch an overview (the coarse placeholder / zoomed-out coverage) kept the OLD
+// band's texture. The uncertainty-opacity mode depends on both pools following the
+// band, so the dirty marking now covers overview tiles too.
+TEST(SonarLiveEviction, BandSwitchMarksOverviewTexturesDirtyToo)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+  const QString ns = "/band_switch_test";
+  const std::size_t per_tile = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes", qulonglong(2 * per_tile));
+
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  std::vector<gggs::GridIndex> written;
+  for(std::size_t i = 0; i < 8; ++i)
+  {
+    const gggs::GridIndex grid = level.gridIndex(43.0 + 0.02 * i, -70.5);
+    ASSERT_TRUE(grid.valid());
+    written.push_back(grid);
+    SonarLiveTile tile(grid, kEdge, kEdge);
+    tile.applyPatch(makeUniformDepth(grid, static_cast<std::int16_t>(300 + i)));
+    const QString path = QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                                   .arg(static_cast<int>(grid.level()))
+                                                   .arg(grid.row())
+                                                   .arg(grid.column()));
+    ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+  }
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  // Evicted fine tiles fold up the whole chain; the protected apex always stays, so walk
+  // the ancestors of a written tile until a resident overview is found.
+  gggs::GridIndex parent = gggs::parent(written.front());
+  while(parent.valid() && !layer->overviewTileForTest(parent))
+    parent = gggs::parent(parent);
+  ASSERT_TRUE(parent.valid()) << "need a resident overview";
+
+  layer->markTexturesCleanForTest();
+  EXPECT_FALSE(layer->overviewTextureDirtyForTest(parent));
+  layer->setBandNameForTest("uncertainty");
+  EXPECT_TRUE(layer->overviewTextureDirtyForTest(parent))
+      << "the overview's texture must be re-uploaded for the newly selected band";
 }

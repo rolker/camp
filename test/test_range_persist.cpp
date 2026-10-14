@@ -532,6 +532,109 @@ TEST(RangePersist, LiveSmoothInterpolationRoundTrips)
   }
 }
 
+// [camp#239 / ADR-0017] Uncertainty-driven opacity on the live layer: opt-in (default
+// OFF with the shipped IHO S-44 Order 1a standard), persisted under settingsKey().
+TEST(RangePersist, LiveOpacityDefaultsOffAndRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    EXPECT_FALSE(layer->opacityMode()) << "opt-in: default behaviour must be unchanged";
+    EXPECT_EQ(layer->opacityBandName(), "uncertainty");
+    const auto& r = layer->opacityRamp();
+    EXPECT_EQ(r.kind, camp::raster::OpacityRamp::Kind::Standard);
+    EXPECT_FLOAT_EQ(r.a, 0.5f);
+    EXPECT_FLOAT_EQ(r.b, 0.013f);
+    EXPECT_FLOAT_EQ(r.multiple, 3.0f);
+
+    EXPECT_TRUE(layer->setOpacityMode(true));
+    camp::raster::OpacityRamp manual;
+    manual.kind = camp::raster::OpacityRamp::Kind::Manual;
+    manual.lo = 0.8f;
+    manual.hi = 2.4f;
+    layer->setOpacityRamp(manual);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_TRUE(layer->opacityMode());
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Manual);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 0.8f);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().hi, 2.4f);
+  }
+}
+
+TEST(RangePersist, LiveOpacityStandardParametersRoundTrip)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    camp::raster::OpacityRamp order1b;   // Standard kind, other parameters
+    order1b.a = 0.5f;
+    order1b.b = 0.013f;
+    order1b.multiple = 2.0f;
+    layer->setOpacityRamp(order1b);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Standard);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().multiple, 2.0f);
+  }
+}
+
+// A corrupt/nonsensical persisted ramp must not render garbage: it falls back to the
+// shipped standard. An absent key set restores today's behaviour (mode off).
+TEST(RangePersist, LiveOpacityCorruptRampFallsBackToTheShippedStandard)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("opacity_mode", true);
+    settings.setValue("opacity_ramp_kind", "manual");
+    settings.setValue("opacity_lo", "nan");
+    settings.setValue("opacity_hi", -4.0);
+    settings.setValue("opacity_multiple", 0.0);
+  }
+  layer->readSettings();
+  EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Standard);
+  EXPECT_FLOAT_EQ(layer->opacityRamp().a, 0.5f);
+  EXPECT_FLOAT_EQ(layer->opacityRamp().multiple, 3.0f);
+}
+
+// Colour band == opacity band is meaningless: it restores with the mode OFF.
+TEST(RangePersist, LiveOpacityWithSameColourAndOpacityBandRestoresOff)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("band", "uncertainty");
+    settings.setValue("opacity_mode", true);
+  }
+  layer->readSettings();
+  EXPECT_FALSE(layer->opacityMode());
+  EXPECT_FALSE(layer->opacityActive());
+}
+
 // [camp#181 / ADR-0015] Same anchor round-trip on RasterLayer, whose settings group
 // is itemID() rather than settingsKey().
 TEST(RangePersist, RasterShorelineAnchorRoundTrips)

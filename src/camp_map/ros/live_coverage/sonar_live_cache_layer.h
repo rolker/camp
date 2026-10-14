@@ -2,6 +2,7 @@
 #define CAMP_ROS_LIVE_COVERAGE_SONAR_LIVE_CACHE_LAYER_H
 
 #include "../layer.h"
+#include "../../raster/opacity_ramp.h"
 #include "../../raster/raster_field_source.h"
 #include "../../raster/raster_gl_renderer.h"
 #include "sonar_live_tile.h"
@@ -191,6 +192,27 @@ public:
   void setSmoothInterpolation(bool smooth);
   bool smoothInterpolation() const { return smooth_interpolation_; }
 
+  /// [camp#239 / ADR-0017] Uncertainty-driven opacity (opt-in, default OFF): colour
+  /// comes from the selected band (\c band_name_, normally "depth") through the LUT as
+  /// always; each cell's OPACITY comes from \c opacityBandName() (default "uncertainty")
+  /// through \c opacityRamp(). Persisted under settingsKey() like the other settings.
+  /// The mode is only effective while the opacity band differs from the colour band;
+  /// setOpacityMode(true) is refused (returns false) in that case.
+  bool setOpacityMode(bool on);
+  bool opacityMode() const { return opacity_mode_; }
+  void setOpacityRamp(const raster::OpacityRamp& ramp);
+  const raster::OpacityRamp& opacityRamp() const { return opacity_ramp_; }
+  const std::string& opacityBandName() const { return opacity_band_name_; }
+  /// True when the mode could be turned on: the opacity band differs from the colour
+  /// band and at least one held tile carries it.
+  bool opacityAvailable() const;
+  /// True when the mode is on and actually applied to the render.
+  bool opacityActive() const { return opacity_mode_ && opacity_band_name_ != band_name_; }
+  /// Test seams: texture-dirty state of a resident entry.
+  bool overviewTextureDirtyForTest(const gggs::GridIndex& index) const;
+  void markTexturesCleanForTest();                  ///< clear every entry's dirty flags
+  void setBandNameForTest(const std::string& name) { setBandName(name); }
+
   void setRangeOverride(float lo, float hi);   ///< -> Manual [lo, hi]
   void resetRangeToAuto();                      ///< -> Auto (tracks the data extents)
   marine_colormap::RangeMode rangeMode() const { return range_model_.mode(); }
@@ -237,6 +259,13 @@ private:
     // [camp#160] Monotonic access stamp for the LRU eviction fallback (bumped on
     // patch + on render). Unused for overview entries (they are never evicted).
     std::uint64_t last_access_seq = 0;
+    // (declared AFTER last_access_seq: Entry is brace-initialised positionally)
+    // [camp#239] Second R32F texture holding the opacity (uncertainty) band, uploaded
+    // lazily and only while the opacity mode is on. Has its OWN dirty flag: textureFor()
+    // clears texture_dirty before alphaTextureFor() runs, so sharing one flag would leave
+    // the alpha texture stale after a patch. Freed with \c texture everywhere.
+    std::unique_ptr<QOpenGLTexture> alpha_texture;
+    bool alpha_texture_dirty = true;
   };
 
   void subscribeCatalog();
@@ -331,6 +360,9 @@ private:
   // [camp#134] (Re)upload the selected band of @p entry as an R32F value texture
   // (owned by the Entry). The shader + LUT + tessellation now live in renderer_.
   QOpenGLTexture* textureFor(Entry& entry);
+  // [camp#239] (Re)upload the opacity band of @p entry; null when the entry lacks it.
+  QOpenGLTexture* alphaTextureFor(Entry& entry);
+  void markAllTexturesDirty();   // both value and opacity textures, fine AND overview
 
   /// [camp#103] items() body with an optional scene-space clip: a non-null
   /// @p clip_scene keeps only the tiles/footprints whose Web-Mercator extent
@@ -476,6 +508,11 @@ private:
   marine_colormap::RangeModel range_model_;
 
   std::string band_name_;        // selected band (persisted)
+
+  // [camp#239 / ADR-0017] Uncertainty-driven opacity (persisted; default OFF).
+  bool opacity_mode_ = false;
+  std::string opacity_band_name_ = "uncertainty";
+  raster::OpacityRamp opacity_ramp_;   // default: IHO S-44 Order 1a, transparent at 3x
 
   rclcpp::Subscription<marine_interfaces::msg::SonarVisualizationTile>::SharedPtr tile_sub_;
   rclcpp::Subscription<marine_interfaces::msg::TileCatalog>::SharedPtr catalog_sub_;

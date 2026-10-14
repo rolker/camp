@@ -4,6 +4,7 @@
 #include "../node.h"
 #include "../../map_view/web_mercator.h"
 #include "../../raster/colormap_range_dialog.h"
+#include "../../raster/opacity_range_dialog.h"
 #include "../../raster/viewport_clip.h"
 
 #include <marine_colormap/palette.hpp>
@@ -298,9 +299,15 @@ SonarLiveCacheLayer::~SonarLiveCacheLayer()
   if(renderer_.makeCurrent())
   {
     for(auto& item : tiles_)
+    {
       item.second.texture.reset();
+      item.second.alpha_texture.reset();
+    }
     for(auto& item : overview_tiles_)   // [camp#160] overview textures too
+    {
       item.second.texture.reset();
+      item.second.alpha_texture.reset();
+    }
     renderer_.doneCurrent();
   }
 }
@@ -512,7 +519,7 @@ void SonarLiveCacheLayer::warmLoad()
     // catalog version, so the next catalog re-requests it if the boat is newer, and
     // the prune gate never deletes it spuriously (ADR-0006 D3).
     reconciler_.markHave(index, 0);
-    tiles_.insert_or_assign(index, Entry{std::move(*tile), nullptr, true, 0});
+    tiles_.insert_or_assign(index, Entry{std::move(*tile), nullptr, true, 0, nullptr, true});
     if(++since_trim >= 64)   // cap the load peak at ~budget + 64 tiles
     {
       since_trim = 0;
@@ -535,7 +542,7 @@ void SonarLiveCacheLayer::warmLoad()
                                                gggs::Level(static_cast<std::uint8_t>(lvl)));
     if(tile && tile->index().valid())
       overview_tiles_.insert_or_assign(tile->index(),
-                                       Entry{std::move(*tile), nullptr, true, 0});
+                                       Entry{std::move(*tile), nullptr, true, 0, nullptr, true});
   }
 
   if(band_name_.empty())
@@ -600,7 +607,7 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
   const bool is_new = (it == tiles_.end());
   if(is_new)
     it = tiles_.emplace(index,
-                        Entry{SonarLiveTile(index, msg.width, msg.height), nullptr, true, 0})
+                        Entry{SonarLiveTile(index, msg.width, msg.height), nullptr, true, 0, nullptr, true})
            .first;
   // [camp#172] The index is resident again (live re-send) — drop it from the
   // on-demand reload set so a pending reload doesn't redundantly reload it.
@@ -608,6 +615,7 @@ void SonarLiveCacheLayer::handleTile(const marine_interfaces::msg::SonarVisualiz
   Entry& entry = it->second;
   entry.tile.applyPatch(msg);
   entry.texture_dirty = true;
+  entry.alpha_texture_dirty = true;
   entry.last_access_seq = ++access_seq_;   // [camp#160] freshest — LRU fallback
   reconciler_.markHave(index, entry.tile.version());
 
@@ -692,6 +700,7 @@ void SonarLiveCacheLayer::handleCatalog(const marine_interfaces::msg::TileCatalo
     if(it != tiles_.end())
     {
       it->second.texture.reset();   // free the GPU texture under the current context
+      it->second.alpha_texture.reset();
       tiles_.erase(it);
       pruned = true;
     }
@@ -826,6 +835,10 @@ std::size_t SonarLiveCacheLayer::entryBytes(const Entry& e)
       bytes += band->data.size() * sizeof(float);
   if(e.texture)
     bytes += static_cast<std::size_t>(e.tile.width()) * e.tile.height() * sizeof(float);
+  // [camp#239] The opacity-band texture is real VRAM too: count it so the ADR-0010
+  // budget stays honest while the mode is on.
+  if(e.alpha_texture)
+    bytes += static_cast<std::size_t>(e.tile.width()) * e.tile.height() * sizeof(float);
   return bytes;
 }
 
@@ -900,11 +913,12 @@ void SonarLiveCacheLayer::foldIntoParent(const SonarLiveTile& fine)
     it = overview_tiles_
            .emplace(parent_index,
                     Entry{SonarLiveTile(parent_index, fine.width(), fine.height()),
-                          nullptr, true, 0})
+                          nullptr, true, 0, nullptr, true})
            .first;
   Entry& overview = it->second;
   overview.tile.foldChild(fine);
   overview.texture_dirty = true;
+  overview.alpha_texture_dirty = true;
   scheduleWriteThrough(overview.tile, kOverviewSubdir);
   foldIntoParent(overview.tile);   // build the full chain to level 0
 }
@@ -1053,6 +1067,7 @@ bool SonarLiveCacheLayer::reconcilePyramid(
     if(it != overview_tiles_.end())
     {
       it->second.texture.reset();
+      it->second.alpha_texture.reset();
       overview_tiles_.erase(it);
     }
     cancelPendingWrite(index);
@@ -1073,7 +1088,7 @@ bool SonarLiveCacheLayer::reconcilePyramid(
     auto it = overview_tiles_.find(item.first);
     if(it == overview_tiles_.end())
       it = overview_tiles_
-             .emplace(item.first, Entry{std::move(item.second), nullptr, true, 0})
+             .emplace(item.first, Entry{std::move(item.second), nullptr, true, 0, nullptr, true})
              .first;
     else
     {
@@ -1084,6 +1099,7 @@ bool SonarLiveCacheLayer::reconcilePyramid(
       // re-upload happens.
       it->second.tile = std::move(item.second);
       it->second.texture_dirty = true;
+      it->second.alpha_texture_dirty = true;
     }
     // Persist the repair, or warm-load would bring the stale content straight back.
     scheduleWriteThrough(it->second.tile, kOverviewSubdir);
@@ -1234,6 +1250,7 @@ void SonarLiveCacheLayer::evictIfOverBudget()
       // full displayed cost a reload will re-incur once painted).
       last_evicted_fine_bytes_ = entryBytes(it->second);
       it->second.texture.reset();
+      it->second.alpha_texture.reset();
       tiles_.erase(it);
       // [camp#172] Record it for on-demand reload: its disk copy survives (persisted by
       // handleTile's write-through), so panning back can reload it (ADR-0010 D2).
@@ -1261,6 +1278,7 @@ void SonarLiveCacheLayer::evictIfOverBudget()
       if(it == overview_tiles_.end())
         continue;
       it->second.texture.reset();
+      it->second.alpha_texture.reset();
       overview_tiles_.erase(it);
       evicted = true;
     }
@@ -1400,7 +1418,7 @@ void SonarLiveCacheLayer::onReloadFinished()
     // A live re-send may have re-added it while the worker ran — newest resident wins.
     if(tiles_.count(index))
       continue;
-    tiles_.insert_or_assign(index, Entry{tile, nullptr, true, ++access_seq_});
+    tiles_.insert_or_assign(index, Entry{tile, nullptr, true, ++access_seq_, nullptr, true});
     // Defensive: possession was kept across eviction (D2 never drops markHave), so the
     // reconciler already holds this index — but re-assert it so residency and possession
     // can never silently diverge if that invariant is ever weakened. markHave is
@@ -1525,9 +1543,18 @@ std::string SonarLiveCacheLayer::defaultBand() const
 void SonarLiveCacheLayer::updateDisplay()
 {
   if(enabled_)
-    setStatus(QString("(live: %1 fine + %2 overview tiles)")
-                .arg(qulonglong(tiles_.size()))
-                .arg(qulonglong(overview_tiles_.size())));
+  {
+    QString status = QString("(live: %1 fine + %2 overview tiles)")
+                       .arg(qulonglong(tiles_.size()))
+                       .arg(qulonglong(overview_tiles_.size()));
+    // [camp#239] Say so when the opacity mode is on but cannot apply, instead of
+    // silently drawing opaque depth.
+    if(opacity_mode_ && opacity_band_name_ == band_name_)
+      status += " (opacity: pick a colour band other than the opacity band)";
+    else if(opacity_mode_ && !opacityAvailable())
+      status += " (opacity: no uncertainty band)";
+    setStatus(status);
+  }
   else
     setStatus("(available)");
 }
@@ -1562,6 +1589,90 @@ QOpenGLTexture* SonarLiveCacheLayer::textureFor(Entry& entry)
   entry.texture->setWrapMode(QOpenGLTexture::ClampToEdge);
   entry.texture_dirty = false;
   return entry.texture.get();
+}
+
+QOpenGLTexture* SonarLiveCacheLayer::alphaTextureFor(Entry& entry)
+{
+  const SonarLiveBand* band = entry.tile.band(opacity_band_name_);
+  if(!band || band->data.empty())
+  {
+    entry.alpha_texture.reset();   // band gone (or never there): hold no stale texture
+    return nullptr;
+  }
+  if(entry.alpha_texture && !entry.alpha_texture_dirty)
+    return entry.alpha_texture.get();
+  entry.alpha_texture = std::make_unique<QOpenGLTexture>(QOpenGLTexture::Target2D);
+  entry.alpha_texture->setFormat(QOpenGLTexture::R32F);
+  entry.alpha_texture->setSize(entry.tile.width(), entry.tile.height());
+  entry.alpha_texture->setMipLevels(1);
+  entry.alpha_texture->allocateStorage(QOpenGLTexture::Red, QOpenGLTexture::Float32);
+  entry.alpha_texture->setData(QOpenGLTexture::Red, QOpenGLTexture::Float32,
+                               band->data.data());
+  entry.alpha_texture->setWrapMode(QOpenGLTexture::ClampToEdge);
+  entry.alpha_texture_dirty = false;
+  return entry.alpha_texture.get();
+}
+
+void SonarLiveCacheLayer::markAllTexturesDirty()
+{
+  for(auto& item : tiles_)
+  {
+    item.second.texture_dirty = true;
+    item.second.alpha_texture_dirty = true;
+  }
+  for(auto& item : overview_tiles_)
+  {
+    item.second.texture_dirty = true;
+    item.second.alpha_texture_dirty = true;
+  }
+}
+
+bool SonarLiveCacheLayer::opacityAvailable() const
+{
+  if(opacity_band_name_ == band_name_)
+    return false;
+  for(const auto& item : tiles_)
+    if(item.second.tile.band(opacity_band_name_))
+      return true;
+  return false;
+}
+
+bool SonarLiveCacheLayer::overviewTextureDirtyForTest(const gggs::GridIndex& index) const
+{
+  const auto it = overview_tiles_.find(index);
+  return it != overview_tiles_.end() && it->second.texture_dirty;
+}
+
+void SonarLiveCacheLayer::markTexturesCleanForTest()
+{
+  for(auto* pool : {&tiles_, &overview_tiles_})
+    for(auto& item : *pool)
+    {
+      item.second.texture_dirty = false;
+      item.second.alpha_texture_dirty = false;
+    }
+}
+
+bool SonarLiveCacheLayer::setOpacityMode(bool on)
+{
+  if(on == opacity_mode_)
+    return true;
+  if(on && opacity_band_name_ == band_name_)
+    return false;   // colour band == opacity band is meaningless: refuse
+  opacity_mode_ = on;
+  cached_image_ = QImage();
+  updateDisplay();
+  writeSettings();
+  update(boundingRect());
+  return true;
+}
+
+void SonarLiveCacheLayer::setOpacityRamp(const raster::OpacityRamp& ramp)
+{
+  opacity_ramp_ = ramp;
+  cached_image_ = QImage();
+  writeSettings();
+  update(boundingRect());
 }
 
 QStringList SonarLiveCacheLayer::bands() const
@@ -1756,6 +1867,16 @@ QList<raster::RasterFieldItem> SonarLiveCacheLayer::itemsIntersecting(
     fi.v1 = planned.v1;
     fi.has_nodata = band->has_nodata;
     fi.nodata = band->has_nodata ? band->nodata : 0.0f;
+    // [camp#239 / ADR-0017] Opacity band as a second texture, same sub-rect (parent
+    // and child tiles are the same W x H, so a placeholder samples both identically).
+    // A tile without the band gets none and draws as plain opaque depth.
+    if(opacityActive())
+      if(const SonarLiveBand* ub = entry.tile.band(opacity_band_name_))
+        if((fi.alpha_texture = alphaTextureFor(entry)))
+        {
+          fi.has_alpha_nodata = ub->has_nodata;
+          fi.alpha_nodata = ub->has_nodata ? ub->nodata : 0.0f;
+        }
     result.push_back(fi);
   }
   return result;
@@ -1780,8 +1901,9 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bo
   const QList<raster::RasterFieldItem> draw = itemsIntersecting(clip_bounds);
   // [camp#142] Feed the resolved range (Auto tracks data_min_/data_max_; Manual is
   // the operator override) into the shader's u_min/u_max instead of the raw extents.
-  const QImage image = renderer_.renderToImage(draw, clip_bounds, range_model_.lo(),
-                                               range_model_.hi(), size);
+  const QImage image = renderer_.renderToImage(
+    draw, clip_bounds, range_model_.lo(), range_model_.hi(), size,
+    opacityActive() ? &opacity_ramp_ : nullptr);
   renderer_.doneCurrent();
   return image;
 }
@@ -1851,10 +1973,10 @@ void SonarLiveCacheLayer::setBandName(const std::string& name)
   band_name_ = name;
   // The value texture is per-band: mark every tile's texture for re-upload, reset
   // and re-fold the auto-range over the new band.
-  for(auto& item : tiles_)
-    item.second.texture_dirty = true;
+  markAllTexturesDirty();   // [camp#239] fine AND overview (overview was missed before)
   resetAutoRange();
   foldAutoRange();
+  updateDisplay();
   cached_image_ = QImage();
   writeSettings();
   update(boundingRect());
@@ -1944,6 +2066,32 @@ void SonarLiveCacheLayer::contextMenu(QMenu* menu)
       [this]() { resetRangeToAuto(); });
   });
 
+  // [camp#239 / ADR-0017] Uncertainty-driven opacity: colour from the selected band,
+  // opacity from the "uncertainty" band. Opt-in; disabled (with the reason) when it
+  // cannot apply.
+  QAction* opacity_action = menu->addAction("Show uncertainty as opacity");
+  opacity_action->setCheckable(true);
+  opacity_action->setChecked(opacity_mode_);
+  if(!opacity_mode_ && !opacityAvailable())
+  {
+    opacity_action->setEnabled(false);
+    opacity_action->setToolTip(
+      opacity_band_name_ == band_name_
+        ? QString("Select a colour band other than \"%1\" first")
+            .arg(QString::fromStdString(opacity_band_name_))
+        : QString("No held tile carries a \"%1\" band")
+            .arg(QString::fromStdString(opacity_band_name_)));
+  }
+  connect(opacity_action, &QAction::triggered, this,
+          [this](bool on) { setOpacityMode(on); });
+  QAction* opacity_range_action = menu->addAction("Opacity range…");
+  connect(opacity_range_action, &QAction::triggered, this, [this]()
+  {
+    raster::showOpacityRangeDialog(
+      nullptr, "Uncertainty opacity", opacity_ramp_,
+      [this](const raster::OpacityRamp& r) { setOpacityRamp(r); });
+  });
+
   // Band picker over the union of band names across held tiles. Only shown when
   // there is more than one band to choose from.
   std::vector<std::string> names;
@@ -1995,6 +2143,35 @@ void SonarLiveCacheLayer::readSettings()
   const std::string band = settings.value("band", QString::fromStdString(band_name_))
                              .toString().toStdString();
   const bool was_enabled = settings.value("live_enabled", false).toBool();
+  // [camp#239 / ADR-0017] Opacity mode (default OFF; an absent key keeps today's
+  // behaviour). A ramp with a non-finite or nonsensical field falls back to the
+  // shipped standard rather than rendering garbage.
+  const bool opacity_mode = settings.value("opacity_mode", false).toBool();
+  const std::string opacity_band =
+    settings.value("opacity_band", QString::fromStdString(opacity_band_name_))
+      .toString().toStdString();
+  raster::OpacityRamp ramp;
+  {
+    const bool manual = settings.value("opacity_ramp_kind", "standard").toString() == "manual";
+    const float a = settings.value("opacity_a", ramp.a).toFloat();
+    const float b = settings.value("opacity_b", ramp.b).toFloat();
+    const float mult = settings.value("opacity_multiple", ramp.multiple).toFloat();
+    const float lo = settings.value("opacity_lo", ramp.lo).toFloat();
+    const float hi = settings.value("opacity_hi", ramp.hi).toFloat();
+    const bool sane = std::isfinite(a) && a >= 0.0f && std::isfinite(b) && b >= 0.0f &&
+                      std::isfinite(mult) && mult >= 1.0f && std::isfinite(lo) &&
+                      std::isfinite(hi) && lo >= 0.0f && hi >= 0.0f;
+    if(sane)
+    {
+      ramp.a = a;
+      ramp.b = b;
+      ramp.multiple = mult;
+      ramp.lo = lo;
+      ramp.hi = hi;
+      ramp.kind = manual ? raster::OpacityRamp::Kind::Manual
+                         : raster::OpacityRamp::Kind::Standard;
+    }
+  }
   // [camp#142] Persisted colormap range. "manual" restores the operator override;
   // anything else (default "auto") leaves the data-driven Auto range. Honor Manual
   // only when both extents are present too — a partial/corrupt entry falls back to
@@ -2014,6 +2191,12 @@ void SonarLiveCacheLayer::readSettings()
   }
   if(!band.empty())
     band_name_ = band;
+  if(!opacity_band.empty())
+    opacity_band_name_ = opacity_band;
+  opacity_ramp_ = ramp;
+  // Colour band == opacity band restores with the mode OFF (meaningless combination).
+  opacity_mode_ = opacity_mode && opacity_band_name_ != band_name_;
+  cached_image_ = QImage();
   // [camp#142] Apply the persisted range. A Manual override is independent of the
   // data extents and is restored as-is; "auto" leaves the model tracking the data.
   if(has_manual_range)
@@ -2036,6 +2219,17 @@ void SonarLiveCacheLayer::writeSettings()
   settings.setValue("band", QString::fromStdString(band_name_));
   settings.setValue("live_enabled", enabled_);
   settings.setValue("smooth_interpolation", smooth_interpolation_);   // [camp#132]
+  // [camp#239 / ADR-0017] Opacity mode, band and ramp.
+  settings.setValue("opacity_mode", opacity_mode_);
+  settings.setValue("opacity_band", QString::fromStdString(opacity_band_name_));
+  settings.setValue("opacity_ramp_kind",
+                    opacity_ramp_.kind == raster::OpacityRamp::Kind::Manual ? "manual"
+                                                                            : "standard");
+  settings.setValue("opacity_a", opacity_ramp_.a);
+  settings.setValue("opacity_b", opacity_ramp_.b);
+  settings.setValue("opacity_multiple", opacity_ramp_.multiple);
+  settings.setValue("opacity_lo", opacity_ramp_.lo);
+  settings.setValue("opacity_hi", opacity_ramp_.hi);
   // [camp#142] Persist the colormap range mode + bounds so a Manual override (and
   // its [lo, hi]) survives a restart; Auto persists as "auto".
   settings.setValue("range_mode",
