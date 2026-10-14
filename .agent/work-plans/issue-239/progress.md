@@ -43,3 +43,22 @@ issue: 239
 - [ ] Opacity range on the colorbar legend in this PR?
 - [ ] Which Ware works to anchor on
 - [ ] GGGS layer follow-up issue?
+
+## Plan Review
+**Status**: complete
+**When**: 2026-10-14 10:03 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5) (in-context — author self-review)
+
+**Plan**: `.agent/work-plans/issue-239/plan.md` at `a24ea26`
+**PR**: PR-less
+Independence uncertain: this review ran in the same context that authored the plan (no fresh dispatch), so findings are self-review; an independent re-review is advisable.
+**Verdict**: approve-with-suggestions (after must-fix items folded in at `a24ea26`)
+
+### Findings
+- [x] (must-fix) Default ramp as an auto-range snapshot makes the lowest uncertainty present at enable time fully opaque and defeats firming-up; use a fixed/owner-chosen default, never data-derived — folded into Approach 4f
+- [x] (must-fix) Unspecified when colour band equals opacity band; define disabled menu entry and restore-with-mode-off — folded into Approach 4g
+- [x] (must-fix) Plan said 8 texture.reset() sites; actual is 6 (lines 301, 303, 694, 1055, 1236, 1263); also opacity-band change must dirty overview entries — folded into Approach 4c
+- [ ] (suggestion) Make the "alpha mode off is byte-identical" renderer test compare against a golden captured BEFORE the renderer change, not against the new code's own nullptr path — plan.md Approach 8
+- [ ] (suggestion) The modal opacity dialog blocks the UI; consider modeless/live for demo use (ADR-0009 already accepts modal)
+- [ ] (suggestion) Size is large (~15 files); renderer commit should be independently reviewable, consider splitting docs/dialog into a second PR if review drags
+- [ ] (suggestion) Rename shader uniforms u_u_opaque/u_u_transparent to u_alpha_lo/u_alpha_hi
