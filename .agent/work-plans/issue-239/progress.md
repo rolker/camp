@@ -143,3 +143,23 @@ Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: 
 - [x] Manual ramp: defaults seeded valid, hi > lo enforced at dialog and setter, applied == restored, tested — `opacity_range_dialog.cpp`, `opacity_ramp.h`
 - [x] No misleading status before the first band; colour-band switch no longer dirties unchanged opacity textures
 - [x] updateDisplay O(n) scan per tile message (deferred: opt-in mode, cheap lookups; revisit with a cached count if profiling shows it)
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-10-14 11:08 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+**Verdict**: approved
+
+**Branch**: feature/issue-239 at `2c2ebf7`
+**Mode**: pre-push
+**Depth**: Standard (reason: round-3 read of the round-2 fixes plus the whole branch)
+**Must-fix**: 0 | **Suggestions**: 5
+**Round**: 3 | **Ship**: recommended — no Claude-lens must-fix; the one codex must-fix (float rounding of hi > lo) was fixed in the follow-up commit
+Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: codex ran, gemini skipped (timed out in rounds 1 and 2). Before the review the two round-2 tests were confirmed red with their fixes temporarily reverted (see Implementation).
+
+### Findings
+- [ ] (must-fix) lo + 0.01f rounds back to lo for large lo, leaving hi == lo, which readSettings rejects on restart (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
+- [ ] (suggestion) Status not refreshed after the queued eviction (codex; lens A) — sonar_live_cache_layer.cpp renderImage
+- [ ] (suggestion) Eviction is not viewport-aware: visible tiles can be shed to overviews when the alpha textures push a tight budget over (lens B) — sonar_live_cache_layer.cpp evictIfOverBudget
+- [ ] (suggestion) Reload batch cap does not include the texture cost, so a reload can overshoot then evict again (lens B) — sonar_live_cache_layer.cpp kickReload
+- [ ] (suggestion) Pre-existing: warm-load overview insert_or_assign can destroy a displaced entry's GL textures with no context current (lens B) — sonar_live_cache_layer.cpp:544
