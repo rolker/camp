@@ -86,3 +86,23 @@ Specialists: static analysis skipped (pre-commit hooks passed on every commit); 
 - [x] (suggestion) Test-only mutators are public members of the production class (lens B) — sonar_live_cache_layer.h (deferred: matches the file's existing convention (setResidentBudgetForTest and the other *ForTest seams are already public))
 - [x] (suggestion) Modal dialog has no parent and on_change captures the layer this; layer removal during the modal would dangle (lens B) — opacity_range_dialog.cpp (deferred: identical pattern to the existing colormap range dialog (nullptr parent); layers cannot be removed while a modal dialog is open in the current UI)
 - [x] (suggestion) Documentation of the policy for tiles without the band: consistent with the owner's decision, but tile-level fallback is inconsistent between tiles (lens A) — see the mixed-tiles must-fix (deferred: the tile-level fallback is the owner's decision; the inconsistency is now surfaced by the mixed-tile status line)
+
+## Implementation
+**Status**: complete
+**When**: 2026-10-14 10:50 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+
+**Branch**: feature/issue-239 at `b4908de`
+**Addressed**: Local Review (Pre-Push) round 1 at b5eca40
+**Commits**: ae26128, 8269d9b, c67b6da
+
+### Actions
+- [x] Standard ramp read the colour band as depth — applied only with the depth colour band, manual ramp unaffected — `sonar_live_cache_layer.h opacityActive`
+- [x] Shader rejected only NaN — now +/-inf uncertainty or depth is transparent, with a parity test — `raster_gl_renderer.cpp`
+- [x] Settings restore accepted garbled / incomplete ramps — whole-ramp fallback to the shipped standard, tested — `sonar_live_cache_layer.cpp readSettings`
+- [x] Mixed tiles drew opaque with no warning — status counts tiles lacking the band, tested — `sonar_live_cache_layer.cpp updateDisplay`
+- [x] Alpha textures stayed resident when the mode was off — released and uncounted, tested with GL — `sonar_live_cache_layer.cpp releaseAlphaTextures`
+- [x] mode=on with colour==opacity band lost on restart (deferred: restore-off was a review-plan decision; needs a requested-vs-effective flag)
+- [x] Test-only mutators public (deferred: matches existing *ForTest convention in this class)
+- [x] Modal dialog unparented (deferred: same pattern as the existing colormap range dialog)
+- [x] Inconsistent tile-level fallback policy (deferred: owner decision; now surfaced by the status line)
