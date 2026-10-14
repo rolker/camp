@@ -30,25 +30,28 @@ Constraints from the repo's ADRs:
 
 ## Approach
 
-1. **Pure opacity mapping** — add `src/camp_map/raster/opacity_ramp.h` (header-only,
-   ROS/GL/Qt-free): `struct OpacityRamp { float opaque; float transparent; }` and
-   `float opacityFromUncertainty(float u, const OpacityRamp&)` = 1 at/below `opaque`, 0
-   at/above `transparent`, linear between; `opaque >= transparent` is normalised (swap,
-   and equal values give a hard step); NaN/NoData handled by the explicit policy in
-   step 3. This is the single reference implementation the unit test pins and the GLSL
-   mirrors line for line.
+1. **Pure opacity mapping** — `src/camp_map/raster/opacity_ramp.h` (header-only,
+   ROS/GL/Qt-free): `OpacityRamp` is either `Standard` (opaque at the survey standard's
+   allowed uncertainty for the cell's own depth, `sqrt(a^2 + (b*d)^2)`, transparent at
+   `multiple` times that; defaults IHO S-44 Order 1a `a=0.5 m`, `b=0.013`, multiple 3,
+   as named constants) or `Manual` (absolute `[lo, hi]`). `opacityFromUncertainty(u,
+   depth, ramp)` = 1 at/below the opaque threshold, 0 at/above the transparent one,
+   linear between; a degenerate ramp is a hard step; non-finite `u` or depth gives 0.
+   This is the single reference implementation the unit test pins and the GLSL mirrors.
 2. **Renderer, additive** — `RasterFieldItem` gains `QOpenGLTexture* alpha_texture =
    nullptr`, `bool has_alpha_nodata`, `float alpha_nodata`. `renderToImage()` gains a
    trailing defaulted parameter `const OpacityRamp* opacity = nullptr` (existing call
    sites untouched). The shader gets `uniform sampler2D u_alpha_tex` (unit 2),
-   `uniform int u_alpha_mode`, `uniform float u_u_opaque, u_u_transparent`. With
-   `u_alpha_mode == 0` (every existing caller) the code path is unchanged. With it on, a
-   Scalar item's colour is looked up as today, then `a = clamp((u_u_transparent - u) /
-   max(u_u_transparent - u_u_opaque, 1e-6), 0, 1)` and the output is premultiplied
-   `vec4(c.rgb * a, a)` (matches the existing `GL_ONE, GL_ONE_MINUS_SRC_ALPHA` blend).
+   `uniform int u_alpha_on` (set per item), `u_alpha_kind`, `u_alpha_a/_b/_mult` (Standard)
+   and `u_alpha_lo/_hi` (Manual), plus `u_has_alpha_nodata/u_alpha_nodata`. With
+   `u_alpha_on == 0` (every existing caller) `a == 1.0` and the output is bit-identical.
+   With it on, a Scalar item's colour is looked up as today, the opaque/transparent
+   thresholds come from the ramp (Standard: from the cell's own depth `v`), and the
+   output is premultiplied `vec4(c.rgb * a, a)` (matches the existing
+   `GL_ONE, GL_ONE_MINUS_SRC_ALPHA` blend).
    Depth NoData still discards first. The alpha texture uses Nearest filtering like the
    value texture. Items without an `alpha_texture` in an alpha-mode draw are drawn per
-   the missing-band policy in step 3 (a per-item `u_alpha_mode` toggle, not a global one).
+   the missing-band policy in step 3 (a per-item `u_alpha_on` toggle, not a global one).
 3. **Missing-uncertainty policy (decided here, flagged as an open question)** — cell
    level: finite depth with NaN/NoData uncertainty is rendered fully transparent
    (`a = 0`: nothing is known about its quality, so it is not asserted). Tile level: a
@@ -75,14 +78,12 @@ Constraints from the repo's ADRs:
       "uncertainty"`, `OpacityRamp opacity_ramp_`, `bool opacity_ramp_manual_ = false`.
       Setters (`setOpacityMode`, `setOpacityRamp`, `resetOpacityRamp`) invalidate
       `cached_image_`, `writeSettings()`, `update()`.
-   f. **Default ramp (revised after review-plan)**: the default is NEVER derived from the
-      live data. A snapshot or live-tracking auto-range would make the lowest uncertainty
-      present at enable time fully opaque and defeat "firms up" as repeat passes arrive.
-      The default `[opaque, transparent]` comes from one named constant pair (or a
-      `QSettings` default key) in `opacity_ramp.h`, whose values the owner chooses (open
-      question; no value is invented in this plan). Until a persisted ramp exists, enabling
-      the mode opens the "Opacity range..." dialog pre-filled with that default so the
-      operator sees and confirms it. Once confirmed it is persisted as manual.
+   f. **Default ramp (owner decision, supersedes the earlier open question)**: never
+      derived from live data. The default is IHO S-44 Order 1a per cell depth, transparent
+      at 3x (named constants in `opacity_ramp.h`); the dialog can edit `a`, `b` and the
+      multiple or pin manual absolute thresholds. The design note and ADR state that the
+      CUBE uncertainty layer is scaled to 1.96 sigma (cube_bathymetry#163). No
+      dialog-on-enable is needed any more because the default is a real standard.
    g. **Colour band vs opacity band**: the mode colours by `band_name_` (the existing Band
       picker) and takes opacity from `opacity_band_name_`. They must differ: the menu entry
       is disabled (with a tooltip) when `band_name_ == opacity_band_name_`, and `readSettings()`
@@ -92,12 +93,13 @@ Constraints from the repo's ADRs:
 5. **Persistence** — in `readSettings()/writeSettings()` under `settingsKey()`
    (`live:<ns>`, the layer's `layer_id`): `opacity_mode` (bool, default false),
    `opacity_band` (string, default `uncertainty`), `opacity_ramp_mode`
-   (`auto`|`manual`), `opacity_lo`, `opacity_hi`. Absent keys restore today's behaviour;
+   (`standard`|`manual`), `opacity_a`, `opacity_b`, `opacity_multiple`, `opacity_lo`,
+   `opacity_hi`. Absent keys restore today's behaviour;
    a manual ramp is honoured only if both bounds are present and finite (same rule as
    the camp#142 range restore).
 6. **UI** — in the layer context menu: a checkable "Show uncertainty as opacity" (enabled
    only when the held tiles carry the opacity band), and "Opacity range..." opening a
-   small modal dialog (two `QDoubleSpinBox`es + Reset-to-default, live-applied, in the
+   small modal dialog (Standard/Manual radio, spin boxes for a, b, multiple and lo, hi, Reset-to-default, live-applied, in the
    style of `colormap_range_dialog`; put it in `raster/opacity_range_dialog.{h,cpp}` so
    `GggsTileLayer` can reuse it later). The existing "Colormap range..." keeps governing
    the depth colour range. The Band submenu keeps choosing the colour band.
@@ -122,21 +124,21 @@ Constraints from the repo's ADRs:
 
 | File | Change |
 |------|--------|
-| `src/camp_map/raster/opacity_ramp.h` | New: `OpacityRamp` + `opacityFromUncertainty()` pure reference |
+| `src/camp_map/raster/opacity_ramp.h` | New: `OpacityRamp` (Standard/Manual) + `opacityFromUncertainty()` pure reference |
 | `src/camp_map/raster/raster_field_source.h` | `RasterFieldItem`: optional `alpha_texture`, alpha NoData fields |
 | `src/camp_map/raster/raster_gl_renderer.{h,cpp}` | Shader uniforms/sampler, premultiplied alpha path, defaulted `opacity` param |
-| `src/camp_map/raster/opacity_range_dialog.{h,cpp}` | New: two-spinbox opacity range dialog |
+| `src/camp_map/raster/opacity_range_dialog.{h,cpp}` | New: Standard/Manual opacity ramp dialog |
 | `src/camp_map/ros/live_coverage/sonar_live_cache_layer.{h,cpp}` | Mode state, alpha texture upload/lifetime/bytes, items(), menu, persistence |
 | `CMakeLists.txt` | Add new sources + tests |
 | `test/test_opacity_ramp.cpp` | New: ramp endpoints, linear midpoint, swapped/equal bounds, NaN/NoData policy |
 | `test/test_range_persist.cpp` | Add opacity-mode round-trip + default-off + corrupt-entry cases for the live layer |
-| `test/test_raster_gl_renderer.cpp` | Add: alpha mode renders expected premultiplied pixels (skips without GL); alpha mode off is byte-identical to before |
-| `test/test_sonar_live_eviction.cpp` | Add: alpha texture counted in `entryBytes()` and freed on eviction |
-| `test/test_sonar_live_tile_nodata.cpp` (or new) | Overview fold carries both bands; parent cell with depth but no uncertainty |
+| `test/test_raster_gl_renderer.cpp` + `test/fixtures/scalar_render_golden.png` | Golden captured from the renderer BEFORE the change (commit bea9d00) plus alpha-mode tests: premultiplied pixels, NaN/sentinel uncertainty, shader-vs-CPU sweep, no-texture/no-ramp draws opaque (all skip without GL) |
+| `test/test_sonar_live_eviction.cpp` | Add: a band switch marks overview textures dirty too (the existing `setBandName()` gap, fixed here). The alpha-texture byte accounting is exercised only through the shared code path, not a dedicated layer-level GL test (deviation) |
+| `test/test_sonar_live_tile_nodata.cpp` | Overview fold carries both bands; parent cell with depth but no uncertainty stays NoData |
 | `docs/decisions/0017-uncertainty-driven-opacity.md` | New ADR |
 | `docs/uncertainty_opacity_design.md` | New design note (Ware reference, verified citations) |
 | `docs/camp_user_manual.md` | Document the menu entries and persistence |
-| `.agents/README.md` | Add the new persisted keys to the verified-parameter table |
+| `.agents/README.md` | A paragraph (this repo has no parameter table) with the persisted keys and the Entry/alpha-texture pitfalls |
 
 ## Principles Self-Check
 
@@ -186,14 +188,24 @@ Constraints from the repo's ADRs:
 
 ## Open Questions
 
-- Default opacity ramp values: a fixed survey-standard rule (which standard?) or a persisted app-wide default? (A data-derived snapshot was rejected in review: it would defeat the firming-up behaviour.)
-- Missing uncertainty at cell level renders transparent and a tile with no uncertainty band renders as plain opaque depth: is that the wanted policy?
-- Which base should faint cells blend against for the demo (dark chart vs light)? Faint depth colour on a light basemap may wash out.
-- Is a fixed band name `"uncertainty"` acceptable until camp#104 band semantics land, or should the opacity band be user-pickable in the first slice?
-- Should the opacity range be shown on the colorbar legend in this PR, or is the separate dialog enough?
-- Ware reference: which of his works should the design note anchor on (the book, or a specific uncertainty-display paper)? Citations will be verified before writing.
-- Should the GGGS tile layer get the same mode in a follow-up issue (the issue says the live layer only)?
+All answered by the owner (2026-10-14); recorded as decisions:
+
+- Default ramp: IHO S-44 Order 1a per cell depth, opaque at the allowed uncertainty, transparent at 3x; a, b and the multiple are named constants; manual override in the dialog; CUBE uncertainty is 1.96 sigma (cube_bathymetry#163), stated in the ADR and design note.
+- Missing uncertainty: cell level transparent, tile without the band draws plain opaque depth.
+- Basemap: OpenStreetMap; wash-out judged at rehearsal.
+- Band name: fixed `uncertainty` for this slice.
+- Legend: not in this PR.
+- Ware: the book is the anchor; no page/chapter citation was verifiable, so none is given and the note says so.
+- GGGS layer: follow-up filed as rolker/camp#241, not implemented.
 
 ## Estimated Scope
 
 Single PR, about 8 atomic commits (pure ramp + test; renderer + test; layer plumbing; persistence + test; dialog + menu; ADR + design note; user manual + README). Moderate size; the renderer change is the risky part and is reviewable on its own commit.
+
+## Implementation Notes
+
+- The shader uniforms are `u_alpha_lo/u_alpha_hi` (plus kind/a/b/mult) rather than the plan's original `u_u_opaque/u_u_transparent`, per the plan review.
+- The "alpha mode off is byte-identical" test compares against a golden PNG captured from the renderer before the change (bea9d00), with a per-channel tolerance of 2 for driver rounding; `CAMP_UPDATE_GOLDEN=1` regenerates it.
+- `Entry` is brace-initialised positionally in six places; the new members were appended after `last_access_seq` and those sites gained explicit initialisers (otherwise `-Wmissing-field-initializers`).
+- The alpha texture has its own dirty flag: `textureFor()` clears `texture_dirty` before `alphaTextureFor()` runs, so one shared flag would leave the alpha texture stale after a patch.
+- Confirmed the plan's step 4d suspicion: `setBandName()` marked only fine tiles dirty; overview textures kept the old band. Fixed via `markAllTexturesDirty()`.
