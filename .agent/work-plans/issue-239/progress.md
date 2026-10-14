@@ -121,9 +121,9 @@ Specialists: static analysis skipped (pre-commit hooks passed on every commit); 
 Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: codex ran, gemini FAILED again (agy 420 s print timeout). Lens A and Lens B found no must-fix; codex found three.
 
 ### Findings
-- [ ] (must-fix) Alpha textures upload at render time and no arrival-driven eviction sees them; footprint can sit over the ADR-0010 budget while the stream is idle (codex; lens B suggestion) — sonar_live_cache_layer.cpp renderImage
-- [ ] (must-fix) Overview-blind status: opacityAvailable() and the mixed-tile count scanned fine tiles only (codex) — sonar_live_cache_layer.cpp opacityAvailable, updateDisplay
-- [ ] (must-fix) The dialog applied Manual [0,0] (blank layer) and persisted bounds that readSettings rejects, so a restart silently reverted to Standard (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
-- [ ] (suggestion) updateDisplay() scans all tiles on every tile message while the mode is active, O(n^2) over a burst (lens A+B) — sonar_live_cache_layer.cpp updateDisplay
-- [ ] (suggestion) Misleading status before the first band is known (lens A) — sonar_live_cache_layer.cpp updateDisplay
-- [ ] (suggestion) A colour-band switch re-uploads unchanged opacity textures (lens B) — sonar_live_cache_layer.cpp setBandName
+- [x] (must-fix) Alpha textures upload at render time and no arrival-driven eviction sees them; footprint can sit over the ADR-0010 budget while the stream is idle (codex; lens B suggestion) — sonar_live_cache_layer.cpp renderImage
+- [x] (must-fix) Overview-blind status: opacityAvailable() and the mixed-tile count scanned fine tiles only (codex) — sonar_live_cache_layer.cpp opacityAvailable, updateDisplay
+- [x] (must-fix) The dialog applied Manual [0,0] (blank layer) and persisted bounds that readSettings rejects, so a restart silently reverted to Standard (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
+- [x] (suggestion) updateDisplay() scans all tiles on every tile message while the mode is active, O(n^2) over a burst (lens A+B) — sonar_live_cache_layer.cpp updateDisplay (deferred: opt-in mode; per-tile cost is one string-keyed map lookup, thousands of tiles is millions of cheap operations; revisit with a cached count if a profile shows it)
+- [x] (suggestion) Misleading status before the first band is known (lens A) — sonar_live_cache_layer.cpp updateDisplay
+- [x] (suggestion) A colour-band switch re-uploads unchanged opacity textures (lens B) — sonar_live_cache_layer.cpp setBandName
