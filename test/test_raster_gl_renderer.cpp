@@ -612,6 +612,37 @@ TEST(RasterGlRendererTest, ManualRampSetsPremultipliedOpacityFromTheSecondTextur
   EXPECT_EQ(a[5], 0) << "NaN uncertainty = nothing known = transparent";
 }
 
+// The CPU reference returns 0 for any non-finite uncertainty or depth; the shader must
+// agree for +/-inf too (it first only handled NaN, so -inf uncertainty drew opaque and an
+// infinite depth made every finite uncertainty acceptable under the standard ramp).
+TEST(RasterGlRendererTest, InfiniteUncertaintyOrDepthIsTransparentLikeTheCpuReference)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+  const float inf = std::numeric_limits<float>::infinity();
+  const OpacityRamp standard;
+  OpacityRamp manual;
+  manual.kind = OpacityRamp::Kind::Manual;
+  manual.lo = 1.0f;
+  manual.hi = 3.0f;
+  for(const OpacityRamp& ramp : {standard, manual})
+  {
+    // u: -inf, +inf, finite (control).  depth: finite, finite, finite.
+    std::vector<float> unc = {-inf, inf, 0.1f, 0.1f};
+    std::vector<float> depth = {10.0f, 10.0f, 10.0f, inf};   // last cell: infinite depth
+    const std::vector<int> a = renderAlphaStrip(depth, unc, &ramp);
+    ASSERT_EQ(a.size(), 4u);
+    EXPECT_EQ(a[0], 0) << "-inf uncertainty";
+    EXPECT_EQ(a[1], 0) << "+inf uncertainty";
+    EXPECT_EQ(a[2], 255) << "finite control";
+    EXPECT_EQ(a[3], 0) << "infinite depth";
+    for(std::size_t i = 0; i < unc.size(); ++i)
+      EXPECT_EQ(a[i], int(std::lround(camp::raster::opacityFromUncertainty(
+                          unc[i], depth[i], ramp) * 255.0f)))
+          << "cell " << i;
+  }
+}
+
 TEST(RasterGlRendererTest, AlphaNodataSentinelIsTransparent)
 {
   if(!offscreenGLAvailable())

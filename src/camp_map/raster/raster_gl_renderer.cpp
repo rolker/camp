@@ -118,8 +118,12 @@ void main()
     if(u_alpha_on != 0)
     {
       float u = texture2D(u_alpha_tex, v_texcoord).r;
-      if(u != u || (u_has_alpha_nodata != 0 && u == u_alpha_nodata))
-        a = 0.0;                                      // no uncertainty known
+      // Non-finite uncertainty or depth (NaN, +/-inf) or the NoData sentinel: no
+      // usable quality figure, so transparent - same as opacity_ramp.h. GLSL 1.20 has
+      // no isinf(), so test the magnitude against the largest finite float.
+      if(u != u || abs(u) > 3.0e38 || v != v || abs(v) > 3.0e38 ||
+         (u_has_alpha_nodata != 0 && u == u_alpha_nodata))
+        a = 0.0;
       else
       {
         float lo = u_alpha_lo;
