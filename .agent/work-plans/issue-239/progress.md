@@ -163,3 +163,18 @@ Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: 
 - [x] (suggestion) Eviction is not viewport-aware: visible tiles can be shed to overviews when the alpha textures push a tight budget over (lens B) — sonar_live_cache_layer.cpp evictIfOverBudget (deferred: viewport-aware eviction is a design change to ADR-0010 beyond this feature; documented in ADR-0017 consequences; default 512 MiB budget leaves headroom)
 - [x] (suggestion) Reload batch cap does not include the texture cost, so a reload can overshoot then evict again (lens B) — sonar_live_cache_layer.cpp kickReload (deferred: bounded reload/evict cycle only at the budget edge, re-kick waits for a viewport move; fold into the viewport-aware eviction work)
 - [x] (suggestion) Pre-existing: warm-load overview insert_or_assign can destroy a displaced entry's GL textures with no context current (lens B) — sonar_live_cache_layer.cpp:544 (deferred: pre-existing, unrelated to this feature; the alpha texture only enlarges what it leaks; worth its own issue)
+
+## Implementation
+**Status**: complete
+**When**: 2026-10-14 11:08 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+
+**Branch**: feature/issue-239 at `77f00b0`
+**Addressed**: Local Review (Pre-Push) round 3
+**Commits**: 77f00b0
+
+### Actions
+- [x] Manual ramp hi > lo is now robust to float rounding (shared normalizeManualRamp with a nextafter floor), boundary-tested at lo up to 1e7 and through the settings round trip at 1e6
+- [x] Status refreshed after the queued eviction
+- [x] Viewport-aware eviction, reload cap, pre-existing warm-load overview replace (deferred: see the review entry; recorded in ADR-0017 consequences where relevant)
+- [x] Red-test verification: with the post-render budget re-check disabled and the overview dirty-marking in markAllTexturesDirty removed (working tree only, never committed, restored via git checkout and byte-compared), SonarLiveEviction.AlphaUploadAtRenderTimeTriggersBudgetEviction and SonarLiveEviction.BandSwitchMarksOverviewTexturesDirtyToo both FAILED; restored, all 5 eviction tests pass
