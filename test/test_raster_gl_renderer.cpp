@@ -32,9 +32,11 @@
 #include <QOpenGLContext>
 #include <QOpenGLTexture>
 
+#include "raster/opacity_ramp.h"
 #include "raster/raster_field_source.h"
 #include "raster/raster_gl_renderer.h"
 
+using camp::raster::OpacityRamp;
 using camp::raster::RasterFieldItem;
 using camp::raster::RasterGlRenderer;
 
@@ -547,4 +549,126 @@ TEST(RasterGlRendererTest, DefaultScalarRenderMatchesPreOpacityGolden)
       EXPECT_LE(std::abs(a.blue() - b.blue()), 2) << x << "," << y;
       EXPECT_LE(std::abs(a.alpha() - b.alpha()), 2) << x << "," << y;
     }
+}
+
+// ---------------- [camp#239 / ADR-0017] uncertainty-driven opacity ----------------
+
+namespace
+{
+// Render a w x 1 strip of constant depth `depth_value` whose per-cell uncertainty is
+// `unc`, grayscale over [0,10] (so colour is white wherever it is visible), through
+// `ramp`. Returns the premultiplied-alpha byte per cell.
+std::vector<int> renderAlphaStrip(const std::vector<float>& depth,
+                                  const std::vector<float>& unc, const OpacityRamp* ramp,
+                                  bool attach_alpha_texture = true,
+                                  bool alpha_nodata = false)
+{
+  RasterGlRenderer renderer;
+  EXPECT_TRUE(renderer.makeCurrent());
+  renderer.setColormap("grayscale");
+  const int w = int(depth.size());
+  auto dtex = makeScalarTexture(w, 1, depth);
+  auto utex = makeScalarTexture(w, 1, unc);
+  RasterFieldItem item = scalarItem(dtex.get(), w, false, 0.0f);
+  item.north = 1.0;
+  if(attach_alpha_texture)
+  {
+    item.alpha_texture = utex.get();
+    item.has_alpha_nodata = alpha_nodata;
+    item.alpha_nodata = 9999.0f;
+  }
+  const QImage img = renderer.renderToImage({item}, QRectF(0, 0, w, 1), 0.0f, 10.0f,
+                                            QSize(w, 1), ramp);
+  dtex.reset();
+  utex.reset();
+  renderer.doneCurrent();
+  EXPECT_FALSE(img.isNull());
+  std::vector<int> out;
+  for(int x = 0; x < w; ++x)
+    out.push_back(qAlpha(img.pixel(x, 0)));
+  return out;
+}
+}  // namespace
+
+TEST(RasterGlRendererTest, ManualRampSetsPremultipliedOpacityFromTheSecondTexture)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+  OpacityRamp ramp;
+  ramp.kind = OpacityRamp::Kind::Manual;
+  ramp.lo = 1.0f;
+  ramp.hi = 3.0f;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  // u: opaque, opaque edge, midpoint, transparent edge, beyond, NaN
+  const std::vector<float> unc = {0.5f, 1.0f, 2.0f, 3.0f, 9.0f, nan};
+  const std::vector<float> depth(unc.size(), 10.0f);   // white
+  const std::vector<int> a = renderAlphaStrip(depth, unc, &ramp);
+  ASSERT_EQ(a.size(), 6u);
+  EXPECT_EQ(a[0], 255);
+  EXPECT_EQ(a[1], 255);
+  EXPECT_NEAR(a[2], 128, 2);
+  EXPECT_EQ(a[3], 0);
+  EXPECT_EQ(a[4], 0);
+  EXPECT_EQ(a[5], 0) << "NaN uncertainty = nothing known = transparent";
+}
+
+TEST(RasterGlRendererTest, AlphaNodataSentinelIsTransparent)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+  OpacityRamp ramp;
+  ramp.kind = OpacityRamp::Kind::Manual;
+  ramp.lo = 1.0f;
+  ramp.hi = 3.0f;
+  const std::vector<float> unc = {0.5f, 9999.0f};
+  const std::vector<float> depth(2, 10.0f);
+  const std::vector<int> a = renderAlphaStrip(depth, unc, &ramp, true, true);
+  EXPECT_EQ(a[0], 255);
+  EXPECT_EQ(a[1], 0);
+}
+
+TEST(RasterGlRendererTest, ShaderMatchesTheCpuReferenceAcrossASweep)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+  const OpacityRamp standard;   // IHO S-44 Order 1a, 3x
+  OpacityRamp manual;
+  manual.kind = OpacityRamp::Kind::Manual;
+  manual.lo = 0.7f;
+  manual.hi = 2.1f;
+  for(const OpacityRamp& ramp : {standard, manual})
+  {
+    std::vector<float> unc, depth;
+    for(int i = 0; i < 48; ++i)
+    {
+      unc.push_back(0.06f * float(i));               // 0 .. 2.82 m
+      depth.push_back(i < 24 ? 5.0f : 100.0f);       // depth changes the standard
+    }
+    const std::vector<int> a = renderAlphaStrip(depth, unc, &ramp);
+    for(std::size_t i = 0; i < unc.size(); ++i)
+    {
+      const int expect = int(std::lround(
+        camp::raster::opacityFromUncertainty(unc[i], depth[i], ramp) * 255.0f));
+      EXPECT_NEAR(a[i], expect, 2) << "cell " << i << " u=" << unc[i];
+    }
+  }
+}
+
+TEST(RasterGlRendererTest, ItemWithoutAlphaTextureOrWithoutRampDrawsOpaque)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+  OpacityRamp ramp;
+  ramp.kind = OpacityRamp::Kind::Manual;
+  ramp.lo = 0.0f;
+  ramp.hi = 0.1f;
+  const std::vector<float> unc(3, 50.0f);   // would be fully transparent
+  const std::vector<float> depth(3, 10.0f);
+  // Ramp given, but the item has no uncertainty texture: tile-level missing band =
+  // plain opaque depth.
+  for(int v : renderAlphaStrip(depth, unc, &ramp, /*attach_alpha_texture=*/false))
+    EXPECT_EQ(v, 255);
+  // Uncertainty texture attached, but no ramp requested: ignored.
+  for(int v : renderAlphaStrip(depth, unc, nullptr, /*attach_alpha_texture=*/true))
+    EXPECT_EQ(v, 255);
 }

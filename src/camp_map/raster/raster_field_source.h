@@ -52,6 +52,18 @@ struct RasterFieldItem
   bool has_nodata = false;
   float nodata = 0.0f;
 
+  /// [camp#239 / ADR-0017] Optional second R32F texture (same size and orientation as
+  /// `texture`) holding per-cell UNCERTAINTY, honoured only for a Scalar item when the
+  /// caller passes an OpacityRamp to renderToImage(). It never changes colour: it sets
+  /// the cell's opacity. Null (the default, and every pre-existing caller) means the
+  /// item is drawn exactly as before. Owned by the source, like `texture`. It is
+  /// sampled through the same sub-rect (u0..v1) as `texture`.
+  QOpenGLTexture* alpha_texture = nullptr;
+  /// Cells of `alpha_texture` equal to `alpha_nodata` (finite sentinel) are treated
+  /// like NaN there: no uncertainty known, so the cell is fully transparent.
+  bool has_alpha_nodata = false;
+  float alpha_nodata = 0.0f;
+
   /// [field 2026-08-27] Sub-rect of the texture to stretch across the bounds above,
   /// in normalized texture coordinates: `u` runs west→east, `v` runs north→south
   /// (texture row 0 = north, matching the renderer's vertex generation). The

@@ -61,6 +61,14 @@ void main()
 //    premultiplies (so mipmap/linear filtering doesn't fringe), so the texel is
 //    emitted as-is — already matching the GL_ONE / GL_ONE_MINUS_SRC_ALPHA blend.
 //    Transparency comes from the composited alpha; fully-transparent cells discard.
+//
+//  - [camp#239 / ADR-0017] Scalar + u_alpha_on != 0: a SECOND R32F texture (u_alpha_tex,
+//    unit 2) holds per-cell uncertainty and sets the cell's opacity. Colour is
+//    unchanged (value texture -> LUT; the LUT carries no alpha, ADR-0008). The mapping
+//    mirrors opacity_ramp.h's opacityFromUncertainty() line for line. Output is
+//    PREMULTIPLIED (rgb * a, a) to match the GL_ONE / GL_ONE_MINUS_SRC_ALPHA blend.
+//    With u_alpha_on == 0 (every pre-existing caller) a == 1.0 and the output is
+//    bit-identical to before: c.rgb * 1.0 == c.rgb.
 constexpr char kFragmentShader[] = R"(
 #version 120
 uniform sampler2D u_tex;     // unit 0: Scalar R32F data, or Rgba RGBA8
@@ -70,6 +78,16 @@ uniform float u_max;
 uniform int u_has_nodata;    // Scalar: nonzero => discard v == u_nodata
 uniform float u_nodata;
 uniform int u_mode;          // 0 = Scalar (LUT), 1 = Rgba (direct)
+uniform sampler2D u_alpha_tex;   // unit 2: Scalar uncertainty R32F (camp#239)
+uniform int u_alpha_on;          // nonzero => opacity from u_alpha_tex
+uniform int u_has_alpha_nodata;
+uniform float u_alpha_nodata;
+uniform int u_alpha_kind;        // 0 = Standard (a,b,mult by depth), 1 = Manual [lo,hi]
+uniform float u_alpha_a;
+uniform float u_alpha_b;
+uniform float u_alpha_mult;
+uniform float u_alpha_lo;
+uniform float u_alpha_hi;
 varying vec2 v_texcoord;
 void main()
 {
@@ -96,7 +114,31 @@ void main()
     // Negative-valued ranges are fine: span = u_max - u_min stays positive.
     float t = clamp((v - u_min) / max(u_max - u_min, 1e-6), 0.0, 1.0);
     vec4 c = texture2D(u_lut, vec2(t, 0.5));
-    gl_FragColor = vec4(c.rgb, 1.0);
+    float a = 1.0;
+    if(u_alpha_on != 0)
+    {
+      float u = texture2D(u_alpha_tex, v_texcoord).r;
+      if(u != u || (u_has_alpha_nodata != 0 && u == u_alpha_nodata))
+        a = 0.0;                                      // no uncertainty known
+      else
+      {
+        float lo = u_alpha_lo;
+        float hi = u_alpha_hi;
+        if(u_alpha_kind == 0)
+        {
+          float bd = u_alpha_b * v;
+          lo = sqrt(u_alpha_a * u_alpha_a + bd * bd);
+          hi = u_alpha_mult * lo;
+        }
+        if(u <= lo)
+          a = 1.0;
+        else if(hi <= lo || u >= hi)
+          a = 0.0;
+        else
+          a = (hi - u) / (hi - lo);
+      }
+    }
+    gl_FragColor = vec4(c.rgb * a, a);
   }
   else
   {
@@ -286,7 +328,8 @@ void RasterGlRenderer::setShorelineAnchor(std::optional<float> anchor)
 
 QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
                                        const QRectF& scene_bounds, float data_min,
-                                       float data_max, const QSize& size)
+                                       float data_max, const QSize& size,
+                                       const OpacityRamp* opacity)
 {
   if(items.isEmpty() || size.isEmpty() || !gl_context_)
     return QImage();
@@ -328,6 +371,18 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
     program_->setUniformValue("u_max", data_max);
     program_->setUniformValue("u_tex", 0);
     program_->setUniformValue("u_lut", 1);
+    program_->setUniformValue("u_alpha_tex", 2);
+    // [camp#239] Ramp uniforms (inert unless an item turns u_alpha_on on below).
+    if(opacity)
+    {
+      const bool manual = opacity->kind == OpacityRamp::Kind::Manual;
+      program_->setUniformValue("u_alpha_kind", manual ? 1 : 0);
+      program_->setUniformValue("u_alpha_a", opacity->a);
+      program_->setUniformValue("u_alpha_b", opacity->b);
+      program_->setUniformValue("u_alpha_mult", opacity->multiple);
+      program_->setUniformValue("u_alpha_lo", opacity->lo);
+      program_->setUniformValue("u_alpha_hi", opacity->hi);
+    }
     // [camp#181 / ADR-0015] Bake keyed on (name, data_min, data_max, anchor): the
     // same [u_min, u_max] the shader normalizes over is the range the anchored LUT
     // is built against, so the two agree at every entry.
@@ -399,6 +454,21 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
                                         : QOpenGLTexture::Linear,
           QOpenGLTexture::Linear);
       item.texture->bind(0);
+      // [camp#239] Opacity applies only to a Scalar item that supplied an uncertainty
+      // texture while the caller asked for it; every other item draws as before.
+      const bool alpha_on = opacity && scalar && item.alpha_texture;
+      if(alpha_on)
+      {
+        item.alpha_texture->setMinMagFilters(QOpenGLTexture::Nearest,
+                                             QOpenGLTexture::Nearest);
+        item.alpha_texture->bind(2);
+      }
+      program_->setUniformValue("u_alpha_on", alpha_on ? 1 : 0);
+      program_->setUniformValue("u_has_alpha_nodata",
+                                (alpha_on && item.has_alpha_nodata) ? 1 : 0);
+      program_->setUniformValue("u_alpha_nodata",
+                                (alpha_on && item.has_alpha_nodata) ? item.alpha_nodata
+                                                                    : 0.0f);
       program_->setUniformValue("u_mode", scalar ? 0 : 1);
       program_->setUniformValue("u_has_nodata",
                                 (scalar && item.has_nodata) ? 1 : 0);
@@ -410,6 +480,8 @@ QImage RasterGlRenderer::renderToImage(const QList<RasterFieldItem>& items,
                                   4 * sizeof(float));
       f->glDrawArrays(GL_TRIANGLE_STRIP, 0, rows * 2);
       item.texture->release(0);
+      if(alpha_on)
+        item.alpha_texture->release(2);
     }
 
     if(lut)
