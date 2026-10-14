@@ -106,3 +106,24 @@ Specialists: static analysis skipped (pre-commit hooks passed on every commit); 
 - [x] Test-only mutators public (deferred: matches existing *ForTest convention in this class)
 - [x] Modal dialog unparented (deferred: same pattern as the existing colormap range dialog)
 - [x] Inconsistent tile-level fallback policy (deferred: owner decision; now surfaced by the status line)
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-10-14 11:01 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-239 at `7b93bc2`
+**Mode**: pre-push
+**Depth**: Standard (reason: shared GL renderer + new ADR; re-review of round-1 fixes)
+**Must-fix**: 3 | **Suggestions**: 3
+**Round**: 2 | **Ship**: recommended — remaining items are mechanical and were fixed in the same sitting; the host asked for exactly one re-review, so the fixes in 2c2ebf7 are not re-reviewed again
+Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: codex ran, gemini FAILED again (agy 420 s print timeout). Lens A and Lens B found no must-fix; codex found three.
+
+### Findings
+- [ ] (must-fix) Alpha textures upload at render time and no arrival-driven eviction sees them; footprint can sit over the ADR-0010 budget while the stream is idle (codex; lens B suggestion) — sonar_live_cache_layer.cpp renderImage
+- [ ] (must-fix) Overview-blind status: opacityAvailable() and the mixed-tile count scanned fine tiles only (codex) — sonar_live_cache_layer.cpp opacityAvailable, updateDisplay
+- [ ] (must-fix) The dialog applied Manual [0,0] (blank layer) and persisted bounds that readSettings rejects, so a restart silently reverted to Standard (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
+- [ ] (suggestion) updateDisplay() scans all tiles on every tile message while the mode is active, O(n^2) over a burst (lens A+B) — sonar_live_cache_layer.cpp updateDisplay
+- [ ] (suggestion) Misleading status before the first band is known (lens A) — sonar_live_cache_layer.cpp updateDisplay
+- [ ] (suggestion) A colour-band switch re-uploads unchanged opacity textures (lens B) — sonar_live_cache_layer.cpp setBandName
