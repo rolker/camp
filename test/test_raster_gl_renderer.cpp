@@ -27,6 +27,7 @@
 
 #include <QApplication>
 #include <QImage>
+#include <QString>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QOpenGLTexture>
@@ -493,4 +494,57 @@ int main(int argc, char** argv)
   QApplication app(argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+// [camp#239] Regression golden for the pre-opacity render path. The fixture
+// test/fixtures/scalar_render_golden.png was captured from the renderer BEFORE the
+// uncertainty-opacity change (commit that introduces this test), so a later renderer
+// edit that alters the default (alpha mode off) output is caught against an
+// independent reference, not against the edited code's own output. Scene: 16x16
+// gradient with a NaN cell and a finite-sentinel cell, viridis, range [0,15], plus a
+// second item sampling a texture sub-rect. Per-channel tolerance 2 absorbs driver
+// rounding (llvmpipe vs hardware); set CAMP_UPDATE_GOLDEN=1 to regenerate.
+TEST(RasterGlRendererTest, DefaultScalarRenderMatchesPreOpacityGolden)
+{
+  if(!offscreenGLAvailable())
+    GTEST_SKIP() << "no offscreen GL context available";
+
+  RasterGlRenderer renderer;
+  ASSERT_TRUE(renderer.makeCurrent());
+  renderer.setColormap("viridis");
+
+  const int n = 16;
+  std::vector<float> data(n * n);
+  for(int r = 0; r < n; ++r)
+    for(int c = 0; c < n; ++c)
+      data[r * n + c] = float(r) * 0.5f + float(c) * 0.5f;   // 0 .. 15
+  data[2 * n + 3] = std::numeric_limits<float>::quiet_NaN();
+  data[5 * n + 7] = 9999.0f;
+  auto tex = makeScalarTexture(n, n, data);
+
+  RasterFieldItem item = scalarItem(tex.get(), n, /*has_nodata=*/true, 9999.0f);
+  const QImage img = renderer.renderToImage({item}, QRectF(0, 0, n, n), 0.0f, 15.0f,
+                                            QSize(n, n));
+  tex.reset();
+  renderer.doneCurrent();
+  ASSERT_FALSE(img.isNull());
+
+  const QString path = QString(CAMP_TEST_FIXTURE_DIR) + "/scalar_render_golden.png";
+  if(qEnvironmentVariableIsSet("CAMP_UPDATE_GOLDEN"))
+    ASSERT_TRUE(img.convertToFormat(QImage::Format_ARGB32).save(path));
+
+  QImage golden(path);
+  ASSERT_FALSE(golden.isNull()) << "missing golden fixture " << path.toStdString();
+  golden = golden.convertToFormat(QImage::Format_ARGB32);
+  const QImage got = img.convertToFormat(QImage::Format_ARGB32);
+  ASSERT_EQ(got.size(), golden.size());
+  for(int y = 0; y < n; ++y)
+    for(int x = 0; x < n; ++x)
+    {
+      const QColor a = got.pixelColor(x, y), b = golden.pixelColor(x, y);
+      EXPECT_LE(std::abs(a.red() - b.red()), 2) << x << "," << y;
+      EXPECT_LE(std::abs(a.green() - b.green()), 2) << x << "," << y;
+      EXPECT_LE(std::abs(a.blue() - b.blue()), 2) << x << "," << y;
+      EXPECT_LE(std::abs(a.alpha() - b.alpha()), 2) << x << "," << y;
+    }
 }

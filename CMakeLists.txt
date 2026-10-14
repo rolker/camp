@@ -981,6 +981,9 @@ if(BUILD_TESTING)
   target_include_directories(test_raster_gl_renderer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
   )
+  target_compile_definitions(test_raster_gl_renderer PRIVATE
+    CAMP_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
+  )
   target_link_libraries(test_raster_gl_renderer
     camp_map
     Qt5::Core
