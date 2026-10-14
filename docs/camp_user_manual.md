@@ -103,6 +103,9 @@ Each boat gets a tab containing:
   the thresholds: by default a cell is fully opaque at the IHO S-44 Order 1a allowed
   uncertainty for its depth and fully transparent at three times that (adjustable, or
   pin manual values in metres). The uncertainty is the CUBE 95 % (1.96 sigma) figure.
+  The standard ramp needs the *depth* band as the colour band (it reads each cell's depth
+  from it); with another colour band use manual thresholds. The layer's status line says
+  when the mode cannot apply or when some tiles lack an uncertainty band.
   The choice is remembered per layer across restarts. The menu entry is greyed out
   (with the reason) until a tile with an `uncertainty` band has arrived and the
   colour band is not the uncertainty band itself.

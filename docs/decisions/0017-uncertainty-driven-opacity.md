@@ -44,7 +44,12 @@ default rendering unchanged.
    allowed uncertainty `sqrt(a^2 + (b*d)^2)`). `a`, `b` and the multiple (3) are named
    constants in `raster/opacity_ramp.h` and editable in the dialog; the operator can
    instead pin manual absolute thresholds. The depth is read as a magnitude so a
-   negative-down depth band works.
+   negative-down depth band works. The shader takes the cell's depth from the COLOUR
+   band's value, so the Standard ramp is applied only while the colour band is
+   `depth` (otherwise the layer status says to pick depth or use manual thresholds);
+   a Manual ramp is depth-independent and works with any colour band. Non-finite
+   (NaN or infinite) uncertainty or depth is transparent, in the shader and in the CPU
+   reference alike.
 4. **Confidence level.** The CUBE `uncertainty` layer is scaled to 1.96 sigma (a 95 %
    interval; see cube_bathymetry#163), which is also the confidence level of S-44's
    TVU limits, so the two are comparable as they stand. A boat whose CUBE is configured
@@ -53,6 +58,9 @@ default rendering unchanged.
    is fully transparent (nothing is known about its quality, so it is not asserted). A
    tile that has no uncertainty band at all draws as plain opaque depth, and the layer
    status says `(opacity: no uncertainty band)`, so a depth-only source does not blank.
+   When only SOME resident tiles lack the band the status counts them
+   (`N of M tiles lack uncertainty, drawn opaque`), because plain opaque depth would
+   otherwise read as high confidence.
 6. **Overview pyramid.** `foldChild()` already folds every band independently by MEAN
    over finite samples, so both bands exist at every level and a coarse placeholder
    samples both textures through the same sub-rect (parent and child are the same
@@ -61,13 +69,16 @@ default rendering unchanged.
    no uncertainty sample stays uncertainty-NoData and therefore transparent.
 7. **Resident footprint.** The alpha texture is counted by `entryBytes()` (so the
    ADR-0010 budget stays honest) and freed at every site that frees the value texture.
+   It is released (and leaves the budget) when the mode is turned off or cannot apply.
    It has its own dirty flag, because `textureFor()` clears the value texture's flag
    before the alpha upload runs.
 8. **Opt-in, persisted.** The mode is off by default. It persists under the layer's
    `settingsKey()` (`MapItem/live:<namespace>`): `opacity_mode`, `opacity_band`
    (default `uncertainty`), `opacity_ramp_kind` (`standard`|`manual`), `opacity_a`,
-   `opacity_b`, `opacity_multiple`, `opacity_lo`, `opacity_hi`. A non-finite or
-   nonsensical stored ramp falls back to the shipped standard; a colour band equal to
+   `opacity_b`, `opacity_multiple`, `opacity_lo`, `opacity_hi`. A stored ramp with a
+   garbled, non-finite or nonsensical number, or a Manual ramp missing a bound or with
+   `hi <= lo`, falls back as a whole to the shipped standard (a garbled string would
+   otherwise convert to 0 and hide every cell); a colour band equal to
    the opacity band restores with the mode off.
 9. **Band naming.** The opacity band is the fixed name `uncertainty` for this slice
    (camp#104 band semantics are not a prerequisite); the setting is stored so it can
