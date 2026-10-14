@@ -206,8 +206,15 @@ public:
   /// True when the mode could be turned on: the opacity band differs from the colour
   /// band and at least one held tile carries it.
   bool opacityAvailable() const;
-  /// True when the mode is on and actually applied to the render.
-  bool opacityActive() const { return opacity_mode_ && opacity_band_name_ != band_name_; }
+  /// True when the mode is on and actually applied to the render: the opacity band
+  /// differs from the colour band, and a Standard ramp (thresholds follow the CELL'S DEPTH,
+  /// read from the colour band's value) has the depth band as the colour band. A Manual
+  /// ramp is depth-independent and works with any colour band.
+  bool opacityActive() const
+  {
+    return opacity_mode_ && opacity_band_name_ != band_name_ &&
+           (opacity_ramp_.kind == raster::OpacityRamp::Kind::Manual || band_name_ == "depth");
+  }
   /// Test seams: texture-dirty state of a resident entry.
   bool overviewTextureDirtyForTest(const gggs::GridIndex& index) const;
   void markTexturesCleanForTest();                  ///< clear every entry's dirty flags
@@ -362,6 +369,7 @@ private:
   QOpenGLTexture* textureFor(Entry& entry);
   // [camp#239] (Re)upload the opacity band of @p entry; null when the entry lacks it.
   QOpenGLTexture* alphaTextureFor(Entry& entry);
+  void releaseAlphaTextures();   // free every alpha texture under the GL context
   void markAllTexturesDirty();   // both value and opacity textures, fine AND overview
 
   /// [camp#103] items() body with an optional scene-space clip: a non-null

@@ -1551,8 +1551,24 @@ void SonarLiveCacheLayer::updateDisplay()
     // silently drawing opaque depth.
     if(opacity_mode_ && opacity_band_name_ == band_name_)
       status += " (opacity: pick a colour band other than the opacity band)";
+    else if(opacity_mode_ && !opacityActive())
+      status += " (opacity: the standard ramp needs the depth band as colour band; "
+                "pick depth or use manual thresholds)";
     else if(opacity_mode_ && !opacityAvailable())
       status += " (opacity: no uncertainty band)";
+    else if(opacityActive())
+    {
+      // Mixed state: tiles lacking the band draw as plain opaque depth (ADR-0017 D5),
+      // which would otherwise read as high confidence - say so.
+      std::size_t missing = 0;
+      for(const auto& item : tiles_)
+        if(!item.second.tile.band(opacity_band_name_))
+          ++missing;
+      if(missing > 0)
+        status += QString(" (opacity: %1 of %2 tiles lack uncertainty, drawn opaque)")
+                    .arg(qulonglong(missing))
+                    .arg(qulonglong(tiles_.size()));
+    }
     setStatus(status);
   }
   else
@@ -1613,6 +1629,25 @@ QOpenGLTexture* SonarLiveCacheLayer::alphaTextureFor(Entry& entry)
   return entry.alpha_texture.get();
 }
 
+void SonarLiveCacheLayer::releaseAlphaTextures()
+{
+  // The mode is off (or cannot apply): alpha textures nobody draws would otherwise stay
+  // resident and keep counting against the ADR-0010 budget until each tile is evicted.
+  bool any = false;
+  for(auto* pool : {&tiles_, &overview_tiles_})
+    for(auto& item : *pool)
+      any = any || item.second.alpha_texture;
+  if(!any || !renderer_.makeCurrent())
+    return;
+  for(auto* pool : {&tiles_, &overview_tiles_})
+    for(auto& item : *pool)
+    {
+      item.second.alpha_texture.reset();
+      item.second.alpha_texture_dirty = true;
+    }
+  renderer_.doneCurrent();
+}
+
 void SonarLiveCacheLayer::markAllTexturesDirty()
 {
   for(auto& item : tiles_)
@@ -1660,6 +1695,8 @@ bool SonarLiveCacheLayer::setOpacityMode(bool on)
   if(on && opacity_band_name_ == band_name_)
     return false;   // colour band == opacity band is meaningless: refuse
   opacity_mode_ = on;
+  if(!opacityActive())
+    releaseAlphaTextures();
   cached_image_ = QImage();
   updateDisplay();
   writeSettings();
@@ -1670,7 +1707,10 @@ bool SonarLiveCacheLayer::setOpacityMode(bool on)
 void SonarLiveCacheLayer::setOpacityRamp(const raster::OpacityRamp& ramp)
 {
   opacity_ramp_ = ramp;
+  if(!opacityActive())
+    releaseAlphaTextures();   // e.g. Standard ramp with a non-depth colour band
   cached_image_ = QImage();
+  updateDisplay();
   writeSettings();
   update(boundingRect());
 }
@@ -1974,6 +2014,8 @@ void SonarLiveCacheLayer::setBandName(const std::string& name)
   // The value texture is per-band: mark every tile's texture for re-upload, reset
   // and re-fold the auto-range over the new band.
   markAllTexturesDirty();   // [camp#239] fine AND overview (overview was missed before)
+  if(!opacityActive())
+    releaseAlphaTextures();
   resetAutoRange();
   foldAutoRange();
   updateDisplay();
@@ -2152,15 +2194,30 @@ void SonarLiveCacheLayer::readSettings()
       .toString().toStdString();
   raster::OpacityRamp ramp;
   {
+    // Every stored number must be PRESENT where it matters and convert cleanly:
+    // toFloat() silently yields 0 for a garbled string, and a 0 here would pass a
+    // ">= 0" check and hide every cell (lo = hi = 0). Anything doubtful falls back to
+    // the shipped standard as a whole rather than half-applying.
+    auto number = [&settings](const char* key, float fallback, bool* ok) {
+      if(!settings.contains(key))
+        return fallback;
+      bool converted = false;
+      const float v = settings.value(key).toFloat(&converted);
+      if(!converted || !std::isfinite(v))
+        *ok = false;
+      return v;
+    };
+    bool ok = true;
     const bool manual = settings.value("opacity_ramp_kind", "standard").toString() == "manual";
-    const float a = settings.value("opacity_a", ramp.a).toFloat();
-    const float b = settings.value("opacity_b", ramp.b).toFloat();
-    const float mult = settings.value("opacity_multiple", ramp.multiple).toFloat();
-    const float lo = settings.value("opacity_lo", ramp.lo).toFloat();
-    const float hi = settings.value("opacity_hi", ramp.hi).toFloat();
-    const bool sane = std::isfinite(a) && a >= 0.0f && std::isfinite(b) && b >= 0.0f &&
-                      std::isfinite(mult) && mult >= 1.0f && std::isfinite(lo) &&
-                      std::isfinite(hi) && lo >= 0.0f && hi >= 0.0f;
+    const float a = number("opacity_a", ramp.a, &ok);
+    const float b = number("opacity_b", ramp.b, &ok);
+    const float mult = number("opacity_multiple", ramp.multiple, &ok);
+    const float lo = number("opacity_lo", ramp.lo, &ok);
+    const float hi = number("opacity_hi", ramp.hi, &ok);
+    if(manual && !(settings.contains("opacity_lo") && settings.contains("opacity_hi")))
+      ok = false;   // a Manual ramp with a missing bound would restore as [0, 0]
+    const bool sane = ok && a >= 0.0f && b >= 0.0f && mult >= 1.0f && lo >= 0.0f &&
+                      hi >= 0.0f && (!manual || hi > lo);
     if(sane)
     {
       ramp.a = a;
