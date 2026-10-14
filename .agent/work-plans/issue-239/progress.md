@@ -62,3 +62,27 @@ Independence uncertain: this review ran in the same context that authored the pl
 - [ ] (suggestion) The modal opacity dialog blocks the UI; consider modeless/live for demo use (ADR-0009 already accepts modal)
 - [ ] (suggestion) Size is large (~15 files); renderer commit should be independently reviewable, consider splitting docs/dialog into a second PR if review drags
 - [ ] (suggestion) Rename shader uniforms u_u_opaque/u_u_transparent to u_alpha_lo/u_alpha_hi
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-10-14 10:45 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+**Verdict**: changes-requested
+
+**Branch**: feature/issue-239 at `73459ce`
+**Mode**: pre-push
+**Depth**: Standard (reason: ~1500 changed lines, shared GL renderer, new ADR)
+**Must-fix**: 4 | **Suggestions**: 5
+**Round**: 1 | **Ship**: continue — the must-fixes are mechanical but touch correctness of the displayed quantity
+Specialists: static analysis skipped (pre-commit hooks passed on every commit); governance + plan drift by the lead (plan sync'd, no drift beyond recorded deviations); Claude Adversarial Lens A + Lens B (two fresh subagents); Cross-Model: codex ran, gemini FAILED (agy print timeout 420s, partial output discarded).
+
+### Findings
+- [ ] (must-fix) Standard ramp reads the COLOUR band's value as depth; with a non-depth colour band the S-44 limit is computed from the wrong quantity (codex; lens A+B minor) — raster_gl_renderer.cpp:129, sonar_live_cache_layer.cpp opacityActive
+- [ ] (must-fix) Shader rejects NaN but not +/-inf, unlike opacity_ramp.h (codex must-fix, lens A) — raster_gl_renderer.cpp:121
+- [ ] (must-fix) Settings restore: toFloat() without ok flag and Manual accepted without both bounds present, so corrupt/missing values restore [0,0] and hide every cell (codex must-fix, lens B) — sonar_live_cache_layer.cpp:2159
+- [ ] (must-fix) Mixed tiles (some lack the uncertainty band) draw those tiles opaque with no warning, since the status only warns when NO tile has the band (codex must-fix, lens A) — sonar_live_cache_layer.cpp:1554
+- [ ] (suggestion) Turning the mode off (or making the bands collide) never frees alpha textures; they stay counted in the ADR-0010 budget (lens A+B) — sonar_live_cache_layer.cpp setOpacityMode
+- [ ] (suggestion) A runtime-valid mode=on with colour==opacity band is lost on restart (restore forces off, next write persists false) (lens A) — sonar_live_cache_layer.cpp readSettings
+- [ ] (suggestion) Test-only mutators are public members of the production class (lens B) — sonar_live_cache_layer.h
+- [ ] (suggestion) Modal dialog has no parent and on_change captures the layer this; layer removal during the modal would dangle (lens B) — opacity_range_dialog.cpp
+- [ ] (suggestion) Documentation of the policy for tiles without the band: consistent with the owner's decision, but tile-level fallback is inconsistent between tiles (lens A) — see the mixed-tiles must-fix
