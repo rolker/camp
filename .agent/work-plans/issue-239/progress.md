@@ -127,3 +127,19 @@ Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: 
 - [x] (suggestion) updateDisplay() scans all tiles on every tile message while the mode is active, O(n^2) over a burst (lens A+B) — sonar_live_cache_layer.cpp updateDisplay (deferred: opt-in mode; per-tile cost is one string-keyed map lookup, thousands of tiles is millions of cheap operations; revisit with a cached count if a profile shows it)
 - [x] (suggestion) Misleading status before the first band is known (lens A) — sonar_live_cache_layer.cpp updateDisplay
 - [x] (suggestion) A colour-band switch re-uploads unchanged opacity textures (lens B) — sonar_live_cache_layer.cpp setBandName
+
+## Implementation
+**Status**: complete
+**When**: 2026-10-14 11:01 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+
+**Branch**: feature/issue-239 at `2c2ebf7`
+**Addressed**: Local Review (Pre-Push) round 2
+**Commits**: 2c2ebf7
+
+### Actions
+- [x] Budget re-check queued after a render-time alpha upload, tested with GL — `sonar_live_cache_layer.cpp renderImage`
+- [x] opacityAvailable() and the mixed-tile count include overview tiles — `sonar_live_cache_layer.cpp`
+- [x] Manual ramp: defaults seeded valid, hi > lo enforced at dialog and setter, applied == restored, tested — `opacity_range_dialog.cpp`, `opacity_ramp.h`
+- [x] No misleading status before the first band; colour-band switch no longer dirties unchanged opacity textures
+- [x] updateDisplay O(n) scan per tile message (deferred: opt-in mode, cheap lookups; revisit with a cached count if profiling shows it)
