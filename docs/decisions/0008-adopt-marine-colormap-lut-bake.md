@@ -104,6 +104,8 @@ Two design questions had to be settled before adopting it:
 
 ## Consequences
 
+- **Opacity (camp#239).** The uncertainty-driven opacity feature follows this rule: alpha
+  is computed in the shader, not baked into the LUT ([ADR-0017](0017-uncertainty-driven-opacity.md)).
 - **`bake_lut` TransferParams MUST stay identity.** Any future use of gain, contrast,
   alpha-ramp or below/no-data must go through the shader (or a deliberate shader
   rewrite), not by baking them into this LUT — otherwise the range the shader applies

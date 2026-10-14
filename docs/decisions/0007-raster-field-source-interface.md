@@ -130,6 +130,7 @@ which cells are "data".
 | `RasterLayer` from QPainter → GL | Mipmap pyramid + `QPixmap` chain removed; a scalar colormap change now re-bakes the LUT instead of re-warping the file | Yes |
 | Both GL layers lose their own shader | The `// NOTE: shader duplicated` marker in `sonar_live_cache_layer.cpp` is removed | Yes |
 | `marine_colormap` GPU-lib migration | Per-band colormap defaults | **No — deferred** |
+| `RasterFieldItem` / `renderToImage()` extended (camp#239) | Optional `alpha_texture` + defaulted `OpacityRamp*`; default output unchanged — see [ADR-0017](0017-uncertainty-driven-opacity.md) | Yes |
 
 - **ADR-0006 is untouched.** `SonarLiveCacheLayer`'s persistence (write-through /
   warm-load), opt-in tile-stream subscription, and GUI-thread reconciler invariant

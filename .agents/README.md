@@ -161,6 +161,18 @@ entry whose path did not resolve when it was written keeps its RAW spelling (a
 dangling symlink), so once the target appears the path in hand is the resolved
 one and an exact-match removal would write the entry back on every launch.
 
+**Live coverage opacity mode (camp#239, ADR-0017):** `SonarLiveCacheLayer` can colour
+by one band (depth) and set each cell's opacity from another (`uncertainty`). Opacity is
+computed in the shared fragment shader from a second R32F texture, **never baked into
+the LUT** (ADR-0008); the CPU reference is `raster/opacity_ramp.h`, which the shader
+mirrors and `test_opacity_ramp` / `test_raster_gl_renderer` pin. Default ramp = IHO S-44
+Order 1a (`a=0.5`, `b=0.013`) per cell depth, transparent at 3x. Persisted under
+`MapItem/live:<namespace>`: `opacity_mode` (default off), `opacity_band`,
+`opacity_ramp_kind`, `opacity_a`, `opacity_b`, `opacity_multiple`, `opacity_lo`,
+`opacity_hi`. Pitfall: `SonarLiveCacheLayer::Entry` is brace-initialised positionally, so
+new members must be declared after the existing ones, and every place that frees
+`texture` must also free `alpha_texture`.
+
 **Overlays** (mission items, AIS contacts, collision zones, platform/ship-track,
 nav_source) parent to the Map's persistent scene-origin anchor (`Map::rootItem()`,
 via `AutonomousVehicleProject::originAnchor()`) or to a dedicated Map `Layer`, so

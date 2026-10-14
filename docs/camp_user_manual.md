@@ -96,6 +96,16 @@ Each boat gets a tab containing:
   (`unh_marine_navigation#64`) that replaced the nav2 Collision Monitor; the overlay
   and topic name are unchanged.)*
 - **Markers** and **AIS** — generic marker overlays and AIS contacts.
+- **Live sonar coverage** — right-click a *Live Coverage* layer for its colormap, band
+  and range controls. *Show uncertainty as opacity* (off by default) keeps the depth
+  colour but fades each cell by how uncertain it is, so freshly pinged cells appear
+  faintly and firm up as repeat passes lower the uncertainty. *Opacity range…* chooses
+  the thresholds: by default a cell is fully opaque at the IHO S-44 Order 1a allowed
+  uncertainty for its depth and fully transparent at three times that (adjustable, or
+  pin manual values in metres). The uncertainty is the CUBE 95 % (1.96 sigma) figure.
+  The choice is remembered per layer across restarts. The menu entry is greyed out
+  (with the reason) until a tile with an `uncertainty` band has arrived and the
+  colour band is not the uncertainty band itself.
 
 > **Not in CAMP:** camera/sonar/segmentation imagery and the annunciators — those
 > are separate operator-station windows, covered in the boat's operator manual.
