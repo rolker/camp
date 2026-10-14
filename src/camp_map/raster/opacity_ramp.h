@@ -54,6 +54,20 @@ struct OpacityRamp
   float hi = kDefaultTransparentMultiple * kDefaultStandard.a;
 };
 
+/// Make a Manual ramp valid (hi strictly greater than lo), the one rule both the dialog
+/// and the persisted-settings reader enforce so that what is applied is what is restored.
+/// `lo + 0.01` is not enough on its own: for a large `lo` the float spacing exceeds 0.01
+/// and the sum rounds back to `lo`, so the next representable float is used as a floor.
+inline void normalizeManualRamp(OpacityRamp& ramp)
+{
+  if (ramp.kind != OpacityRamp::Kind::Manual || ramp.hi > ramp.lo) {
+    return;
+  }
+  const float bumped = ramp.lo + 0.01f;
+  const float next = std::nextafter(ramp.lo, std::numeric_limits<float>::infinity());
+  ramp.hi = bumped > ramp.lo ? bumped : next;
+}
+
 /// The standard's allowed uncertainty at @p depth (sign-agnostic: the live depth
 /// band may be negative-down).
 inline float allowedUncertainty(const OpacityRamp& ramp, float depth)

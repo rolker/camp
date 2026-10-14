@@ -81,6 +81,31 @@ TEST(OpacityRampTest, DegenerateManualRampIsAHardStep)
   EXPECT_FLOAT_EQ(opacityFromUncertainty(2.1f, 10.0f, r), 0.0f);
 }
 
+// hi must end up strictly greater than lo for ANY lo, including values where adding
+// 0.01 rounds back to lo in float (the persisted-settings reader rejects hi <= lo).
+TEST(OpacityRampTest, NormalizeManualRampAlwaysYieldsHiGreaterThanLo)
+{
+  for(float lo : {0.0f, 0.5f, 2.0f, 1000.0f, 1.0e5f, 1.0e6f, 1.0e7f})
+  {
+    OpacityRamp r;
+    r.kind = OpacityRamp::Kind::Manual;
+    r.lo = lo;
+    r.hi = lo;
+    camp::raster::normalizeManualRamp(r);
+    EXPECT_GT(r.hi, r.lo) << "lo=" << lo;
+  }
+  OpacityRamp valid;
+  valid.kind = OpacityRamp::Kind::Manual;
+  valid.lo = 1.0f;
+  valid.hi = 3.0f;
+  camp::raster::normalizeManualRamp(valid);
+  EXPECT_FLOAT_EQ(valid.hi, 3.0f) << "a valid ramp is left alone";
+  OpacityRamp standard;
+  standard.lo = standard.hi = 5.0f;
+  camp::raster::normalizeManualRamp(standard);
+  EXPECT_FLOAT_EQ(standard.hi, 5.0f) << "only Manual ramps are normalised";
+}
+
 TEST(OpacityRampTest, NonFiniteInputsAreTransparent)
 {
   const OpacityRamp r;

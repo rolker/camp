@@ -104,9 +104,7 @@ void showOpacityRangeDialog(
     r.hi = static_cast<float>(hi_spin->value());
     // Same rule readSettings() applies on restore, so what is applied now is what comes
     // back after a restart: a Manual ramp needs hi > lo.
-    if (r.kind == OpacityRamp::Kind::Manual && r.hi <= r.lo) {
-      r.hi = r.lo + 0.01f;
-    }
+    normalizeManualRamp(r);
     return r;
   };
   auto changed = [=]() {

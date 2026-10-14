@@ -93,4 +93,9 @@ default rendering unchanged.
   by a follow-up that gives GGGS tiles the same mode.
 - `setBandName()` previously left overview textures on the old band; fixed here because
   the new mode depends on both pools following the band selection.
+- The alpha texture roughly doubles the per-tile texture cost while the mode is on. Eviction
+  does not know which tiles the last render needed, so under a budget tight enough that the
+  visible tiles alone exceed it, eviction can shed visible fine tiles to their overviews
+  (the camp#172 reload path then brings them back on the next pan). The default budget
+  leaves ample headroom; viewport-aware eviction is not part of this change.
 - The ramp dialog is a modal window per ADR-0009; a modeless variant remains possible.

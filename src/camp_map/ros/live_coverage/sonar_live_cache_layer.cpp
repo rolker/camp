@@ -1712,9 +1712,7 @@ void SonarLiveCacheLayer::setOpacityRamp(const raster::OpacityRamp& ramp)
   opacity_ramp_ = ramp;
   // A Manual ramp must have hi > lo to survive a restart (readSettings rejects the rest);
   // enforce the same rule at the source so what is applied is what is restored.
-  if(opacity_ramp_.kind == raster::OpacityRamp::Kind::Manual &&
-     !(opacity_ramp_.hi > opacity_ramp_.lo))
-    opacity_ramp_.hi = opacity_ramp_.lo + 0.01f;
+  raster::normalizeManualRamp(opacity_ramp_);
   if(!opacityActive())
     releaseAlphaTextures();   // e.g. Standard ramp with a non-depth colour band
   cached_image_ = QImage();
@@ -1964,6 +1962,7 @@ QImage SonarLiveCacheLayer::renderImage(const QSize& size, const QRectF& clip_bo
     QMetaObject::invokeMethod(this, [this]() {
       evict_queued_ = false;
       evictIfOverBudget();
+      updateDisplay();   // residency changed with no arrival to refresh the status
     }, Qt::QueuedConnection);
   }
   return image;

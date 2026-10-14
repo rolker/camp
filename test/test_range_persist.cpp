@@ -632,8 +632,8 @@ TEST(RangePersist, LiveOpacityManualRampAppliedIsManualRampRestored)
     auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
     camp::raster::OpacityRamp degenerate;
     degenerate.kind = camp::raster::OpacityRamp::Kind::Manual;
-    degenerate.lo = 2.0f;
-    degenerate.hi = 2.0f;
+    degenerate.lo = 1.0e6f;   // large: lo + 0.01f rounds back to lo in float
+    degenerate.hi = 1.0e6f;
     layer->setOpacityRamp(degenerate);
     EXPECT_GT(layer->opacityRamp().hi, layer->opacityRamp().lo);
   }
@@ -642,7 +642,7 @@ TEST(RangePersist, LiveOpacityManualRampAppliedIsManualRampRestored)
     layer->readSettings();
     EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Manual)
         << "the applied Manual ramp must survive the restart, not revert to Standard";
-    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 2.0f);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 1.0e6f);
   }
 }
 
