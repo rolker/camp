@@ -25,3 +25,21 @@ issue: 239
 - [ ] Design note in docs/ citing Colin Ware (uncertainty visualisation; value-by-alpha) - verify citations against sources before writing; do not cite from memory.
 - [ ] Out of scope: GggsTileLayer two-band mode (the issue is the live layer); note as follow-up.
 - [ ] Tests: shader-side alpha mapping cannot run headless unless the mapping is extracted into a pure function; plan a CPU reference function (shared by a unit test and a documented GLSL mirror) plus a persistence round-trip in test_range_persist style.
+
+## Plan Authored
+**Status**: complete
+**When**: 2026-10-14 10:03 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+
+**Plan**: `.agent/work-plans/issue-239/plan.md` at `68f1e23`
+**Branch**: feature/issue-239 at `68f1e23`
+**Phases**: single
+
+### Open questions
+- [ ] Default opacity ramp: auto-range snapshot, survey standard, or app-wide default
+- [ ] Missing-uncertainty policy (cell transparent, tile-without-band opaque)
+- [ ] Basemap to blend against for the demo
+- [ ] Fixed band name "uncertainty" vs user-pickable
+- [ ] Opacity range on the colorbar legend in this PR?
+- [ ] Which Ware works to anchor on
+- [ ] GGGS layer follow-up issue?
