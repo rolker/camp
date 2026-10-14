@@ -158,8 +158,8 @@ Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: 
 Specialists: Claude Adversarial Lens A + Lens B (fresh subagents); Cross-Model: codex ran, gemini skipped (timed out in rounds 1 and 2). Before the review the two round-2 tests were confirmed red with their fixes temporarily reverted (see Implementation).
 
 ### Findings
-- [ ] (must-fix) lo + 0.01f rounds back to lo for large lo, leaving hi == lo, which readSettings rejects on restart (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
-- [ ] (suggestion) Status not refreshed after the queued eviction (codex; lens A) — sonar_live_cache_layer.cpp renderImage
-- [ ] (suggestion) Eviction is not viewport-aware: visible tiles can be shed to overviews when the alpha textures push a tight budget over (lens B) — sonar_live_cache_layer.cpp evictIfOverBudget
-- [ ] (suggestion) Reload batch cap does not include the texture cost, so a reload can overshoot then evict again (lens B) — sonar_live_cache_layer.cpp kickReload
-- [ ] (suggestion) Pre-existing: warm-load overview insert_or_assign can destroy a displaced entry's GL textures with no context current (lens B) — sonar_live_cache_layer.cpp:544
+- [x] (must-fix) lo + 0.01f rounds back to lo for large lo, leaving hi == lo, which readSettings rejects on restart (codex; lens A suggestion) — opacity_range_dialog.cpp, sonar_live_cache_layer.cpp setOpacityRamp
+- [x] (suggestion) Status not refreshed after the queued eviction (codex; lens A) — sonar_live_cache_layer.cpp renderImage
+- [x] (suggestion) Eviction is not viewport-aware: visible tiles can be shed to overviews when the alpha textures push a tight budget over (lens B) — sonar_live_cache_layer.cpp evictIfOverBudget (deferred: viewport-aware eviction is a design change to ADR-0010 beyond this feature; documented in ADR-0017 consequences; default 512 MiB budget leaves headroom)
+- [x] (suggestion) Reload batch cap does not include the texture cost, so a reload can overshoot then evict again (lens B) — sonar_live_cache_layer.cpp kickReload (deferred: bounded reload/evict cycle only at the budget edge, re-kick waits for a viewport move; fold into the viewport-aware eviction work)
+- [x] (suggestion) Pre-existing: warm-load overview insert_or_assign can destroy a displaced entry's GL textures with no context current (lens B) — sonar_live_cache_layer.cpp:544 (deferred: pre-existing, unrelated to this feature; the alpha texture only enlarges what it leaks; worth its own issue)
