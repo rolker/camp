@@ -10,8 +10,10 @@
 
 #include <cstdint>
 #include <set>
+#include <vector>
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QDir>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -253,4 +255,161 @@ int main(int argc, char** argv)
   QCoreApplication::setApplicationName("test_sonar_live_eviction");
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
+}
+
+// [camp#239] setBandName() used to mark only the FINE tiles' textures dirty, so after a
+// band switch an overview (the coarse placeholder / zoomed-out coverage) kept the OLD
+// band's texture. The uncertainty-opacity mode depends on both pools following the
+// band, so the dirty marking now covers overview tiles too.
+TEST(SonarLiveEviction, BandSwitchMarksOverviewTexturesDirtyToo)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+  const QString ns = "/band_switch_test";
+  const std::size_t per_tile = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes", qulonglong(2 * per_tile));
+
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  std::vector<gggs::GridIndex> written;
+  for(std::size_t i = 0; i < 8; ++i)
+  {
+    const gggs::GridIndex grid = level.gridIndex(43.0 + 0.02 * i, -70.5);
+    ASSERT_TRUE(grid.valid());
+    written.push_back(grid);
+    SonarLiveTile tile(grid, kEdge, kEdge);
+    tile.applyPatch(makeUniformDepth(grid, static_cast<std::int16_t>(300 + i)));
+    const QString path = QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                                   .arg(static_cast<int>(grid.level()))
+                                                   .arg(grid.row())
+                                                   .arg(grid.column()));
+    ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+  }
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  // Evicted fine tiles fold up the whole chain; the protected apex always stays, so walk
+  // the ancestors of a written tile until a resident overview is found.
+  gggs::GridIndex parent = gggs::parent(written.front());
+  while(parent.valid() && !layer->overviewTileForTest(parent))
+    parent = gggs::parent(parent);
+  ASSERT_TRUE(parent.valid()) << "need a resident overview";
+
+  layer->markTexturesCleanForTest();
+  EXPECT_FALSE(layer->overviewTextureDirtyForTest(parent));
+  layer->setBandNameForTest("uncertainty");
+  EXPECT_TRUE(layer->overviewTextureDirtyForTest(parent))
+      << "the overview's texture must be re-uploaded for the newly selected band";
+}
+
+// [camp#239] Mixed state: tiles that lack the uncertainty band draw as plain opaque depth
+// (ADR-0017), which reads as high confidence, so the status must say how many. Also the
+// all-missing and all-present cases.
+TEST(SonarLiveEviction, OpacityStatusReportsTilesLackingTheUncertaintyBand)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+  const QString ns = "/opacity_status_test";
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes", qulonglong(0));   // no eviction
+
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  auto write_tile = [&](double lat, bool with_uncertainty) {
+    const gggs::GridIndex grid = level.gridIndex(lat, -70.5);
+    SonarLiveTile tile(grid, kEdge, kEdge);
+    mi::SonarVisualizationTile msg = makeUniformDepth(grid, 300);
+    if(with_uncertainty)
+    {
+      mi::VisualizationBand u = msg.bands.front();
+      u.name = "uncertainty";
+      msg.bands.push_back(u);
+    }
+    tile.applyPatch(msg);
+    const QString path = QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                                   .arg(static_cast<int>(grid.level()))
+                                                   .arg(grid.row())
+                                                   .arg(grid.column()));
+    ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+  };
+  write_tile(43.00, true);
+  write_tile(43.50, false);
+
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  ASSERT_EQ(layer->residentTileCount(), std::size_t(2));
+  ASSERT_TRUE(layer->setOpacityMode(true));
+  EXPECT_TRUE(layer->opacityActive());
+  EXPECT_TRUE(layer->status().contains("1 of 2 tiles lack uncertainty"))
+      << layer->status().toStdString();
+
+  // Alpha textures are real VRAM and are counted against the ADR-0010 budget while the
+  // mode is on, and released when it is turned off. Needs a GL context to upload.
+  const QImage on = layer->renderImage(QSize(64, 64));
+  if(on.isNull())
+    GTEST_SKIP() << "no offscreen GL context: alpha texture accounting not exercised";
+  const std::size_t with_alpha = layer->fineResidentBytes();
+  ASSERT_TRUE(layer->setOpacityMode(false));
+  const std::size_t without_alpha = layer->fineResidentBytes();
+  const std::size_t one_texture =
+    static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  EXPECT_EQ(with_alpha - without_alpha, one_texture)
+      << "exactly the one tile that has an uncertainty band uploads an alpha texture";
+}
+
+// [camp#239] The alpha texture is uploaded at RENDER time, which no tile-arrival eviction
+// sees; with the stream idle the footprint used to sit over the ADR-0010 budget
+// indefinitely. Rendering with the mode on must queue a budget re-check.
+TEST(SonarLiveEviction, AlphaUploadAtRenderTimeTriggersBudgetEviction)
+{
+  QSettings().clear();
+  QTemporaryDir cache;
+  ASSERT_TRUE(cache.isValid());
+  const QString ns = "/opacity_budget_test";
+  const std::size_t two_bands = 2 * static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  const std::size_t one_tex = static_cast<std::size_t>(kEdge) * kEdge * sizeof(float);
+  // Two tiles with both bands: CPU bands + value texture fit; the alpha textures do not.
+  QSettings().setValue("LiveTileCache/cache_dir", cache.path());
+  QSettings().setValue("LiveTileCache/max_vram_bytes",
+                       qulonglong(2 * (two_bands + one_tex) + one_tex / 2));
+  const QString tile_dir = QDir(cache.path()).filePath(sanitizeNamespace(ns));
+  ASSERT_TRUE(QDir().mkpath(tile_dir));
+  const gggs::Level level(kLevel);
+  for(double lat : {43.0, 43.5})
+  {
+    const gggs::GridIndex grid = level.gridIndex(lat, -70.5);
+    SonarLiveTile tile(grid, kEdge, kEdge);
+    mi::SonarVisualizationTile msg = makeUniformDepth(grid, 300);
+    mi::VisualizationBand u = msg.bands.front();
+    u.name = "uncertainty";
+    msg.bands.push_back(u);
+    tile.applyPatch(msg);
+    const QString path = QDir(tile_dir).filePath(QString("%1_%2_%3.tif")
+                                                   .arg(static_cast<int>(grid.level()))
+                                                   .arg(grid.row())
+                                                   .arg(grid.column()));
+    ASSERT_TRUE(tile.writeToGeoTiff(path.toStdString()));
+  }
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new SonarLiveCacheLayer(layers, nullptr, ns);
+  layer->enableLiveCoverage();
+  ASSERT_EQ(layer->residentTileCount(), std::size_t(2));
+  ASSERT_TRUE(layer->setOpacityMode(true));
+  if(layer->renderImage(QSize(64, 64)).isNull())
+    GTEST_SKIP() << "no offscreen GL context";
+  QCoreApplication::processEvents();   // the queued budget re-check
+  EXPECT_LT(layer->residentTileCount(), std::size_t(2))
+      << "alpha uploads pushed the footprint over budget; eviction must have run";
 }

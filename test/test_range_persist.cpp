@@ -28,7 +28,9 @@
 
 #include <gtest/gtest.h>
 
+#include <map>
 #include <optional>
+#include <vector>
 
 #include <QApplication>
 #include <QSettings>
@@ -530,6 +532,209 @@ TEST(RangePersist, LiveSmoothInterpolationRoundTrips)
     EXPECT_TRUE(layer->smoothInterpolation())
         << "persisted smooth opt-in must restore from the settingsKey() group";
   }
+}
+
+// [camp#239 / ADR-0017] Uncertainty-driven opacity on the live layer: opt-in (default
+// OFF with the shipped IHO S-44 Order 1a standard), persisted under settingsKey().
+TEST(RangePersist, LiveOpacityDefaultsOffAndRoundTrips)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    EXPECT_FALSE(layer->opacityMode()) << "opt-in: default behaviour must be unchanged";
+    EXPECT_EQ(layer->opacityBandName(), "uncertainty");
+    const auto& r = layer->opacityRamp();
+    EXPECT_EQ(r.kind, camp::raster::OpacityRamp::Kind::Standard);
+    EXPECT_FLOAT_EQ(r.a, 0.5f);
+    EXPECT_FLOAT_EQ(r.b, 0.013f);
+    EXPECT_FLOAT_EQ(r.multiple, 3.0f);
+
+    EXPECT_TRUE(layer->setOpacityMode(true));
+    camp::raster::OpacityRamp manual;
+    manual.kind = camp::raster::OpacityRamp::Kind::Manual;
+    manual.lo = 0.8f;
+    manual.hi = 2.4f;
+    layer->setOpacityRamp(manual);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_TRUE(layer->opacityMode());
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Manual);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 0.8f);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().hi, 2.4f);
+  }
+}
+
+TEST(RangePersist, LiveOpacityStandardParametersRoundTrip)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    camp::raster::OpacityRamp order1b;   // Standard kind, other parameters
+    order1b.a = 0.5f;
+    order1b.b = 0.013f;
+    order1b.multiple = 2.0f;
+    layer->setOpacityRamp(order1b);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Standard);
+    EXPECT_FLOAT_EQ(layer->opacityRamp().multiple, 2.0f);
+  }
+}
+
+// A corrupt/nonsensical persisted ramp must not render garbage: it falls back to the
+// shipped standard. An absent key set restores today's behaviour (mode off).
+TEST(RangePersist, LiveOpacityCorruptRampFallsBackToTheShippedStandard)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("opacity_mode", true);
+    settings.setValue("opacity_ramp_kind", "manual");
+    settings.setValue("opacity_lo", "nan");
+    settings.setValue("opacity_hi", -4.0);
+    settings.setValue("opacity_multiple", 0.0);
+  }
+  layer->readSettings();
+  EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Standard);
+  EXPECT_FLOAT_EQ(layer->opacityRamp().a, 0.5f);
+  EXPECT_FLOAT_EQ(layer->opacityRamp().multiple, 3.0f);
+}
+
+// Whatever is applied must be what comes back after a restart: a Manual ramp with
+// hi <= lo (a fresh Manual selection used to be [0, 0]) is normalised at the setter, and a
+// default Manual ramp is a valid seeded one.
+TEST(RangePersist, LiveOpacityManualRampAppliedIsManualRampRestored)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  const camp::raster::OpacityRamp fresh;
+  EXPECT_GT(fresh.hi, fresh.lo) << "default Manual bounds must already be valid";
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    camp::raster::OpacityRamp degenerate;
+    degenerate.kind = camp::raster::OpacityRamp::Kind::Manual;
+    degenerate.lo = 1.0e6f;   // large: lo + 0.01f rounds back to lo in float
+    degenerate.hi = 1.0e6f;
+    layer->setOpacityRamp(degenerate);
+    EXPECT_GT(layer->opacityRamp().hi, layer->opacityRamp().lo);
+  }
+  {
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    layer->readSettings();
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Manual)
+        << "the applied Manual ramp must survive the restart, not revert to Standard";
+    EXPECT_FLOAT_EQ(layer->opacityRamp().lo, 1.0e6f);
+  }
+}
+
+// A garbled number, or a Manual ramp missing a bound, must not restore as [0, 0] (which
+// would hide every positive-uncertainty cell with no explanation): the whole ramp falls
+// back to the shipped standard.
+TEST(RangePersist, LiveOpacityGarbledOrIncompleteRampFallsBack)
+{
+  struct Case
+  {
+    const char * name;
+    std::map<QString, QVariant> keys;
+  };
+  const std::vector<Case> cases = {
+    {"garbled a", {{"opacity_ramp_kind", "standard"}, {"opacity_a", "banana"}}},
+    {"manual without bounds", {{"opacity_ramp_kind", "manual"}}},
+    {"manual one bound", {{"opacity_ramp_kind", "manual"}, {"opacity_lo", 1.0}}},
+    {"manual garbled hi", {{"opacity_ramp_kind", "manual"}, {"opacity_lo", 1.0},
+                           {"opacity_hi", "x"}}},
+    {"manual hi <= lo", {{"opacity_ramp_kind", "manual"}, {"opacity_lo", 2.0},
+                         {"opacity_hi", 2.0}}},
+  };
+  for(const Case& c : cases)
+  {
+    QSettings().clear();
+    Map map;
+    camp::map::LayerList* layers = map.topLevelLayers();
+    ASSERT_NE(layers, nullptr);
+    auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+    {
+      QSettings settings;
+      settings.beginGroup("MapItem");
+      settings.beginGroup(layer->settingsKey());
+      for(const auto& kv : c.keys)
+        settings.setValue(kv.first, kv.second);
+    }
+    layer->readSettings();
+    EXPECT_EQ(layer->opacityRamp().kind, camp::raster::OpacityRamp::Kind::Standard) << c.name;
+    EXPECT_FLOAT_EQ(layer->opacityRamp().a, 0.5f) << c.name;
+  }
+}
+
+// The Standard ramp reads the COLOUR band's value as the cell's depth, so it is only
+// applied with the depth band as colour band; a Manual ramp works with any colour band.
+TEST(RangePersist, LiveOpacityStandardRampNeedsTheDepthColourBand)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+  auto write_band = [&](const char * band) {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("band", band);
+    settings.setValue("opacity_mode", true);
+  };
+  write_band("backscatter");
+  layer->readSettings();
+  EXPECT_TRUE(layer->opacityMode());
+  EXPECT_FALSE(layer->opacityActive()) << "Standard ramp + non-depth colour band";
+  camp::raster::OpacityRamp manual;
+  manual.kind = camp::raster::OpacityRamp::Kind::Manual;
+  manual.lo = 1.0f;
+  manual.hi = 2.0f;
+  layer->setOpacityRamp(manual);
+  EXPECT_TRUE(layer->opacityActive()) << "Manual ramp is depth-independent";
+  layer->setOpacityRamp(camp::raster::OpacityRamp());   // Standard (persists)
+  write_band("depth");                                  // then overwrite the stored band
+  layer->readSettings();
+  EXPECT_TRUE(layer->opacityActive());
+}
+
+// Colour band == opacity band is meaningless: it restores with the mode OFF.
+TEST(RangePersist, LiveOpacityWithSameColourAndOpacityBandRestoresOff)
+{
+  QSettings().clear();
+  Map map;
+  camp::map::LayerList* layers = map.topLevelLayers();
+  ASSERT_NE(layers, nullptr);
+  auto* layer = new TestableSonarLiveCacheLayer(layers, nullptr, "/test_source");
+  {
+    QSettings settings;
+    settings.beginGroup("MapItem");
+    settings.beginGroup(layer->settingsKey());
+    settings.setValue("band", "uncertainty");
+    settings.setValue("opacity_mode", true);
+  }
+  layer->readSettings();
+  EXPECT_FALSE(layer->opacityMode());
+  EXPECT_FALSE(layer->opacityActive());
 }
 
 // [camp#181 / ADR-0015] Same anchor round-trip on RasterLayer, whose settings group

@@ -1,6 +1,7 @@
 #ifndef RASTER_RASTER_GL_RENDERER_H
 #define RASTER_RASTER_GL_RENDERER_H
 
+#include "opacity_ramp.h"
 #include "raster_field_source.h"
 
 #include <QImage>
@@ -65,9 +66,15 @@ public:
   /// (the layer's Web-Mercator extent), with the colormap range [@p data_min,
   /// @p data_max] for Scalar items. The context MUST already be current (see
   /// makeCurrent()). Returns a null image if the shader fails to compile.
+  ///
+  /// [camp#239 / ADR-0017] @p opacity, when non-null, enables the uncertainty-opacity
+  /// mode for every Scalar item that carries an `alpha_texture`: colour still comes
+  /// from the value texture through the LUT, opacity from the second texture via the
+  /// ramp (premultiplied output). Null (the default) leaves every item byte-identical
+  /// to the pre-#239 output; an item without an `alpha_texture` is drawn opaque.
   QImage renderToImage(const QList<RasterFieldItem>& items,
                        const QRectF& scene_bounds, float data_min, float data_max,
-                       const QSize& size);
+                       const QSize& size, const OpacityRamp* opacity = nullptr);
 
   /// [camp#141] Select the marine_colormap palette baked into the LUT, by name
   /// (re-baked on next render). An unknown name renders as "grayscale".

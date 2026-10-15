@@ -321,6 +321,7 @@ set(CAMP_MAP_SOURCES
     src/camp_map/map_view/map_view.cpp
     src/camp_map/map_view/web_mercator.cpp
     src/camp_map/raster/colormap_range_dialog.cpp
+    src/camp_map/raster/opacity_range_dialog.cpp
     src/camp_map/raster/raster_gl_renderer.cpp
     src/camp_map/raster/raster_layer.cpp
     src/camp_map/raster/shoreline_anchor.cpp
@@ -972,6 +973,14 @@ if(BUILD_TESTING)
     ${GDAL_LIBRARY}
   )
 
+  # [camp#239 / ADR-0017] CPU reference for uncertainty-driven opacity (pure maths).
+  ament_add_gtest(test_opacity_ramp
+    test/test_opacity_ramp.cpp
+  )
+  target_include_directories(test_opacity_ramp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+
   # [camp#134] Shared RasterGlRenderer unit tests (ADR-0007): the unified shader's
   # NaN + finite-sentinel discard, LUT bake, Nearest sampling, and the RGBA bypass
   # path, driven directly with hand-built textures. Self-skips with no offscreen GL.
@@ -980,6 +989,9 @@ if(BUILD_TESTING)
   )
   target_include_directories(test_raster_gl_renderer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/camp_map
+  )
+  target_compile_definitions(test_raster_gl_renderer PRIVATE
+    CAMP_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/fixtures"
   )
   target_link_libraries(test_raster_gl_renderer
     camp_map

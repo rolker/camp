@@ -138,3 +138,44 @@ TEST(SonarLiveTileNoData, SentinelIsNaNSoOneGeoTiffSlotSuffices)
     EXPECT_TRUE(std::isnan(band->nodata)) << name << " sentinel should be NaN";
   }
 }
+
+// [camp#239 / ADR-0017] The overview fold must carry BOTH bands the opacity mode reads,
+// each folded independently: a parent cell with a depth mean but no uncertainty
+// sample keeps its uncertainty NoData (the renderer then draws it transparent), and the
+// folded uncertainty is the MEAN of the child samples (a display approximation, not a
+// propagated uncertainty).
+TEST(SonarLiveTileNoData, FoldCarriesDepthAndUncertaintyBandsIndependently)
+{
+  const gggs::Level level(kLevel);
+  const gggs::GridIndex grid = level.gridIndex(43.0, -70.5);
+
+  mi::SonarVisualizationTile msg;
+  msg.header.stamp.sec = 100;
+  msg.header.frame_id = "gggs";
+  msg.index = tileIndexFromGridIndex(grid);
+  msg.width = kEdge;
+  msg.height = kEdge;
+  msg.window_col = 0;
+  msg.window_row = 0;
+  msg.window_width = kEdge;
+  msg.window_height = kEdge;
+  msg.bands.push_back(makeBand("depth", -32768.0, 0.01, 0.0, -1500, kEdge * kEdge));
+  msg.bands.push_back(makeBand("uncertainty", 1275.0, 0.01, 0.0, 30, 4));   // 4 cells
+  SonarLiveTile child(grid, kEdge, kEdge);
+  child.applyPatch(msg);
+
+  SonarLiveTile parent(gggs::parent(grid), kEdge, kEdge);
+  parent.foldChild(child);
+
+  ASSERT_NE(parent.band("depth"), nullptr);
+  ASSERT_NE(parent.band("uncertainty"), nullptr);
+  const std::size_t depth_cells = drawableCells(parent, "depth");
+  const std::size_t unc_cells = drawableCells(parent, "uncertainty");
+  EXPECT_GT(depth_cells, std::size_t(0));
+  EXPECT_GT(unc_cells, std::size_t(0));
+  EXPECT_LT(unc_cells, depth_cells)
+      << "cells with depth but no uncertainty sample must stay uncertainty-NoData";
+  for(float v : parent.band("uncertainty")->data)
+    if(std::isfinite(v))
+      EXPECT_NEAR(v, 0.30f, 1e-4) << "MEAN of the child samples (all 0.30 here)";
+}
