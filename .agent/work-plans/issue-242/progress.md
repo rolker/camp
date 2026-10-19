@@ -6,7 +6,7 @@ issue: 242
 
 ## Implementation
 **Status**: complete
-**When**: 2026-10-19 (see commit dates)
+**When**: 2026-10-19 10:02 -04:00
 **By**: Claude Code Agent (Claude Sonnet 5.5)
 
 **Branch**: feature/issue-242
