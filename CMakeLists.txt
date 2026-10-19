@@ -893,6 +893,25 @@ if(BUILD_TESTING)
     Qt5::Widgets
   )
 
+  # [camp#242] Resize anchor: the map centre must survive a resize (window-manager
+  # maximize after the startup restore, edge drag, dock panel). ProjectView cannot
+  # be constructed in a gtest (roslink + managers), so the test drives a plain
+  # QGraphicsView through the same camp::keepCenterOnResize() ProjectView's
+  # constructor calls; check_project_view_resize_anchor guards that call.
+  ament_add_gtest(test_view_resize_anchor
+    test/test_view_resize_anchor.cpp
+  )
+  target_include_directories(test_view_resize_anchor PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/camp
+  )
+  target_link_libraries(test_view_resize_anchor
+    Qt5::Widgets
+  )
+  add_test(NAME check_project_view_resize_anchor
+    COMMAND ${CMAKE_COMMAND}
+      -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_project_view_resize_anchor.cmake)
+
   ament_add_gtest(test_background_persistence
     test/test_background_persistence.cpp
   )

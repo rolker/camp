@@ -1,4 +1,5 @@
 #include "projectview.h"
+#include "view_resize_anchor.h"
 
 #include <QCursor>
 #include <QWheelEvent>
@@ -42,6 +43,10 @@ ProjectView::ProjectView(QWidget *parent) : QGraphicsView(parent),
     // and fitInView() multiplies the current transform so the flip survives.
     // See ADR-0002.
     scale(1.0, -1.0);
+
+    // [camp#242] Resizing the window (maximize, edge drag, dock panel) keeps the
+    // map centre instead of the top-left scene point. See view_resize_anchor.h.
+    camp::keepCenterOnResize(this);
 }
 
 void ProjectView::wheelEvent(QWheelEvent *event)
