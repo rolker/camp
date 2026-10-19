@@ -217,6 +217,15 @@ coverage of the Map model's insert/remove/reorder paths).
 
 ## Common Pitfalls
 
+- **Map view restore and resize (camp#90, camp#242):** `MainWindow` restores
+  `MainWindow/mapScale` and `MainWindow/mapCenter` on a `QTimer::singleShot(0)`
+  after `restoreGeometry()`, at the window's pre-maximize size. `ProjectView`
+  therefore sets `QGraphicsView::AnchorViewCenter` as its resize anchor
+  (`camp::keepCenterOnResize()` in `src/camp/view_resize_anchor.h`), so the later
+  window-manager maximize, an edge drag or a dock panel appearing keeps the
+  centre; with Qt's default `NoAnchor` the top-left point stays fixed and the
+  restored centre moved by half the size change (~1.7 km observed). Don't remove
+  it; `test_view_resize_anchor` and `check_project_view_resize_anchor` guard it.
 - **QSettings store name:** the deployed app must call
   `setOrganizationName("UNH-CCOMJHC")` / `setApplicationName("CCOMAutonomousMissionPlanner")`
   in `main.cpp` — otherwise it persists to "Unknown Organization" and splits its

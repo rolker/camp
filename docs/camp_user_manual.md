@@ -35,6 +35,9 @@ ros2 launch camp camp_launch.py
   Open one with *Open Background* from the map context menu. Charts are app
   state — CAMP remembers what you opened and restores it next start, and
   removing a chart layer makes that stick too.
+- CAMP also remembers the map zoom and centre and restores them next start. The
+  map keeps its centre when the window is resized (maximized, dragged larger or
+  smaller, or a side panel shown or hidden).
 - CAMP is typically started as part of the operator launcher (see the boat's
   operator manual, *Starting the stack*), so you don't usually run it by hand.
 
