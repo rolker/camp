@@ -20,3 +20,19 @@ issue: 242
 
 ### Not done
 - [ ] Not run against a real window manager maximize (no GUI allowed here); the live rehearsal should confirm.
+
+## Local Review (Pre-Push)
+**Status**: complete
+**When**: 2026-10-19 10:02 -04:00
+**By**: Claude Code Agent (Claude Sonnet 5.5)
+**Verdict**: approved
+
+**Branch**: feature/issue-242 at `52af3aa`
+**Mode**: pre-push
+**Depth**: Light (reason: ~36 lines changed in existing files plus three small new files; no governance-path or security triggers). Run as a single reviewer read with static analysis (pre-commit hooks all passed); no sub-agent or cross-model dispatch, proportionate to the size.
+**Must-fix**: 0 | **Suggestions**: 1
+**Round**: 1 | **Ship**: recommended — no must-fix; the one hygiene item (hand-typed timestamp in progress.md) was fixed in a follow-up commit
+
+### Findings
+- [x] (suggestion) progress.md Implementation entry carried a hand-typed "(see commit dates)" When field, against the generated-timestamp rule — `.agent/work-plans/issue-242/progress.md` (fixed, regenerated with date)
+- Checked and clean: resize anchor vs centerOn/fitInView/scale/transformationAnchor (independent properties); test is deterministic offscreen with a one-pixel tolerance and a NoAnchor control; the source check was seen to fail with the constructor call removed; docs claims match the code. No src/ or test/ change resulted from the review, so no rebuild was needed.
